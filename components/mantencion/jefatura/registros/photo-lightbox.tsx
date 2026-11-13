@@ -75,7 +75,7 @@ export function PhotoLightbox({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(next) => { if (!next) onClose() }}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/95" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[color-mix(in_oklab,var(--color-text)_95%,transparent)]" />
         <DialogPrimitive.Content
           className="fixed inset-0 z-50 flex flex-col text-white outline-none"
           onKeyDown={handleKeyDown}

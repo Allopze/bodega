@@ -150,7 +150,7 @@ export function InvoiceReconciliationCard({
 
       {reconciliation.hasInvoices && (
         <div className="mt-3 overflow-x-auto">
-          <TableRoot className="rounded-none border-0">
+          <TableRoot framed={false}>
           <Table className="min-w-[720px] text-left text-xs">
             <caption className="sr-only">Conciliación de líneas de factura contra la orden de compra</caption>
             <TableHeader className="text-(--color-text-subtle)">

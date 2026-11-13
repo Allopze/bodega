@@ -41,6 +41,7 @@ import {
   assertPermissionModuleEnabled,
   setSubmoduleToggle,
   ModuleDisabledError,
+  toggleableNavItems,
 } from "@/lib/services/module-toggles"
 import { assertInspectionOperationEnabled } from "@/lib/services/prevention-inspections/module-toggle"
 
@@ -479,6 +480,27 @@ describe("module-toggles service", () => {
       const flotaItem = flota!.submodules.find((s) => s.href === "/flota")
       expect(flotaItem!.enabled).toBe(false)
     })
+  })
+})
+
+describe("toggleableNavItems", () => {
+  it("un contenedor sin permisos propios no es submódulo: sólo cuentan sus hijos", () => {
+    const items = [
+      { href: "/mantencion/panel", permissions: ["mant:view"] },
+      { label: "Configuración", href: "/mantencion/configuracion", permissions: [], children: [
+        { href: "/mantencion/pautas", permissions: ["mant:schedules"] },
+        { href: "/mantencion/catalogos", permissions: ["mant:catalogs"] },
+      ] },
+    ]
+    expect(toggleableNavItems(items).map((item) => item.href)).toEqual(["/mantencion/panel", "/mantencion/pautas", "/mantencion/catalogos"])
+  })
+
+  it("un padre con permisos sigue siendo submódulo y sus hijos bajo su ruta no", () => {
+    const items = [{ href: "/prevencion/cgrd", permissions: ["prev:cgrd"], children: [
+      { href: "/prevencion/cgrd/mapa", permissions: ["prev:cgrd"] },
+      { href: "/prevencion/emergencias", permissions: ["prev:emergency"] },
+    ] }]
+    expect(toggleableNavItems(items).map((item) => item.href)).toEqual(["/prevencion/cgrd", "/prevencion/emergencias"])
   })
 })
 

@@ -74,6 +74,9 @@ export function StageTabs({
                 : "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]",
             )}
           >
+            {/* Rótulo y contador alineados por la línea base: el contador va en mono
+                más chico y, centrado por caja, quedaba bajo el texto (auditoría 2026-11-13, M5). */}
+            <span className="inline-flex items-baseline">
             {tab.label}
             {tab.count !== undefined && (
               <span className={cn(
@@ -86,6 +89,7 @@ export function StageTabs({
                 {" "}{tab.count}
               </span>
             )}
+            </span>
           </Link>
         )
       })}

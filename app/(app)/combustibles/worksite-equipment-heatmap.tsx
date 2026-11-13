@@ -1,6 +1,7 @@
 import * as React from "react"
 import { ChartLineUp } from "@phosphor-icons/react/dist/ssr"
 import type { HeatmapCell } from "@/lib/combustibles/consumption-dashboard"
+import { compactNumber } from "./_shared/chart-shared"
 
 /**
  * Pasos de intensidad del mapa: un solo tono (el verde de la marca) que se
@@ -81,7 +82,7 @@ export function WorksiteEquipmentHeatmap({ cells }: { cells: HeatmapCell[] }) {
                     style={{ backgroundColor: cell.liters > 0 ? stepColor(step.mix) : EMPTY_COLOR, color: step.mix === 100 && cell.liters > 0 ? "var(--color-surface)" : "var(--color-text)" }}
                     title={`${cell.worksiteName} · ${cell.equipmentLabel}: ${cell.liters.toLocaleString("es-CL")} L${cell.amount == null ? "" : ` / ${cell.amount.toLocaleString("es-CL")} CLP`}`}
                   >
-                    <span className="font-mono font-semibold">{cell.liters >= 1000 ? `${(cell.liters / 1000).toFixed(0)}k` : Math.round(cell.liters)}</span>
+                    <span className="font-mono font-semibold">{compactNumber(cell.liters)}</span>
                     <span className="opacity-75">L</span>
                   </div>
                 )

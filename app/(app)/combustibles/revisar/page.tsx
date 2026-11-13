@@ -117,8 +117,10 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
 
   // Una consulta que cae a su fallback no puede leerse como «no hay nada»: se anota y el banner lo dice.
   const degraded: string[] = []
+  // El banner dice «N de M fuentes»: M es lo que de verdad se pidió en esta carga (varía con la vista y el detalle).
+  const requested: string[] = []
   const tracked = <T,>(promise: Promise<T>, fallback: T, label: string) =>
-    settle(promise.catch((error: unknown) => { degraded.push(label); throw error }), fallback, label)
+    (requested.push(label), settle(promise.catch((error: unknown) => { degraded.push(label); throw error }), fallback, label))
 
   const canApprove = can(session, "combustibles:approve_flagged")
   const canReviewCases = can(session, "combustibles:review_anomalies")
@@ -162,7 +164,9 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
   const kindHref = (next: FuelInboxKind | undefined) => hrefWith({ tipo: next, decision: undefined, severidad: undefined, regla: undefined, estado: undefined, ref: undefined })
 
   const kindItems = [
-    { key: "todo", label: `Todo${totalCount !== null ? ` · ${totalCount}` : ""}`, active: kind === undefined, href: kindHref(undefined) },
+    // En «Pendientes» el total ya está en la pestaña de arriba («Pendientes N»): no se repite en el chip (A5).
+    // En «Decididas» ninguna pestaña lo cuenta, así que ahí sí lo lleva.
+    { key: "todo", label: `Todo${view === "decididas" && totalCount !== null ? ` · ${totalCount}` : ""}`, active: kind === undefined, href: kindHref(undefined) },
     ...FUEL_INBOX_KINDS.map((value) => ({
       key: value,
       label: `${FUEL_INBOX_KIND_LABELS[value]}${counts[value] !== null ? ` · ${counts[value]}` : ""}`,
@@ -188,12 +192,17 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
   const degradedList = degraded.includes("la lista")
 
   const oldestDays = summary.oldestWaitingSince ? daysWaiting(summary.oldestWaitingSince, today) : null
+  const oldestPhrase = oldestDays !== null && oldestDays > 0
+    ? `La más antigua espera desde hace ${oldestDays === 1 ? "1 día" : `${oldestDays} días`}.`
+    : null
+  // El total pendiente vive en la pestaña «Pendientes N»: la frase no lo repite. Sólo habla cuando no hay conteo
+  // que mostrar (falló o es cero) o para decir lo más antiguo.
   const answer = view === "pendientes"
     ? summary.total === null
       ? "No se pudo contar lo pendiente. Reintenta en unos minutos."
       : summary.total === 0
         ? "No queda nada esperando a una persona."
-        : `${summary.total === 1 ? "1 cosa espera" : `${summary.total} cosas esperan`} a una persona.${oldestDays !== null && oldestDays > 0 ? ` La más antigua espera desde hace ${oldestDays === 1 ? "1 día" : `${oldestDays} días`}.` : ""}`
+        : oldestPhrase
     : `Lo que se decidió ${period.inLabel}. Desde aquí se puede deshacer una decisión.`
 
   // Una sola representación por dimensión (A5): el conteo por tipo vive en las pestañas de arriba, no se repite en un gráfico.
@@ -208,14 +217,14 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
     <PageContainer>
       <PageHeader
         title="Por revisar"
-        description="Lo que la plataforma no puede decidir sola: cargas por decidir, casos, patentes sin vincular y pedidos de revisión"
+        description="Lo que la plataforma no puede decidir sola: cargas, casos, patentes y pedidos"
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Por revisar" }]} />}
         actions={<FuelHeaderActions period={period} />}
       />
-      <DegradedDataBanner degraded={degraded} total={9} />
+      <DegradedDataBanner degraded={degraded} total={requested.length} />
       <SectionNav items={revisarNavItems({ pendientes: summary.total })} activeKey={view} ariaLabel="Por revisar" carryParams={FUEL_CARRY_PARAMS} />
 
-      <p className="mb-4 text-sm font-medium text-[var(--color-text)]">{answer}</p>
+      {answer ? <p className="mb-4 text-sm font-medium text-[var(--color-text)]">{answer}</p> : null}
 
       {view === "pendientes" && !canApprove ? (
         <Callout tone="info" className="mb-4">
@@ -316,7 +325,7 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
             ? <>La última revisión automática, del {formatDateTime(lastRun.at)}, no terminó bien.</>
             : <>La revisión automática corrió el {formatDateTime(lastRun.at)}{lastRun.status === "running" ? " y sigue en curso" : ""}.</>
           : <>La revisión automática todavía no ha corrido.</>}
-        {canManageRules ? <Link href={FUEL_PATHS.ajustesReglas} className="font-medium text-[var(--color-primary)] hover:underline">Cómo se detecta cada cosa</Link> : null}
+        {canManageRules ? <Link href={FUEL_PATHS.ajustesReglas} className="font-medium text-[var(--color-primary-ink)] hover:underline">Cómo se detecta cada cosa</Link> : null}
       </p>
 
       {itemKey && !detail && !degraded.includes("el detalle") ? (

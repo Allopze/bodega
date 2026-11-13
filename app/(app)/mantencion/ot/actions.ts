@@ -20,7 +20,7 @@ import type { ActionState } from "@/lib/validation/masters"
  * comprobar permiso y alcance de faena: aquí no se confía en la interfaz.
  *
  * `createWorkOrderAction` es para `useActionState` con el `<form>` del Sheet
- * «Nueva OT». El formulario envía un campo `payload` con el JSON del
+ * «Nueva orden». El formulario envía un campo `payload` con el JSON del
  * `createWorkOrderSchema` (las dos listas de ítems no caben bien en FormData
  * plano). Devuelve `data.id` para navegar al detalle.
  */
@@ -48,7 +48,7 @@ export async function createWorkOrderAction(_prev: ActionState, formData: FormDa
     }
     revalidatePath(PATH)
     revalidatePath(`/mantencion/equipos/${parsed.data.vehicleId}`)
-    return { ok: true, message: `Orden de trabajo ${result.value.folio} creada.`, data: { id: result.value.id, folio: result.value.folio } }
+    return { ok: true, message: `Orden ${result.value.folio} creada.`, data: { id: result.value.id, folio: result.value.folio } }
   } catch (error) {
     return actionErrorResult(error, "No se pudo crear la orden de trabajo. Inténtalo de nuevo.")
   }

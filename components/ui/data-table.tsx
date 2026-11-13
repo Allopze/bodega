@@ -85,6 +85,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
   enableColumnToggle = false,
   hideDensityToggle = false,
   stickyFirstColumn = false,
+  framed = true,
   viewKey,
   onVisibleRowsChange,
 }: DataTableProps<T>) => {
@@ -377,7 +378,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
       )}
 
       {/* Table */}
-      <TableRoot data-density={density} data-sticky-col={stickyFirstColumn || undefined} className={renderMobileCard ? "hidden md:block" : undefined}>
+      <TableRoot framed={framed} data-density={density} data-sticky-col={stickyFirstColumn || undefined} className={renderMobileCard ? "hidden md:block" : undefined}>
         {/* Ocultar una columna quitaba su `<th>` pero no sus `<td>`: `renderRow`
             es del llamador y la tabla no puede filtrar sus celdas. La fila se
             corría y los valores quedaban bajo el encabezado equivocado. Como el

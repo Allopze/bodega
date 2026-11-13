@@ -104,7 +104,7 @@ function emptyCopy(tab: SparePartTab, hasInactive: boolean) {
   }
   return {
     title: "Todavía no hay repuestos en el catálogo",
-    description: "Se agregan al armar una OC de repuestos o desde aquí.",
+    description: "Se agregan al armar una orden de compra de repuestos o desde aquí.",
     cta: true,
   }
 }
@@ -223,7 +223,7 @@ export function SparePartsCatalogView({ rows, counts, tab, units }: SparePartsCa
                 </TableCell>
                 <TableCell><SupplierValue row={row} /></TableCell>
                 <TableCellNum><PriceValue row={row} /></TableCellNum>
-                <TableCell nowrap>{row.lastPurchasedAt ? <span className="font-mono text-[13px]">{formatDate(row.lastPurchasedAt)}</span> : <span className={MUTED}>Sin compras</span>}</TableCell>
+                <TableCell nowrap>{row.lastPurchasedAt ? <span className="font-mono text-sm">{formatDate(row.lastPurchasedAt)}</span> : <span className={MUTED}>Sin compras</span>}</TableCell>
                 <TableCellNum>{row.vehicleCount === 0 ? <span className={MUTED}>—</span> : plural(row.vehicleCount, "equipo", "equipos")}</TableCellNum>
               </TableRow>
             )

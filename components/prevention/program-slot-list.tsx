@@ -119,7 +119,7 @@ export function ProgramSlotList({
   }) => Promise<{ ok: boolean; message?: string }>
 }) {
   if (rows.length === 0) {
-    return <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">{emptyHint}</p>
+    return <p className="text-sm text-[var(--color-text-subtle)]">{emptyHint}</p>
   }
 
   return (
@@ -127,55 +127,60 @@ export function ProgramSlotList({
       <p className="text-xs text-[var(--color-text-subtle)]">
         Lo que el programa {year} planifica para esta faena. Una casilla sin resolver al vencer su mes cuenta como incumplimiento.
       </p>
-      {rows.map((row) => (
-        <article key={row.id} className="rounded-lg border border-[var(--color-border)] p-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="inline-flex items-center gap-1.5 text-sm font-medium">
-                <CalendarBlank size={15} aria-hidden />
-                {MONTHS[row.scheduledMonth - 1]} · semana {row.scheduledWeek}
-              </p>
-              {!!row.activeEvidenceCount && (
-                <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)]">
-                  <Paperclip size={13} aria-hidden />
-                  {row.activeEvidenceCount} evidencia{row.activeEvidenceCount === 1 ? "" : "s"} adjunta{row.activeEvidenceCount === 1 ? "" : "s"}
+      {/* Las casillas viven dentro de la sección del módulo: filas separadas por una línea
+          fina y no una tarjeta con borde y radio por casilla (auditoría UI/UX
+          Control operacional 2026-11-13, §8). */}
+      <div className="divide-y divide-[var(--color-border)]">
+        {rows.map((row) => (
+          <article key={row.id} className="py-3 first:pt-0 last:pb-0">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="inline-flex items-center gap-1.5 text-sm font-medium">
+                  <CalendarBlank size={15} aria-hidden />
+                  {MONTHS[row.scheduledMonth - 1]} · semana {row.scheduledWeek}
                 </p>
-              )}
-              {row.status === "completed" && row.fulfilledLabel && (
-                <p className="mt-1 text-xs text-[var(--color-text-muted)]">{row.fulfilledLabel}</p>
-              )}
-              {row.status === "not_applicable" && (
-                <p className="mt-1 inline-flex max-w-xl items-start gap-1.5 text-xs text-[var(--color-text-subtle)]">
-                  <Prohibit size={13} className="mt-0.5 shrink-0" aria-hidden />{row.notApplicableReason}
-                </p>
-              )}
-              {row.status === "pending" && isBeforeActivation(row, year, activationPeriod ?? null) && (
-                <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
-                  Anterior a la activación del programa: no se exige, pero se puede registrar si se realiza.
-                </p>
-              )}
-              {row.status === "not_completed" && row.observation && (
-                <p className="mt-1 inline-flex max-w-xl items-start gap-1.5 text-xs text-[var(--color-text-subtle)]">
-                  <WarningCircle size={13} className="mt-0.5 shrink-0 text-[var(--color-danger-ink)]" aria-hidden />{row.observation}
-                </p>
-              )}
+                {!!row.activeEvidenceCount && (
+                  <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)]">
+                    <Paperclip size={13} aria-hidden />
+                    {row.activeEvidenceCount} evidencia{row.activeEvidenceCount === 1 ? "" : "s"} adjunta{row.activeEvidenceCount === 1 ? "" : "s"}
+                  </p>
+                )}
+                {row.status === "completed" && row.fulfilledLabel && (
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">{row.fulfilledLabel}</p>
+                )}
+                {row.status === "not_applicable" && (
+                  <p className="mt-1 inline-flex max-w-xl items-start gap-1.5 text-xs text-[var(--color-text-subtle)]">
+                    <Prohibit size={13} className="mt-0.5 shrink-0" aria-hidden />{row.notApplicableReason}
+                  </p>
+                )}
+                {row.status === "pending" && isBeforeActivation(row, year, activationPeriod ?? null) && (
+                  <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+                    Anterior a la activación del programa: no se exige, pero se puede registrar si se realiza.
+                  </p>
+                )}
+                {row.status === "not_completed" && row.observation && (
+                  <p className="mt-1 inline-flex max-w-xl items-start gap-1.5 text-xs text-[var(--color-text-subtle)]">
+                    <WarningCircle size={13} className="mt-0.5 shrink-0 text-[var(--color-danger-ink)]" aria-hidden />{row.observation}
+                  </p>
+                )}
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <MetaBadge meta={statusMeta(row.status)} dot />
+                {canRecord && row.status !== "completed" && (
+                  <>
+                    {row.status !== "not_completed" && (
+                      <SlotDialog row={row} target="not_completed" onRecord={onRecord} />
+                    )}
+                    {row.status !== "not_applicable" && (
+                      <SlotDialog row={row} target="not_applicable" suggestion={notApplicableSuggestion} onRecord={onRecord} />
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <MetaBadge meta={statusMeta(row.status)} dot />
-              {canRecord && row.status !== "completed" && (
-                <>
-                  {row.status !== "not_completed" && (
-                    <SlotDialog row={row} target="not_completed" onRecord={onRecord} />
-                  )}
-                  {row.status !== "not_applicable" && (
-                    <SlotDialog row={row} target="not_applicable" suggestion={notApplicableSuggestion} onRecord={onRecord} />
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </article>
-      ))}
+          </article>
+        ))}
+      </div>
     </div>
   )
 }

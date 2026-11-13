@@ -132,7 +132,7 @@ export function ImportWizard({ kind, media, open, onOpenChange }: {
                 <Input value={source} onChange={(event) => setSource(event.target.value)} maxLength={60} />
               </Field>
             ) : (
-              <Field label="Medio de suministro" helper="Todas las filas del archivo se asocian a este medio. Se administran en Ajustes › ¿Por dónde llega el combustible?." required>
+              <Field label="Medio de suministro" helper="Todas las filas del archivo se asocian a este medio. Se administran en Ajustes › Medios de suministro." required>
                 <OptionSelect
                   aria-label="Medio de suministro"
                   options={media.map((medium) => ({ value: medium.id, label: medium.name }))}
@@ -152,7 +152,7 @@ export function ImportWizard({ kind, media, open, onOpenChange }: {
               helperText={copy.helper}
             />
             <div className="flex items-center justify-between gap-3">
-              <ExportButton action={downloadImportTemplateAction} filters={kind} label="Descargar plantilla" variant="ghost" />
+              <ExportButton action={downloadImportTemplateAction} filters={kind} label="Descargar plantilla" ariaLabel={kind === "telemetry" ? "Descargar la plantilla de telemetría" : "Descargar la plantilla de despachos de surtidor"} variant="ghost" />
               <p className="text-xs text-[var(--color-text-muted)]">La plantilla trae los encabezados exactos y una hoja de instrucciones.</p>
             </div>
             {message ? <p role="alert" className="text-sm text-[var(--color-danger-ink)]">{message}</p> : null}

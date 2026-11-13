@@ -54,6 +54,9 @@ export type OperationalAsset = {
   id: string
   code: string
   name: string
+  /** Patente y tipo por separado, para `VehicleIdentity`; `name` ya los junta («Camión · patente») para la exportación y la búsqueda. */
+  plate?: string | null
+  typeName?: string | null
   worksiteId: string
   worksiteName: string
   /** Valor crudo de la columna `operational_status` (`operativo`, `mantencion`,
@@ -620,6 +623,8 @@ export async function getOperationalControlHub(
       id: vehicle.id,
       code: vehicle.code ?? vehicle.plate,
       name: `${vehicle.typeName ?? vehicle.type} · ${vehicle.plate}`,
+      plate: vehicle.plate,
+      typeName: vehicle.typeName ?? vehicle.type,
       worksiteId: vehicle.worksiteId,
       worksiteName: vehicle.worksiteName,
       operationalStatus: rawStatus,

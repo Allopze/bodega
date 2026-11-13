@@ -4,15 +4,14 @@ import * as React from "react"
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
 import { ExpiryStatus } from "@/components/ui/expiry-status"
-import { TableCell } from "@/components/ui/table"
-import { MetaBadge } from "@/components/states/state-badge"
-import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
+import { TableCell, TableRow } from "@/components/ui/table"
+import { StateBadge } from "@/components/states/state-badge"
+import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
 import { expiryState } from "@/lib/expiry"
 import { formatCLP } from "@/lib/utils"
 import type { getFleetOverview } from "@/lib/services/fleet"
 import { fleetExpirySubject } from "./fleet-expiry-subject"
 import { FleetMeterReading } from "./fleet-meter-reading"
-import { FleetTableRow } from "./fleet-table-row"
 import { Button } from "@/components/ui/button"
 
 type VehicleRow = Awaited<ReturnType<typeof getFleetOverview>>[number]
@@ -22,6 +21,20 @@ function formatUnitCost(value: number | null, label: string | null): string {
   if (value == null || label == null) return "—"
   const unit = label === "CLP/km" ? "km" : "h"
   return `$${value.toLocaleString("es-CL", { maximumFractionDigits: 1 })}/${unit}`
+}
+
+/** El estado que `StateBadge entity="fleet"` entiende: un vehículo dado de baja es «inactivo» sea cual sea su último estado operativo. */
+function fleetState(vehicle: VehicleRow): string {
+  return vehicle.isActive ? vehicle.operationalStatus : "inactivo"
+}
+
+/**
+ * Hay gasto de combustible que mostrar cuando el proveedor trajo algo del equipo en
+ * los 12 meses. El servicio suma con `COALESCE(…, 0)`: sin movimientos el monto es 0,
+ * y un «$0» se leía como «no gastó» cuando en realidad es «sin dato».
+ */
+function hasFuelData(vehicle: VehicleRow): boolean {
+  return (vehicle.totalLiters ?? 0) > 0 || (vehicle.loadCount ?? 0) > 0 || (vehicle.totalFuelAmount ?? 0) > 0
 }
 
 function meterSourceLabel(source: string | null): string | undefined {
@@ -71,12 +84,12 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
     { key: "operationalStatus", label: "Estado", sortable: true },
     { key: "responsibleName", label: "Responsable", sortable: true },
     { key: "nextExpiryDate", label: "Próximo vencimiento", sortable: true },
-    ...(canViewCosts && canViewFuel ? [{ key: "totalFuelAmount", label: "Combustible", sortable: true, numeric: true }] : []),
+    ...(canViewCosts && canViewFuel ? [{ key: "totalFuelAmount", label: "Gasto combustible (12 m)", sortable: true, numeric: true }] : []),
     // Ratio de dos unidades distintas (CLP/km y CLP/h): ordenarlo por el número
     // crudo compararía magnitudes que no lo son.
-    ...(canViewCosts && canViewFuel ? [{ key: "fuelCostPerUnit", label: "Costo por km/h", sortable: false, numeric: true }] : []),
+    ...(canViewCosts && canViewFuel ? [{ key: "fuelCostPerUnit", label: "Costo por km u hora", sortable: false, numeric: true }] : []),
     ...(showWorkOrders ? [{ key: "openWorkOrders", label: "OT abiertas", sortable: true, numeric: true }] : []),
-    ...(showMeterReading ? [{ key: "_meterReading", label: "Km/Hr", sortable: false, numeric: true }] : []),
+    ...(showMeterReading ? [{ key: "_meterReading", label: "Lectura (km u h)", sortable: false, numeric: true }] : []),
   ], [canViewCosts, canViewFuel, showWorkOrders, showMeterReading])
 
   return (
@@ -93,53 +106,46 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
       renderMobileCard={(vehicle) => (
         <article className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]">
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-medium text-[var(--color-text)]">{vehicle.plate}</p>
-              <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-                {[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.type}
-              </p>
-            </div>
-            <MetaBadge meta={{ label: vehicle.isActive ? formatFuelVehicleStatus(vehicle.operationalStatus) : "Inactivo", variant: vehicle.isActive && vehicle.operationalStatus === "operativo" ? "success" : "outline" }} />
+            <VehicleIdentity code={vehicle.code} plate={vehicle.plate} type={vehicle.type} />
+            <StateBadge entity="fleet" state={fleetState(vehicle)} />
           </div>
           <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
             <div><dt className="text-[var(--color-text-subtle)]">Faena</dt><dd>{vehicle.worksiteName}</dd></div>
             <div><dt className="text-[var(--color-text-subtle)]">Responsable</dt><dd>{vehicle.responsibleName ?? "—"}</dd></div>
             <div className="col-span-2"><dt className="text-[var(--color-text-subtle)]">Próximo vencimiento</dt><dd className="mt-0.5"><NextExpiry vehicle={vehicle} today={today} warningDays={warningDays} /></dd></div>
             {canViewCosts && canViewFuel && (
-              <div><dt className="text-[var(--color-text-subtle)]">Costo por km/h</dt><dd className="font-mono">{formatUnitCost(vehicle.fuelCostPerUnit, vehicle.fuelCostPerUnitLabel)}</dd></div>
+              <div><dt className="text-[var(--color-text-subtle)]">Costo por km u hora</dt><dd className="font-mono">{formatUnitCost(vehicle.fuelCostPerUnit, vehicle.fuelCostPerUnitLabel)}</dd></div>
             )}
             {vehicle.openWorkOrders != null && <div><dt className="text-[var(--color-text-subtle)]">OT abiertas</dt><dd>{vehicle.openWorkOrders}{vehicle.inWorkshopNow ? " · en taller" : ""}</dd></div>}
-            {/* P-9: la misma celda que la columna «Km/Hr» de la tabla (valor y aviso de lectura objetada), con la misma condición de columna. */}
-            {showMeterReading && <div><dt className="text-[var(--color-text-subtle)]">Km/Hr</dt><dd className="font-mono"><FleetMeterReading vehicle={vehicle} /></dd></div>}
+            {/* P-9: la misma celda que la columna «Lectura (km u h)» de la tabla (valor y aviso de lectura objetada), con la misma condición de columna. */}
+            {showMeterReading && <div><dt className="text-[var(--color-text-subtle)]">Lectura (km u h)</dt><dd className="font-mono"><FleetMeterReading vehicle={vehicle} /></dd></div>}
           </dl>
           <Button asChild size="sm" variant="secondary" className="mt-3 w-full">
-            <Link href={`/flota/${vehicle.id}`}>Ver ficha del equipo</Link>
+            <Link href={`/flota/${vehicle.id}`} aria-label={`Ver ficha de ${vehicle.code || vehicle.plate}`}>Ver ficha</Link>
           </Button>
         </article>
       )}
       renderRow={(vehicle) => {
         return (
-          <FleetTableRow key={vehicle.id} href={`/flota/${vehicle.id}`}>
+          <TableRow key={vehicle.id}>
             <TableCell>
-              <span className="font-medium text-[var(--color-primary)]">{vehicle.plate}</span>
-              <div className="text-xs text-[var(--color-text-muted)]">
-                {[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.type}
-              </div>
+              {/* El enlace es real (clic medio, «abrir en pestaña»); antes la fila entera era un `role="link"`. */}
+              <VehicleIdentity code={vehicle.code} plate={vehicle.plate} type={vehicle.type} href={`/flota/${vehicle.id}`} />
             </TableCell>
             <TableCell>{vehicle.worksiteName}</TableCell>
             <TableCell>
-              <MetaBadge meta={{ label: vehicle.isActive ? formatFuelVehicleStatus(vehicle.operationalStatus) : "Inactivo", variant: vehicle.isActive && vehicle.operationalStatus === "operativo" ? "success" : "outline" }} />
+              <StateBadge entity="fleet" state={fleetState(vehicle)} />
             </TableCell>
             <TableCell>{vehicle.responsibleName ?? "—"}</TableCell>
             <TableCell><NextExpiry vehicle={vehicle} today={today} warningDays={warningDays} /></TableCell>
-            {canViewCosts && canViewFuel && <TableCell className="text-right font-mono">{formatCLP(vehicle.totalFuelAmount ?? 0)}</TableCell>}
+            {canViewCosts && canViewFuel && <TableCell className="text-right font-mono">{hasFuelData(vehicle) ? formatCLP(vehicle.totalFuelAmount ?? 0) : "—"}</TableCell>}
             {canViewCosts && canViewFuel && (
               <TableCell
                 className="text-right font-mono"
                 title={[
                   meterSourceLabel(vehicle.meterSource),
                   vehicle.meterSeriesIncomplete ? "El recorrido es una cota inferior: parte de la serie se descartó por lecturas inválidas." : null,
-                  vehicle.meterSeriesCovered === false ? "Costo por km/h no calculado: la serie no cubre los 12 meses." : null,
+                  vehicle.meterSeriesCovered === false ? "Costo por km u hora no calculado: la serie no cubre los 12 meses." : null,
                 ].filter(Boolean).join(" ") || undefined}
               >
                 {formatUnitCost(vehicle.fuelCostPerUnit, vehicle.fuelCostPerUnitLabel)}
@@ -150,7 +156,7 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
               {vehicle.inWorkshopNow && <span className="ml-1 font-sans text-xs text-[var(--color-warning-ink)]">en taller</span>}
             </TableCell>}
             {showMeterReading && <TableCell className="text-right font-mono"><FleetMeterReading vehicle={vehicle} /></TableCell>}
-          </FleetTableRow>
+          </TableRow>
         )
       }}
     />

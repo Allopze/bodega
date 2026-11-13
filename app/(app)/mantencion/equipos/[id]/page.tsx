@@ -10,7 +10,10 @@ import { loadEquipmentInsurance, loadEquipmentWorkOrders, loadLifeRows, loadLife
 import { listHistoricalRecords } from "@/lib/services/mantencion/historical-import"
 import { listEquipmentHistory } from "@/lib/services/mantencion/equipment-history"
 import { loadFleet } from "@/lib/services/mantencion/fleet"
+import { listAssignableMechanics, listWorkOrderEquipmentOptions, listWorksiteMechanics } from "@/lib/services/mantencion/work-orders/query"
+import { todayInChile } from "@/lib/utils"
 import { getVehiclePurchaseHistory } from "@/lib/services/vehicle-purchase-history"
+import type { NewOtSheetProps } from "@/components/mantencion/jefatura/ot/new-ot-sheet"
 import { LIFE_PAGE_SIZE } from "@/components/mantencion/jefatura/equipos/equipment-life-section"
 import { loadEquipmentFormCatalogs } from "../form-catalogs"
 
@@ -61,6 +64,24 @@ export default async function EquipmentDetailPage({
     listHistoricalRecords(viewer, { vehicleId: id }),
     canSeePurchases ? getVehiclePurchaseHistory(id) : Promise.resolve(null),
   ])
+
+  // «Crear orden de trabajo» con este equipo elegido: sólo con permiso de crear y mientras el equipo siga activo.
+  // Las mismas reglas que el alta de la lista de órdenes (la jefatura asigna a cualquier mecánico; el administrador
+  // de contrato, a los de la faena del equipo); `createWorkOrder` las vuelve a validar.
+  const canCreateOrder = can(session, "mant:ot:create") && !row.retired
+  const canManageOrders = can(session, "mant:ot:manage")
+  let newOrder: NewOtSheetProps | null = null
+  if (canCreateOrder) {
+    const [options, mechanics, worksiteMechanics] = await Promise.all([
+      listWorkOrderEquipmentOptions(viewer),
+      canManageOrders ? listAssignableMechanics() : Promise.resolve(null),
+      canManageOrders ? Promise.resolve(null) : listWorksiteMechanics(viewer),
+    ])
+    const equipment = options.filter((option) => option.id === id)
+    if (equipment.length > 0) {
+      newOrder = { equipment, mechanics, worksiteMechanics, today: todayInChile(), defaultRequesterName: session.user.name ?? "", defaultVehicleId: id }
+    }
+  }
 
   const { status, workshop } = row
   const data: EquipmentDetailData = {
@@ -116,7 +137,6 @@ export default async function EquipmentDetailPage({
           model: row.model ?? "",
           year: row.year != null ? String(row.year) : "",
           worksiteId: row.worksiteId,
-          newWorksiteName: "",
           scheduleId: row.scheduleId ?? "",
           initialReading: row.initialReading ? formatNumber(row.initialReading.value) : "",
           initialReadingDate: row.initialReading?.date ?? "",
@@ -126,5 +146,5 @@ export default async function EquipmentDetailPage({
       }
     : null
 
-  return <EquipmentDetailView data={data} edit={edit} canSeeSchedules={can(session, "mant:schedules:manage")} canExport={can(session, "mant:export")} justCreated={justCreated} />
+  return <EquipmentDetailView data={data} edit={edit} canSeeSchedules={can(session, "mant:schedules:manage")} canExport={can(session, "mant:export")} justCreated={justCreated} newOrder={newOrder} />
 }

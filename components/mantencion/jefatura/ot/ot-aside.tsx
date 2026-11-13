@@ -127,7 +127,7 @@ export function OtAside({ detail, showCosts = false }: { detail: WorkOrderDetail
   return (
     <aside aria-label="Historial y registros enlazados" className="flex min-w-0 flex-col gap-4">
       {showCosts && detail.totalCost != null && (
-        <SectionCard title="Mano de obra / taller externo" description="Cargado por jefatura. Los repuestos y servicios comprados por OC están en «Repuestos pedidos».">
+        <SectionCard title="Mano de obra / taller externo" description="Cargado por jefatura. Los repuestos y servicios comprados con orden de compra están en «Repuestos pedidos».">
           <p className="font-mono text-lg font-semibold tabular-nums text-[var(--color-text)]">{formatCLP(detail.totalCost)}</p>
         </SectionCard>
       )}

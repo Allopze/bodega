@@ -32,7 +32,7 @@ async function cleanup() {
   })
 }
 
-test.describe("Panel operacional — combustible por activo", () => {
+test.describe("Panel operacional — combustible por vehículo", () => {
   test.beforeEach(async ({ page }) => {
     await cleanup()
     await withSql(async (sql) => {
@@ -84,7 +84,14 @@ test.describe("Panel operacional — combustible por activo", () => {
 
   test("la fila del vehículo muestra litros, rendimiento, cargas por decidir y costo facturado", async ({ page }) => {
     // Período explícito: la prueba no depende de la fecha en que se ejecute.
-    await page.goto("/control-operacional?desde=2026-10-01&hasta=2026-10-31")
+    // Por defecto la tabla muestra seis columnas (Vehículo, Faena, Estado,
+    // Próximo vencimiento, OT abiertas y Casos abiertos); las de combustible se
+    // piden por la URL de la vista, que es lo que guarda el menú «Columnas».
+    const columnas = [
+      "code", "worksiteName", "operationalStatusLabel", "fuelLiters", "fuelPerformanceValue",
+      "flaggedLoads", "openAnomalyCases", "fuelBilledAmount",
+    ].join(",")
+    await page.goto(`/control-operacional?desde=2026-10-01&hasta=2026-10-31&control-operacional-activos_cols=${columnas}`)
 
     const table = page.getByRole("table", { name: "Activos operacionales" })
     await expect(table).toBeVisible()
@@ -110,9 +117,31 @@ test.describe("Panel operacional — combustible por activo", () => {
     await expect(cells.nth(column("Cargas marcadas (período)"))).toHaveText("1")
     await expect(cells.nth(column("Casos abiertos"))).toHaveText("0")
     await expect(cells.nth(column("Costo combustible (proveedor)"))).toContainText("$50.000")
-    await expect(row.getByRole("link", { name: "Combustible" })).toHaveAttribute(
+    // El enlace dice a qué vehículo pertenece: «Combustible de E2E…».
+    await expect(row.getByRole("link", { name: /^Combustible de / })).toHaveAttribute(
       "href",
       `/combustibles/consumo/equipos/${VEHICLE_ID}`,
     )
+  })
+
+  test("por defecto la tabla muestra seis columnas y la atención de hoy queda fuera de la zona del período", async ({ page }) => {
+    await page.goto("/control-operacional?desde=2026-10-01&hasta=2026-10-31")
+
+    const table = page.getByRole("table", { name: "Activos operacionales" })
+    await expect(table).toBeVisible()
+    const headers = (await table.getByRole("columnheader").allTextContents())
+      .map((header) => header.replace(/^Ordenar por /, "").trim())
+    for (const label of ["Vehículo", "Faena", "Estado", "Próximo vencimiento", "OT abiertas", "Casos abiertos"]) {
+      expect(headers, `columna «${label}»`).toContain(label)
+    }
+    // Lo demás está en «Columnas», no a la vista.
+    expect(headers).not.toContain("Costo combustible (proveedor)")
+    expect(headers).not.toContain("Rendimiento promedio")
+
+    // «Requiere atención ahora» abre la pantalla sin la nota «Foto de hoy»; el selector de período vive en su zona.
+    await expect(page.getByRole("heading", { name: "Requiere atención ahora" })).toBeVisible()
+    await expect(page.getByText(/Foto de hoy/)).toHaveCount(0)
+    const zonaDelPeriodo = page.getByRole("heading", { name: "Desempeño del período" }).locator("xpath=ancestor::section[1]")
+    await expect(zonaDelPeriodo.getByRole("button", { name: /Período|oct|2026/ }).first()).toBeVisible()
   })
 })

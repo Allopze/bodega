@@ -10,7 +10,7 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Consumo y rendimiento"
+        title="Litros cargados"
         description="Litros por faena, equipo y origen del combustible"
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Consumo", href: FUEL_PATHS.consumo }, { label: "Litros" }]} />}
       />

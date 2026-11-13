@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { expectPageTitle } from "./helpers"
+import { expectPageTitle, textoVisible } from "./helpers"
 import { asJefe, trackConsole, withSql } from "./mantencion-3-helpers"
 
 /**
@@ -73,7 +73,8 @@ test.describe("Incorporar desde la flota", () => {
     const brand = page.getByRole("combobox", { name: `Marca de ${VEHICLE_NEW_BRAND.code}`, exact: true })
     // La de la flota viene preseleccionada aunque no esté en la lista.
     await expect(brand).toHaveValue(VEHICLE_NEW_BRAND.brand)
-    await expect(page.getByText("Marca nueva: se agrega a la lista al incorporar.")).toBeVisible()
+    // La tabla y las tarjetas móviles viven en el DOM a la vez (AGENTS, «Locators»): sólo cuenta la visible.
+    await expect(textoVisible(page, "Marca nueva: se agrega a la lista al incorporar.")).toBeVisible()
     // Y se puede reemplazar por cualquier otra, escribiéndola.
     await brand.fill(TYPED_BRAND)
     await brand.press("Tab")
@@ -95,7 +96,7 @@ test.describe("Incorporar desde la flota", () => {
     const errors = trackConsole(page)
     await asJefe(page)
     await page.goto("/mantencion/catalogos")
-    await expectPageTitle(page, "Catálogos de mantención")
+    await expectPageTitle(page, "Marcas y talleres")
     await expect(page.getByRole("cell", { name: "Scania", exact: true })).toBeVisible()
     await page.getByRole("link", { name: /^Talleres/ }).click()
     await expect(page).toHaveURL(/catalogo=talleres/)

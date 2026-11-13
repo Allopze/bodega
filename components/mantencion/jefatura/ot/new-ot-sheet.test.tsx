@@ -21,11 +21,11 @@ const EQUIPMENT = [
 const BASE = { equipment: EQUIPMENT, mechanics: null, today: "2026-11-02", defaultRequesterName: "Ana Pérez" }
 
 async function openSheet() {
-  fireEvent.click(screen.getByRole("button", { name: /Nueva OT/ }))
+  fireEvent.click(screen.getByRole("button", { name: /Nueva orden/ }))
   return within(await screen.findByRole("dialog"))
 }
 
-describe("«Nueva OT»", () => {
+describe("«Nueva orden»", () => {
   beforeEach(() => vi.clearAllMocks())
   afterEach(cleanup)
 
@@ -33,15 +33,15 @@ describe("«Nueva OT»", () => {
     render(<NewWorkOrderCta {...BASE} />)
     const sheet = await openSheet()
     expect((sheet.getByRole("textbox", { name: /Solicitante/ }) as HTMLInputElement).value).toBe("Ana Pérez")
-    expect(sheet.getByRole("button", { name: /Fecha de la OT/ }).textContent).toContain("02-11-2026")
-    expect((sheet.getByRole("button", { name: "Crear OT" }) as HTMLButtonElement).disabled).toBe(true)
+    expect(sheet.getByRole("button", { name: /Fecha de la orden/ }).textContent).toContain("02-11-2026")
+    expect((sheet.getByRole("button", { name: "Crear orden" }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it("el campo de costo dice mano de obra / taller externo y aclara que lo comprado por OC se suma solo", async () => {
+  it("el campo de costo dice mano de obra / taller externo y aclara que lo comprado con orden de compra se suma solo", async () => {
     render(<NewWorkOrderCta {...BASE} />)
     const sheet = await openSheet()
     expect(sheet.getByLabelText("Costo mano de obra / taller externo (CLP, opcional)")).toBeTruthy()
-    expect(sheet.getByText("Sólo mano de obra o taller externo. Los repuestos y servicios comprados por OC se suman solos desde la solicitud vinculada.")).toBeTruthy()
+    expect(sheet.getByText("Sólo mano de obra o taller externo. Los repuestos y servicios comprados con orden de compra se suman solos desde la solicitud vinculada.")).toBeTruthy()
     expect(sheet.queryByText(/Costo total/)).toBeNull()
   })
 
@@ -107,7 +107,7 @@ describe("«Nueva OT»", () => {
     fireEvent.click(sheet.getAllByRole("button", { name: "Agregar línea" })[0]!)
     fireEvent.click(sheet.getAllByRole("button", { name: "Agregar línea" })[0]!)
     fireEvent.change(sheet.getByRole("textbox", { name: "Trabajos anexos (reparación), línea 1" }), { target: { value: "Cambiar pastillas de freno" } })
-    fireEvent.click(sheet.getByRole("button", { name: "Crear OT" }))
+    fireEvent.click(sheet.getByRole("button", { name: "Crear orden" }))
 
     await waitFor(() => expect(createWorkOrderAction).toHaveBeenCalled())
     const formData = createWorkOrderAction.mock.calls[0]![1] as FormData
@@ -126,7 +126,7 @@ describe("«Nueva OT»", () => {
     const sheet = await openSheet()
     fireEvent.focus(sheet.getByRole("combobox", { name: /Equipo/ }))
     fireEvent.mouseDown(await screen.findByRole("option", { name: /EX-04/ }))
-    fireEvent.click(sheet.getByRole("button", { name: "Crear OT" }))
+    fireEvent.click(sheet.getByRole("button", { name: "Crear orden" }))
     expect((await sheet.findByText("Describe la reparación que se pide.")).getAttribute("role")).toBe("alert")
     expect(push).not.toHaveBeenCalled()
   })

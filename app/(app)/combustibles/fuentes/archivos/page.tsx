@@ -1,8 +1,10 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { UploadSimple } from "@phosphor-icons/react/dist/ssr"
 import { requireAnyPermission } from "@/lib/auth/can"
 import { settle } from "@/lib/async-settle"
+import { Button } from "@/components/ui/button"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
@@ -68,7 +70,12 @@ export default async function ArchivosImportadosPage({ searchParams }: { searchP
               title={kind || status ? "Ningún archivo coincide con el filtro" : "Todavía no se ha importado ningún archivo"}
               description={kind || status
                 ? "Quita el filtro de tipo o de estado para ver todos los archivos."
-                : "Cuando subas una planilla, un reporte de tarjeta o la telemetría de los equipos, quedará acá con lo que trajo."}
+                : "Cuando subas una planilla, un reporte de tarjeta o la telemetría de los equipos con «Agregar datos», arriba, quedará acá con lo que trajo."}
+              // «Agregar datos» vive una sola vez por pantalla, en la cabecera (regla del área que fija
+              // `e2e/control-operacional-navegacion.spec.ts`): el vacío remite a él en vez de repetirlo.
+              action={kind || status
+                ? <Button asChild variant="secondary"><Link href={FUEL_PATHS.fuentesArchivos}>Quitar filtros</Link></Button>
+                : undefined}
             />
           ) : (
             <>

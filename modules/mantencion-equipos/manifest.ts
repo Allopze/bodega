@@ -57,7 +57,17 @@ export const mantencionEquiposModule = {
   nav: [
     {
       areaId: "control-operacional",
+      // Orden por la tarea de quien mantiene (reorganización 2026-11-13): primero lo
+      // que se mira cada día (Panel, OT, Registros, Equipos) y al final la
+      // «Configuración», que se toca poco y se pliega bajo un solo padre.
       items: [
+        {
+          label: "Panel de mantención",
+          href: "/mantencion/panel",
+          iconName: "Gauge",
+          permissions: ["mant:records:view_worksite", "mant:records:view_all"],
+          group: "Mantención",
+        },
         {
           // Las OT las ve también la administración de contrato, que no tiene los
           // permisos de registros: por eso el ítem lleva sus propios permisos. El
@@ -69,14 +79,7 @@ export const mantencionEquiposModule = {
           group: "Mantención",
         },
         {
-          label: "Panel",
-          href: "/mantencion/panel",
-          iconName: "Gauge",
-          permissions: ["mant:records:view_worksite", "mant:records:view_all"],
-          group: "Mantención",
-        },
-        {
-          label: "Registros",
+          label: "Registros firmados",
           href: "/mantencion/registros",
           iconName: "ClipboardText",
           permissions: ["mant:records:view_own", "mant:records:view_worksite", "mant:records:view_all"],
@@ -90,29 +93,26 @@ export const mantencionEquiposModule = {
           group: "Mantención",
         },
         {
-          label: "Pautas",
-          href: "/mantencion/pautas",
-          iconName: "ListChecks",
-          permissions: ["mant:schedules:manage"],
+          // Padre sin permisos propios: es sólo un contenedor y se ve cuando la
+          // persona ve al menos un hijo (`getVisibleAreas`), llevándola al primero
+          // que puede abrir. Cada hijo conserva exactamente el permiso de su
+          // página y de sus acciones: el menú sólo los refleja. El `href` es una
+          // entrada sin pantalla propia (redirige al primer hijo permitido), como
+          // «Ajustes» en Combustible.
+          label: "Configuración",
+          href: "/mantencion/configuracion",
+          iconName: "GearSix",
+          permissions: [],
           group: "Mantención",
-        },
-        {
-          // Marcas, talleres, conductores, tipos de trabajo y aceites. Mismo permiso que exige la
-          // página y sus acciones (`mant:equipment:manage`): el menú sólo lo refleja.
-          label: "Catálogos",
-          href: "/mantencion/catalogos",
-          iconName: "Books",
-          permissions: ["mant:equipment:manage"],
-          group: "Mantención",
-        },
-        {
-          // Quién tiene la app conectada y el botón para desconectarla. Mismo permiso que exige la
-          // página y su acción (`mant:devices:manage`): el menú sólo lo refleja.
-          label: "Dispositivos",
-          href: "/mantencion/dispositivos",
-          iconName: "DeviceMobile",
-          permissions: ["mant:devices:manage"],
-          group: "Mantención",
+          children: [
+            { label: "Pautas", href: "/mantencion/pautas", permissions: ["mant:schedules:manage"] },
+            // Marcas, talleres, conductores, tipos de trabajo y aceites. Mismo permiso
+            // que exige la página y sus acciones (`mant:equipment:manage`).
+            { label: "Marcas y talleres", href: "/mantencion/catalogos", permissions: ["mant:equipment:manage"] },
+            // Quién tiene la app conectada y el botón para desconectarla. Mismo permiso
+            // que exige la página y su acción (`mant:devices:manage`).
+            { label: "Dispositivos", href: "/mantencion/dispositivos", permissions: ["mant:devices:manage"] },
+          ],
         },
       ],
     },

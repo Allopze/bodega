@@ -10,7 +10,7 @@ import { CHART_COLORS } from "@/lib/chart-palette"
 import { fuelEquipmentHref } from "@/lib/combustibles/routes"
 import type { EvolutionPanel, EvolutionPanels } from "@/lib/combustibles/evolution-panels"
 import { MONTH_LABELS, formatQty } from "@/lib/utils"
-import { AXIS_TICK, compactNumber } from "./control/_charts/chart-shared"
+import { AXIS_TICK, compactNumber } from "./_shared/chart-shared"
 import { useChartMotion } from "@/components/ui/chart-interactions"
 
 /**

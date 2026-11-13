@@ -12,7 +12,7 @@ import {
 import { can, requirePermission } from "@/lib/auth/can"
 import { normalizeAnalyticsFilters } from "@/lib/services/analytics"
 import { getCachedAnalyticsDashboard, getCachedSupplyLeadTime } from "@/lib/services/read-model-cache"
-import { formatCLP, formatDate, formatPercent, formatQty } from "@/lib/utils"
+import { cn, formatCLP, formatDate, formatPercent, formatQty } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -301,7 +301,7 @@ export default async function AnaliticaPage({
           )}
         </section>
 
-        <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <section className={cn("grid grid-cols-1 gap-5", data.dataGaps.length > 0 && "xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]")}>
           {/* Destino del tile «Alertas». `tabIndex={-1}` deja que el salto de ancla mueva el foco
               aquí; `scroll-mt-4` por convención de las demás anclas (la TopBar no es sticky). */}
           <Card
@@ -316,9 +316,11 @@ export default async function AnaliticaPage({
             </CardHeader>
             <CardContent>
               {data.alerts.length > 0 ? (
-                <div className="grid gap-3">
+                // Filas separadas por una línea fina, no una tarjeta con borde por alerta: la
+                // Card ya es la superficie (auditoría UI/UX Control operacional 2026-11-13, §8).
+                <ul className="divide-y divide-[var(--color-border)]">
                   {data.alerts.slice(0, 8).map((alert) => (
-                    <div key={`${alert.type}-${alert.entityLabel}-${alert.reason}`} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+                    <li key={`${alert.type}-${alert.entityLabel}-${alert.reason}`} className="py-3 first:pt-0 last:pb-0">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
@@ -331,30 +333,33 @@ export default async function AnaliticaPage({
                         <Warning size={17} className="mt-1 shrink-0 text-[var(--color-signal-ink)]" />
                       </div>
                       <p className="mt-2 text-xs font-medium text-[var(--color-text)]">{alert.action}</p>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               ) : (
                 <EmptyText text="No hay alertas para los filtros actuales." />
               )}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Brechas de trazabilidad</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="grid gap-3">
-                {data.dataGaps.map((gap) => (
-                  <li key={gap} className="flex gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm leading-5 text-[var(--color-text-muted)]">
-                    <ArrowRight size={15} className="mt-0.5 shrink-0 text-[var(--color-text-subtle)]" />
-                    <span>{gap}</span>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
+          {/* Sin brechas no hay nada que decir: una tarjeta vacía sólo robaba media fila. */}
+          {data.dataGaps.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Brechas de trazabilidad</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="divide-y divide-[var(--color-border)]">
+                  {data.dataGaps.map((gap) => (
+                    <li key={gap} className="flex gap-3 py-3 text-sm leading-5 text-[var(--color-text-muted)] first:pt-0 last:pb-0">
+                      <ArrowRight size={15} className="mt-0.5 shrink-0 text-[var(--color-text-subtle)]" />
+                      <span>{gap}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
         </section>
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">

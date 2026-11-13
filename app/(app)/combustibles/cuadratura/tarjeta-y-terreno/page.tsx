@@ -21,7 +21,7 @@ import { FUEL_PATHS, fuelInboxHref, withFuelContext } from "@/lib/combustibles/r
 import { FUEL_CARRY_PARAMS, cuadraturaNavItems } from "@/lib/combustibles/section-nav"
 import { getTaeCopecReconciliation, summarizeCardFieldCoverage, type TaeCopecFilters } from "@/lib/combustibles/tae-copec-reconciliation"
 import { resolvePagination } from "@/lib/pagination"
-import { ControlFilters } from "../../control/_components/control-filters"
+import { ControlFilters } from "../../_shared/control-filters"
 import { loadCuadraturaContext } from "../_components/context"
 import { litersText } from "../_components/format"
 import { firstParam, hrefWith, periodContext } from "../_components/params"
@@ -65,6 +65,7 @@ export default async function CuadraturaTarjetaTerrenoPage({ searchParams }: { s
   const granularityNote = monthlyGranularityNote(period)
   const counts: Record<CoverageFilter, number> = { ambos: coverage.both, tarjeta: coverage.cardOnly, terreno: coverage.fieldOnly }
   const unmapped = data?.summary
+  const hasUnmapped = Boolean(unmapped && (unmapped.unmappedTaeLoads > 0 || unmapped.unmappedTctRecords > 0))
 
   return (
     <PageContainer>
@@ -80,7 +81,6 @@ export default async function CuadraturaTarjetaTerrenoPage({ searchParams }: { s
         <FilterSearchInput param="q" placeholder="Buscar patente o equipo…" ariaLabel="Buscar patente o equipo" pageKeys={["pagina"]} />
       </ControlFilters>
 
-      {granularityNote ? <Callout tone="info" className="mb-4">{granularityNote}</Callout> : null}
 
       {result.failed ? (
         <SectionError what="la cobertura de la tarjeta" />
@@ -95,16 +95,20 @@ export default async function CuadraturaTarjetaTerrenoPage({ searchParams }: { s
           <p className="max-w-3xl text-base text-[var(--color-text)]" data-testid="coverage-answer">
             {coverageAnswer(coverage, period.monthKeys.length > 1)}
           </p>
-          <Callout tone="info">
-            <strong>Esto no es una diferencia contable.</strong> La tarjeta y el formulario en terreno son canales distintos: «En ambos» dice que el equipo aparece en los dos el mismo mes. La diferencia de litros se mide en{" "}
-            <Link className="font-medium underline underline-offset-4" href={withFuelContext(FUEL_PATHS.cuadraturaMandante, ctxParams)}>Por mandante</Link>.
+          {/* Un solo aviso (antes tres apilados): qué es esta vista, la nota del período y lo que quedó sin equipo. */}
+          <Callout tone={hasUnmapped ? "warning" : "info"} title={hasUnmapped ? "Hay litros sin equipo vinculado" : undefined}>
+            <p>
+              <strong>Esto no es una diferencia de litros.</strong> La tarjeta y el formulario en terreno son canales distintos: «En ambos» dice que el equipo aparece en los dos el mismo mes. La diferencia de litros se mide en{" "}
+              <Link className="font-medium underline underline-offset-4" href={withFuelContext(FUEL_PATHS.cuadraturaMandante, ctxParams)}>Por mandante</Link>.
+              {granularityNote ? <> {granularityNote}</> : null}
+            </p>
+            {hasUnmapped && unmapped ? (
+              <p className="mt-1">
+                {unmapped.unmappedTaeLoads} {unmapped.unmappedTaeLoads === 1 ? "carga" : "cargas"} en terreno ({litersText(unmapped.unmappedTaeLiters)}) y {unmapped.unmappedTctRecords} {unmapped.unmappedTctRecords === 1 ? "total" : "totales"} de la tarjeta ({litersText(unmapped.unmappedTctLiters)}) no tienen equipo, así que no aparecen en la tabla.{" "}
+                <Link className="font-medium underline underline-offset-4" href={fuelInboxHref({ tipo: "patente" })}>Vincularlos</Link>
+              </p>
+            ) : null}
           </Callout>
-          {unmapped && (unmapped.unmappedTaeLoads > 0 || unmapped.unmappedTctRecords > 0) ? (
-            <Callout tone="warning" role="status" title="Hay litros sin equipo asociado">
-              {unmapped.unmappedTaeLoads} {unmapped.unmappedTaeLoads === 1 ? "carga" : "cargas"} en terreno ({litersText(unmapped.unmappedTaeLiters)}) y {unmapped.unmappedTctRecords} {unmapped.unmappedTctRecords === 1 ? "total" : "totales"} de la tarjeta ({litersText(unmapped.unmappedTctLiters)}) no tienen equipo, así que no aparecen en la tabla.{" "}
-              <Link className="font-medium underline underline-offset-4" href={fuelInboxHref({ tipo: "patente" })}>Vincularlos</Link>
-            </Callout>
-          ) : null}
 
           <SegmentedControl
             variant="pills"

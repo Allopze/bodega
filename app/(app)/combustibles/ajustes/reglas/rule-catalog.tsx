@@ -97,7 +97,7 @@ export function AnomalyRuleCatalog({ rows, caseCounts, caseCountsFailed, emptyAc
       <details className="mt-4 rounded-xl border border-[var(--color-border)] p-4 [&_summary]:cursor-pointer">
         <summary className="text-sm font-semibold text-[var(--color-text)]">Avanzado: código de cada regla y configuración en JSON</summary>
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">Sólo para administración del sistema. El código de una regla del catálogo no se puede cambiar.</p>
-        <TableRoot aria-label="Código y configuración de cada regla" className="mt-3">
+        <TableRoot framed={false} aria-label="Código y configuración de cada regla" className="mt-3">
           <Table className="min-w-[680px]">
             <TableHeader><TableRow><TableHead>Regla</TableHead><TableHead>Código</TableHead><TableHead>Configuración</TableHead></TableRow></TableHeader>
             <TableBody>

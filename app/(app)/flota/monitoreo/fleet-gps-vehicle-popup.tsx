@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import type { FleetGpsPosition } from "@/lib/services/fleet-gps"
 import { formatDateTime } from "@/lib/utils"
 import { formatGpsMeter, movementLabel } from "./fleet-gps-format"
+import { ignitionMeta, providerLabel } from "./fleet-gps-labels"
 
 /** Lo que se despliega junto al punto del vehículo en el mapa de Monitoreo GPS. */
 export function FleetGpsVehiclePopup({ position }: { position: FleetGpsPosition }) {
@@ -19,7 +20,7 @@ export function FleetGpsVehiclePopup({ position }: { position: FleetGpsPosition 
       </div>
 
       <div className="space-y-1">
-        <MetaBadge meta={{ label: !position.ignitionKnown ? "Sin dato" : position.ignition ? "Encendido" : "Apagado", variant: !position.ignitionKnown ? "neutral" : position.ignition ? "success" : "neutral" }} dot />
+        <MetaBadge meta={ignitionMeta(position)} dot />
         <p className="text-xs text-[var(--color-text-muted)]">{movementLabel(position)}</p>
       </div>
 
@@ -27,7 +28,7 @@ export function FleetGpsVehiclePopup({ position }: { position: FleetGpsPosition 
         <dt className="text-[var(--color-text-subtle)]">Faena</dt>
         <dd>{position.worksiteName}</dd>
         <dt className="text-[var(--color-text-subtle)]">Fuente</dt>
-        <dd>{position.providers.map((provider) => provider === "onway" ? "OnWay" : provider === "wialon" ? "Wialon" : provider).join(" + ") || "Sin fuente"}</dd>
+        <dd>{position.providers.map(providerLabel).join(" + ") || "Sin fuente"}</dd>
         <dt className="text-[var(--color-text-subtle)]">Medidor</dt>
         <dd className="tabular-nums">{formatGpsMeter(position)}</dd>
         {position.driverName ? (

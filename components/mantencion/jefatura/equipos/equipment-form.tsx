@@ -19,7 +19,6 @@ import type { ActionState } from "@/lib/validation/operations"
 import { EquipmentStatusFields } from "./equipment-status-fields"
 import type { EquipmentFormCatalogs, EquipmentFormValues } from "./equipment-form-types"
 
-const NEW_WORKSITE = "__new__"
 const SELECT = "h-11 w-full sm:h-9"
 
 type FormAction = (prev: ActionState, formData: FormData) => Promise<ActionState>
@@ -27,8 +26,7 @@ type FormAction = (prev: ActionState, formData: FormData) => Promise<ActionState
 /**
  * Formulario del equipo: es el mismo para «Nuevo equipo» y «Editar ficha». Los
  * campos están controlados porque unos dependen de otros (el tipo fija la unidad
- * y con ella las pautas que se ofrecen; «Nueva faena…» muestra su nombre; la baja
- * pide su motivo). El servidor vuelve a validar todo y devuelve los errores por
+ * y con ella las pautas que se ofrecen; la baja pide su motivo). El servidor vuelve a validar todo y devuelve los errores por
  * campo; si hay registros, la unidad y la lectura inicial quedan fijas.
  */
 export function EquipmentForm({
@@ -114,21 +112,13 @@ export function EquipmentForm({
         <Field label="Año" htmlFor="eq-year" error={error("year")}>
           <Input id="eq-year" name="year" inputMode="numeric" maxLength={4} autoComplete="off" value={values.year} onChange={(e) => set("year", e.target.value.replace(/\D/g, ""))} error={!!error("year")} />
         </Field>
-        <div>
-          <Field label="Faena" required htmlFor="eq-worksite" error={error("worksiteId")} helper={values.worksiteId === NEW_WORKSITE ? "Si ya existe con otro acento o mayúsculas, se usa la existente." : undefined}>
-            <OptionSelect
-              id="eq-worksite" name="worksiteId" className={SELECT} placeholder="Elige la faena…" value={values.worksiteId} error={!!error("worksiteId")} onValueChange={(v) => set("worksiteId", v)}
-              options={[...catalogs.worksites.map((item) => ({ value: item.id, label: item.name })), { value: NEW_WORKSITE, label: "Nueva faena…" }]}
-            />
-          </Field>
-          {values.worksiteId === NEW_WORKSITE && (
-            <div className="mt-2">
-              <Field label="Nombre de la faena nueva" htmlFor="eq-newWorksite">
-                <Input id="eq-newWorksite" name="newWorksiteName" autoComplete="off" value={values.newWorksiteName} onChange={(e) => set("newWorksiteName", e.target.value)} error={!!error("worksiteId")} />
-              </Field>
-            </div>
-          )}
-        </div>
+        {/* Sólo faenas que ya existen: las nuevas se crean en Administración › Faenas, para no duplicarlas (auditoría 2026-11-13, M12). */}
+        <Field label="Faena" required htmlFor="eq-worksite" error={error("worksiteId")}>
+          <OptionSelect
+            id="eq-worksite" name="worksiteId" className={SELECT} placeholder="Elige la faena…" value={values.worksiteId} error={!!error("worksiteId")} onValueChange={(v) => set("worksiteId", v)}
+            options={catalogs.worksites.map((item) => ({ value: item.id, label: item.name }))}
+          />
+        </Field>
         <Field
           label="Pauta de mantención" htmlFor="eq-schedule" error={error("scheduleId")}
           helper={!type ? "Elige primero el tipo de equipo." : schedules.length ? `Solo aparecen pautas en ${unitName(type.unit)}.` : `No hay pautas en ${unitName(type.unit)}. Crea una en Pautas.`}

@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { Callout } from "@/components/ui/callout"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { PhotoGallery } from "@/components/mantencion/jefatura/registros/photo-gallery"
@@ -20,7 +20,7 @@ import { loadRecordNeighbors } from "@/lib/services/mantencion/records-query"
 import { formatDateTime } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
-export const metadata: Metadata = { title: "Registro de mantención" }
+export const metadata: Metadata = { title: "Registro firmado" }
 
 export default async function RecordDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<RawSearchParams> }) {
   let session
@@ -65,7 +65,7 @@ export default async function RecordDetailPage({ params, searchParams }: { param
         breadcrumb={[
           { label: "Control operacional", href: "/control-operacional" },
           { label: "Mantención" },
-          { label: "Registros", href: listHref },
+          { label: "Registros firmados", href: listHref },
           { label: folio },
         ]}
         actions={
@@ -102,14 +102,11 @@ export default async function RecordDetailPage({ params, searchParams }: { param
       </div>
 
       {voided && detail.voided && (
-        <div role="note" className="mb-4 rounded-xl border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-4 py-3 text-sm text-[var(--color-danger-ink)]">
-          <p className="font-semibold">
-            <Badge variant="danger" size="sm">Anulado</Badge>{" "}
-            Este registro no cuenta en las lecturas, el estado de los equipos ni los indicadores.
-          </p>
+        <Callout tone="danger" title="Este registro está anulado" className="mb-4">
+          <p>No cuenta en las lecturas, el estado de los equipos ni los indicadores.</p>
           <p className="mt-1.5">Motivo: {detail.voided.reason}</p>
           <p className="mt-0.5">{detail.voided.userName} · {formatDateTime(detail.voided.createdAt)}</p>
-        </div>
+        </Callout>
       )}
 
       <RecordAlerts detail={detail} />

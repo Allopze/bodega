@@ -23,7 +23,7 @@ export default async function NewEquipmentPage() {
       <PageHeader
         title="Nuevo equipo"
         description="Si el vehículo ya está en la flota de la plataforma, se incorpora a la mantención sin duplicarlo."
-        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Equipos", href: "/mantencion/equipos" }, { label: "Nuevo equipo" }]}
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Equipos", href: "/mantencion/equipos" }, { label: "Nuevo equipo" }]}
       />
       <EquipmentForm
         action={createEquipmentAction}

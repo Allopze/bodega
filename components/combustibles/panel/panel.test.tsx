@@ -61,7 +61,7 @@ describe("tira de pasos", () => {
     expect(within(links[0]!).getAllByText("Sin datos")).toHaveLength(2)
     expect(screen.queryByText("Listo")).not.toBeInTheDocument()
     expect(screen.getByRole("heading", { level: 2, name: "Pasos para cerrar el período" })).toBeInTheDocument()
-    expect(within(links[1]!).getByText("Paso 2")).toBeInTheDocument()
+    expect(links[1]).toHaveTextContent(/Paso 2/)
     expect(within(links[1]!).getByRole("heading", { level: 3, name: "Falta decidir" })).toBeInTheDocument()
   })
 
@@ -89,12 +89,12 @@ describe("tira de pasos", () => {
     expect(container.querySelectorAll("li[aria-hidden='true']")).toHaveLength(1)
   })
 
-  it("la barra de avance dice el período, su estado y cuántos pasos están listos", () => {
+  it("el avance dice el período, su estado y cuántos pasos están listos, una sola vez y sin barra", () => {
     render(<PanelProgress label="Octubre 2026" status="en_curso" ready={3} total={5} />)
     expect(screen.getByText("Octubre 2026")).toBeInTheDocument()
     expect(screen.getByText(/En curso/)).toBeInTheDocument()
-    expect(screen.getByRole("progressbar", { name: "3 de 5 pasos listos" })).toHaveAttribute("aria-valuenow", "3")
     expect(screen.getByText("3 de 5")).toBeInTheDocument()
+    expect(screen.queryByRole("progressbar")).toBeNull()
   })
 })
 

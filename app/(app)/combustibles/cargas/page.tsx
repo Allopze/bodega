@@ -24,7 +24,7 @@ import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { CargasAttentionStrip } from "./attention-strip"
 import { CargasWorkbench } from "./cargas-workbench"
 import type { CargasFilterOption } from "./cargas-filters"
-import type { EnrichedRow } from "../bitacora/bitacora-table"
+import type { EnrichedRow } from "./bitacora-table"
 import type { TaeExportFilters } from "../tae/actions"
 
 export const metadata: Metadata = { title: "Cargas" }
@@ -100,9 +100,15 @@ export default async function CargasPage({ searchParams }: { searchParams: Promi
   // Las filas y las cuatro señales de terreno van juntas, en una segunda tanda: sumar la consulta de las señales a la primera dejaba
   // diez consultas a la vez sobre un pool de diez. `null` si los filtros no pueden traer registros en terreno; con la consulta
   // caída la tira no se pinta y el aviso de datos degradados lo dice.
-  const [rows, attention] = await Promise.all([
+  const [rows, attention, pendingTotal] = await Promise.all([
     track(getFuelLogRows(session, filters, { limit: CARGAS_PAGE_SIZE, offset: pagination.offset, sort }), [] as FuelLogRow[], "filas"),
     track(getFieldLoadAttention(session, filters), null, "señales de terreno"),
+    // Cuántas cargas de la lista tienen algo abierto, con los mismos filtros y sin los de atención: la línea de «todo despejado»
+    // no puede decir «nada pendiente» sobre filas que muestran un caso abierto.
+    track(
+      getFuelLogTotal(session, { ...filters, stateSlug: undefined, sealIncomplete: undefined, photosIncomplete: undefined, onlyPending: true }),
+      0, "cargas con algo pendiente",
+    ),
   ])
 
   const canViewAudit = can(session, "combustibles:view_audit")
@@ -164,7 +170,7 @@ export default async function CargasPage({ searchParams }: { searchParams: Promi
           <>
             <SectionNav items={cargasNavItems()} activeKey="cargas" ariaLabel="Vistas de cargas" carryParams={FUEL_CARRY_PARAMS} />
             <DegradedDataBanner degraded={degraded} total={tracked} />
-            {attention && <CargasAttentionStrip attention={attention} searchParams={sp} periodInLabel={period.inLabel} />}
+            {attention && <CargasAttentionStrip attention={attention} searchParams={sp} periodInLabel={period.inLabel} pending={pendingTotal} />}
           </>
         }
         after={<ServerPagination pagination={pagination} hrefForPage={hrefForPage} className="mt-2" />}

@@ -664,6 +664,13 @@ Examples:
   to `SheetContent` / `DialogContent` (see `DESIGN.md` § Modales multivista). Never solve it with a
   page-local `h-`/`max-h-`; the primitive is what guarantees it, and
   `components/__tests__/modal-alto-estable.test.ts` fails when a tabbed or segmented modal lacks it.
+- a table inside a `Card`, `Section` or `<details>` that shows two concentric frames (a card inside a
+  card) → pass `framed={false}` to `DataTable` / `TableRoot` (or drop the wrapping `Card` when it only
+  adds a title). Never `className="rounded-none border-0"` on the table: that is the local override
+  this prop replaces (UI/UX audit of Control operacional, 2026-11-13, §8);
+- a vehicle shown with a different identifier or order than in the next screen → use
+  `VehicleIdentity` (`components/fleet/vehicle-identity.tsx`: internal code in mono, «Type · plate»
+  below) and `StateBadge entity="fleet"` for its operational status.
 
 Do not spread local class overrides across pages to compensate for a shared-component problem.
 <!-- END:shared-ui-fix-rule -->
@@ -782,10 +789,24 @@ Lo que **no** se relaja:
   dos veces en la misma. Por eso el gasto en OC se fue de Adquisiciones cuando
   nació Finanzas, y el cumplimiento PDTP salió de la fila de tiles al ganar su
   medidor radial.
-- El resto de las pantallas conserva el tope de 4 sin excepciones.
+- El resto de las pantallas conserva el tope de 4, con una sola excepción más,
+  declarada abajo: la tira de pasos del Panel de combustible.
 - La superficie del tablero (un panel por grupo en vez de una tarjeta por
   bloque) y sus cifras en sans tienen su propia excepción en la regla 7; no
   cambian ningún tope de esta sección.
+
+### Excepción declarada: el Panel de combustible (`/combustibles`)
+
+La entrada de Combustible es el avance del mes en **cinco pasos** (Fuentes de
+datos → Por revisar → Cuadratura → Equipos → Pagos), definidos en
+`.impeccable/surfaces/app-app-combustibles.md`. Son cinco tiles porque el mes se
+cierra en ese orden y partir la tira en dos rompía la lectura de la secuencia.
+
+- Tope de **5** en esa tira y en ninguna otra pantalla del módulo.
+- Cada paso es accionable: su enlace lleva al trabajo que falta, no al total.
+- El avance se muestra una sola vez (barra **o** texto «N de 5 pasos listos»),
+  además de la insignia de cada paso (A5).
+- Un paso dice su estado con la insignia; el borde de la tarjeta no se colorea.
 
 ## A2 — Muro de filtros: 4–6 primarios + "Más filtros (N)"
 

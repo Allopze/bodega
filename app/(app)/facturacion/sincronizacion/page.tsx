@@ -219,7 +219,7 @@ export default async function BillingSyncPage() {
           <p className="text-sm text-[var(--color-text-muted)]">Todavía no se ha ejecutado ninguna sincronización.</p>
         ) : (
           <div className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-          <TableRoot className="rounded-none border-0">
+          <TableRoot framed={false}>
               <Table className="text-left">
                 <caption className="sr-only">Corridas de sincronización con su resultado y desglose</caption>
                 <TableHeader>

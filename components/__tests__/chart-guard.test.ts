@@ -116,8 +116,8 @@ const MOVIMIENTO_CONGELADO: Record<string, { count: number; why: string }> = {}
 const DENSAS: Record<string, string> = {
   "app/(app)/combustibles/evolution-by-vehicle-chart.tsx": "paneles pequeños, uno por vehículo (small multiples)",
   "app/(app)/combustibles/consumption-charts.tsx": "ranking de patentes: una barra por patente",
-  "app/(app)/combustibles/control/_charts/overview-ranking-chart.tsx": "ranking de faenas: una barra por faena",
-  "app/(app)/combustibles/control/_charts/overview-monthly-chart.tsx": "columnas apiladas por medio de suministro: más de 6 segmentos",
+  "app/(app)/combustibles/consumo/_components/charts/overview-ranking-chart.tsx": "ranking de faenas: una barra por faena",
+  "app/(app)/combustibles/consumo/_components/charts/overview-monthly-chart.tsx": "columnas apiladas por medio de suministro: más de 6 segmentos",
   "app/(app)/analitica/analytics-charts.tsx": "Pareto de proveedores: una barra por proveedor",
   "app/(app)/combustibles/cuadratura/estanques/tank-level-chart.tsx": "dos paneles por estanque (nivel y entradas/salidas): small multiples",
 }

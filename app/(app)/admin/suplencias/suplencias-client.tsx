@@ -177,7 +177,7 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
       ) : (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
           <div className="overflow-x-auto">
-            <TableRoot className="rounded-none border-0">
+            <TableRoot framed={false}>
             <Table className="text-left">
               <caption className="sr-only">Suplencias temporales de usuarios</caption>
               <TableHeader>

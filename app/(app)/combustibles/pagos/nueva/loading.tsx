@@ -11,7 +11,7 @@ export default function Loading() {
       <PageHeader
         title="Nueva factura"
         description="Registra una carga facturada con su neto, IEC e IVA"
-        breadcrumb={<FuelBreadcrumbs items={[{ label: "Pagos", href: FUEL_PATHS.pagos }, { label: "Nueva factura" }]} />}
+        breadcrumb={<FuelBreadcrumbs items={[{ label: "Facturas y pagos", href: FUEL_PATHS.pagos }, { label: "Nueva factura" }]} />}
       />
       <div className="space-y-6">
         <Skeleton className="h-72 w-full rounded-[var(--radius-2xl)]" />

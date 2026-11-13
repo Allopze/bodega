@@ -23,7 +23,7 @@ export function RankingTable({
       </CardHeader>
       <CardContent>
         {rows.length > 0 ? (
-          <TableRoot stickyHeader className="shadow-none">
+          <TableRoot stickyHeader framed={false}>
             <Table>
               <TableHeader>
                 <TableRow>

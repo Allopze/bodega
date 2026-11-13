@@ -66,7 +66,7 @@ test.describe("E2E 7 · Pautas", () => {
     const errors = trackConsole(page)
     await asJefe(page)
     await page.goto("/mantencion/pautas")
-    await expectPageTitle(page, "Pautas de mantención")
+    await expectPageTitle(page, "Pautas")
     await expect(page.getByRole("link", { name: "Camiones y tractos", exact: true })).toBeVisible()
     await expect(page.getByRole("link", { name: "Maquinaria pesada", exact: true })).toBeVisible()
 

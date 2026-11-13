@@ -119,7 +119,7 @@ describe("Período por mes completo", () => {
   })
 })
 
-describe("Cuadratura › Proveedor y terreno", () => {
+describe("Cuadratura › Facturado y terreno", () => {
   const rows: MediumCrossRow[] = [
     { mediumId: "a", name: "TCT", fieldLiters: 100, fieldLoads: 1, reportedLiters: 120, differenceLiters: 20, differencePct: 16.7 },
     { mediumId: "b", name: "Surtidor CMPC", fieldLiters: 80, fieldLoads: 2, reportedLiters: null, differenceLiters: null, differencePct: null },

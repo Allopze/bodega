@@ -239,18 +239,18 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
     ...(canViewFuel ? [
       { header: "Litros (12 meses)", key: "liters", width: 18 },
       { header: "Cargas (12 meses)", key: "loads", width: 18 },
-      // P-9: la misma lectura que la columna «Km/Hr» de la lista (odómetro y, a falta de él, horómetro),
+      // P-9: la misma lectura que la columna «Lectura (km u h)» de la lista (odómetro y, a falta de él, horómetro),
       // con la fecha en que se tomó y, si el detector tiene un caso abierto sobre ella, la misma marca.
       { header: "Última lectura", key: "lastReading", width: 44 },
       { header: "Fuente de la lectura", key: "meterSource", width: 22 },
-      // Misma marca que el aviso de la columna «Km/Hr» de la lista: hay un caso del detector aún abierto
+      // Misma marca que el aviso de la columna «Lectura (km u h)» de la lista: hay un caso del detector aún abierto
       // sobre la última lectura del equipo.
       { header: "Lectura objetada", key: "objectedReading", width: 18 },
     ] : []),
     ...(canViewWorkOrders ? [{ header: "OT abiertas", key: "openWorkOrders", width: 14 }] : []),
     ...(canViewCosts && canViewFuel ? [
       { header: "Costo combustible", key: "fuelCost", width: 18 },
-      { header: "Costo por km/h", key: "fuelCostPerUnit", width: 20 },
+      { header: "Costo por km u hora", key: "fuelCostPerUnit", width: 20 },
     ] : []),
   ]
   for (const row of exportRows) {

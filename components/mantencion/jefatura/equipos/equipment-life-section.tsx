@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { executorText, formatHours, formatNumber, formatReading, plural, recordKindText } from "@/lib/mantencion/format"
 import type { LifeRow, LifeTotals, LifeWorkOrders } from "@/lib/services/mantencion/equipment-life"
@@ -70,8 +71,30 @@ function MaintenanceLifeSection({ life, code }: { life: EquipmentLifeData; code:
         />
       ) : (
         <>
-          {/* La tabla sangra hasta el borde de la tarjeta: sin su propio marco, para no dibujar un borde dentro del borde. */}
-          <TableRoot aria-label={`Mantenciones del equipo ${code}`} className="-mx-5 w-auto rounded-none border-0">
+          {/* Bajo md, una tarjeta por mantención: ocho columnas no caben en 390 px (auditoría 2026-11-13, M13). */}
+          <ul aria-label={`Mantenciones del equipo ${code} como tarjetas`} className="grid gap-3 md:hidden">
+            {rows.map((row) => (
+              <li key={row.id}>
+                <ResponsiveDataListCard
+                  title={(
+                    <Link href={`/mantencion/registros/${row.id}`} className="font-mono text-sm font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline">
+                      {row.folio ?? "Sin folio"}
+                    </Link>
+                  )}
+                  description={`${formatDate(row.workDate)} · ${recordKindText(row.kind, row.intervalValue, row.unit)}`}
+                  status={<LifeStatus row={row} />}
+                  className={row.status === "anulado" ? "text-[var(--color-text-muted)]" : undefined}
+                >
+                  <ResponsiveDataListField label="Lectura"><span className="font-mono tabular-nums">{formatReading(row.reading, row.unit)}</span></ResponsiveDataListField>
+                  <ResponsiveDataListField label="Horas"><span className="font-mono tabular-nums">{row.hours != null ? formatHours(row.hours) : "—"}</span></ResponsiveDataListField>
+                  <ResponsiveDataListField label="Hecho por">{executorText(row)}</ResponsiveDataListField>
+                  <ResponsiveDataListField label="En taller">{workshopText(row)}</ResponsiveDataListField>
+                </ResponsiveDataListCard>
+              </li>
+            ))}
+          </ul>
+          {/* La tabla sangra hasta el borde de la tarjeta y no lleva marco propio: un borde dentro del borde es una tarjeta dentro de otra. */}
+          <TableRoot aria-label={`Mantenciones del equipo ${code}`} framed={false} className="-mx-5 hidden w-auto md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -145,7 +168,7 @@ function EquipmentWorkOrdersSection({ workOrders, code }: { workOrders: LifeWork
       title="Órdenes de trabajo"
       description={rows.length ? `${plural(total, "orden", "órdenes")} de reparación o mantención en taller` : "Reparaciones y mantenciones pedidas al taller"}
       action={total > rows.length ? (
-        <Link href={`/mantencion/ot?q=${encodeURIComponent(code)}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-0">
+        <Link href={`/mantencion/ot?estado=abiertas&q=${encodeURIComponent(code)}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-0">
           Ver todas en la lista de órdenes
         </Link>
       ) : undefined}
@@ -157,7 +180,32 @@ function EquipmentWorkOrdersSection({ workOrders, code }: { workOrders: LifeWork
           description="Aparecen aquí cuando se pide una reparación o una mantención en el taller para este equipo."
         />
       ) : (
-        <TableRoot aria-label={`Órdenes de trabajo del equipo ${code}`} className="-mx-5 w-auto rounded-none border-0">
+        <>
+        <ul aria-label={`Órdenes de trabajo del equipo ${code} como tarjetas`} className="grid gap-3 md:hidden">
+          {rows.map((row) => (
+            <li key={row.id}>
+              <ResponsiveDataListCard
+                title={(
+                  <Link href={`/mantencion/ot/${row.id}`} className="font-mono text-sm font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline">
+                    {row.folio}
+                  </Link>
+                )}
+                description={workOrderTypeText(row)}
+                status={<MetaBadge meta={OT_STATE_META[row.status]} size="sm" />}
+              >
+                <ResponsiveDataListField label="Ingreso → salida" className="col-span-2">
+                  <span className="font-mono tabular-nums">
+                    {row.workshopEntryAt
+                      ? `${formatDateTime(row.workshopEntryAt)} → ${row.workshopExitAt ? formatDateTime(row.workshopExitAt) : "sigue en taller"}`
+                      : `Pedida el ${formatDate(row.requestDate)}`}
+                  </span>
+                </ResponsiveDataListField>
+                <ResponsiveDataListField label="Días en taller">{stayText(row)}</ResponsiveDataListField>
+              </ResponsiveDataListCard>
+            </li>
+          ))}
+        </ul>
+        <TableRoot aria-label={`Órdenes de trabajo del equipo ${code}`} framed={false} className="-mx-5 hidden w-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -189,6 +237,7 @@ function EquipmentWorkOrdersSection({ workOrders, code }: { workOrders: LifeWork
             </TableBody>
           </Table>
         </TableRoot>
+        </>
       )}
     </SectionCard>
   )
@@ -203,7 +252,7 @@ export function EquipmentLifeSection({ life, code }: { life: EquipmentLifeData; 
     <div className="flex flex-col gap-5">
       <MaintenanceLifeSection life={life} code={code} />
       {!!life.historical?.total && <SectionCard title="Historial anterior" description={`${plural(life.historical.total, "trabajo registrado", "trabajos registrados")} en formularios anteriores`}>
-        <Link href={`/mantencion/registros/historicos?equipo=${encodeURIComponent(life.historical.vehicleId)}`} className="text-sm font-semibold text-[var(--color-primary-ink)] hover:underline">Ver antecedentes de este equipo</Link>
+        <Link href={`/mantencion/registros/historicos?equipo=${encodeURIComponent(life.historical.vehicleId)}`} className="text-sm font-semibold text-[var(--color-primary-ink)] hover:underline">Ver el historial anterior de este equipo</Link>
       </SectionCard>}
       <EquipmentWorkOrdersSection workOrders={life.workOrders ?? null} code={code} />
     </div>

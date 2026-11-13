@@ -154,6 +154,14 @@ export async function countEquipmentRecords(vehicleId: string, client: Reader = 
   return row?.n ?? 0
 }
 
+/** Si el vehículo de la flota ya tiene ficha de mantención (perfil). La ficha de Flota
+ *  enlaza a la de Mantención sólo entonces: `/mantencion/equipos/[id]` da 404 sin perfil. */
+export async function hasMaintenanceProfile(vehicleId: string, client: Reader = db): Promise<boolean> {
+  const [row] = await client.select({ id: mantEquipmentProfiles.vehicleId }).from(mantEquipmentProfiles)
+    .where(eq(mantEquipmentProfiles.vehicleId, vehicleId)).limit(1)
+  return Boolean(row)
+}
+
 /** La ficha actual de uno (con `vehicleId`) o de todos los equipos con perfil de mantención. */
 export async function loadEquipmentCurrents(client: Reader, vehicleId?: string): Promise<EquipmentCurrent[]> {
   const rows = await client

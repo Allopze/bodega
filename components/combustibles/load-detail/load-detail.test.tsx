@@ -7,7 +7,7 @@ const requestReviewAction = vi.fn()
 const withdrawReviewRequestAction = vi.fn()
 const refresh = vi.fn()
 
-vi.mock("@/app/(app)/combustibles/bitacora/actions", () => ({
+vi.mock("@/app/(app)/combustibles/cargas/actions", () => ({
   requestReviewAction: (...args: unknown[]) => requestReviewAction(...args),
   withdrawReviewRequestAction: (...args: unknown[]) => withdrawReviewRequestAction(...args),
 }))

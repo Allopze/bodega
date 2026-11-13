@@ -4,10 +4,12 @@ import * as React from "react"
 import Link from "next/link"
 import { CaretDown, CaretUp, CaretUpDown, Truck } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
+import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
-import { brandAndModel, EQUIPMENT_STATE_LABEL, formatReading, plural, remainingText } from "@/lib/mantencion/format"
+import { Tooltip } from "@/components/ui/tooltip"
+import { brandAndModel, EQUIPMENT_STATE_LABEL, formatNumber, formatReading, plural, remainingText } from "@/lib/mantencion/format"
 import { matchesEquipmentSearch, type EquipmentListRow } from "@/lib/services/mantencion/equipment-list"
 import { formatDate } from "@/lib/utils"
 import { EquipmentStateBadge } from "../shared/equipment-state-badge"
@@ -28,19 +30,34 @@ const COMPARE: Record<SortKey, (a: EquipmentListRow, b: EquipmentListRow) => num
   estado: (a, b) => a.stateOrder - b.stateOrder || urgencyOf(a) - urgencyOf(b) || byCode(a, b),
 }
 
-const COLUMNS: Array<{ key: SortKey | null; label: string }> = [
+/** Qué es la «Estimación GPS»: sin esto la columna no dice de dónde sale su estado ni por qué puede diferir del oficial. */
+const GPS_HELP = "Estado de mantención calculado con la última lectura del GPS, cuando es más nueva que la última lectura registrada. No reemplaza al estado oficial."
+
+// «Mantención» y no «Estado»: el estado de un equipo para Flota es operativo / en mantención / fuera de servicio; esta
+// columna dice si su pauta está vencida, próxima o al día (auditoría 2026-11-13, T6).
+const COLUMNS: Array<{ key: SortKey | null; label: string; help?: string }> = [
   { key: "cod", label: "Equipo" },
-  { key: null, label: "Tipo y marca" },
+  { key: null, label: "Marca y modelo" },
   { key: "faena", label: "Faena" },
   { key: null, label: "Pauta" },
   { key: null, label: "Última lectura" },
   { key: "prox", label: "Próxima mantención" },
-  { key: null, label: "Estimación GPS" },
-  { key: "estado", label: "Estado" },
+  { key: null, label: "Estimación GPS", help: GPS_HELP },
+  { key: "estado", label: "Mantención" },
 ]
 
 function SortHeader({ column, sort, onSort }: { column: (typeof COLUMNS)[number]; sort: { key: SortKey; dir: SortDir } | null; onSort: (key: SortKey) => void }) {
-  if (!column.key) return <TableHead>{column.label}</TableHead>
+  if (!column.key) {
+    return (
+      <TableHead>
+        {column.help ? (
+          <Tooltip content={column.help} side="top">
+            <span tabIndex={0} className="cursor-help underline decoration-dotted underline-offset-4 focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]">{column.label}</span>
+          </Tooltip>
+        ) : column.label}
+      </TableHead>
+    )
+  }
   const key = column.key
   const active = sort?.key === key
   const Icon = !active ? CaretUpDown : sort.dir === "asc" ? CaretUp : CaretDown
@@ -63,7 +80,7 @@ function NextMaintenance({ row }: { row: EquipmentListRow }) {
   if (row.nextReading == null) return <span className="text-[var(--color-text-subtle)]">—</span>
   return (
     <>
-      <span className="font-mono text-[13px] tabular-nums">{formatReading(row.nextReading, row.unit)}</span>
+      <span className="font-mono text-sm tabular-nums">{formatReading(row.nextReading, row.unit)}</span>
       <div className="text-xs text-[var(--color-text-muted)]">{remainingText({ remaining: row.remaining }, row.unit)}</div>
     </>
   )
@@ -77,7 +94,7 @@ function NextMaintenance({ row }: { row: EquipmentListRow }) {
  * tercer clic vuelve al orden por estado. «Mostrar 50 más» agranda la ventana
  * sobre la lista ya ordenada, no sobre una página.
  */
-export function EquipmentTable({ rows, canManage, canViewGps = true, filtered }: { rows: EquipmentListRow[]; canManage: boolean; canViewGps?: boolean; filtered: boolean }) {
+export function EquipmentTable({ rows, canManage, canViewGps = true, filtered, pendingFleet = 0 }: { rows: EquipmentListRow[]; canManage: boolean; canViewGps?: boolean; filtered: boolean; pendingFleet?: number }) {
   const columns = canViewGps ? COLUMNS : COLUMNS.filter((column) => column.label !== "Estimación GPS")
   const { searchQuery } = useSafeShellHeader()
   const [sort, setSort] = React.useState<{ key: SortKey; dir: SortDir } | null>(null)
@@ -102,11 +119,21 @@ export function EquipmentTable({ rows, canManage, canViewGps = true, filtered }:
         title={filtered ? "Ningún equipo coincide con los filtros" : "Todavía no hay equipos en la mantención"}
         description={filtered
           ? "Prueba con otra faena, tipo, pauta o estado, o quita los filtros."
-          : "Agrega los equipos uno a uno o impórtalos desde una planilla de Excel: aparecerán en la app del mecánico en su próxima sincronización."}
+          : pendingFleet > 0
+            ? `${plural(pendingFleet, "vehículo ya está", "vehículos ya están")} en la flota con su código, patente, tipo y faena: sólo falta elegir su marca y su pauta, y aparecen en la app del mecánico en su próxima sincronización.`
+            : "Agrega los equipos uno a uno o impórtalos desde una planilla de Excel: aparecerán en la app del mecánico en su próxima sincronización."}
         action={filtered
           ? <Button asChild variant="secondary" size="sm"><Link href="/mantencion/equipos">Quitar los filtros</Link></Button>
-          : canManage ? <Button asChild size="sm"><Link href="/mantencion/equipos/nuevo">Nuevo equipo</Link></Button> : undefined}
-        secondaryAction={!filtered && canManage ? <Button asChild variant="secondary" size="sm"><Link href="/mantencion/equipos/importar">Importar desde Excel</Link></Button> : undefined}
+          : !canManage ? undefined
+            : pendingFleet > 0
+              ? <Button asChild size="sm"><Link href="/mantencion/equipos/incorporar">{pendingFleet === 1 ? "Incorporar el vehículo de la flota" : `Incorporar los ${formatNumber(pendingFleet)} vehículos de la flota`}</Link></Button>
+              : <Button asChild size="sm"><Link href="/mantencion/equipos/nuevo">Nuevo equipo</Link></Button>}
+        secondaryAction={!filtered && canManage ? (
+          <div className="flex flex-wrap justify-center gap-2">
+            {pendingFleet > 0 && <Button asChild variant="secondary" size="sm"><Link href="/mantencion/equipos/nuevo">Nuevo equipo</Link></Button>}
+            <Button asChild variant="secondary" size="sm"><Link href="/mantencion/equipos/importar">Importar desde Excel</Link></Button>
+          </div>
+        ) : undefined}
       />
     )
   }
@@ -128,7 +155,7 @@ export function EquipmentTable({ rows, canManage, canViewGps = true, filtered }:
               className="flex min-h-11 flex-col gap-1.5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors duration-(--duration-fast) hover:bg-[var(--color-surface-2)]"
             >
               <span className="flex items-baseline justify-between gap-3">
-                <span className="whitespace-nowrap font-mono text-[13px] font-semibold text-[var(--color-primary-ink)]">
+                <span className="whitespace-nowrap font-mono text-sm font-semibold text-[var(--color-primary-ink)]">
                   {row.code}
                   {row.showPlate && <span className="ml-2 font-normal text-[var(--color-text-muted)]">{row.plate}</span>}
                 </span>
@@ -168,28 +195,18 @@ export function EquipmentTable({ rows, canManage, canViewGps = true, filtered }:
             {shown.map((row) => (
               <TableRow key={row.id} className={row.state === "baja" ? "bg-[var(--color-surface-2)]/60" : undefined}>
                 <TableCell className="whitespace-nowrap">
-                  {/* Objetivo táctil de 44 px en móvil; en escritorio la línea normal. */}
-                  <Link
-                    href={`/mantencion/equipos/${row.id}`}
-                    className="inline-flex min-h-11 items-center font-mono text-[13px] font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline sm:min-h-0"
-                  >
-                    {row.code}
-                  </Link>
-                  {row.showPlate && <div className="font-mono text-xs text-[var(--color-text-muted)]">{row.plate}</div>}
-                  {row.noPlate && <div className="text-xs text-[var(--color-text-subtle)]">Sin patente</div>}
+                  {/* El mismo «código, y debajo tipo · patente» de todo el área; el enlace conserva el código como nombre. */}
+                  <VehicleIdentity code={row.code} plate={row.showPlate ? row.plate : row.noPlate ? "Sin patente" : null} type={row.typeName} href={`/mantencion/equipos/${row.id}`} linkLabel={row.code} />
                 </TableCell>
                 <TableCell>
-                  <div>{row.typeName}</div>
-                  <div className="text-xs text-[var(--color-text-muted)]">
-                    {[brandAndModel(row.brandName, row.model), row.year].filter(Boolean).join(" · ")}
-                  </div>
+                  {[brandAndModel(row.brandName, row.model), row.year].filter(Boolean).join(" · ") || <span className="text-[var(--color-text-subtle)]">—</span>}
                 </TableCell>
                 <TableCell>{row.worksiteName}</TableCell>
                 <TableCell>{row.hasSchedule ? row.scheduleName : <span className="text-[var(--color-text-subtle)]">Sin pauta</span>}</TableCell>
                 <TableCell className="whitespace-nowrap">
                   {row.reading == null ? <span className="text-[var(--color-text-subtle)]">—</span> : (
                     <>
-                      <span className="font-mono text-[13px] tabular-nums">{formatReading(row.reading, row.unit)}</span>
+                      <span className="font-mono text-sm tabular-nums">{formatReading(row.reading, row.unit)}</span>
                       {row.readingDate && <div className="text-xs text-[var(--color-text-muted)]">{formatDate(row.readingDate)}</div>}
                     </>
                   )}

@@ -187,7 +187,7 @@ export function SupplierPricesSection({ suppliers, ordersHref }: { suppliers: Sp
                         {supplier.isPreferred && <Badge variant="primary" size="sm" className="ml-2 align-middle">Preferido</Badge>}
                       </TableCell>
                       <TableCellNum>{supplier.unitPrice === null ? <span className={MUTED}>Sin precio</span> : formatCLP(supplier.unitPrice)}</TableCellNum>
-                      <TableCell nowrap className="font-mono text-[13px]">{formatDate(supplier.lastUpdated)}</TableCell>
+                      <TableCell nowrap className="font-mono text-sm">{formatDate(supplier.lastUpdated)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -250,7 +250,7 @@ export function PriceHistorySection({ history }: { history: SparePartPriceHistor
                 <TableBody>
                   {history.map((entry) => (
                     <TableRow key={entry.id}>
-                      <TableCell nowrap className="font-mono text-[13px]">{formatDate(entry.effectiveDate)}</TableCell>
+                      <TableCell nowrap className="font-mono text-sm">{formatDate(entry.effectiveDate)}</TableCell>
                       <TableCell>{entry.supplierName}</TableCell>
                       <TableCellNum className={MUTED}>{entry.previousPrice === null ? "—" : formatCLP(entry.previousPrice)}</TableCellNum>
                       <TableCellNum className="font-medium">{entry.newPrice === null ? "Sin precio" : formatCLP(entry.newPrice)}</TableCellNum>
@@ -327,7 +327,7 @@ export function PurchasedForSection({ usage, access }: { usage: SparePartVehicle
                         </TableCell>
                         <TableCell>{[vehicle.vehicleBrand, vehicle.vehicleModel].filter(Boolean).join(" ") || <span className={MUTED}>—</span>}</TableCell>
                         <TableCellNum>{vehicle.requestCount}</TableCellNum>
-                        <TableCell nowrap className="font-mono text-[13px]">{formatDate(vehicle.lastRequestedAt)}</TableCell>
+                        <TableCell nowrap className="font-mono text-sm">{formatDate(vehicle.lastRequestedAt)}</TableCell>
                       </TableRow>
                     )
                   })}
@@ -341,7 +341,7 @@ export function PurchasedForSection({ usage, access }: { usage: SparePartVehicle
   )
 }
 
-/* ── Últimas solicitudes y OC ──────────────────────────────────────────────── */
+/* ── Últimas solicitudes y órdenes de compra ──────────────────────────────────────────────── */
 
 function LineCodes({ line, access }: { line: SparePartPurchaseLine; access: SparePartLinkAccess }) {
   return (
@@ -351,7 +351,7 @@ function LineCodes({ line, access }: { line: SparePartPurchaseLine; access: Spar
         : <span className={`text-xs ${MUTED}`}>Sin solicitud</span>}
       {line.orderId && line.orderCode
         ? <Code href={access.canOpenOrders ? `/compras/${line.orderId}` : null}>{line.orderCode}</Code>
-        : <span className={`text-xs ${MUTED}`}>Sin OC</span>}
+        : <span className={`text-xs ${MUTED}`}>Sin orden de compra</span>}
       {line.orderStatus && <StateBadge state={line.orderStatus} entity="oc" size="sm" />}
     </div>
   )
@@ -399,7 +399,7 @@ export function RecentLinesSection({ lines, access }: { lines: SparePartPurchase
                 <TableHeader>
                   <TableRow>
                     <TableHead>Fecha</TableHead>
-                    <TableHead>Solicitud y OC</TableHead>
+                    <TableHead>Solicitud y orden de compra</TableHead>
                     <TableHead>Equipo</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
                     <TableHead className="text-right">Precio unitario</TableHead>
@@ -409,7 +409,7 @@ export function RecentLinesSection({ lines, access }: { lines: SparePartPurchase
                   {lines.map((line, index) => {
                     return (
                       <TableRow key={`${line.orderId ?? "sin-oc"}-${line.requestItemId ?? index}`}>
-                        <TableCell nowrap className="font-mono text-[13px]">{formatDate(line.date)}</TableCell>
+                        <TableCell nowrap className="font-mono text-sm">{formatDate(line.date)}</TableCell>
                         <TableCell>
                           <LineCodes line={line} access={access} />
                           {line.supplierName && <p className={`mt-0.5 text-xs ${MUTED}`}>{line.supplierName}</p>}

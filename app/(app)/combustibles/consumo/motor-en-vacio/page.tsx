@@ -23,14 +23,14 @@ import { FUEL_PATHS, fuelEquipmentHref } from "@/lib/combustibles/routes"
 import { fuelAddDataOptions } from "@/lib/combustibles/section-nav"
 import { resolvePagination } from "@/lib/pagination"
 import { formatQty } from "@/lib/utils"
-import { IdleDailyChartLazy, IdleLitersChartLazy, IdleMonthlyChartLazy } from "../../control/_charts/idle-charts-lazy"
-import { SectionError, ViewSection } from "../../control/_charts/overview-section"
-import { loadControlContext } from "../../control/_components/control-context"
-import { ControlFilters } from "../../control/_components/control-filters"
-import { EquipmentSelect } from "../../control/_components/equipment-select"
-import { monthText, numberText, pctText } from "../../control/_components/format"
-import { hrefInContext, searchWith } from "../../control/_components/page-links"
-import { createSourceTracker } from "../../control/_components/track-sources"
+import { IdleDailyChartLazy, IdleLitersChartLazy, IdleMonthlyChartLazy } from "../_components/charts/idle-charts-lazy"
+import { SectionError, ViewSection } from "../_components/charts/overview-section"
+import { loadControlContext } from "../_components/control-context"
+import { ControlFilters } from "../../_shared/control-filters"
+import { EquipmentSelect } from "../_components/equipment-select"
+import { monthText, numberText, pctText } from "../_components/format"
+import { hrefInContext, searchWith } from "../_components/page-links"
+import { createSourceTracker } from "../_components/track-sources"
 import { ConsumoNav } from "../../consumo-nav"
 import { Disclosure } from "../_components/disclosure"
 import { LitersPerHourSection, TopIdleDaysTable } from "./comparison-sections"
@@ -65,7 +65,7 @@ export default async function MotorEnVacioPage({ searchParams }: { searchParams:
   if (!hasTelemetry.failed && !hasTelemetry.data) {
     return (
       <PageContainer>
-        <PageHeader title="Consumo y rendimiento" description={DESCRIPTION} breadcrumb={breadcrumb} actions={<FuelHeaderActions period={period} />} />
+        <PageHeader title="Motor en vacío" description={DESCRIPTION} breadcrumb={breadcrumb} actions={<FuelHeaderActions period={period} />} />
         <ConsumoNav activeKey="motor-en-vacio" />
         <EmptyState
           title="Aún no hay telemetría de equipos"
@@ -102,7 +102,7 @@ export default async function MotorEnVacioPage({ searchParams }: { searchParams:
   return (
     <PageContainer>
       <PageHeader
-        title="Consumo y rendimiento"
+        title="Motor en vacío"
         description={DESCRIPTION}
         breadcrumb={breadcrumb}
         actions={<FuelHeaderActions period={period}>{exportAction}</FuelHeaderActions>}

@@ -11,7 +11,7 @@ export default function Loading() {
       <PageHeader
         title="Estado de cuenta"
         description="Detalle del estado de cuenta"
-        breadcrumb={<FuelBreadcrumbs items={[{ label: "Pagos", href: FUEL_PATHS.pagos }, { label: "Estados de cuenta", href: FUEL_PATHS.estados }, { label: "Detalle" }]} />}
+        breadcrumb={<FuelBreadcrumbs items={[{ label: "Facturas y pagos", href: FUEL_PATHS.pagos }, { label: "Estados de cuenta", href: FUEL_PATHS.estados }, { label: "Detalle" }]} />}
       />
       <div className="space-y-6">
         <Skeleton className="h-28 w-full rounded-[var(--radius-2xl)]" />

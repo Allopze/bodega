@@ -205,7 +205,7 @@ export function OperationsImportWizard() {
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setStep("form")}>Volver</Button>
             <Button onClick={handleConfirm} disabled={loading || !canConfirm}>
-              {loading ? "Importando..." : `Confirmar (${preview.totales.totalFilas} registros)`}
+              {loading ? "Importando…" : `Confirmar (${preview.totales.totalFilas} registros)`}
             </Button>
           </div>
         </CardContent>
@@ -231,7 +231,7 @@ export function OperationsImportWizard() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <ExportButton action={downloadOperationsTemplateAction} label="Descargar plantilla" />
+          <ExportButton action={downloadOperationsTemplateAction} label="Descargar plantilla" ariaLabel="Descargar la plantilla de la planilla de cargas" />
           <span className="text-xs text-[var(--color-text-muted)]">Mismas columnas que lee el importador, con una hoja de instrucciones (formatos y unidades).</span>
         </div>
 
@@ -270,7 +270,7 @@ export function OperationsImportWizard() {
 
         <div className="flex justify-end">
           <Button onClick={handlePreview} disabled={loading}>
-            {loading ? "Leyendo..." : "Revisar"}
+            {loading ? "Leyendo…" : "Revisar"}
           </Button>
         </div>
       </CardContent>

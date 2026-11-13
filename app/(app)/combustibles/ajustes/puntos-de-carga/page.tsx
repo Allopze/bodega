@@ -72,8 +72,13 @@ export default async function AjustesPuntosDeCargaPage() {
     lastUsedAt: link.lastUsedAt,
     revokedAt: link.revokedAt,
   }))
-  const sources = [worksiteRows, pointRows, storageRows, linkRows]
-  const degraded = sources.filter((source) => source.failed).length
+  const sources = [
+    { label: "faenas", failed: worksiteRows.failed },
+    { label: "puntos de carga", failed: pointRows.failed },
+    { label: "estanques", failed: storageRows.failed },
+    { label: "enlaces QR", failed: linkRows.failed },
+  ]
+  const degraded = sources.filter((source) => source.failed).map((source) => source.label)
 
   return (
     <PageContainer>
@@ -84,11 +89,11 @@ export default async function AjustesPuntosDeCargaPage() {
         actions={<FuelHeaderActions><NewLoadingPointButton worksites={worksiteRows.value} storageLocations={storageRows.value} /></FuelHeaderActions>}
       />
       <div className="space-y-4">
-        <DegradedDataBanner degraded={Array.from({ length: degraded }, () => "fuente")} total={sources.length} />
+        <DegradedDataBanner degraded={degraded} total={sources.length} />
         <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">
           Cada QR abre el formulario en terreno de un punto de carga. Se muestra una sola vez; si se pierde, revoca el enlace y genera otro.
         </p>
-        {degraded > 0 && points.length === 0 ? null : (
+        {degraded.length > 0 && points.length === 0 ? null : (
           <LoadingPointsPanel
             points={points}
             links={links}

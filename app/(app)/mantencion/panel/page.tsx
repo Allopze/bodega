@@ -9,6 +9,7 @@ import { PanelKpis, PanelStrip } from "@/components/mantencion/jefatura/panel/pa
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
 import { loadPanel, loadPanelWorksites } from "@/lib/services/mantencion/panel"
+import { countUnassignedWorkOrders } from "@/lib/services/mantencion/work-orders/query"
 import { parsePanelFilters } from "@/lib/services/mantencion/panel-filters"
 import { PanelExportButton } from "./panel-export-button"
 
@@ -26,7 +27,13 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
   const raw = await searchParams
   const filters = parsePanelFilters(raw)
 
-  const [worksites, data] = await Promise.all([loadPanelWorksites(viewer), loadPanel(viewer, filters)])
+  // Las órdenes tienen su propio permiso: sin él, el indicador «Órdenes por asignar» no se ofrece.
+  const canViewOrders = can(session, "mant:ot:view_worksite") || can(session, "mant:ot:view_all")
+  const [worksites, data, unassignedOrders] = await Promise.all([
+    loadPanelWorksites(viewer),
+    loadPanel(viewer, filters),
+    canViewOrders ? countUnassignedWorkOrders(viewer, filters.worksiteId) : Promise.resolve(null),
+  ])
   // Una faena de la URL que no está en el alcance del usuario no se ofrece ni se muestra elegida.
   const worksiteId = worksites.some((item) => item.id === filters.worksiteId) ? (filters.worksiteId ?? "") : ""
   const exportParams: Record<string, string> = { periodo: filters.period, ...(worksiteId ? { faena: worksiteId } : {}) }
@@ -55,7 +62,7 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
         <PanelEmptyState canManage={can(session, "mant:equipment:manage")} />
       ) : (
         <>
-          <PanelKpis data={data} />
+          <PanelKpis data={data} unassignedOrders={unassignedOrders} />
           <PanelStrip data={data} />
 
           {/*

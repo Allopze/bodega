@@ -201,6 +201,18 @@ export async function listWorkOrders(viewer: MantViewer, filters: WorkOrderListF
   return { rows: rows.map((row) => toListRow(row, today)), total: counts[filters.tab], counts }
 }
 
+/**
+ * Órdenes que esperan mecánico (`solicitada`) dentro del alcance de quien mira,
+ * opcionalmente acotadas a una faena. Es la cifra del indicador «Órdenes por
+ * asignar» del panel; la lista (`?estado=solicitada`) cuenta lo mismo.
+ */
+export async function countUnassignedWorkOrders(viewer: MantViewer, worksiteId?: string): Promise<number> {
+  const [row] = await db.select({ count: sql<number>`count(*)::int` })
+    .from(mantWorkOrders)
+    .where(and(baseWhere(viewer, { worksiteId }), tabWhere("solicitada")))
+  return row?.count ?? 0
+}
+
 export interface WorkOrderFilterOptions {
   worksites: Array<{ id: string; name: string }>
   mechanics: Array<{ id: string; name: string }>

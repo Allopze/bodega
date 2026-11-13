@@ -4,11 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { WorkOrderTab } from "@/lib/services/mantencion/work-orders/query"
 import type { WorkOrderPartsRequest } from "@/lib/services/mantencion/work-orders/types"
 import { otDetail, otRow } from "./ot-fixtures"
-import { OT_FILTER_PARAMS, buildOtTabs, hasWorkOrderFilters, parseWorkOrderQuery } from "./ot-filters"
+import { OT_FILTER_PARAMS, buildOtTabs, defaultOtTab, hasExplicitTab, hasWorkOrderFilters, parseWorkOrderQuery } from "./ot-filters"
 import { OtAside } from "./ot-aside"
 import {
-  OtEntrySection, OtExitSection, OtFaenaReceptionSection, OtHeaderSection, OtItemsSection, OtPartsRequestsSection, OtReceptionSection, OtRejectionNotice,
-  OtRepairSection, OtVoidedNotice,
+  OtHeaderSection, OtItemsSection, OtPartsRequestsSection, OtProgressSection, OtRejectionNotice, OtRepairSection, OtVoidedNotice, nextStepText,
 } from "./ot-sections"
 import { OtTable } from "./ot-table"
 import { OT_STATUSES, OT_STATUS_LABELS } from "@/lib/mantencion/work-order-states"
@@ -31,10 +30,17 @@ const cards = () => within(screen.getByRole("list", { name: "Órdenes de trabajo
 const table = () => within(screen.getByRole("region", { name: "Órdenes de trabajo" }))
 
 describe("filtros y pestañas de la lista", () => {
-  it("sin parámetros rige «Abiertas», página 1 y sin filtros", () => {
+  it("sin parámetros rige «Por asignar», página 1 y sin filtros", () => {
     const filters = parseWorkOrderQuery({})
-    expect(filters).toMatchObject({ tab: "abiertas", page: 1, pageSize: 25 })
+    expect(filters).toMatchObject({ tab: "solicitada", page: 1, pageSize: 25 })
     expect(hasWorkOrderFilters(filters)).toBe(false)
+    expect(hasExplicitTab({})).toBe(false)
+    expect(hasExplicitTab({ estado: "cerrada" })).toBe(true)
+    expect(hasExplicitTab({ estado: "SUBMITTED" })).toBe(false)
+  })
+
+  it("«?estado=abiertas» sigue siendo válido: los tiles del tablero enlazan a todas las abiertas", () => {
+    expect(parseWorkOrderQuery({ estado: "abiertas" }).tab).toBe("abiertas")
   })
 
   it("lee estado, faena, equipo, mecánico, período, búsqueda y página de la URL", () => {
@@ -45,7 +51,7 @@ describe("filtros y pestañas de la lista", () => {
 
   it("ignora un estado desconocido, fechas mal formadas y páginas inválidas", () => {
     const filters = parseWorkOrderQuery({ estado: "SUBMITTED", desde: "ayer", hasta: "2026-13", pagina: "-2" })
-    expect(filters).toMatchObject({ tab: "abiertas", page: 1 })
+    expect(filters).toMatchObject({ tab: "solicitada", page: 1 })
     expect(filters.from).toBeUndefined()
     expect(filters.to).toBeUndefined()
   })
@@ -86,13 +92,28 @@ describe("filtros y pestañas de la lista", () => {
     expect(hasWorkOrderFilters(parseWorkOrderQuery({ estado: "cerrada" }))).toBe(false)
   })
 
-  it("ocho pestañas con su contador; «Abiertas» es la predeterminada y no lleva parámetro", () => {
+  it("siete pestañas con su contador y todas con parámetro: «Abiertas» (la suma de cinco) ya no es una pestaña", () => {
     const counts: Record<WorkOrderTab, number> = { abiertas: 9, solicitada: 2, asignada: 1, en_ejecucion: 4, trabajo_terminado: 1, recepcionada: 1, cerrada: 30, anulada: 0 }
     const tabs = buildOtTabs(counts)
-    expect(tabs.map((tab) => tab.label)).toEqual(["Abiertas", "Por asignar", "Asignadas", "En taller", "Por recibir", "Por conformidad", "Cerradas", "Anuladas"])
-    expect(tabs.map((tab) => tab.count)).toEqual([9, 2, 1, 4, 1, 1, 30, 0])
-    expect(tabs[0]!.value).toBe("")
-    expect(tabs[3]!.value).toBe("en_ejecucion")
+    expect(tabs.map((tab) => tab.label)).toEqual(["Por asignar", "Asignadas", "En taller", "Por recibir", "Por conformidad", "Cerradas", "Anuladas"])
+    expect(tabs.map((tab) => tab.count)).toEqual([2, 1, 4, 1, 1, 30, 0])
+    expect(tabs.every((tab) => tab.value !== "")).toBe(true)
+    expect(tabs[0]!.value).toBe("solicitada")
+    expect(tabs[2]!.value).toBe("en_ejecucion")
+  })
+
+  it("quien sólo ejecuta no ve «Por asignar»", () => {
+    const counts = { abiertas: 0, solicitada: 0, asignada: 0, en_ejecucion: 0, trabajo_terminado: 0, recepcionada: 0, cerrada: 0, anulada: 0 } satisfies Record<WorkOrderTab, number>
+    expect(buildOtTabs(counts, { hide: ["solicitada"] }).map((tab) => tab.label)).not.toContain("Por asignar")
+  })
+
+  it("abre en «Por asignar» y, si no hay nada por asignar, en la primera etapa con trabajo", () => {
+    const base = { abiertas: 0, solicitada: 0, asignada: 0, en_ejecucion: 0, trabajo_terminado: 0, recepcionada: 0, cerrada: 7, anulada: 1 } satisfies Record<WorkOrderTab, number>
+    expect(defaultOtTab({ ...base, solicitada: 2, en_ejecucion: 4 })).toBe("solicitada")
+    expect(defaultOtTab({ ...base, en_ejecucion: 4, recepcionada: 1 })).toBe("en_ejecucion")
+    // Sin trabajo abierto, no abre en «Cerradas»: la primera pestaña, que explica qué esperar.
+    expect(defaultOtTab(base)).toBe("solicitada")
+    expect(defaultOtTab({ ...base, solicitada: 3, asignada: 1 }, ["solicitada"])).toBe("asignada")
   })
 
   it("las etiquetas de estado salen de la máquina de estados: ninguno se muestra crudo", () => {
@@ -147,16 +168,21 @@ describe("tabla de la lista", () => {
 })
 
 describe("secciones del detalle, en el orden del talonario", () => {
-  it("cabecera: folio, equipo, REPARACIÓN / MANTENCIÓN marcadas, fecha, solicitante y mecánico", () => {
+  it("cabecera: REPARACIÓN / MANTENCIÓN marcadas, fecha, solicitante y mecánico; folio, equipo y faena ya van en el título", () => {
     render(<OtHeaderSection detail={otDetail({ repair: true, maintenance: false })} />)
     const group = screen.getByRole("group", { name: "Tipo de trabajo" })
     expect(group.textContent).toContain("Reparación: marcada")
     expect(group.textContent).toContain("Mantención: sin marcar")
-    expect(screen.getByText("OT-BIO-0001")).toBeTruthy()
-    expect(screen.getByText("KA-135 · RBYD-98")).toBeTruthy()
+    expect(screen.getByText("Fecha de la orden")).toBeTruthy()
+    expect(screen.queryByText("Fecha OT")).toBeNull()
     expect(screen.getByText("30-10-2026")).toBeTruthy()
     expect(screen.getAllByText("Ana Pérez", { selector: "dd" })).toHaveLength(2) // solicitante y creada por
     expect(screen.getByText(/Javier Roa · desde/)).toBeTruthy()
+    // M6: lo que ya dice el título de la página no se repite en una tarjeta.
+    expect(screen.queryByText("Nº (folio)")).toBeNull()
+    expect(screen.queryByText("OT-BIO-0001")).toBeNull()
+    expect(screen.queryByText("KA-135 · RBYD-98")).toBeNull()
+    expect(screen.queryByText("Faena")).toBeNull()
   })
 
   it("la descripción de la reparación sólo aparece si se marcó REPARACIÓN", () => {
@@ -166,7 +192,7 @@ describe("secciones del detalle, en el orden del talonario", () => {
     expect(screen.queryByText(/Pierde aceite/)).toBeNull()
   })
 
-  it("trabajos anexos y mantenciones: líneas numeradas con SÍ / NO / Pendiente, nota y origen en taller", () => {
+  it("trabajos anexos y mantenciones: líneas numeradas con Sí / No / Pendiente, nota y origen en taller", () => {
     render(
       <>
         <OtItemsSection detail={otDetail()} kind="anexo" />
@@ -174,48 +200,60 @@ describe("secciones del detalle, en el orden del talonario", () => {
       </>,
     )
     const anexos = within(screen.getByRole("region", { name: "Trabajos anexos (reparación)" }))
-    expect(anexos.getByText("SÍ")).toBeTruthy()
+    expect(anexos.getByText("Sí")).toBeTruthy()
     expect(anexos.getByText("Pendiente")).toBeTruthy()
     expect(anexos.getByText("Agregado en el taller")).toBeTruthy()
     const mantenciones = within(screen.getByRole("region", { name: "Mantenciones solicitadas o asignadas en taller" }))
-    expect(mantenciones.getByText("NO")).toBeTruthy()
+    expect(mantenciones.getByText("No")).toBeTruthy()
     expect(mantenciones.getByText("Falta el filtro")).toBeTruthy()
   })
 
-  it("los pasos que aún no ocurren se dicen en texto, no con un hueco", () => {
-    render(
-      <>
-        <OtEntrySection detail={otDetail({ entry: null })} />
-        <OtExitSection detail={otDetail()} />
-        <OtReceptionSection detail={otDetail()} />
-        <OtFaenaReceptionSection detail={otDetail()} />
-      </>,
-    )
-    expect(screen.getByText(/aún no ingresa al taller/)).toBeTruthy()
-    expect(screen.getByText("El equipo aún no sale del taller.")).toBeTruthy()
-    expect(screen.getByText("Aún no se registra la recepción.")).toBeTruthy()
-    expect(screen.getByText("Aún sin conformidad en faena.")).toBeTruthy()
+  it("«Avance»: el estado y lo que sigue arriba, y las cuatro etapas en línea con «Pendiente» donde aún no ocurren", () => {
+    render(<OtProgressSection detail={otDetail({ entry: null, status: "asignada" })} />)
+    expect(screen.getByRole("heading", { name: "Avance" })).toBeTruthy()
+    expect(screen.getByText("Asignada")).toBeTruthy()
+    expect(screen.getByText(/Falta que Javier Roa registre el ingreso del equipo al taller/)).toBeTruthy()
+    const stages = within(screen.getByRole("list", { name: "Etapas de la orden" })).getAllByRole("listitem")
+    expect(stages.map((stage) => stage.querySelector("p")!.textContent)).toEqual(["Ingreso a taller", "Salida de taller", "Recepción del equipo", "Conformidad en faena"])
+    for (const stage of stages) expect(stage.textContent).toContain("Pendiente")
+    // Ya no hay cuatro tarjetas con «Aún no…» por etapa.
+    expect(screen.queryByText(/aún no ingresa al taller/)).toBeNull()
+    expect(screen.queryByText("Aún no se registra la recepción.")).toBeNull()
+    expect(screen.queryByText("Aún sin conformidad en faena.")).toBeNull()
   })
 
-  it("ingreso, salida, recepción y recepción en faena muestran fecha, hora y «Sr.»", () => {
+  it("cada etapa cumplida lleva fecha y hora, quién la registró y quién recibió (sin «Sr.»)", () => {
     const detail = otDetail({
+      status: "cerrada",
       exit: { exitAt: "2026-11-03T14:30:00.000Z", finishedByName: "Javier Roa" },
       reception: { receivedAt: "2026-11-03T18:00:00.000Z", receiverName: "Marco Vera", recordedByName: "Alexis Soto", recordedAt: "2026-11-03T18:05:00.000Z" },
       faenaReception: { receivedAt: "2026-11-04T13:00:00.000Z", receiverName: "Ana Pérez", recordedByName: "Ana Pérez", closedAt: "2026-11-04T13:01:00.000Z" },
     })
-    render(
-      <>
-        <OtEntrySection detail={detail} />
-        <OtExitSection detail={detail} />
-        <OtReceptionSection detail={detail} />
-        <OtFaenaReceptionSection detail={detail} />
-      </>,
-    )
-    expect(screen.getByText("Luis Mena")).toBeTruthy()
-    expect(screen.getByText(/Taller Los Aromos \(externo\)/)).toBeTruthy()
-    expect(screen.getByText("120.500")).toBeTruthy()
-    expect(screen.getByText("Marco Vera")).toBeTruthy()
-    expect(screen.getAllByText("Ana Pérez").length).toBeGreaterThan(0)
+    render(<OtProgressSection detail={detail} />)
+    const stages = within(screen.getByRole("list", { name: "Etapas de la orden" })).getAllByRole("listitem")
+    expect(stages).toHaveLength(4)
+    for (const stage of stages) expect(stage.textContent).not.toContain("Pendiente")
+    expect(stages[0]!.textContent).toContain("Taller Los Aromos (externo)")
+    expect(stages[0]!.textContent).toContain("Encargado Luis Mena")
+    expect(stages[0]!.textContent).toContain("Operador Pedro Díaz")
+    expect(stages[0]!.textContent).toContain("Kilómetro 120.500")
+    expect(stages[1]!.textContent).toContain("Registrada por Javier Roa")
+    expect(stages[2]!.textContent).toContain("Recibió Marco Vera")
+    expect(stages[3]!.textContent).toContain("Recibió Ana Pérez")
+    expect(screen.queryByText("Sr.")).toBeNull()
+    expect(screen.getByText("La orden está cerrada.")).toBeTruthy()
+  })
+
+  it("el siguiente paso sigue la cadena de estados y la entrega estimada sólo aparece mientras el equipo está en taller", () => {
+    const base = { assignedToName: "Javier Roa", needsLinkedRecord: false }
+    expect(nextStepText({ ...base, status: "solicitada" })).toBe("Falta asignar un mecánico.")
+    expect(nextStepText({ ...base, status: "en_ejecucion", needsLinkedRecord: true })).toBe("Falta registrar el trabajo y la salida de taller.")
+    expect(nextStepText({ ...base, status: "trabajo_terminado" })).toContain("recibir el equipo")
+    expect(nextStepText({ ...base, status: "recepcionada" })).toContain("conformidad en faena")
+    const { rerender } = render(<OtProgressSection detail={otDetail()} />)
+    expect(screen.getByText(/Entrega estimada:/)).toBeTruthy()
+    rerender(<OtProgressSection detail={otDetail({ status: "cerrada" })} />)
+    expect(screen.queryByText(/Entrega estimada:/)).toBeNull()
   })
 
   it("una OT anulada se marca con su motivo; una devuelta muestra el último motivo de rechazo", () => {
@@ -243,7 +281,7 @@ function partsLine(overrides: Partial<WorkOrderPartsRequest> = {}): WorkOrderPar
 describe("«Repuestos pedidos»", () => {
   const partsTable = () => within(screen.getByRole("region", { name: "Repuestos pedidos" }))
 
-  it("lista solicitud, repuesto, estado en español, OC y entrega estimada; marca «Vencida» si la fecha pasó y falta recibir", () => {
+  it("lista solicitud, repuesto, estado en español, orden de compra y entrega estimada; marca «Vencida» si la fecha pasó y falta recibir", () => {
     const detail = otDetail({
       partsRequests: [
         partsLine(),
@@ -386,7 +424,7 @@ describe("columna lateral", () => {
     const items = history.getAllByRole("listitem").map((item) => item.textContent ?? "")
     expect(items[0]).toContain("Rechazada")
     expect(items[0]).toContain("Sigue la fuga de aceite")
-    expect(items.at(-1)).toContain("OT solicitada")
+    expect(items.at(-1)).toContain("Orden solicitada")
     // El cambio de fecha dice de qué a qué.
     expect(history.getByText("03-11-2026 → 05-11-2026")).toBeTruthy()
   })
@@ -394,7 +432,7 @@ describe("columna lateral", () => {
   it("el costo cargado se rotula como mano de obra / taller externo y remite a «Repuestos pedidos»", () => {
     render(<OtAside detail={otDetail({ totalCost: 250_000 })} showCosts />)
     expect(screen.getByRole("heading", { name: "Mano de obra / taller externo" })).toBeTruthy()
-    expect(screen.getByText("Cargado por jefatura. Los repuestos y servicios comprados por OC están en «Repuestos pedidos».")).toBeTruthy()
+    expect(screen.getByText("Cargado por jefatura. Los repuestos y servicios comprados con orden de compra están en «Repuestos pedidos».")).toBeTruthy()
     expect(screen.getByText(/250\.000/)).toBeTruthy()
     expect(screen.queryByText(/Costo de la OT/)).toBeNull()
     expect(screen.queryByText(/Mano de obra y repuestos/)).toBeNull()

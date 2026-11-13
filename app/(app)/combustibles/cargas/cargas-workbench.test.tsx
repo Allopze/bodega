@@ -3,7 +3,7 @@ import React from "react"
 import { describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { describeFuelPeriod } from "@/lib/combustibles/period/parse"
-import type { EnrichedRow } from "../bitacora/bitacora-table"
+import type { EnrichedRow } from "./bitacora-table"
 import { CargasWorkbench } from "./cargas-workbench"
 
 vi.mock("next/navigation", () => ({
@@ -14,11 +14,11 @@ vi.mock("next/navigation", () => ({
 // El filtro y la tabla reales tienen sus propias pruebas: acá se mide la
 // decisión de la mesa de trabajo entre «vacío» y «tabla» cuando falta el total.
 vi.mock("./cargas-filters", () => ({ CargasFilters: () => <div data-testid="filtros" /> }))
-vi.mock("../bitacora/bitacora-table", () => ({
+vi.mock("./bitacora-table", () => ({
   rowKey: (row: { source: string; id: string }) => `${row.source}:${row.id}`,
   BitacoraTable: ({ rows }: { rows: unknown[] }) => <table data-testid="bitacora"><tbody><tr><td>{rows.length} filas</td></tr></tbody></table>,
 }))
-vi.mock("../bitacora/export-button", () => ({ CargasExportButton: () => null }))
+vi.mock("./export-button", () => ({ CargasExportButton: () => null }))
 vi.mock("@/components/combustibles/add-fuel-data-button", () => ({ AddFuelDataButton: () => null }))
 vi.mock("@/components/combustibles/fuel-header-actions", () => ({ FuelHeaderActions: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock("@/components/combustibles/fuel-breadcrumbs", () => ({ FuelBreadcrumbs: () => null }))

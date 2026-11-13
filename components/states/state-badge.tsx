@@ -209,6 +209,17 @@ const FUEL_STATE_META: Record<string, StateMeta> = {
   cancelled:   { label: "Anulada",     variant: "danger",  family: "danger"  },
 }
 
+/* ── Estado operacional del vehículo (`fuel_vehicles.operational_status`) ────
+ * Un solo color por estado en Panel operacional, Flota y Mantención: antes
+ * Flota sólo coloreaba «Operativo» y el Panel usaba warning/signal (auditoría
+ * Control operacional 2026-11-13, T6). `inactivo` es el vehículo dado de baja. */
+const FLEET_STATE_META: Record<string, StateMeta> = {
+  operativo:      { label: "Operativo",         variant: "success", family: "success" },
+  mantencion:     { label: "En mantención",     variant: "warning", family: "warning" },
+  fuera_servicio: { label: "Fuera de servicio", variant: "danger",  family: "danger"  },
+  inactivo:       { label: "Inactivo",          variant: "default", family: "neutral" },
+}
+
 /* ── Guía de Despacho Interna (GDI) states ───────────────────────────────── */
 export type DispatchGuideStatus = "draft" | "dispatched" | "partially_received" | "received" | "cancelled"
 
@@ -242,6 +253,7 @@ function getStateMeta(state: string, entity: EntityType): StateMeta {
     case "feedback": return FEEDBACK_ESTADO_META[state as FeedbackEstado] ?? { label: state, variant: "default", family: "neutral" }
     case "ppa":      return PPA_STATE_META[state]                        ?? { label: state, variant: "default", family: "neutral" }
     case "fuel_log": return FUEL_STATE_META[state]                       ?? { label: state, variant: "default", family: "neutral" }
+    case "fleet":    return FLEET_STATE_META[state]                      ?? { label: state, variant: "default", family: "neutral" }
     case "dispatch_guide": return DISPATCH_GUIDE_STATE_META[state as DispatchGuideStatus] ?? { label: state, variant: "default", family: "neutral" }
     default:         return ITEM_STATE_META[state as ItemStatus]          ?? { label: state, variant: "default", family: "neutral" }
   }
@@ -273,7 +285,7 @@ export function StateBadge({
 }
 
 /* ── Exports for external use ─────────────────────────────────────────────── */
-export { ITEM_STATE_META, REQUEST_STATE_META, OC_STATE_META, PPA_STATE_META, FUEL_STATE_META, DISPATCH_GUIDE_STATE_META }
+export { ITEM_STATE_META, REQUEST_STATE_META, OC_STATE_META, PPA_STATE_META, FUEL_STATE_META, FLEET_STATE_META, DISPATCH_GUIDE_STATE_META }
 
 /* ── MetaBadge: vocabulario de estado fuera de las entidades canónicas ────── */
 

@@ -8,7 +8,7 @@ import { catalogFromSlug } from "@/lib/mantencion/catalog-labels"
 import { listCatalogAdminRows } from "@/lib/services/mantencion/catalog-admin"
 import { listMantCatalogs } from "@/lib/services/mantencion/catalogs"
 
-export const metadata: Metadata = { title: "Catálogos de mantención" }
+export const metadata: Metadata = { title: "Marcas y talleres" }
 export const dynamic = "force-dynamic"
 
 export default async function CatalogsPage({ searchParams }: { searchParams: Promise<{ catalogo?: string | string[] }> }) {

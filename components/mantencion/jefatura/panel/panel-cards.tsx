@@ -20,12 +20,14 @@ import { WeeklyChart } from "./weekly-chart"
  * mantención sino la falta del dato, y como barra gris eclipsaban a los demás
  * (112 de 119): van como aviso con enlace, más abajo. «Dado de baja» no cuenta:
  * la flota del panel es la activa.
+ *
+ * «Vencida» tampoco es una barra: su cifra es el tile «Mantenciones vencidas» de
+ * arriba (A5, una cifra en un solo lugar; auditoría 2026-11-13, M4).
  */
-const FLEET_BAR_STATES = ["vencida", "proxima", "al_dia"] as const
+const FLEET_BAR_STATES = ["proxima", "al_dia"] as const
 
 /** Color de la barra de cada estado: los mismos tokens que su etiqueta (D9). */
 const BAR_COLOR: Record<(typeof FLEET_BAR_STATES)[number], string> = {
-  vencida: "var(--color-danger)",
   proxima: "var(--color-warning)",
   al_dia: "var(--color-success)",
 }
@@ -60,8 +62,9 @@ export function FleetCard({ data }: { data: PanelData }) {
   const description = coverage.unknown > 0 && coverage.evaluable > 0
     ? `${coverage.evaluable} de ${plural(active, "equipo activo", "equipos activos")} tienen pauta y lectura para calcular su estado`
     : `${plural(active, "equipo activo", "equipos activos")}, según su pauta y su última lectura`
+  const withOverdue = counts.vencida > 0 ? `${description} · las ${formatNumber(counts.vencida)} vencidas están en el indicador de arriba` : description
   return (
-    <SectionCard title="Estado de la flota" description={description}>
+    <SectionCard title="Estado de la flota" description={withOverdue}>
       {active === 0 ? (
         <EmptyState
           compact
@@ -179,13 +182,13 @@ export function UpcomingCard({ data }: { data: PanelData }) {
                 >
                   <span className="flex items-start justify-between gap-3">
                     <span className="min-w-0 text-sm">
-                      <strong className="whitespace-nowrap font-mono text-[13px] font-semibold text-[var(--color-primary-ink)]">{row.code}</strong>
+                      <strong className="whitespace-nowrap font-mono text-sm font-semibold text-[var(--color-primary-ink)]">{row.code}</strong>
                       {row.plate !== row.code && <span className="whitespace-nowrap font-mono text-xs text-[var(--color-text-muted)]"> · {row.plate}</span>}
                       <span className="block text-xs text-[var(--color-text-muted)]">{row.worksiteName} · {row.scheduleName ?? "Sin pauta"}</span>
                     </span>
                     {row.nextReading != null && (
                       <span className="shrink-0 whitespace-nowrap text-right">
-                        <span className="font-mono text-[13px] tabular-nums text-[var(--color-text)]">{formatReading(row.nextReading, row.unit)}</span>
+                        <span className="font-mono text-sm tabular-nums text-[var(--color-text)]">{formatReading(row.nextReading, row.unit)}</span>
                         <span className="block text-xs text-[var(--color-text-muted)]">{remainingText({ remaining: row.remaining }, row.unit)}</span>
                       </span>
                     )}
@@ -196,7 +199,7 @@ export function UpcomingCard({ data }: { data: PanelData }) {
             ))}
           </ul>
           {/* La tabla sangra hasta el borde de la tarjeta y pierde su marco propio: dentro de una tarjeta, borde sobre borde era un doble marco. */}
-          <TableRoot aria-label="Próximas mantenciones" className="-mx-5 hidden w-auto rounded-none border-0 md:block">
+          <TableRoot aria-label="Próximas mantenciones" framed={false} className="-mx-5 hidden w-auto md:block">
             <Table className="[&_tr>:first-child]:pl-5 [&_tr>:last-child]:pr-5">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -211,17 +214,17 @@ export function UpcomingCard({ data }: { data: PanelData }) {
               <TableBody>
                 {data.upcoming.map((row) => (
                   <TableRow key={row.vehicleId}>
-                    <TableCell className="whitespace-nowrap font-mono text-[13px]">
+                    <TableCell className="whitespace-nowrap font-mono text-sm">
                       <Link href={`/mantencion/equipos/${row.vehicleId}`} className="font-semibold text-[var(--color-primary-ink)] hover:underline focus-visible:underline">{row.code}</Link>
                       {row.plate !== row.code && <div className="text-xs text-[var(--color-text-muted)]">{row.plate}</div>}
                     </TableCell>
                     <TableCell>{row.worksiteName}</TableCell>
                     <TableCell>{row.scheduleName ?? <span className="text-[var(--color-text-muted)]">Sin pauta</span>}</TableCell>
-                    <TableCell className="whitespace-nowrap font-mono text-[13px] tabular-nums">{row.reading != null ? formatReading(row.reading, row.unit) : "—"}</TableCell>
+                    <TableCell className="whitespace-nowrap font-mono text-sm tabular-nums">{row.reading != null ? formatReading(row.reading, row.unit) : "—"}</TableCell>
                     <TableCell className="whitespace-nowrap">
                       {row.nextReading != null ? (
                         <>
-                          <span className="font-mono text-[13px] tabular-nums">{formatReading(row.nextReading, row.unit)}</span>
+                          <span className="font-mono text-sm tabular-nums">{formatReading(row.nextReading, row.unit)}</span>
                           <div className="text-xs text-[var(--color-text-muted)]">{remainingText({ remaining: row.remaining }, row.unit)}</div>
                         </>
                       ) : "—"}
@@ -250,7 +253,10 @@ export function UpcomingCard({ data }: { data: PanelData }) {
 export function WorkshopCard({ data }: { data: PanelData }) {
   const { rows } = data.workshop
   return (
-    <SectionCard title="En taller ahora" description="Correctivas con el equipo aún detenido">
+    <SectionCard
+      title="En taller ahora"
+      description={data.workshop.equipment > 0 ? `${plural(data.workshop.equipment, "equipo detenido", "equipos detenidos")} · correctivas y órdenes de trabajo` : "Correctivas con el equipo aún detenido"}
+    >
       {rows.length === 0 ? (
         <p className="text-sm text-[var(--color-text-muted)]">Ningún equipo en taller.</p>
       ) : (
@@ -264,7 +270,7 @@ export function WorkshopCard({ data }: { data: PanelData }) {
                 className="flex min-h-11 items-start justify-between gap-3 rounded-md px-1 py-2.5 hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--color-primary)]"
               >
                 <span className="min-w-0 text-sm">
-                  <strong className="font-mono text-[13px] font-semibold">{row.code}{row.plate !== row.code ? ` · ${row.plate}` : ""}</strong>
+                  <strong className="font-mono text-sm font-semibold">{row.code}{row.plate !== row.code ? ` · ${row.plate}` : ""}</strong>
                   <span className="line-clamp-2 break-words text-[var(--color-text-muted)]">{row.worksiteName}{row.summary ? ` · ${row.summary}` : ""}</span>
                   {row.reason && <span className="line-clamp-2 break-words text-[var(--color-text-muted)]">Sigue en taller: {row.reason}</span>}
                 </span>
@@ -298,7 +304,7 @@ export function HoursCard({ data }: { data: PanelData }) {
             key: row.worksiteId,
             label: row.worksiteName,
             value: row.hours,
-            href: `/mantencion/registros?tipo=C&estado=vigente&faena=${encodeURIComponent(row.worksiteId)}${data.from ? `&desde=${data.from}` : ""}`,
+            href: `/mantencion/registros?revision=todos&tipo=C&estado=vigente&faena=${encodeURIComponent(row.worksiteId)}${data.from ? `&desde=${data.from}` : ""}`,
           }))}
         />
       )}

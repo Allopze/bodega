@@ -183,16 +183,17 @@ test("siembra de registros propios con fotos reales", async () => {
   }
 })
 
-test("el panel muestra los cuatro indicadores, el gráfico con sus datos y cada uno lleva a su subconjunto", async ({ page }) => {
+test("el panel muestra sus indicadores, el gráfico con sus datos y cada uno lleva a su subconjunto", async ({ page }) => {
   const consoleErrors = trackConsole(page)
   await login(page, JEFE)
   await page.goto("/mantencion/panel")
   await expectPageTitle(page, "Panel de mantención")
 
-  // A1: como máximo cuatro tarjetas de indicador.
-  await expect(page.locator("[data-kpi-card]")).toHaveCount(4)
-  // La correctiva sembrada lleva 3 días sin novedad: el tile de taller avisa «sin actualizar».
-  await expect(page.getByRole("link", { name: /^Equipos en taller/ })).toContainText("sin actualizar")
+  // A1: como máximo cuatro tarjetas de indicador (hoy tres: órdenes por asignar, vencidas y registros).
+  expect(await page.locator("[data-kpi-card]").count()).toBeLessThanOrEqual(4)
+  await expect(page.getByRole("link", { name: /^Órdenes por asignar/ })).toBeVisible()
+  // La correctiva sembrada lleva 3 días sin novedad: «En taller ahora» avisa «Sin actualizar».
+  await expect(page.getByText("Sin actualizar", { exact: true }).first()).toBeVisible()
 
   // Gráfico apilado: se dibuja, tiene nombre accesible y su tabla «Ver datos» repite las cifras.
   await expect(page.getByRole("img", { name: /^Registros por semana/ })).toBeVisible()
@@ -225,9 +226,10 @@ test("el panel muestra los cuatro indicadores, el gráfico con sus datos y cada 
   await page.getByRole("link", { name: /^Mantenciones vencidas/ }).click()
   await expect(page).toHaveURL(/\/mantencion\/equipos\?estado=vencida/)
   await page.goto("/mantencion/panel")
-  await page.getByRole("link", { name: /^Equipos en taller/ }).click()
-  // Lleva a la lista de EQUIPOS en taller (la cifra del tile cuenta equipos, también los retenidos por una OT).
-  await expect(page).toHaveURL(/\/mantencion\/equipos\?.*taller=1/)
+  await page.getByRole("link", { name: /^Órdenes por asignar/ }).click()
+  await expect(page).toHaveURL(/\/mantencion\/ot\?estado=solicitada/)
+  // La lista de EQUIPOS en taller (también los retenidos por una OT) sigue siendo un filtro de Equipos.
+  await page.goto("/mantencion/equipos?taller=1")
   await expect(textoVisible(page, rec.B.code).first()).toBeVisible()
 
   await page.goto("/mantencion/panel")
@@ -236,8 +238,8 @@ test("el panel muestra los cuatro indicadores, el gráfico con sus datos y cada 
 
   // Una barra de la flota lleva a Equipos ya filtrado.
   await page.goto("/mantencion/panel")
-  await page.getByRole("link", { name: /^Vencida: \d+ equipos?\. Ver esos equipos/ }).click()
-  await expect(page).toHaveURL(/\/mantencion\/equipos\?estado=vencida/)
+  await page.getByRole("link", { name: /^Próxima: \d+ equipos?\. Ver esos equipos/ }).click()
+  await expect(page).toHaveURL(/\/mantencion\/equipos\?estado=proxima/)
 
   // El período cambia la URL sin recargar y deja el botón marcado.
   await page.goto("/mantencion/panel")
@@ -262,7 +264,7 @@ test("registros: indicadores con su rango, filtros en la URL y orden por columna
   const consoleErrors = trackConsole(page)
   await login(page, JEFE)
   await page.goto("/mantencion/registros")
-  await expectPageTitle(page, "Registros de mantención")
+  await expectPageTitle(page, "Registros firmados")
   await expect(page.getByRole("heading", { level: 2, name: /^Indicadores · \d+ registros? vigentes? del \d{2}-\d{2}-\d{4} al \d{2}-\d{2}-\d{4}/ })).toBeVisible()
   for (const seeded of [rec.A, rec.B, rec.C, rec.D]) {
     await expect(page.getByRole("link", { name: `Ver el registro ${seeded.folio}` })).toBeVisible()
@@ -273,7 +275,9 @@ test("registros: indicadores con su rango, filtros en la URL y orden por columna
   await expect(tabs.getByRole("link", { name: /^Por revisar \d+$/ })).toBeVisible()
   await expect(tabs.getByRole("link", { name: /^Observados \d+$/ })).toBeVisible()
   await expect(tabs.getByRole("link", { name: /^Revisados \d+$/ })).toBeVisible()
-  await expect(tabs.getByRole("link", { name: "Todos", exact: true })).toHaveAttribute("aria-current", "page")
+  // Abre en «Por revisar» (la primera) y «Todos» es la última, con `revision=todos`.
+  await expect(page).toHaveURL(/revision=pendiente/)
+  await expect(tabs.getByRole("link", { name: /^Por revisar/ })).toHaveAttribute("aria-current", "page")
   await tabs.getByRole("link", { name: /^Observados/ }).click()
   await expect(page).toHaveURL(/revision=observado/)
   // Los cuatro sembrados siguen pendientes: no están en «Observados».
@@ -282,7 +286,8 @@ test("registros: indicadores con su rango, filtros en la URL y orden por columna
   await expect(page).toHaveURL(/revision=pendiente/)
   await expect(page.getByRole("link", { name: `Ver el registro ${rec.A.folio}` })).toBeVisible()
   await tabs.getByRole("link", { name: "Todos", exact: true }).click()
-  await expect(page).not.toHaveURL(/revision=/)
+  await expect(page).toHaveURL(/revision=todos/)
+  await expect(tabs.getByRole("link", { name: "Todos", exact: true })).toHaveAttribute("aria-current", "page")
   await page.getByRole("button", { name: "Más filtros", exact: true }).click()
   await expect(page.getByRole("combobox", { name: "Revisión" })).toHaveCount(0)
   await page.keyboard.press("Escape")
@@ -330,7 +335,7 @@ test("registros: indicadores con su rango, filtros en la URL y orden por columna
 
 test("registros: el Excel trae sus cinco hojas, fechas reales y la autoría «en nombre de»", async ({ page }) => {
   await login(page, JEFE)
-  await page.goto("/mantencion/registros")
+  await page.goto("/mantencion/registros?revision=todos")
   const { workbook, filename } = await download(page, "Exportar Excel")
   expect(filename).toMatch(/^registros-mantencion-\d{4}-\d{2}-\d{2}\.xlsx$/)
   expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(expect.arrayContaining([
@@ -364,7 +369,7 @@ test("registros: el Excel trae sus cinco hojas, fechas reales y la autoría «en
 test("detalle: datos, alertas, firmas y visor de fotos a pantalla completa", async ({ page }) => {
   const consoleErrors = trackConsole(page)
   await login(page, JEFE)
-  await page.goto("/mantencion/registros")
+  await page.goto("/mantencion/registros?revision=todos")
   await page.getByRole("link", { name: `Ver el registro ${rec.A.folio}` }).click()
   // Desde la lista, el detalle recuerda de dónde viene (`?lista=`) para ofrecer anterior y siguiente.
   await expect(page).toHaveURL(new RegExp(`/mantencion/registros/${rec.A.id}\\?lista=`))
@@ -460,7 +465,7 @@ test("PDF: páginas, folio, firma de jefatura pendiente y el mismo archivo en la
 test("Excel de un solo registro desde su detalle", async ({ page }) => {
   await login(page, JEFE)
   await page.goto(`/mantencion/registros/${rec.D.id}`)
-  const { workbook, filename } = await download(page, "", { trigger: "Exportar", item: "Excel" })
+  const { workbook, filename } = await download(page, "Exportar Excel")
   expect(filename).toContain(rec.D.folio)
   expect(workbook.getWorksheet("Registros")!.rowCount).toBe(2)
 })
@@ -554,9 +559,9 @@ test("anular exige motivo, ofrece el registro corregido y desaparece de los cál
   await page.goto("/mantencion/panel?periodo=todo")
   expect(await kpiNumber(page, /^Registros · /)).toBe(before - 1)
   // …la lista lo conserva marcado, pero «vigentes» ya no lo trae.
-  await page.goto("/mantencion/registros")
+  await page.goto("/mantencion/registros?revision=todos")
   await expect(page.getByRole("link", { name: `Ver el registro ${rec.A.folio}` })).toBeVisible()
-  await page.goto("/mantencion/registros?estado=vigente")
+  await page.goto("/mantencion/registros?revision=todos&estado=vigente")
   await expect(page.getByRole("link", { name: `Ver el registro ${rec.A.folio}` })).toHaveCount(0)
   await page.goto("/mantencion/registros?estado=anulado")
   await expect(page.getByRole("link", { name: `Ver el registro ${rec.A.folio}` })).toBeVisible()

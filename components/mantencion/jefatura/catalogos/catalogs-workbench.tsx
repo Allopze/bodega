@@ -32,7 +32,7 @@ function columnsFor(catalog: MantCatalogKey): ColumnDef[] {
     { key: "isActive", label: "Estado", sortable: true, sortValue: (row: Row) => (row.isActive ? 0 : 1) },
   ]
   // Los aceites no se cuentan: una correctiva guarda el nombre elegido, no una referencia a la fila.
-  if (catalog !== "oils") columns.push({ key: "usage", label: "Usos", sortable: true, sortValue: (row: Row) => row.usage ?? 0 })
+  if (catalog !== "oils") columns.push({ key: "usage", label: "En uso", sortable: true, sortValue: (row: Row) => row.usage ?? 0 })
   columns.push({ key: "actions", label: "Acciones", toggleable: false })
   return columns
 }
@@ -88,9 +88,9 @@ export function CatalogsWorkbench({ catalog, rows, counts, canEdit = true }: {
   return (
     <>
       <PageHeader
-        title="Catálogos de mantención"
+        title="Marcas y talleres"
         description="Marcas, talleres, conductores, tipos de trabajo y aceites que se ofrecen en equipos, pautas y en la app del mecánico."
-        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Catálogos" }]}
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Marcas y talleres" }]}
         // Con el catálogo vacío el botón es el llamado del estado vacío: dos iguales a la vista no suman.
         actions={hasRows && canEdit ? <Button size="sm" onClick={create}><Plus size={14} aria-hidden />{labels.create}</Button> : undefined}
       />

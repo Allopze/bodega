@@ -7,8 +7,8 @@ import { LPH_BAND_PCT, buildLphComparison, describeLphComparison, type LphCompar
 import type { LitersPerHourComparisonRow } from "@/lib/combustibles/control/queries/idle-comparison"
 import type { IdleTopDay } from "@/lib/combustibles/control/queries/idle"
 import { countOf, formatDate } from "@/lib/utils"
-import { LphScatterChartLazy } from "../../control/_charts/idle-charts-lazy"
-import { monthText, numberText, pctText } from "../../control/_components/format"
+import { LphScatterChartLazy } from "../_components/charts/idle-charts-lazy"
+import { monthText, numberText, pctText } from "../_components/format"
 
 const lph = (value: number | null) => (value === null ? "—" : `${numberText(value, 2)} L/h`)
 
@@ -18,7 +18,7 @@ export function LitersPerHourTable({ rows }: { rows: LitersPerHourComparisonRow[
     return <p className="text-sm text-[var(--color-text-muted)]">No hay telemetría en este período para comparar con las cargas.</p>
   }
   return (
-    <TableRoot stickyHeader aria-label="L/h de telemetría frente a L/h de cargas">
+    <TableRoot framed={false} stickyHeader aria-label="L/h de telemetría frente a L/h de cargas">
       <Table>
         <TableHeader>
           <TableRow>
@@ -145,7 +145,7 @@ export function TopIdleDaysTable({ rows }: { rows: IdleTopDay[] }) {
     return <p className="text-sm text-[var(--color-text-muted)]">Ningún día del período tiene al menos 1 hora de funcionamiento.</p>
   }
   return (
-    <TableRoot aria-label="Días con mayor porcentaje de motor en vacío">
+    <TableRoot framed={false} aria-label="Días con mayor porcentaje de motor en vacío">
       <Table>
         <TableHeader>
           <TableRow>

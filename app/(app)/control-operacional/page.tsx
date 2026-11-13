@@ -1,14 +1,7 @@
-import type { ReactNode } from "react"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import {
-  ArrowRight,
-  Certificate,
-  GasPump,
-  Truck,
-  Wrench,
-} from "@phosphor-icons/react/dist/ssr"
+import { ArrowRight } from "@phosphor-icons/react/dist/ssr"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -22,7 +15,6 @@ import { SummaryBar } from "@/components/ui/summary-bar"
 import { can, requireAuth } from "@/lib/auth/can"
 import { getFuelInboxPendingForSession } from "@/lib/combustibles/inbox/queries"
 import { getTaeCopecReconciliation } from "@/lib/combustibles/tae-copec-reconciliation"
-import { getDriverLicenseAttention } from "@/lib/services/driver-licenses"
 import {
   getOperationalControlHub,
   resolveOperationalControlPeriod,
@@ -37,7 +29,6 @@ import {
   stoppedTile,
   workOrdersTile,
   type AttentionTile,
-  type AttentionTileKey,
   type FuelPendingCounts,
 } from "./attention-tiles"
 import { OperationalAssetsTable } from "./operational-assets-table"
@@ -49,13 +40,6 @@ export const metadata: Metadata = { title: "Panel operacional" }
 
 /** Ninguna de las cuatro colas de «Por revisar» se pudo contar: el tile lo dice en vez de pintar 0. */
 const NO_FUEL_COUNTS: FuelPendingCounts = { carga: null, caso: null, patente: null, pedido: null }
-
-const ATTENTION_ICONS: Record<AttentionTileKey, ReactNode> = {
-  stopped: <Truck size={16} weight="duotone" />,
-  workOrders: <Wrench size={16} weight="duotone" />,
-  documents: <Certificate size={16} weight="duotone" />,
-  fuel: <GasPump size={16} weight="duotone" />,
-}
 
 /** Una frase para la conciliación: no pinta un cero ni omite una excepción aceptada. */
 function reconciliationText(reconciliation: OperationalReconciliationHealth): string {
@@ -104,11 +88,11 @@ export default async function OperationalControlPage({
   const canViewFuelSources = can(session, "combustibles:import")
     || can(session, "combustibles:tae_import")
     || can(session, "combustibles:sync_integrations")
-  // Cruces de otros subdominios: licencias (no se exponen sin su capacidad) y
-  // cobertura TAE/TCT del período (requiere `combustibles:tae_view`).
-  const canViewLicenses = can(session, "flota:manage_licenses")
+  // Cruce de otro subdominio: cobertura de los dos canales de Copec del período
+  // (requiere `combustibles:tae_view`). Las licencias de conducir ya no se
+  // cuentan aquí: viven en Conductores.
   const canViewTae = can(session, "combustibles:tae_view")
-  const [data, fuelPending, sourceHealth, taeCoverage, licenseAttention] = await Promise.all([
+  const [data, fuelPending, sourceHealth, taeCoverage] = await Promise.all([
     getOperationalControlHub(session, period),
     // Las cuatro colas de «Por revisar», las mismas que cuenta el menú y la
     // bandeja: cada tipo cae a null por separado y el tile lo dice. El `catch`
@@ -125,9 +109,6 @@ export default async function OperationalControlPage({
           .then((result) => result.summary)
           .catch(() => null)
       : Promise.resolve(null),
-    canViewLicenses
-      ? getDriverLicenseAttention(session).catch(() => null)
-      : Promise.resolve(null),
   ])
 
   // El período «por defecto» es el que resuelve el servicio sin parámetros, no
@@ -139,7 +120,7 @@ export default async function OperationalControlPage({
   // El período no va en la descripción: la cabecera la corta a dos líneas y el
   // rango quedaba truncado a mitad de fecha. Lo dice el selector del header y el
   // rótulo de «Desempeño del período».
-  const headerDescription = "Qué requiere atención hoy en flota y combustible, y el desempeño de los activos en el período elegido."
+  const headerDescription = "Qué requiere atención hoy en flota y combustible, y el desempeño de los vehículos en el período elegido."
 
   const { canViewFleet, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment, canViewWorkOrders, canViewPurchaseCosts, canViewMaintenance } = data.permissions
   // Secciones que pueden degradarse: documentos, ajustes de flota y GPS (sólo
@@ -166,8 +147,6 @@ export default async function OperationalControlPage({
   const performanceStats = buildPerformanceStats(data.metrics, {
     canViewFleet,
     canViewWorkOrders,
-    licenseAttention,
-    taeCoverage,
   })
   const glossary = buildPerformanceGlossary({
     canViewFleet,
@@ -177,7 +156,6 @@ export default async function OperationalControlPage({
     canViewCosts,
     canViewWorkOrders,
     canViewPurchaseCosts,
-    canViewLicenses,
     canViewTaeCoverage: canViewTae,
     canViewMaintenance,
   })
@@ -193,17 +171,7 @@ export default async function OperationalControlPage({
             { label: "Panel operacional" },
           ]} />
         }
-        actions={
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <PeriodControl
-              mode="range"
-              from={period.from}
-              to={period.to}
-              defaultRange={{ ...defaultPeriod, label: "los últimos 90 días" }}
-            />
-            <OperationalExportButton period={period} />
-          </div>
-        }
+        actions={<OperationalExportButton period={period} />}
       />
 
       {data.degradedSources.length > 0 && (
@@ -212,19 +180,18 @@ export default async function OperationalControlPage({
         </div>
       )}
 
+      {/* Lo de hoy va arriba y con su propio encabezado: el selector de período
+          vive más abajo, en la zona que gobierna, así que ninguna nota tiene que
+          avisar que estas cifras no cambian con él. */}
       {attentionTiles.length > 0 && (
         <section aria-labelledby="atencion-ahora" className="mb-5">
-          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
-            <h2 id="atencion-ahora" className="text-eyebrow">Requiere atención ahora</h2>
-            <p className="text-xs text-[var(--color-text-subtle)]">
-              Foto de hoy: el período elegido no cambia estas cifras.
-            </p>
-          </div>
+          <h2 id="atencion-ahora" className="text-eyebrow mb-2">Requiere atención ahora</h2>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {attentionTiles.map((tile) => (
+              // Sin ícono: la etiqueta ya dice de qué es la cifra (auditoría 2026-11-13, P6).
               <KpiCard
                 key={tile.key}
-                icon={ATTENTION_ICONS[tile.key]}
+                icon={null}
                 label={tile.label}
                 value={tile.value}
                 valueKind={tile.valueKind}
@@ -240,10 +207,10 @@ export default async function OperationalControlPage({
       {canViewFleet && stateMismatchAssets.length > 0 && (
         <div className="mb-4">
           <Callout tone="warning">
-            {stateMismatchAssets.length === 1 ? "1 equipo tiene" : `${stateMismatchAssets.length} equipos tienen`} un
+            {stateMismatchAssets.length === 1 ? "1 vehículo tiene" : `${stateMismatchAssets.length} vehículos tienen`} un
             estado distinto entre su ficha y el último intervalo operacional:{" "}
             {/* Sin un filtro de «discrepancia» en /flota, el aviso nombra los
-                equipos para que se puedan buscar por su código. */}
+                vehículos para que se puedan buscar por su código. */}
             {stateMismatchAssets.slice(0, 6).map((asset) => asset.code).join(", ")}
             {stateMismatchAssets.length > 6 && ` y ${stateMismatchAssets.length - 6} más`}.{" "}
             <Link href="/flota?revision=estado" className="underline underline-offset-4">Revisar en Vehículos</Link>.
@@ -251,32 +218,22 @@ export default async function OperationalControlPage({
         </div>
       )}
 
-      {revision === "medidor-gps" && (
-        <div className="mb-4">
-          <Callout tone="warning">
-            Mostrando {visibleAssets.length === 1 ? "1 equipo" : `${visibleAssets.length} equipos`} con discrepancia
-            entre la última carga y la lectura GPS del mismo medidor.{" "}
-            <Link
-              href={`/control-operacional?desde=${period.from}&hasta=${period.to}`}
-              className="underline underline-offset-4"
-            >
-              Quitar filtro
-            </Link>.
-          </Callout>
-        </div>
-      )}
-
-      <section aria-labelledby="desempeno-periodo" className="mb-4 space-y-3">
-        <div>
-          <h2 id="desempeno-periodo" className="text-eyebrow">Desempeño del período</h2>
-          <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
-            {periodLabel}
-            {isDefaultPeriod && " · últimos 90 días"}
-          </p>
-          <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
-            Este panel mide el período seleccionado. El Tablero usa el mes calendario y sus tendencias
-            de combustible, 6 meses fijos; las cifras no son comparables entre pantallas.
-          </p>
+      {/* Desde aquí, todo depende del período elegido. */}
+      <section aria-labelledby="desempeno-periodo" className="mb-4 space-y-3 border-t border-[var(--color-border)] pt-4">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+          <div>
+            <h2 id="desempeno-periodo" className="text-eyebrow">Desempeño del período</h2>
+            <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
+              {periodLabel}
+              {isDefaultPeriod && " · últimos 90 días"}
+            </p>
+          </div>
+          <PeriodControl
+            mode="range"
+            from={period.from}
+            to={period.to}
+            defaultRange={{ ...defaultPeriod, label: "los últimos 90 días" }}
+          />
         </div>
 
         {invalidRange && (
@@ -285,13 +242,22 @@ export default async function OperationalControlPage({
           </Callout>
         )}
 
-        <SummaryBar stats={performanceStats} />
+        {performanceStats.length > 0 && (
+          // Una tira de texto, no tiles: tres cifras que no mueven ninguna decisión
+          // por sí solas no merecen una fila de tarjetas (A1). `justify-start`
+          // porque la tira compacta se alinea a la derecha para el TopBar.
+          <SummaryBar compact stats={performanceStats} className="justify-start text-sm" />
+        )}
 
         {glossary.length > 0 && (
           <details className="rounded-[var(--radius-lg)] border border-[var(--color-border)] px-3.5 py-2.5">
             <summary className="cursor-pointer list-none text-sm font-medium text-[var(--color-text)] [&::-webkit-details-marker]:hidden">
               Cómo se calculan estas cifras
             </summary>
+            <p className="mt-3 text-xs leading-relaxed text-[var(--color-text-muted)]">
+              Este panel mide el período que elijas. El Tablero usa el mes calendario y, en combustible, seis meses
+              fijos: las cifras no son comparables entre pantallas.
+            </p>
             <dl className="mt-3 grid gap-3 md:grid-cols-2">
               {glossary.map((entry) => (
                 <div key={entry.key}>
@@ -316,19 +282,37 @@ export default async function OperationalControlPage({
           canViewCapa={canViewCapa}
           canViewInspections={canViewInspections}
           degradedSources={data.degradedSources}
+          channelCoverage={taeCoverage}
         />
       )}
 
       {/* `grid-cols-1` (= `minmax(0, 1fr)`) bajo xl: con la pista `auto` la
-          tabla de activos —que desplaza dentro de su `TableRoot`— ensanchaba
+          tabla de vehículos —que desplaza dentro de su `TableRoot`— ensanchaba
           la columna 296 px fuera del pozo a 768 y 1024 px. */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Card>
           <CardHeader>
-            <CardTitle as="h2">Activos y estado operacional</CardTitle>
+            <CardTitle as="h2">Vehículos y estado operacional</CardTitle>
           </CardHeader>
           <CardContent>
+            {revision === "medidor-gps" && (
+              <div className="mb-3">
+                <Callout tone="warning">
+                  Mostrando {visibleAssets.length === 1 ? "1 vehículo" : `${visibleAssets.length} vehículos`} con discrepancia
+                  entre la última carga y la lectura GPS del mismo medidor.{" "}
+                  <Link
+                    href={`/control-operacional?desde=${period.from}&hasta=${period.to}`}
+                    className="underline underline-offset-4"
+                  >
+                    Quitar filtro
+                  </Link>.
+                </Callout>
+              </div>
+            )}
             <OperationalAssetsTable
+              // En la revisión de medidores la columna «Discrepancia GPS» es el
+              // motivo de la lista: se remonta para que arranque visible.
+              key={revision ?? "todos"}
               assets={visibleAssets}
               canViewCosts={canViewCosts}
               canViewInspections={canViewInspections}
@@ -338,6 +322,7 @@ export default async function OperationalControlPage({
               canViewWorkOrders={canViewWorkOrders}
               canViewPurchaseCosts={canViewPurchaseCosts}
               canViewMaintenance={canViewMaintenance}
+              showMeterMismatch={revision === "medidor-gps"}
             />
             {canViewServiceEquipment && serviceEquipmentCount > 0 && (
               <p className="mt-3 text-xs text-[var(--color-text-muted)]">
@@ -355,6 +340,8 @@ export default async function OperationalControlPage({
               <CardTitle as="h2">Fuentes de combustible</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* El texto y la insignia no dicen lo mismo dos veces: la frase cuenta,
+                  la insignia da el veredicto. */}
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-medium">
                   {sourceHealth.pending.length > 0
@@ -362,13 +349,15 @@ export default async function OperationalControlPage({
                     : sourceHealth.total === 0
                       ? "Sin fuentes visibles"
                       : sourceHealth.ready
-                        ? "Al día"
-                        : "Sin datos"}
+                        ? "Todas reciben datos"
+                        : "Sin datos del período"}
                 </span>
-                <MetaBadge meta={{
-                  label: sourceHealth.ready ? "Al día" : sourceHealth.pending.length > 0 ? "Revisar" : "Sin datos",
-                  variant: sourceHealth.ready ? "success" : sourceHealth.pending.length > 0 ? "signal" : "neutral",
-                }} />
+                {sourceHealth.total > 0 && (
+                  <MetaBadge meta={{
+                    label: sourceHealth.ready ? "Al día" : sourceHealth.pending.length > 0 ? "Revisar" : "Sin datos",
+                    variant: sourceHealth.ready ? "success" : sourceHealth.pending.length > 0 ? "signal" : "neutral",
+                  }} />
+                )}
               </div>
 
               {sourceHealth.lastUpdateAt && (

@@ -42,7 +42,7 @@ export function AjustesNav({ items }: { items: AjustesNavItem[] }) {
                   {item.external ? <ArrowSquareOut className="h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
                   {item.external ? <span className="sr-only md:hidden">(abre otro catálogo)</span> : null}
                 </span>
-                {item.hint ? <span className="hidden truncate text-xs font-normal text-[var(--color-text-subtle)] md:block">{item.hint}</span> : null}
+                {item.hint ? <span className="whitespace-nowrap text-xs font-normal text-[var(--color-text-subtle)] md:truncate md:whitespace-normal">{item.hint}</span> : null}
               </Link>
             </li>
           )

@@ -5,6 +5,7 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { chartTooltipStyle } from "@/lib/chart-palette"
 import { formatCompactCLP, formatCompactQty, formatPricePerLiter } from "@/lib/utils"
 import { useChartMotion } from "@/components/ui/chart-interactions"
+import { AXIS_TICK } from "./_shared/chart-shared"
 
 interface ChartDataPoint {
   group: string | null
@@ -54,10 +55,10 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-          <XAxis dataKey="month" className="text-xs" tick={{ fill: "var(--color-text-muted)" }} />
+          <XAxis dataKey="month" className="text-xs" tick={AXIS_TICK} />
           {/* Eje izquierdo = Monto (cuánto se gastó); derecho = Precio $/L (por qué). */}
-          <YAxis yAxisId="amount" className="text-xs" tickFormatter={formatCompactCLP} tick={{ fill: AMOUNT_INK }} width={60} />
-          <YAxis yAxisId="price" orientation="right" className="text-xs" tickFormatter={(v) => formatPricePerLiter(Number(v))} tick={{ fill: PRICE_INK }} width={68} domain={[0, "auto"]} />
+          <YAxis yAxisId="amount" className="text-xs" tickFormatter={formatCompactCLP} tick={{ ...AXIS_TICK, fill: AMOUNT_INK }} width={60} />
+          <YAxis yAxisId="price" orientation="right" className="text-xs" tickFormatter={(v) => formatPricePerLiter(Number(v))} tick={{ ...AXIS_TICK, fill: PRICE_INK }} width={68} domain={[0, "auto"]} />
           {/* `filterNull={false}`: recharts omite del tooltip las series nulas, y el mes sin litros perdería su fila de precio. */}
           <Tooltip
             contentStyle={chartTooltipStyle()}
@@ -98,8 +99,8 @@ export function CategoryBarChart({ data, title, onSelect, metric = "amount" }: {
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 10, left: 0, bottom: 5 }} title={onSelect ? `${title}. Selecciona una barra para filtrar el panel por esta selección.` : title}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-          <XAxis type="number" className="text-xs" tickFormatter={metric === "amount" ? formatCompactCLP : (value) => `${formatCompactQty(Number(value))} L`} tick={{ fill: "var(--color-text-muted)" }} />
-          <YAxis type="category" dataKey="name" width={120} className="text-xs" tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
+          <XAxis type="number" className="text-xs" tickFormatter={metric === "amount" ? formatCompactCLP : (value) => `${formatCompactQty(Number(value))} L`} tick={AXIS_TICK} />
+          <YAxis type="category" dataKey="name" width={120} className="text-xs" tick={AXIS_TICK} />
           <Tooltip
             contentStyle={chartTooltipStyle()}
             itemStyle={TOOLTIP_ITEM_STYLE}

@@ -9,9 +9,9 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Pagos"
+        title="Facturas y pagos"
         description="Facturas de combustible con su neto, IEC e IVA"
-        breadcrumb={<FuelBreadcrumbs items={[{ label: "Pagos" }]} />}
+        breadcrumb={<FuelBreadcrumbs items={[{ label: "Facturas y pagos" }]} />}
       />
       <SectionNavSkeleton tabs={2} />
       <div className="mb-4 space-y-2">

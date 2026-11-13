@@ -21,9 +21,10 @@ import { useOperation } from "@/lib/hooks/use-operation"
 import { toast } from "@/lib/toast"
 import { formatDateTime, formatQty } from "@/lib/utils"
 import type { CopecCoverageStatusView, CopecSyncStateView } from "@/lib/combustibles/copec-sync"
+import { COPEC_CHANNEL_SHORT_LABELS } from "@/lib/combustibles/source-labels"
 import { resolveCopecPeriodWithIssuesAction, resolveCopecRejectionAction } from "./copec-review-actions"
 
-const CHANNEL_LABEL: Record<"TCT" | "TAE", string> = { TCT: "Tarjetas de equipo", TAE: "Abastecimiento TAE" }
+const CHANNEL_LABEL = COPEC_CHANNEL_SHORT_LABELS
 const PRODUCT_LABEL: Record<"diesel" | "bluemax", string> = { diesel: "Diésel", bluemax: "BlueMax" }
 
 function monthLabel(monthKey: string): string {

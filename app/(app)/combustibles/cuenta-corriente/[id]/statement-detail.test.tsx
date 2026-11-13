@@ -70,6 +70,22 @@ describe("StatementDetail", () => {
     expect(row).toHaveAttribute("href", "/combustibles/cargas/factura/load-1")
     expect(screen.getByText("CA-09 · AA-BB-11")).toBeInTheDocument()
   })
+
+  it("la tabla de cargas va sin marco propio dentro de su tarjeta (no una tarjeta dentro de otra)", () => {
+    render(<StatementDetail statement={statement} today="2026-10-30" />)
+
+    const region = screen.getByRole("region", { name: "Cargas del estado de cuenta" })
+    expect(region.className).not.toMatch(/\bborder\b/)
+    expect(region.className).not.toMatch(/rounded-/)
+  })
+
+  it("sin cargas dice qué significa y lleva a las facturas, en vez de una cabecera sola", () => {
+    render(<StatementDetail statement={{ ...statement, loads: [] }} today="2026-10-30" />)
+
+    expect(screen.getByText("Este estado de cuenta no tiene cargas")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Ver facturas" })).toHaveAttribute("href", "/combustibles/pagos")
+    expect(screen.queryByRole("columnheader", { name: "N.º factura" })).toBeNull()
+  })
 })
 
 describe("AddPaymentDialog", () => {

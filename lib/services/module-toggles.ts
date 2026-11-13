@@ -58,11 +58,18 @@ interface ToggleableNavItem {
  * gobierna el interruptor de GRD, como antes.
  */
 export function toggleableNavItems<T extends ToggleableNavItem>(items: readonly T[]): T[] {
-  return items.flatMap((item) => [
-    item,
-    ...((item.children ?? []) as T[]).filter((child) =>
-      child.href !== item.href && !child.href.startsWith(`${item.href}/`)),
-  ])
+  return items.flatMap((item) => {
+    const children = (item.children ?? []) as T[]
+    // Un contenedor del menú («Configuración» en Mantención y Combustible) no es
+    // un submódulo: no tiene permisos propios y su ruta sólo redirige al primer
+    // hijo visible. Listarlo daba un interruptor que no apagaba nada; cada hijo
+    // conserva el suyo.
+    if (children.length > 0 && (item.permissions?.length ?? 0) === 0) return children
+    return [
+      item,
+      ...children.filter((child) => child.href !== item.href && !child.href.startsWith(`${item.href}/`)),
+    ]
+  })
 }
 
 const NAV_ROUTE_TARGETS = (registry as readonly {

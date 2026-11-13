@@ -147,32 +147,48 @@ const FUEL_KIND_PHRASES: Record<FuelInboxKind, { singular: string; plural: strin
   pedido: { singular: "pedido de revisión", plural: "pedidos de revisión", label: "Pedidos de revisión" },
 }
 
+/** Las colas que una persona resuelve con un gesto; los casos abiertos son seguimiento y van aparte. */
+const FUEL_ACTION_KINDS = ["carga", "patente", "pedido"] as const satisfies readonly FuelInboxKind[]
+
+/** El seguimiento de casos abiertos: en prod son mayormente meses cerrados, no trabajo del día. */
+const FUEL_FOLLOW_UP_PHRASE = { singular: "caso en seguimiento", plural: "casos en seguimiento" }
+
 /**
- * Lo que espera a una persona en «Por revisar»: las cuatro colas, sin período, la
- * misma cifra del menú (y la del «Todo» de la bandeja mientras su período llegue
- * al último mes con datos). Un tipo cuya consulta falló se dice, no se suma como
- * 0: con uno caído el valor es «Sin dato», nunca un total parcial.
+ * Lo que espera a una persona en «Por revisar» (las cuatro colas, sin período).
+ *
+ * La cifra principal es lo que se resuelve ahora: cargas por decidir, patentes
+ * sin vincular y pedidos de revisión. Los casos abiertos van en el detalle con
+ * su nombre («482 casos en seguimiento»): sumarlos escondía 10 cargas del mes
+ * detrás de un 492 que casi todo era histórico (auditoría 2026-11-13, P2). Un
+ * tipo cuya consulta falló se dice, no se suma como 0: con uno caído el valor es
+ * «Sin dato», nunca un total parcial.
  */
 export function fuelReviewTile(counts: FuelPendingCounts): AttentionTile {
   const label = "Combustible por revisar"
   const failed = FUEL_INBOX_KINDS.filter((kind) => counts[kind] === null)
   if (failed.length === FUEL_INBOX_KINDS.length) return unavailable("fuel", label)
 
-  // Las partes en cero no se nombran; las que fallaron, sí.
-  const parts = FUEL_INBOX_KINDS.flatMap((kind) => {
+  // Las partes en cero no se nombran; las que fallaron, sí. Las colas de acción van antes que el seguimiento.
+  const phraseOf = (kind: FuelInboxKind) => {
     const n = counts[kind]
     const phrase = FUEL_KIND_PHRASES[kind]
     if (n === null) return [`${phrase.label}: ${NOT_COMPUTED.toLowerCase()}`]
-    return n > 0 ? [countOf(n, phrase.singular, phrase.plural)] : []
-  })
+    if (n === 0) return []
+    return [kind === "caso" ? countOf(n, FUEL_FOLLOW_UP_PHRASE.singular, FUEL_FOLLOW_UP_PHRASE.plural) : countOf(n, phrase.singular, phrase.plural)]
+  }
+  const parts = [...FUEL_ACTION_KINDS.flatMap(phraseOf), ...phraseOf("caso")]
   if (failed.length > 0) return unavailable("fuel", label, parts.join(" · "))
   if (parts.length === 0) {
     return { key: "fuel", label, value: "Al día", valueKind: "text", detail: "Nada espera a una persona", tone: "neutral", href: ATTENTION_HREFS.fuel }
   }
+  const actionable = FUEL_ACTION_KINDS.reduce((sum, kind) => sum + (counts[kind] ?? 0), 0)
+  if (actionable === 0) {
+    return { key: "fuel", label, value: "Nada por decidir", valueKind: "text", detail: parts.join(" · "), tone: "signal", href: ATTENTION_HREFS.fuel }
+  }
   return {
     key: "fuel",
     label,
-    value: FUEL_INBOX_KINDS.reduce((sum, kind) => sum + (counts[kind] ?? 0), 0),
+    value: actionable,
     valueKind: "number",
     detail: parts.join(" · "),
     tone: "signal",

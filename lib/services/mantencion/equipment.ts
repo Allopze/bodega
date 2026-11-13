@@ -14,12 +14,11 @@ import {
   EQUIPMENT_FIELD_LABELS, diffEquipmentFields, summarizeChanges, writeEquipmentHistory, type EquipmentFields, type MantActor,
 } from "./equipment-history"
 import {
-  equipmentFailure, loadEquipmentCurrent, resolveEquipment,
+  NEW_WORKSITE, equipmentFailure, loadEquipmentCurrent, resolveEquipment,
   type EquipmentCurrent, type EquipmentInput, type EquipmentResult, type FieldErrors, type ResolvedEquipment, type VehicleIdentity,
 } from "./equipment-resolve"
-import { resolveOrCreateWorksite } from "./worksites"
 
-export { NEW_WORKSITE, countEquipmentRecords } from "./equipment-resolve"
+export { NEW_WORKSITE, countEquipmentRecords, hasMaintenanceProfile } from "./equipment-resolve"
 export type { EquipmentCurrent, EquipmentInput, EquipmentResult, FieldErrors, ResolvedEquipment } from "./equipment-resolve"
 
 /**
@@ -35,8 +34,12 @@ export type { EquipmentCurrent, EquipmentInput, EquipmentResult, FieldErrors, Re
 const PLATE_UNIQUE = "fuel_vehicles_plate_unique"
 /** PK del perfil: el vehículo ya entró a la mantención (dos «incorporar» a la vez). */
 const PROFILE_PK = "mant_equipment_profiles_pkey"
-/** Quien no ve todas las faenas tampoco puede crear una. */
-const NEW_WORKSITE_OUT_OF_SCOPE = "No puedes crear faenas nuevas: elige una de tus faenas."
+/**
+ * El formulario de equipo no crea faenas: el equipo se asigna a una que ya existe. Antes ofrecía «Nueva faena…» y,
+ * tras la unificación de faenas, reabría el riesgo de duplicados («Santa Fe» frente a «Santa Fé»). Una faena nueva se
+ * crea en Administración › Faenas. (La importación desde Excel conserva su propia vía, con casilla de confirmación.)
+ */
+const NEW_WORKSITE_NOT_ALLOWED = "No puedes crear faenas nuevas desde un equipo: elige una de las faenas existentes. Las faenas nuevas se crean en Administración › Faenas."
 
 /**
  * Traduce una violación única al campo que la causó. Atribuir toda violación a
@@ -161,18 +164,12 @@ export async function createEquipment(
   input: EquipmentInput,
 ): Promise<EquipmentResult<{ vehicleId: string; incorporated: boolean }>> {
   const scope = actorEquipmentScope(actor)
+  if (input.worksiteId === NEW_WORKSITE) return equipmentFailure({ worksiteId: NEW_WORKSITE_NOT_ALLOWED })
   try {
     return await db.transaction(async (tx) => {
-      // Sólo puede crear una faena nueva quien ve todas: una faena fuera de su
-      // alcance no se puede administrar después.
-      const resolved = await resolveEquipment(tx, input, {
-        current: null,
-        createWorksite: scope === "all"
-          ? (name) => resolveOrCreateWorksite(tx, { typedName: name, actor: { userId: actor.userId, email: actor.email } })
-          : undefined,
-      })
+      const resolved = await resolveEquipment(tx, input, { current: null })
       if (!resolved.ok) return equipmentFailure(resolved.fieldErrors)
-      if (!resolved.value.worksite.id) return equipmentFailure({ worksiteId: NEW_WORKSITE_OUT_OF_SCOPE })
+      if (!resolved.value.worksite.id) return equipmentFailure({ worksiteId: NEW_WORKSITE_NOT_ALLOWED })
       if (!isWorksiteInScope(scope, resolved.value.worksite.id)) return equipmentFailure({ worksiteId: EQUIPMENT_OUT_OF_SCOPE })
       // Incorporar un vehículo de la flota también lo puede trasladar: su faena ACTUAL
       // tiene que ser del alcance de quien lo incorpora (auditoría I-2).
@@ -309,6 +306,7 @@ export async function updateEquipment(
   status: EquipmentStatusInput,
 ): Promise<EquipmentResult<{ changed: boolean }>> {
   const scope = actorEquipmentScope(actor)
+  if (input.worksiteId === NEW_WORKSITE) return equipmentFailure({ worksiteId: NEW_WORKSITE_NOT_ALLOWED })
   try {
     return await db.transaction(async (tx) => {
       const current = await loadEquipmentCurrent(tx, vehicleId)
@@ -318,15 +316,9 @@ export async function updateEquipment(
       if (!status.active && current.active && !isValidReason(status.retiredReason)) {
         return equipmentFailure({ retiredReason: reasonRequiredMessage("el motivo de la baja") })
       }
-      const resolved = await resolveEquipment(tx, input, {
-        current,
-        keepWorksiteId: current.worksiteId,
-        createWorksite: scope === "all"
-          ? (name) => resolveOrCreateWorksite(tx, { typedName: name, actor: { userId: actor.userId, email: actor.email } })
-          : undefined,
-      })
+      const resolved = await resolveEquipment(tx, input, { current, keepWorksiteId: current.worksiteId })
       if (!resolved.ok) return equipmentFailure(resolved.fieldErrors)
-      if (!resolved.value.worksite.id) return equipmentFailure({ worksiteId: NEW_WORKSITE_OUT_OF_SCOPE })
+      if (!resolved.value.worksite.id) return equipmentFailure({ worksiteId: NEW_WORKSITE_NOT_ALLOWED })
       if (!isWorksiteInScope(scope, resolved.value.worksite.id)) return equipmentFailure({ worksiteId: EQUIPMENT_OUT_OF_SCOPE })
       const edited = await applyUpdate(tx, actor, current, resolved.value, "update")
       let statusChanged = false

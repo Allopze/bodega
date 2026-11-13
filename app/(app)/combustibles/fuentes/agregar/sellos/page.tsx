@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
-import { TaeImportReportForm } from "../../../tae/importar/tae-import-report-form"
+import { TaeImportReportForm } from "./tae-import-report-form"
 
 export const metadata: Metadata = { title: "Agregar histórico de sellos" }
 

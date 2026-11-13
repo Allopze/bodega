@@ -1,9 +1,9 @@
 import { ExportButton } from "@/components/ui/export-button"
 import { PERFORMANCE_UNIT_LABELS, type PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import type { Crosstab } from "@/lib/combustibles/control/view-helpers"
-import { OverviewRankingChart } from "../../control/_charts/overview-charts-lazy"
-import { OverviewCrosstab } from "../../control/_charts/overview-crosstab"
-import { SectionError } from "../../control/_charts/overview-section"
+import { OverviewRankingChart } from "../_components/charts/overview-charts-lazy"
+import { OverviewCrosstab } from "../_components/charts/overview-crosstab"
+import { SectionError } from "../_components/charts/overview-section"
 import { exportCrosstabAction } from "./export-actions"
 
 const RANKING_LIMIT = 12
@@ -40,7 +40,7 @@ export function WorksiteMedium({
                 <h3 id={`${id}-title`} className="text-h3 text-[var(--color-text)]">{title} ({unitLabel})</h3>
                 <p className="mt-0.5 max-w-[68ch] text-sm text-[var(--color-text-muted)]">¿Qué faenas consumen más y por qué medio? Litros de equipos que miden su rendimiento en {unitLabel}.</p>
               </div>
-              {canExport && crosstab ? <ExportButton action={exportCrosstabAction} filters={{ params: exportParams, unit }} label="Exportar Excel" /> : null}
+              {canExport && crosstab ? <ExportButton action={exportCrosstabAction} filters={{ params: exportParams, unit }} label="Exportar Excel" ariaLabel={`Exportar a Excel los litros por faena y medio, equipos en ${unitLabel}`} /> : null}
             </div>
             {crosstab ? (
               <div className="grid gap-6">

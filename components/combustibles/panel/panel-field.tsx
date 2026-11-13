@@ -52,7 +52,7 @@ function Hero({ data, period, canRegister, link }: { data: FieldPanelData; perio
       <nav aria-label="Tus cargas del período" className="grid grid-cols-3 divide-x divide-[var(--color-primary-line)]">
         {stats.map((stat) => (
           <Link key={stat.key} href={stat.href} className="block rounded-[var(--radius-md)] px-3 py-1.5 text-sm text-[var(--color-primary-ink)] hover:bg-[var(--color-surface)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--color-primary)] sm:px-4">
-            <b className="block font-mono text-[28px] font-semibold leading-tight tabular-nums">
+            <b className="block font-sans text-3xl font-semibold leading-tight tabular-nums">
               {stat.value === undefined ? <span className="font-sans text-base font-medium text-[var(--color-text-muted)]">Sin datos</span> : formatQty(stat.value)}
             </b>
             {stat.label}

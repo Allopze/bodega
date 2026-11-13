@@ -136,7 +136,7 @@ export function PreventiveSection({ detail }: { detail: RecordDetail }) {
         description={`${formatNumber(done)} realizados · ${formatNumber(notDone)} no realizados · ${formatNumber(notApplicable)} no aplica`}
       >
         {/* Sin marco propio dentro de la tarjeta (el borde ya es el de la tarjeta). */}
-        <TableRoot aria-label="Resultado de la pauta por sistema" className="rounded-none border-0">
+        <TableRoot aria-label="Resultado de la pauta por sistema" framed={false}>
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -154,7 +154,7 @@ export function PreventiveSection({ detail }: { detail: RecordDetail }) {
                 return (
                   <TableRow key={group.name}>
                     <TableCell className="font-semibold">{group.name}</TableCell>
-                    <TableCell className="whitespace-nowrap font-mono text-[13px] tabular-nums">{groupDone} de {group.items.length}</TableCell>
+                    <TableCell className="whitespace-nowrap font-mono text-sm tabular-nums">{groupDone} de {group.items.length}</TableCell>
                     <TableCell className="text-[var(--color-text-muted)]">
                       {missing.length === 0 && skipped.length === 0 && warned.length === 0 && "Sin novedad"}
                       {missing.length > 0 && (

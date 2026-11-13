@@ -16,6 +16,29 @@ describe("fecha límite de la bandeja", () => {
     expect(inboxDueDate("2028-02")).toBe("2028-02-29")
     expect(inboxDueDate("2026-12")).toBe("2026-12-31")
   })
+
+  it("detectado dentro del mes de su dato, sigue siendo el fin de ese mes", () => {
+    expect(inboxDueDate("2026-11", "2026-11-13T15:00:00.000Z")).toBe("2026-11-30")
+    expect(inboxDueDate("2026-11", "2026-11-01T03:30:00.000Z")).toBe("2026-11-30")
+  })
+
+  it("detectado con el mes ya cerrado, vence a la detección + 7 días", () => {
+    expect(inboxDueDate("2026-01", "2026-11-13T15:00:00.000Z")).toBe("2026-11-20")
+    expect(inboxDueDate("2026-10", "2026-11-28T15:00:00.000Z")).toBe("2026-12-05")
+    expect(inboxDueDate("2026-12", "2027-01-02T15:00:00.000Z")).toBe("2027-01-09")
+  })
+
+  it("el día de detección se mide en hora de Chile, no en UTC", () => {
+    // 2026-11-01 01:00 UTC es el 31 de octubre a las 22:00 en Chile: todavía dentro de octubre.
+    expect(inboxDueDate("2026-10", "2026-11-01T01:00:00.000Z")).toBe("2026-10-31")
+    // 2026-11-01 04:00 UTC ya es el 1 de noviembre en Chile (UTC-3): octubre cerró.
+    expect(inboxDueDate("2026-10", "2026-11-01T04:00:00.000Z")).toBe("2026-11-08")
+  })
+
+  it("una detección ilegible o ausente cae al fin de mes", () => {
+    expect(inboxDueDate("2026-01", null)).toBe("2026-01-31")
+    expect(inboxDueDate("2026-01", "no-es-una-fecha")).toBe("2026-01-31")
+  })
 })
 
 describe("orden de la bandeja", () => {
@@ -43,6 +66,14 @@ describe("orden de la bandeja", () => {
     ]
     expect(rows.sort(compareInboxRows).map((entry) => entry.key)).toEqual(["carga:a", "carga:b"])
     expect(rows.reverse().sort(compareInboxRows).map((entry) => entry.key)).toEqual(["carga:a", "carga:b"])
+  })
+
+  it("un caso histórico detectado tarde va después de la carga del mes que vence antes", () => {
+    const rows = [
+      { key: "caso:enero", dueDate: inboxDueDate("2026-01", "2026-11-28T15:00:00.000Z"), waitingSince: "2026-11-28T15:00:00.000Z" },
+      { key: "carga:noviembre", dueDate: inboxDueDate("2026-11", "2026-11-05T15:00:00.000Z"), waitingSince: "2026-11-05T15:00:00.000Z" },
+    ]
+    expect(rows.sort(compareInboxRows).map((entry) => entry.key)).toEqual(["carga:noviembre", "caso:enero"])
   })
 
   it("lo vencido de un mes anterior va antes que lo del mes en curso", () => {

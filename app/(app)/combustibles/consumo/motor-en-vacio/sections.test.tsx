@@ -8,7 +8,7 @@ import { IdleTopEquipmentTable } from "./top-equipment-table"
 
 vi.mock("next/link", () => ({ default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a> }))
 // Recharts sólo corre en el navegador: acá importa lo que la sección dice alrededor del gráfico.
-vi.mock("../../control/_charts/idle-charts-lazy", () => ({ LphScatterChartLazy: ({ view }: { view: { points: unknown[] } }) => <div data-testid="lph-chart">{view.points.length} puntos</div> }))
+vi.mock("../_components/charts/idle-charts-lazy", () => ({ LphScatterChartLazy: ({ view }: { view: { points: unknown[] } }) => <div data-testid="lph-chart">{view.points.length} puntos</div> }))
 
 const stats: IdleStats = {
   operatingHours: 100, idleHours: 25, workingHours: 75, activeDays: 10, idlePct: 25, dailyAvgPct: 24, dailyMaxPct: 60, dailyMinPct: 5,

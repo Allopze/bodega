@@ -139,7 +139,7 @@ export function OcDetailItems({
 
       {/* Desktop table */}
       <div className="hidden overflow-hidden rounded-[var(--radius-2xl)] shadow-[var(--shadow-card)] bg-[var(--color-surface)] md:block">
-        <TableRoot className="rounded-none border-0">
+        <TableRoot framed={false}>
         <Table className="text-sm">
           <caption className="sr-only">Detalle de ítems de la orden de compra</caption>
           <TableHeader>

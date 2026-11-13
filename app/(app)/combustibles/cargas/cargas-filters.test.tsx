@@ -3,11 +3,12 @@ import React from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { cleanup, render, screen } from "@testing-library/react"
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }), useSearchParams: () => new URLSearchParams(), usePathname: () => "/combustibles/cargas" }))
+const current = vi.hoisted(() => ({ query: "" }))
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }), useSearchParams: () => new URLSearchParams(current.query), usePathname: () => "/combustibles/cargas" }))
 
 import { CargasFilters, type CargasFilterLookups } from "./cargas-filters"
 
-afterEach(() => cleanup())
+afterEach(() => { cleanup(); current.query = "" })
 
 const LOOKUPS: CargasFilterLookups = {
   worksites: [], suppliers: [], products: [], equipmentTypes: [], loadingPoints: [], anomalyRules: [], anomalyAssignees: [], equipmentLabel: null,
@@ -37,5 +38,31 @@ describe("CargasFilters: lo que dice el cuadro de búsqueda", () => {
   it("hay un solo cuadro de búsqueda", () => {
     render(<CargasFilters lookups={LOOKUPS} canViewPersonal />)
     expect(screen.getAllByRole("searchbox")).toHaveLength(1)
+  })
+})
+
+describe("CargasFilters: el estado en un solo control", () => {
+  it("no hay casilla «Sólo con algo pendiente» aparte: va dentro del select de estado", () => {
+    render(<CargasFilters lookups={LOOKUPS} canViewPersonal />)
+    expect(screen.queryByRole("checkbox", { name: /Sólo con algo pendiente/ })).toBeNull()
+    expect(screen.getAllByRole("combobox", { name: "Filtrar por estado" })).toHaveLength(1)
+  })
+
+  it("las URL antiguas con pendiente=si siguen mostrándose, en el select y como chip", () => {
+    current.query = "pendiente=si"
+    render(<CargasFilters lookups={LOOKUPS} canViewPersonal />)
+    expect(screen.getByRole("combobox", { name: "Filtrar por estado" })).toHaveTextContent("Con algo pendiente")
+  })
+
+  it("«Más filtros» ya no trae las casillas de casos abiertos ni de pedido de revisión", () => {
+    current.query = "anomalia=si"
+    render(<CargasFilters lookups={LOOKUPS} canViewPersonal />)
+    expect(screen.getByRole("combobox", { name: "Filtrar por estado" })).toHaveTextContent("Con un caso abierto")
+    expect(screen.queryByRole("button", { name: /Más filtros \(1\)/ })).toBeNull()
+  })
+
+  it("el filtro de «cómo llegó» dice «todas» cuando no hay ninguna elegida", () => {
+    render(<CargasFilters lookups={LOOKUPS} canViewPersonal />)
+    expect(screen.getByRole("button", { name: "Filtrar por cómo llegó la carga" })).toHaveTextContent("Cómo llegó: todas")
   })
 })

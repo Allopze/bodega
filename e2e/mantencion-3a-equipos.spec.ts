@@ -53,24 +53,30 @@ test.describe("E2E 6 · Equipos", () => {
 
     // El estado viaja en la URL (el panel enlaza así) y aparece como filtro activo que se puede quitar.
     await page.goto("/mantencion/equipos?estado=proxima")
-    await expect(page.getByRole("button", { name: "Eliminar filtro Estado", exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Eliminar filtro Mantención", exact: true })).toBeVisible()
     await expect(page.getByRole("row").nth(1)).toContainText("Próxima")
-    await page.getByRole("button", { name: "Eliminar filtro Estado", exact: true }).click()
+    await page.getByRole("button", { name: "Eliminar filtro Mantención", exact: true }).click()
     await expect(page).not.toHaveURL(/estado=/)
     expect(errors).toEqual([])
   })
 
-  test("agrega un equipo: la faena escrita con otra tilde reutiliza la existente (regla 17)", async ({ page }) => {
+  test("agrega un equipo en una faena existente: el formulario ya no ofrece crear faenas (M12)", async ({ page }) => {
     const errors = trackConsole(page)
     await asJefe(page)
     await page.goto("/mantencion/equipos")
-    await page.getByRole("link", { name: "Nuevo equipo", exact: true }).click()
+    // Un solo botón de alta que pregunta cómo: «Agregar equipos» → «Nuevo equipo».
+    await page.getByRole("button", { name: "Agregar equipos", exact: true }).click()
+    await page.getByRole("dialog", { name: "¿Cómo quieres agregar equipos?" }).getByRole("link", { name: /^Nuevo equipo/ }).click()
     await expectPageTitle(page, "Nuevo equipo")
     const worksitesBefore = await withSql(async (sql) => Number((await sql`select count(*) as n from worksites`)[0]?.n))
+    // Sólo faenas que ya existen: la opción «Nueva faena…» se retiró para no reabrir el riesgo de duplicados.
+    await page.locator("#eq-worksite").click()
+    await expect(page.getByRole("option", { name: "Nueva faena…" })).toHaveCount(0)
+    await page.keyboard.press("Escape")
 
     await fillEquipmentForm(page, {
       code: "qa-eq1", plate: "zzzb 71", type: /^Camión ·/, brand: "Scania", model: "R450", year: "2021",
-      worksite: "", newWorksite: "  cholguán ", schedule: "Camiones y tractos", reading: "12.345",
+      worksite: "Cholguan", schedule: "Camiones y tractos", reading: "12.345",
     })
     await page.getByRole("button", { name: "Crear equipo", exact: true }).click()
 
@@ -78,7 +84,7 @@ test.describe("E2E 6 · Equipos", () => {
     ids.eq1 = idFromPath(page)
     await expect(page.getByText(/Equipo QA-EQ1 creado/)).toBeVisible()
     await expectPageTitle(page, "QA-EQ1")
-    // El código se normalizó y la patente quedó con guion; la faena es la que ya existía.
+    // El código se normalizó y la patente quedó con guion; la faena es la elegida y no se creó ninguna.
     await expect(fichaValue(page, "Código interno")).toHaveText("QA-EQ1")
     await expect(fichaValue(page, "Patente")).toHaveText("ZZZB-71")
     await expect(fichaValue(page, "Faena")).toHaveText("Cholguan")
@@ -110,7 +116,7 @@ test.describe("E2E 6 · Equipos", () => {
     await expect(fichaValue(page, "Pauta")).toHaveText("Sin pauta")
   })
 
-  test("edita la ficha: se abre en lectura, la faena se normaliza y el historial lo cuenta", async ({ page }) => {
+  test("edita la ficha: se abre en lectura, la faena se cambia por otra existente y el historial lo cuenta", async ({ page }) => {
     const errors = trackConsole(page)
     await asJefe(page)
     await page.goto(`/mantencion/equipos/${ids.eq1}`)
@@ -118,15 +124,14 @@ test.describe("E2E 6 · Equipos", () => {
     await expect(page.getByRole("textbox", { name: "Modelo", exact: true })).toHaveCount(0)
     await page.getByRole("button", { name: "Editar ficha", exact: true }).click()
     await page.getByRole("textbox", { name: "Modelo", exact: true }).fill("R500")
-    await selectRadixById(page, "eq-worksite", "Nueva faena…")
-    await page.getByRole("textbox", { name: "Nombre de la faena nueva", exact: true }).fill("TENO")
+    await selectRadixById(page, "eq-worksite", "Biodiversa")
     await page.getByRole("button", { name: "Guardar cambios", exact: true }).click()
 
     await expect(page.getByText("Cambios guardados en QA-EQ1.")).toBeVisible()
     await expect(page.getByRole("textbox", { name: "Modelo", exact: true })).toHaveCount(0)
     await expect(fichaValue(page, "Modelo")).toHaveText("R500")
-    await expect(fichaValue(page, "Faena")).toHaveText("Teno")
-    await expect(page.getByText(/Editado · Modelo: R450 → R500 · Faena: Cholguan → Teno/)).toBeVisible()
+    await expect(fichaValue(page, "Faena")).toHaveText("Biodiversa")
+    await expect(page.getByText(/Editado · Modelo: R450 → R500 · Faena: Cholguan → Biodiversa/)).toBeVisible()
     expect(errors).toEqual([])
   })
 

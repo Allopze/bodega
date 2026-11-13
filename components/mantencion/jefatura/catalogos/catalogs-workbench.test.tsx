@@ -42,7 +42,7 @@ afterEach(cleanup)
 describe("CatalogsWorkbench", () => {
   it("muestra las pestañas con su contador, el estado y los usos de cada fila", () => {
     render(<CatalogsWorkbench catalog="brands" rows={ROWS} counts={COUNTS} />)
-    expect(screen.getByRole("heading", { name: "Catálogos de mantención" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Marcas y talleres" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Nueva marca" })).toBeTruthy()
     expect(screen.getByRole("link", { name: "Marcas · 3" }).getAttribute("aria-current")).toBe("page")
     expect(screen.getByRole("link", { name: "Aceites · 0" })).toBeTruthy()
@@ -55,7 +55,7 @@ describe("CatalogsWorkbench", () => {
 
   it("el catálogo de aceites no muestra la columna de usos", () => {
     render(<CatalogsWorkbench catalog="oils" rows={[{ id: "o1", name: "15W-40", isActive: true, usage: null, usageText: "" }]} counts={COUNTS} />)
-    expect(screen.queryByRole("columnheader", { name: /Usos/ })).toBeNull()
+    expect(screen.queryByRole("columnheader", { name: /En uso/ })).toBeNull()
     expect(screen.getByRole("button", { name: "Nuevo aceite" })).toBeTruthy()
   })
 

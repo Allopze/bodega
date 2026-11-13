@@ -352,6 +352,14 @@ tratamiento), filas con hover `bg-surface-2`, celdas numéricas en mono tabular 
 `useSafeShellHeader`), ordenamiento, paginación, estados vacíos/skeleton y vista
 mobile (`renderMobileCard`).
 
+**Tabla dentro de otra superficie: `framed={false}`.** `TableRoot` trae su propio
+marco (`rounded-2xl`, borde y fondo) porque normalmente *es* la superficie. Si la
+tabla vive dentro de una `Card`, una `Section` o un `<details>`, el resultado son
+dos marcos concéntricos con el mismo radio a 20 px de distancia: una tarjeta
+dentro de una tarjeta. En ese caso se pasa `framed={false}` a `DataTable` o a
+`TableRoot`; si la `Card` sólo aporta un título, se quita la `Card` y la tabla
+queda como única superficie con el título como encabezado de sección.
+
 ### Otros
 
 - **Badge**: **un solo tratamiento tipográfico** para todas las variantes (sans,
@@ -475,6 +483,13 @@ opacidad, nunca por movimiento.
 | `--radius-2xl` | 20px | `Dialog`, `TableRoot` |
 | `--radius-shell` | 40px | Pensado para la esquina del pozo — hoy no conectado (ver AppShell) |
 | `--radius-full` | pills | `Badge`, avatares |
+
+**Radios anidados.** Un contenedor con radio dentro de otro usa *radio exterior −
+relleno entre ambos*, nunca menos de 4 px; un interior más redondeado que su
+contenedor (p. ej. una tabla `2xl` dentro de un `<details>` `xl`) se ve como un
+error de montaje. Y antes de anidar, preguntar si el interior necesita marco: una
+lista de filas dentro de una tarjeta se separa con `divide-y`, no con un borde
+por fila.
 
 Sombras suaves (`--shadow-xs/sm/card/md/lg`) reservadas a superficies
 flotantes (cards, popovers, modales) + `--shadow-well`: sombra interior fija

@@ -13,7 +13,7 @@ import { controlFiltersForRange, wholeMonthRange } from "@/lib/combustibles/cont
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import { FUEL_PATHS, withFuelContext } from "@/lib/combustibles/routes"
 import { FUEL_CARRY_PARAMS, cuadraturaNavItems } from "@/lib/combustibles/section-nav"
-import { ControlFilters } from "../../control/_components/control-filters"
+import { ControlFilters } from "../../_shared/control-filters"
 import { loadCuadraturaContext } from "../_components/context"
 import { firstParam, periodContext } from "../_components/params"
 import { wholeMonthsNote } from "../_components/period-text"
@@ -21,7 +21,7 @@ import { SectionError } from "../_components/section"
 import { createSourceTracker } from "../_components/track"
 import { MediumSection, mediumAnswer } from "./medium-section"
 
-export const metadata: Metadata = { title: "Proveedor y terreno" }
+export const metadata: Metadata = { title: "Facturado y terreno" }
 
 type SearchParams = Record<string, string | string[] | undefined>
 
@@ -43,9 +43,9 @@ export default async function CuadraturaProveedorPage({ searchParams }: { search
   return (
     <PageContainer>
       <PageHeader
-        title="Proveedor y terreno"
+        title="Facturado y terreno"
         description="Lo que factura el proveedor contra lo que se registró en terreno"
-        breadcrumb={<FuelBreadcrumbs items={[{ label: "Cuadratura", href: FUEL_PATHS.cuadratura }, { label: "Proveedor y terreno" }]} />}
+        breadcrumb={<FuelBreadcrumbs items={[{ label: "Cuadratura", href: FUEL_PATHS.cuadratura }, { label: "Facturado y terreno" }]} />}
         actions={<FuelHeaderActions period={period} />}
       />
       <SectionNav items={cuadraturaNavItems(session)} activeKey="proveedor" ariaLabel="Vistas de cuadratura" carryParams={FUEL_CARRY_PARAMS} />

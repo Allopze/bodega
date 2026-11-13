@@ -22,12 +22,12 @@ import { FUEL_PATHS, fuelEquipmentHref, fuelInboxHref } from "@/lib/combustibles
 import { fuelAddDataOptions } from "@/lib/combustibles/section-nav"
 import { formatQty } from "@/lib/utils"
 import { ConsumoNav } from "../../../consumo-nav"
-import { PerformanceDispersionChart } from "../../../control/_charts/performance-charts-lazy"
-import { SectionError, ViewSection } from "../../../control/_charts/overview-section"
-import { ReviewExclusionNote } from "../../../control/_charts/performance-review-note"
-import { loadControlContext } from "../../../control/_components/control-context"
-import { hrefInContext, fuelContextParams, searchWith } from "../../../control/_components/page-links"
-import { createSourceTracker } from "../../../control/_components/track-sources"
+import { PerformanceDispersionChart } from "../../_components/charts/performance-charts-lazy"
+import { SectionError, ViewSection } from "../../_components/charts/overview-section"
+import { ReviewExclusionNote } from "../../_components/charts/performance-review-note"
+import { loadControlContext } from "../../_components/control-context"
+import { hrefInContext, fuelContextParams, searchWith } from "../../_components/page-links"
+import { createSourceTracker } from "../../_components/track-sources"
 import { Disclosure } from "../../_components/disclosure"
 import { exportEquipmentStatsAction, exportLoadDetailAction, exportWorksiteStatsAction } from "../export-actions"
 import { FamilyFilters } from "./family-filters"
@@ -92,6 +92,8 @@ export default async function FamilyPerformancePage({ params, searchParams }: Pa
   const contextForFamily = { ...sp, ...fuelContextParams(period, { faena: filters.worksiteId }) }
   const equipmentHref = (vehicleId: string) => hrefInContext(fuelEquipmentHref(vehicleId), period)
   const worksiteHref = (worksiteId: string) => searchWith(sp, { faena: worksiteId, pagina: null, cargas: null })
+  // Quitar los filtros de la vista deja el período y la familia: sólo se borran los que acotan faena, mandante, unidad, medio y equipo.
+  const clearFiltersHref = searchWith(sp, { faena: null, mandante: null, unidad: null, medio: null, equipo: null, pagina: null, cargas: null })
   const pageLink = (key: string) => (page: number) => searchWith(sp, { [key]: page > 1 ? String(page) : null })
 
   // A4: sin datos, qué significa + qué hacer + una acción real.
@@ -105,7 +107,7 @@ export default async function FamilyPerformancePage({ params, searchParams }: Pa
   return (
     <PageContainer>
       <PageHeader
-        title="Consumo y rendimiento"
+        title="Rendimiento"
         description="Cuánto rinde cada equipo contra su modelo y contra su propio historial"
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Consumo", href: FUEL_PATHS.consumo }, { label: "Rendimiento" }]} />}
         actions={<FuelHeaderActions period={period} />}
@@ -136,11 +138,11 @@ export default async function FamilyPerformancePage({ params, searchParams }: Pa
             id="por-equipo"
             title="Por equipo"
             question="¿Qué equipos rinden peor que su modelo o que su propio historial? El código abre la ficha del equipo."
-            actions={canExport && equipment.data ? <ExportButton action={exportEquipmentStatsAction} filters={exportInput} label="Exportar Excel" /> : undefined}
+            actions={canExport && equipment.data ? <ExportButton action={exportEquipmentStatsAction} filters={exportInput} label="Exportar Excel" ariaLabel={`Exportar a Excel el rendimiento por equipo de ${label.toLowerCase()}`} /> : undefined}
           >
             {equipment.data ? (
               <div className="grid gap-3">
-                <EquipmentStatsTable rows={equipment.data.rows} equipmentHref={equipmentHref} />
+                <EquipmentStatsTable rows={equipment.data.rows} equipmentHref={equipmentHref} clearFiltersHref={clearFiltersHref} />
                 <ServerPagination pagination={equipment.data.pagination} hrefForPage={pageLink("pagina")} className="border-t-0 px-0" />
               </div>
             ) : (
@@ -152,9 +154,9 @@ export default async function FamilyPerformancePage({ params, searchParams }: Pa
             id="por-faena"
             title="Por faena"
             question="¿Qué faenas rinden mejor y en cuáles el rendimiento es más irregular? Un clic filtra esa faena."
-            actions={canExport && !worksiteStats.failed ? <ExportButton action={exportWorksiteStatsAction} filters={exportInput} label="Exportar Excel" /> : undefined}
+            actions={canExport && !worksiteStats.failed ? <ExportButton action={exportWorksiteStatsAction} filters={exportInput} label="Exportar Excel" ariaLabel={`Exportar a Excel el rendimiento por faena de ${label.toLowerCase()}`} /> : undefined}
           >
-            {worksiteStats.failed ? <SectionError what="el rendimiento por faena" /> : <WorksiteRanking rows={worksiteStats.data} hrefForWorksite={worksiteHref} />}
+            {worksiteStats.failed ? <SectionError what="el rendimiento por faena" /> : <WorksiteRanking rows={worksiteStats.data} hrefForWorksite={worksiteHref} clearFiltersHref={clearFiltersHref} />}
           </ViewSection>
 
           {!worksiteStats.failed || equipment.data ? (
@@ -196,7 +198,7 @@ export default async function FamilyPerformancePage({ params, searchParams }: Pa
             id="detalle"
             title="Cargas que forman estas cifras"
             question={`¿Qué cargas componen estos números? Sólo cargas de ${label.toLowerCase()}, de a ${DETAIL_PAGE_SIZE}. La fecha abre la ficha de la carga.`}
-            actions={canExport && detail.data ? <ExportButton action={exportLoadDetailAction} filters={exportInput} label="Exportar Excel" /> : undefined}
+            actions={canExport && detail.data ? <ExportButton action={exportLoadDetailAction} filters={exportInput} label="Exportar Excel" ariaLabel={`Exportar a Excel las cargas de ${label.toLowerCase()} que forman estas cifras`} /> : undefined}
           >
             {detail.data ? (
               <div className="grid gap-3">

@@ -17,7 +17,7 @@ function decidedVariant(outcome: string): "danger" | "success" {
 /**
  * Las insignias de una fila de la bandeja, en la lista y en la cabecera de la hoja
  * de decisión: qué es (la etiqueta principal, la que la pantalla elija), cuán grave,
- * en qué quedó o en qué estado está. El punto «Nuevo» de la lista va delante.
+ * en qué quedó o en qué estado está. El «Nuevo» de la lista (punto y palabra) va delante.
  *
  * Una sola de las dos últimas: un caso cerrado ya dice «Resuelto» o «Descartado» en su
  * desenlace, así que su estado no se repite al lado. Sin hooks: sirve igual en el
@@ -45,7 +45,13 @@ export function InboxRowBadges({
 }) {
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
-      {fresh ? <span className="inline-block size-2 rounded-full bg-[var(--color-accent)]" role="img" aria-label="Nuevo" /> : null}
+      {/* El punto solo es color: lleva su palabra a la vista (A11y). */}
+      {fresh ? (
+        <span className="inline-flex items-center gap-1 text-2xs font-semibold text-[var(--color-accent-ink)]">
+          <span aria-hidden className="inline-block size-2 rounded-full bg-[var(--color-accent)]" />
+          Nuevo
+        </span>
+      ) : null}
       <MetaBadge
         meta={{ label, variant: kind === "caso" ? "danger" : kind === "patente" ? "info" : "signal" }}
         size="sm"

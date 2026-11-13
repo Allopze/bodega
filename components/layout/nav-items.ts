@@ -162,6 +162,9 @@ export function getVisibleAreas(
       const children = item.children?.filter((child) =>
         canSeeNav(child, session) && !disabledSubmoduleHrefs?.has(child.href))
       const selfVisible = canSeeNav(item, session) && (isRecoveryDoor || !disabledSubmoduleHrefs?.has(item.href))
+      // Un padre sin permisos propios (`permissions: []`, p. ej. «Configuración» en
+      // Control operacional) nunca es visible por sí mismo: existe sólo si algún
+      // hijo lo es, y su `href` pasa siempre al primer hijo visible.
       // Mismo criterio que `getAdminAreas`: el padre se conserva por sus hijos
       // visibles, porque su permiso y el de ellos no siempre coinciden. "Plan de
       // emergencia" cuelga de GRD y lo necesita quien tiene `emergency:view` sin
@@ -248,7 +251,12 @@ export function flattenNavTargets(
   ]
   for (const area of getVisibleAreas(session, enabledModuleIds, disabledSubmoduleHrefs)) {
     for (const item of area.items) {
-      targets.push({ label: item.label, href: item.href, areaLabel: area.label, groupLabel: item.group, iconName: item.iconName })
+      // Un padre con `permissions: []` es sólo un contenedor (su `href` ya es el
+      // de su primer hijo visible): listarlo repetiría ese destino en ⌘K.
+      const isContainer = item.permissions?.length === 0 && (item.children?.length ?? 0) > 0
+      if (!isContainer) {
+        targets.push({ label: item.label, href: item.href, areaLabel: area.label, groupLabel: item.group, iconName: item.iconName })
+      }
       for (const child of item.children ?? []) {
         targets.push({ label: child.label, href: child.href, areaLabel: area.label, groupLabel: item.group, iconName: item.iconName })
       }

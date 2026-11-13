@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import type { ReactNode } from "react"
 import { redirect } from "next/navigation"
+import { Callout } from "@/components/ui/callout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -23,7 +24,7 @@ import { FUEL_CARRY_PARAMS, cuadraturaNavItems } from "@/lib/combustibles/sectio
 import { getSealHistory } from "@/lib/combustibles/seal-history"
 import { getTaeGroupedTotals, type TaeGroupRow } from "@/lib/combustibles/tae-dashboard"
 import { resolvePagination } from "@/lib/pagination"
-import { ControlFilters } from "../../control/_components/control-filters"
+import { ControlFilters } from "../../_shared/control-filters"
 import { loadCuadraturaContext } from "../_components/context"
 import { LazyDetails } from "../_components/lazy-details"
 import { firstParam, hrefWith, periodContext } from "../_components/params"
@@ -175,6 +176,9 @@ export default async function CuadraturaSellosPage({ searchParams }: { searchPar
       />
       <SectionNav items={cuadraturaNavItems(session)} activeKey="sellos" ariaLabel="Vistas de cuadratura" carryParams={FUEL_CARRY_PARAMS} />
       <DegradedDataBanner degraded={degraded} total={total()} />
+      <Callout tone="info" className="mb-4">
+        <strong>Esto no es una diferencia de litros.</strong> Acá se revisa que cada carga tenga sus sellos y que la cadena no se corte; los litros se cuadran en las otras vistas.
+      </Callout>
       {canField ? (
         <div className="mb-4">
           <SegmentedControl

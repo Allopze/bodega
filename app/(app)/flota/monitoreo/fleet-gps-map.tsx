@@ -15,6 +15,19 @@ import { FleetGpsVehiclePopup } from "./fleet-gps-vehicle-popup"
  */
 const MAP_LOAD_TIMEOUT_MS = 20_000
 const MAP_UNAVAILABLE = "No se pudo cargar el mapa. La tabla de abajo mantiene el monitoreo disponible."
+const MAP_NOT_CONFIGURED = "El mapa no está disponible por ahora. La tabla de abajo mantiene el monitoreo disponible."
+
+/**
+ * Colores de los puntos. MapLibre no lee variables CSS, así que son literales
+ * que repiten los tokens: `--color-primary` (encendido) y los neutros del
+ * sistema. «Apagado» y «sin dato» ya no se distinguen sólo por dos grises casi
+ * iguales: «sin dato» es un anillo hueco (no sabemos el estado, no es un punto
+ * lleno) y «apagado» un punto lleno oscuro (auditoría 2026-11-13, F10).
+ */
+const POINT_ON = "#005c3f"
+const POINT_OFF = "#475569"
+const POINT_UNKNOWN_STROKE = "#64748b"
+const POINT_FILL_UNKNOWN = "#ffffff"
 
 /** Textos propios de MapLibre (títulos y nombres accesibles de los controles). */
 const MAP_LOCALE_ES = {
@@ -49,6 +62,19 @@ function featureCollection(positions: FleetGpsPosition[]) {
       geometry: { type: "Point" as const, coordinates: [position.longitude, position.latitude] },
     })),
   }
+}
+
+/** La leyenda dice con palabras y con la forma del punto lo que el color solo no alcanza a decir. */
+function MapLegend() {
+  const dot = "inline-block h-3 w-3 shrink-0 rounded-full"
+  return (
+    <ul aria-label="Leyenda del mapa" className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+      <li className="flex items-center gap-1.5"><span aria-hidden className={dot} style={{ backgroundColor: POINT_ON }} />Motor encendido</li>
+      <li className="flex items-center gap-1.5"><span aria-hidden className={dot} style={{ backgroundColor: POINT_OFF }} />Motor apagado</li>
+      <li className="flex items-center gap-1.5"><span aria-hidden className={dot} style={{ border: `2px solid ${POINT_UNKNOWN_STROKE}`, backgroundColor: POINT_FILL_UNKNOWN }} />Sin dato de encendido</li>
+      <li className="flex items-center gap-1.5"><span aria-hidden className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-2xs font-semibold text-white" style={{ backgroundColor: POINT_ON }}>3</span>Varios vehículos juntos: acércate para separarlos</li>
+    </ul>
+  )
 }
 
 export function FleetGpsMap({ positions }: { positions: FleetGpsPosition[] }) {
@@ -122,7 +148,12 @@ export function FleetGpsMap({ positions }: { positions: FleetGpsPosition[] }) {
           nextMap.addSource(SOURCE_ID, { type: "geojson", data: featureCollection(initial), cluster: true, clusterMaxZoom: 12, clusterRadius: 45 })
           nextMap.addLayer({ id: CLUSTER_LAYER, type: "circle", source: SOURCE_ID, filter: ["has", "point_count"], paint: { "circle-color": "#005c3f", "circle-radius": 18 } })
           nextMap.addLayer({ id: "fleet-gps-cluster-count", type: "symbol", source: SOURCE_ID, filter: ["has", "point_count"], layout: { "text-field": "{point_count_abbreviated}", "text-font": CLUSTER_COUNT_FONT, "text-size": 12 }, paint: { "text-color": "#ffffff" } })
-          nextMap.addLayer({ id: POINT_LAYER, type: "circle", source: SOURCE_ID, filter: ["!", ["has", "point_count"]], paint: { "circle-color": ["case", ["!", ["get", "ignitionKnown"]], "#94a3b8", ["get", "ignition"], "#005c3f", "#64748b"], "circle-radius": 7, "circle-stroke-width": 2, "circle-stroke-color": "#ffffff" } })
+          nextMap.addLayer({ id: POINT_LAYER, type: "circle", source: SOURCE_ID, filter: ["!", ["has", "point_count"]], paint: {
+            "circle-color": ["case", ["!", ["get", "ignitionKnown"]], POINT_FILL_UNKNOWN, ["get", "ignition"], POINT_ON, POINT_OFF],
+            "circle-radius": ["case", ["!", ["get", "ignitionKnown"]], 6, 7],
+            "circle-stroke-width": ["case", ["!", ["get", "ignitionKnown"]], 3, 2],
+            "circle-stroke-color": ["case", ["!", ["get", "ignitionKnown"]], POINT_UNKNOWN_STROKE, "#ffffff"],
+          } })
 
           nextMap.on("click", (event) => {
             const [feature] = nextMap.queryRenderedFeatures(event.point, { layers: [POINT_LAYER, CLUSTER_LAYER] })
@@ -192,10 +223,10 @@ export function FleetGpsMap({ positions }: { positions: FleetGpsPosition[] }) {
     if (!popup.isOpen()) popup.addTo(map)
   }, [selectedId, selectedLng, selectedLat, loaded])
 
-  if (!style) return <p className="rounded-xl border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">El mapa requiere un proveedor aprobado configurado en producción.</p>
+  if (!style) return <p role="status" className="rounded-xl border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">{MAP_NOT_CONFIGURED}</p>
   if (!hasPositions) return null
   return (
-    <section aria-label="Mapa de posiciones GPS" className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white">
+    <section aria-label="Mapa de posiciones GPS" className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="relative">
         {/* Alto ligado a la ventana: con 360 px fijos el mapa quedaba en 4:1 a lo
             ancho de la página y la flota se veía como una franja. */}
@@ -206,6 +237,7 @@ export function FleetGpsMap({ positions }: { positions: FleetGpsPosition[] }) {
           </p>
         ) : null}
       </div>
+      <MapLegend />
       {popupNode && selected ? createPortal(<FleetGpsVehiclePopup position={selected} />, popupNode) : null}
     </section>
   )

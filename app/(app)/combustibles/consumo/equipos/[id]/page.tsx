@@ -26,10 +26,10 @@ import { describeIdleDaily, idleDailyChartData, idleDailyTable } from "@/lib/com
 import { litersWindowLabel } from "@/lib/combustibles/equipment/liters-by-month"
 import type { EquipmentFile } from "@/lib/combustibles/equipment/types"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
-import { FUEL_PATHS, fuelPerformanceHref } from "@/lib/combustibles/routes"
+import { FUEL_PATHS, fuelLoadHref, fuelPerformanceHref } from "@/lib/combustibles/routes"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
-import { IdleDailyChartLazy } from "../../../control/_charts/idle-charts-lazy"
-import { hrefInContext } from "../../../control/_components/page-links"
+import { IdleDailyChartLazy } from "../../_components/charts/idle-charts-lazy"
+import { hrefInContext } from "../../_components/page-links"
 import { RegularityBadge } from "../../rendimiento/[familia]/stats-tables"
 import { EquipmentLitersChart } from "./equipment-liters-chart-lazy"
 import { EquipmentLoadsTable } from "./equipment-loads-table"
@@ -261,7 +261,7 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
             <ul aria-label="Cargas con la cadena de sellos rota" className="divide-y divide-[var(--color-border)] rounded-[var(--radius-lg)] border border-[var(--color-border)] text-sm">
               {seals.issues.map((issue) => (
                 <li key={issue.submissionId} className="flex flex-wrap items-center gap-x-6 gap-y-1 px-3 py-2">
-                  <Link href={`${FUEL_PATHS.cargas}/terreno/${encodeURIComponent(issue.submissionId)}`} className="font-medium underline-offset-2 hover:underline">{formatDateTime(issue.loadedAt)}</Link>
+                  <Link href={inContext(fuelLoadHref({ origen: "terreno", id: issue.submissionId }))} className="font-medium underline-offset-2 hover:underline">{formatDateTime(issue.loadedAt)}</Link>
                   <span className="text-[var(--color-text-muted)]">Retiró el sello <span className="font-mono text-[var(--color-text)]">{issue.removedSeal ?? STAT_MISSING}</span></span>
                   <span className="text-[var(--color-text-muted)]">Debía retirar el <span className="font-mono text-[var(--color-text)]">{issue.expectedSeal ?? STAT_MISSING}</span></span>
                 </li>

@@ -28,7 +28,7 @@ function SelectFilter({ value, onValue, allLabel, ariaLabel, options }: { value:
 }
 
 /**
- * Filtros de «Tarjetas (total por patente y mes)»: buscar, faena, proveedor y
+ * Filtros de «Tarjetas Copec»: buscar, faena, proveedor y
  * «sólo patentes sin vincular». El período vive en la cabecera. Cada filtro
  * activo tiene su chip; se aplican al instante con `router.replace`.
  */
@@ -42,7 +42,7 @@ export function TarjetasFilters({ worksites, suppliers }: { worksites: Option[];
   if (get("faena")) chips.push({ key: "faena", label: "Faena", value: get("faena"), displayValue: worksites.find((item) => item.value === get("faena"))?.label ?? get("faena") })
   // `proveedor` es el nombre de antes de este filtro (`?vista=registros&proveedor=`): se lee igual.
   const supplier = get("fuente") || get("proveedor")
-  if (supplier) chips.push({ key: get("fuente") ? "fuente" : "proveedor", label: "Proveedor", value: supplier, displayValue: supplier })
+  if (supplier) chips.push({ key: get("fuente") ? "fuente" : "proveedor", label: "Proveedor", value: supplier, displayValue: suppliers.find((item) => item.value === supplier)?.label ?? supplier })
   if (unlinkedOnly) chips.push({ key: "sin_vincular", label: "Patentes", value: "si", displayValue: "Sólo sin vincular" })
   if (get("patente")) chips.push({ key: "patente", label: "Búsqueda", value: get("patente"), displayValue: get("patente") })
 

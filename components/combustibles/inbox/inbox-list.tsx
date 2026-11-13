@@ -6,12 +6,18 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import type { FuelInboxRow } from "@/lib/combustibles/inbox/types"
+import { formatShortDay, monthNameOfKey } from "@/lib/combustibles/panel/format"
 import { cn, formatDate, todayInChile } from "@/lib/utils"
 import { BulkDecideBar } from "./bulk-decide-bar"
 import { InboxRowBadges } from "./inbox-row-badges"
 import { useInboxSeen } from "./use-inbox-seen"
 
 const DAY_MS = 86_400_000
+
+/** «enero 2026»: el mes del dato siempre con su año, para que un caso viejo no parezca de este mes. */
+function dataMonthLabel(dataMonth: string): string {
+  return `${monthNameOfKey(dataMonth)} ${dataMonth.slice(0, 4)}`
+}
 
 function waitLabel(since: string, today: string): string {
   const days = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${todayInChile(since)}T00:00:00Z`)) / DAY_MS)
@@ -33,7 +39,7 @@ function actionLabel(row: FuelInboxRow, view: "pendientes" | "decididas"): strin
 /**
  * La lista de la bandeja: una fila por pendiente, con lo que pasó, el equipo, el
  * dato que lo explica y cuánto espera. Lo nuevo (llegó después de tu primera
- * visita y no lo abriste) lleva un punto. Las cargas por decidir se pueden
+ * visita y no lo abriste) lleva un punto y la palabra «Nuevo». Las cargas por decidir se pueden
  * seleccionar para decidirlas en lote. La fila se abre en la hoja de decisión
  * (`?item=`), salvo un vínculo de patente ya hecho, que lleva a la ficha del equipo.
  *
@@ -126,12 +132,14 @@ export function InboxList({ rows, view, userId, today }: { rows: FuelInboxRow[];
 
                 <div className="min-w-0 text-sm text-[var(--color-text)]">
                   {view === "decididas" && row.decided?.note ? <p className="line-clamp-2">«{row.decided.note}»</p> : <p className="line-clamp-3">{row.datum}</p>}
+                  <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">Datos de {dataMonthLabel(row.dataMonth)}</p>
                 </div>
 
                 {view === "pendientes" ? (
                   <div className="text-xs md:text-right">
-                    <p className={cn("font-mono tabular-nums", overdue ? "font-semibold text-[var(--color-danger-ink)]" : "text-[var(--color-text)]")}>
-                      {overdue ? "Venció el " : "Vence el "}{formatDate(row.dueDate)}
+                    {/* Sólo lo realmente vencido va en rojo; el año aparece cuando no es el año en curso. */}
+                    <p className={cn("tabular-nums", overdue ? "font-semibold text-[var(--color-danger-ink)]" : "text-[var(--color-text)]")}>
+                      {overdue ? "Venció el " : "Vence el "}{formatShortDay(row.dueDate, today)}
                     </p>
                     <p className="text-[var(--color-text-muted)]">Espera <span className="font-mono tabular-nums">{waitLabel(row.waitingSince, today)}</span></p>
                   </div>

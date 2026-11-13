@@ -234,7 +234,7 @@ export function OpsSettingsForm({ current, defaults, office, pdfEngines }: OpsSe
         title="Motor de generación de PDF"
         description="Qué motor arma cada documento. Chromium abre la vista de impresión en un navegador sin interfaz; pdfcn compone el PDF directamente en el servidor."
       >
-        <TableRoot>
+        <TableRoot framed={false}>
           <Table>
             <TableHeader>
               <TableRow>

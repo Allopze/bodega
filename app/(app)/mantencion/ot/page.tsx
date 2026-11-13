@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { StageTabs } from "@/components/ui/stage-tabs"
 import { NewWorkOrderCta } from "@/components/mantencion/jefatura/ot/new-ot-sheet"
-import { OT_FILTER_PARAMS, buildOtTabs, hasWorkOrderFilters, parseWorkOrderQuery, type RawSearchParams } from "@/components/mantencion/jefatura/ot/ot-filters"
+import { OT_FILTER_PARAMS, buildOtTabs, defaultOtTab, hasExplicitTab, hasWorkOrderFilters, parseWorkOrderQuery, type RawSearchParams } from "@/components/mantencion/jefatura/ot/ot-filters"
 import { OtListFilters } from "@/components/mantencion/jefatura/ot/ot-list-filters"
 import { OtTable } from "@/components/mantencion/jefatura/ot/ot-table"
 import { can, requireAnyPermission } from "@/lib/auth/can"
@@ -58,6 +58,20 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
   // Quien sólo ejecuta ve únicamente sus OT asignadas: «Por asignar» siempre estaría vacía.
   const onlyExecutes = !canManage && !can(session, "mant:ot:view_worksite") && !can(session, "mant:ot:view_all")
 
+  const hiddenTabs: WorkOrderTab[] = onlyExecutes ? ["solicitada"] : []
+  if (!hasExplicitTab(raw)) {
+    // Sin pestaña en la URL: «Por asignar» o, si no hay nada, la primera etapa con trabajo. El destino es una URL
+    // con `?estado=` para que la pestaña activa se vea marcada y «Por asignar» no cambie de sentido al vaciarse.
+    const { counts } = await listWorkOrders(viewer, { ...filters, page: 1, pageSize: 1 })
+    const target = new URLSearchParams()
+    for (const [key, value] of Object.entries(raw)) {
+      const text = Array.isArray(value) ? value[0] : value
+      if (text) target.set(key, text)
+    }
+    target.set("estado", defaultOtTab(counts, hiddenTabs))
+    redirect(`${PATHNAME}?${target.toString()}`)
+  }
+
   const [options, list, equipment, mechanics, worksiteMechanics] = await Promise.all([
     loadWorkOrderFilterOptions(viewer),
     listWorkOrders(viewer, filters),
@@ -103,16 +117,23 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
 
       <div className="mb-3">
         <Suspense fallback={<div className="h-11 border-b border-[var(--color-border)] sm:h-9" aria-hidden />}>
-          <StageTabs tabs={buildOtTabs(list.counts, { hide: onlyExecutes ? ["solicitada"] : [] })} ariaLabel="Estado de las órdenes de trabajo" pageParam="pagina" />
+          <StageTabs tabs={buildOtTabs(list.counts, { hide: hiddenTabs })} ariaLabel="Estado de las órdenes de trabajo" pageParam="pagina" />
         </Suspense>
       </div>
+
+      {filters.tab === "abiertas" && (
+        // Los tiles del tablero y del panel enlazan a «todas las abiertas»: la lista las muestra aunque ya no sea una pestaña.
+        <p className="mb-3 text-sm text-[var(--color-text-muted)]">
+          Mostrando todas las órdenes abiertas.{" "}
+          <Link href={PATHNAME} className="font-semibold text-[var(--color-primary-ink)] underline underline-offset-2">Ver por estado</Link>
+        </p>
+      )}
 
       <OtListFilters
         options={options}
         equipment={equipment.map((item) => ({
           id: item.id,
           label: item.plate && item.plate !== item.code ? `${item.code} · ${item.plate}` : item.code,
-          hint: `${item.typeName} · ${item.worksiteName}`,
         }))}
       />
 
@@ -123,7 +144,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
           description={empty.description}
           action={filtered
             ? <Button asChild variant="secondary"><Link href={clearFiltersHref}>Quitar los filtros</Link></Button>
-            : canCreate && filters.tab === "abiertas"
+            : canCreate && (filters.tab === "solicitada" || filters.tab === "abiertas")
               ? <NewWorkOrderCta {...cta} triggerLabel="Crear la primera orden" />
               : undefined}
         />

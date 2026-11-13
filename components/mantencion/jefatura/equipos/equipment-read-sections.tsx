@@ -128,6 +128,14 @@ export function EquipmentFichaCard({ data, canSeeSchedules }: { data: EquipmentD
         />
         <DetailItem layout="stacked" mono label="Lectura inicial" value={data.initialReading ? <ValueOnDate value={<NoBreak>{formatReading(data.initialReading.value, data.unit)}</NoBreak>} date={data.initialReading.date} /> : null} />
         <DetailItem layout="stacked" label="Estado" value={data.retired ? `Dado de baja${data.retiredReason ? ` · ${data.retiredReason}` : ""}` : "Activo"} />
+        {data.canViewFleet && (
+          // El mismo vehículo en el padrón de Flota: documentos, seguro, GPS y consumo viven allá.
+          <DetailItem
+            layout="stacked"
+            label="En Flota"
+            value={<Link href={`/flota/${data.vehicleId}`} className="inline-flex min-h-11 items-center text-[var(--color-primary-ink)] underline-offset-2 hover:underline sm:min-h-0">Ver la ficha de {data.code} en Flota</Link>}
+          />
+        )}
       </dl>
     </SectionCard>
   )

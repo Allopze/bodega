@@ -46,7 +46,7 @@ export function ConsultaPanel({
           <p className={muted}>No se pudieron calcular los litros de {period.inLabel}. Reintenta en un momento.</p>
         ) : hasLoads && liters ? (
           <p className={answer}>
-            En {period.inLabel} tus faenas cargaron <b className="font-mono tabular-nums">{liters.value} L</b> en{" "}
+            En {period.inLabel} tus faenas cargaron <b className="font-semibold tabular-nums">{liters.value} L</b> en{" "}
             <b>{formatQty(figures.equipmentCount)} {figures.equipmentCount === 1 ? "equipo" : "equipos"}</b>
             {liters.variation ? `, ${variationSentence(liters.variation)}` : ""}.
           </p>

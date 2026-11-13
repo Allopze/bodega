@@ -10,7 +10,7 @@ vi.mock("next/navigation", () => ({
 }))
 
 /**
- * P-9: la tarjeta móvil de Flota no mostraba «Km/Hr» (la tabla de escritorio sí). Las dos vistas viven en
+ * P-9: la tarjeta móvil de Flota no mostraba «Lectura (km u h)» (la tabla de escritorio sí). Las dos vistas viven en
  * el DOM a la vez (`md:hidden` y `hidden md:block`), así que la tarjeta se busca por su rol `article`.
  */
 const base = {
@@ -35,10 +35,10 @@ const renderTable = (vehicles: unknown[], canViewFuel = true) =>
 const card = (plate: string) => screen.getAllByRole("article").find((article) => within(article).queryByText(plate))!
 
 describe("FleetTable · tarjeta móvil", () => {
-  it("muestra «Km/Hr» con la última lectura: el odómetro en km y, a falta de él, el horómetro en h", () => {
+  it("muestra «Lectura (km u h)» con la última lectura: el odómetro en km y, a falta de él, el horómetro en h", () => {
     renderTable([LIMPIA, HOROMETRO])
 
-    expect(within(card("AA-0001")).getByText("Km/Hr")).toBeInTheDocument()
+    expect(within(card("AA-0001")).getByText("Lectura (km u h)")).toBeInTheDocument()
     expect(within(card("AA-0001")).getByText("52.000 km")).toBeInTheDocument()
     expect(within(card("AA-0003")).getByText("120,5 h")).toBeInTheDocument()
   })
@@ -55,18 +55,18 @@ describe("FleetTable · tarjeta móvil", () => {
   it("un equipo sin lectura dice «—» (la tabla también), no un cero", () => {
     renderTable([LIMPIA, SIN_LECTURA])
 
-    const dd = within(card("AA-0004")).getByText("Km/Hr").closest("div")!
+    const dd = within(card("AA-0004")).getByText("Lectura (km u h)").closest("div")!
     expect(within(dd).getByText("—")).toBeInTheDocument()
     expect(within(card("AA-0004")).queryByText(/\d+ km|\d+ h$/)).toBeNull()
   })
 
-  it("con la misma condición que la columna de la tabla: sin combustibles:view, o si ningún equipo tiene lectura, no hay «Km/Hr»", () => {
+  it("con la misma condición que la columna de la tabla: sin combustibles:view, o si ningún equipo tiene lectura, no hay «Lectura (km u h)»", () => {
     const { unmount } = renderTable([LIMPIA], false)
-    expect(within(card("AA-0001")).queryByText("Km/Hr")).toBeNull()
+    expect(within(card("AA-0001")).queryByText("Lectura (km u h)")).toBeNull()
     unmount()
 
     renderTable([SIN_LECTURA, { ...SIN_LECTURA, id: "v5", plate: "AA-0005" }])
-    expect(within(card("AA-0004")).queryByText("Km/Hr")).toBeNull()
+    expect(within(card("AA-0004")).queryByText("Lectura (km u h)")).toBeNull()
   })
 })
 
@@ -122,5 +122,53 @@ describe("FleetTable · próximo vencimiento", () => {
     renderTable([{ ...vencida, id: "v10", plate: "AA-0010", nextExpiryDocumentType: "Padrón" }])
 
     expect(within(card("AA-0010")).getByText("Padrón")).toBeInTheDocument()
+  })
+})
+
+/**
+ * F5/F3: el vehículo se abre desde un enlace real en la celda (no desde un `role="link"` sobre la fila) y
+ * las columnas con unidades dicen «km u hora»; sin movimientos de combustible el gasto es «—», no «$0».
+ */
+describe("FleetTable · enlace, estado y columnas", () => {
+  const conCodigo = { ...base, id: "v11", code: "KA-115", plate: "DZTH-66" }
+  const sinCombustible = { ...base, id: "v12", plate: "AA-0012", totalLiters: 0, loadCount: 0, totalFuelAmount: 0 }
+
+  it("la identidad del vehículo es un enlace a su ficha con el código; la patente va debajo con el tipo", () => {
+    renderTable([conCodigo])
+
+    const enlaces = screen.getAllByRole("link", { name: "Ver ficha de KA-115" })
+    expect(enlaces.some((link) => link.getAttribute("href") === "/flota/v11")).toBe(true)
+    expect(screen.getAllByText("Camión · DZTH-66").length).toBeGreaterThan(0)
+  })
+
+  it("ninguna fila se anuncia como enlace: el enlace es el de la celda", () => {
+    renderTable([conCodigo])
+
+    expect(screen.queryAllByRole("row").filter((row) => row.getAttribute("role") === "link")).toHaveLength(0)
+    expect(document.querySelector('tr[role="link"]')).toBeNull()
+  })
+
+  it("el estado usa el vocabulario de flota", () => {
+    renderTable([{ ...conCodigo, operationalStatus: "mantencion" }, { ...base, id: "v13", plate: "AA-0013", isActive: false }])
+
+    expect(screen.getAllByText("En mantención").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Inactivo").length).toBeGreaterThan(0)
+  })
+
+  it("nombra las magnitudes con su unidad y no repite siglas que se leen como velocidad", () => {
+    renderTable([LIMPIA])
+
+    for (const header of ["Gasto combustible (12 m)", "Costo por km u hora", "Lectura (km u h)"]) {
+      expect(screen.getByRole("columnheader", { name: header })).toBeInTheDocument()
+    }
+    expect(screen.queryByText(/Km\/Hr|km\/h$/)).toBeNull()
+  })
+
+  it("sin movimientos de combustible el gasto dice «—», no $0", () => {
+    renderTable([sinCombustible])
+
+    const fila = screen.getAllByRole("row").find((row) => within(row).queryByText("AA-0012"))!
+    expect(within(fila).queryByText("$0")).toBeNull()
+    expect(within(fila).getAllByText("—").length).toBeGreaterThan(0)
   })
 })

@@ -41,9 +41,9 @@ const EVENT_LABELS: Record<OtEventType, string> = {
   item_added: "Ítem agregado",
   items_marked: "Ítems marcados",
   finished: "Salida de taller",
-  received: "Recepción",
+  received: "Equipo recibido",
   rejected: "Devuelta a taller",
-  conformed: "Recepción en faena (conformidad)",
+  conformed: "Conformidad en faena",
   voided: "Anulada",
   reopened: "Reabierta",
   record_linked: "Registro enlazado",
@@ -126,9 +126,9 @@ export async function exportWorkOrders(input: {
     excelDateTime(ot.createdAt),
   ])
   const otHeaders = [
-    "Folio", "Estado", "Faena", "Equipo", "Patente", "Tipo de equipo", "Reparación", "Mantención", "Fecha OT", "Solicitante", "Creada por",
+    "Folio", "Estado", "Faena", "Equipo", "Patente", "Tipo de equipo", "Reparación", "Mantención", "Fecha de la orden", "Solicitante", "Creada por",
     "Mecánico", "Reparación solicitada", "Observaciones", "Taller", "Nombre del taller", "Encargado del taller", "Operador",
-    "Ingreso a taller", "Lectura de ingreso", "Unidad", "Fec. estimada entrega", "Salida taller", "Recepción", "Recibió", "Recepción en faena",
+    "Ingreso a taller", "Lectura de ingreso", "Unidad", "Entrega estimada", "Salida de taller", "Recepción del equipo", "Recibió", "Conformidad en faena",
     "Recibió en faena", "Cerrada", "Veces devuelta", "Motivo de anulación", "Creada",
   ]
 

@@ -34,7 +34,7 @@ export function PhotoGallery({ photos }: { photos: LightboxPhoto[] }) {
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={`/api/mantencion/fotos/${photo.id}`} alt={photo.alt} loading="lazy" className="aspect-[4/3] w-full object-cover" />
-              <span className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-black/70 px-2 py-1 text-xs font-medium text-white">
+              <span className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-[color-mix(in_oklab,var(--color-text)_70%,transparent)] px-2 py-1 text-xs font-medium text-white">
                 Ampliar
                 <MagnifyingGlassPlus size={14} aria-hidden />
               </span>

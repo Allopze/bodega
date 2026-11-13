@@ -243,7 +243,7 @@ export default async function DteListPage({
       ) : (
         <section className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
           <div className="overflow-x-auto">
-            <TableRoot className="rounded-none border-0">
+            <TableRoot framed={false}>
             <Table className="text-left">
               <caption className="sr-only">Documentos tributarios electrónicos recibidos</caption>
               <TableHeader>

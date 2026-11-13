@@ -1,6 +1,7 @@
 /**
  * E2E: navegación del área «Control operacional» ordenada por tarea
- * (rama `feat/control-operacional-orden`, 2026-10-22).
+ * (rama `feat/control-operacional-orden`, 2026-10-22; menú reorganizado el
+ * 2026-11-13 en `feat/control-operacional-uiux`).
  *
  * El área pasó de diez ítems planos de tres módulos a nueve ítems en tres
  * grupos (Seguimiento, Flota, Combustible), con rutas alias que deben dejar
@@ -64,9 +65,20 @@ function menuDelArea(page: Page): Locator {
     .filter({ has: page.locator('a[href="/control-operacional"]') })
 }
 
-/** Un ítem del sidebar, por href. */
+/**
+ * Un ítem del sidebar, por href. «Configuración» (Mantención y Combustible) es un
+ * padre que lleva a su primer hijo: su enlace comparte href con ese hijo, así que
+ * los hijos se buscan dentro de la lista anidada (`li li`) y los ítems de primer
+ * nivel por su enlace propio.
+ */
 function itemDelMenu(page: Page, href: string): Locator {
-  return menuDelArea(page).locator(`a[href="${href}"]`)
+  const enlaces = menuDelArea(page).locator(`a[href="${href}"]`)
+  return HREFS_DE_HIJOS.has(href) ? menuDelArea(page).locator(`li li a[href="${href}"]`) : enlaces.first()
+}
+
+/** La fila de primer nivel (`<li>`) cuyo enlace lleva a `href`: para leer a un padre con sus hijos. */
+function filaDePrimerNivel(page: Page, href: string): Locator {
+  return menuDelArea(page).locator(":scope > li").filter({ has: page.locator(`a[href="${href}"]`) })
 }
 
 function barraDe(page: Page, etiqueta: string): Locator {
@@ -82,7 +94,13 @@ function empiezaCon(texto: string): RegExp {
 // Menú del área
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface DestinoDelMenu { href: string; nombre: string | RegExp }
+interface DestinoDelMenu {
+  /** Para un padre es el href de su primer hijo visible (así lo resuelve `getVisibleAreas`). */
+  href: string
+  nombre: string | RegExp
+  /** Destinos anidados de un padre («Configuración»); sólo se pintan con el padre abierto. */
+  hijos?: readonly DestinoDelMenu[]
+}
 
 const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDelMenu[] }> = [
   {
@@ -100,41 +118,58 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
   {
     grupo: "Mantención",
     destinos: [
+      // «Panel de mantención» y «Panel de combustible» ya no repiten rótulo; igual se distinguen por href y por grupo.
+      { href: "/mantencion/panel", nombre: "Panel de mantención" },
       { href: "/mantencion/ot", nombre: "Órdenes de trabajo" },
-      { href: "/mantencion/panel", nombre: "Panel" },
-      { href: "/mantencion/registros", nombre: "Registros" },
+      { href: "/mantencion/registros", nombre: "Registros firmados" },
       { href: "/mantencion/equipos", nombre: "Equipos" },
-      { href: "/mantencion/pautas", nombre: "Pautas" },
-      { href: "/mantencion/dispositivos", nombre: "Dispositivos" },
-      // El catálogo es del módulo `repuestos`, que se registra después de Mantención de equipos: en el grupo manda el orden de registro.
+      {
+        href: "/mantencion/pautas",
+        nombre: "Configuración",
+        hijos: [
+          { href: "/mantencion/pautas", nombre: "Pautas" },
+          { href: "/mantencion/catalogos", nombre: "Marcas y talleres" },
+          { href: "/mantencion/dispositivos", nombre: "Dispositivos" },
+        ],
+      },
+      // El catálogo es del módulo `repuestos`, apagable por separado de Mantención de equipos: no puede colgar del padre de otro módulo.
       { href: "/mantencion/repuestos", nombre: "Catálogo de repuestos" },
     ],
   },
   {
     grupo: "Combustible",
     destinos: [
-      // «Panel» y «Consumo» repiten rótulos de Mantención en la misma área: se distinguen por href y por grupo.
-      { href: "/combustibles", nombre: "Panel" },
+      { href: "/combustibles", nombre: "Panel de combustible" },
       { href: "/combustibles/cargas", nombre: "Cargas" },
       // El contador de pendientes (`badge: "count"`) va dentro del enlace: sólo se lee el rótulo por prefijo.
       { href: "/combustibles/revisar", nombre: empiezaCon("Por revisar") },
       { href: "/combustibles/cuadratura", nombre: "Cuadratura" },
       { href: "/combustibles/consumo", nombre: "Consumo" },
-      { href: "/combustibles/pagos", nombre: "Pagos" },
-      { href: "/combustibles/fuentes", nombre: "Fuentes de datos" },
-      { href: "/combustibles/ajustes", nombre: "Ajustes" },
+      { href: "/combustibles/pagos", nombre: "Facturas y pagos" },
+      {
+        href: "/combustibles/fuentes",
+        nombre: "Configuración",
+        hijos: [
+          { href: "/combustibles/fuentes", nombre: "Fuentes de datos" },
+          { href: "/combustibles/ajustes", nombre: "Ajustes" },
+        ],
+      },
     ],
   },
 ]
 
-const HREFS_DEL_MENU: string[] = MENU_DEL_AREA.flatMap((grupo) => grupo.destinos.map((destino) => destino.href))
+/** Destinos propios de cada pantalla (los hijos de un padre y las hojas), sin contar al padre que comparte href con su primer hijo. */
+const DESTINOS_DEL_MENU: DestinoDelMenu[] = MENU_DEL_AREA.flatMap((grupo) =>
+  grupo.destinos.flatMap((destino) => destino.hijos ?? [destino]))
+const HREFS_DEL_MENU: string[] = DESTINOS_DEL_MENU.map((destino) => destino.href)
+const HREFS_DE_HIJOS = new Set(MENU_DEL_AREA.flatMap((grupo) => grupo.destinos.flatMap((destino) => (destino.hijos ?? []).map((hijo) => hijo.href))))
 
 test.describe("Control operacional — menú del área", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
   })
 
-  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus diecinueve destinos en orden", async ({ page }) => {
+  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus ítems de primer nivel en orden", async ({ page }) => {
     await page.goto("/control-operacional")
 
     const area = page
@@ -143,7 +178,9 @@ test.describe("Control operacional — menú del área", () => {
     await expect(area).toHaveAttribute("aria-expanded", "true")
 
     const menu = menuDelArea(page)
-    await expect(menu.getByRole("link")).toHaveCount(HREFS_DEL_MENU.length)
+    // Con el área recién abierta los padres («Configuración») están plegados: sólo se
+    // pintan los ítems de primer nivel.
+    await expect(menu.getByRole("link")).toHaveCount(MENU_DEL_AREA.reduce((suma, grupo) => suma + grupo.destinos.length, 0))
 
     // Estructura completa en un solo vistazo: cada encabezado de grupo
     // (`<li aria-hidden>`) seguido de los hrefs de sus ítems, en el orden del menú.
@@ -156,7 +193,30 @@ test.describe("Control operacional — menú del área", () => {
 
     // Y cada ítem tiene un rótulo legible, no un guion ni un texto vacío.
     for (const { href, nombre } of MENU_DEL_AREA.flatMap((grupo) => grupo.destinos)) {
-      await expect.soft(itemDelMenu(page, href), `ítem ${href}`).toHaveText(nombre)
+      await expect.soft(filaDePrimerNivel(page, href).locator("a").first(), `ítem ${href}`).toHaveText(nombre)
+    }
+  })
+
+  test("«Configuración» pliega sus destinos bajo un solo padre y se abre sola al entrar a uno de ellos", async ({ page }) => {
+    // El padre no tiene pantalla propia: su enlace lleva al primer hijo que la persona
+    // puede abrir. Con el administrador del seed (todos los permisos) son Pautas y
+    // Fuentes de datos; los hijos se pintan sólo con el padre abierto.
+    for (const grupo of MENU_DEL_AREA) {
+      for (const padre of grupo.destinos.filter((destino) => destino.hijos)) {
+        const hijos = padre.hijos ?? []
+        const primero = hijos[0]!
+        await page.goto(primero.href)
+        await expect.soft(page, `${primero.href} no debe mandar a /forbidden`).not.toHaveURL(/\/forbidden|\/login/)
+
+        const fila = filaDePrimerNivel(page, padre.href)
+        await expect.soft(fila.getByRole("button", { name: "Mostrar destinos de Configuración", exact: true }), `${grupo.grupo}: el padre se abre al entrar a un hijo`)
+          .toHaveAttribute("aria-expanded", "true")
+        const enlaces = fila.locator("li a")
+        await expect.soft(enlaces, `${grupo.grupo}: hijos de Configuración`).toHaveCount(hijos.length)
+        await expect.soft(enlaces, `${grupo.grupo}: orden y rótulos de los hijos`).toHaveText(hijos.map((hijo) => hijo.nombre as string))
+        // El padre queda como camino (sin `aria-current`): el destino activo es el hijo.
+        await expect.soft(fila.locator('[aria-current="page"]'), `${grupo.grupo}: un solo destino activo`).toHaveCount(1)
+      }
     }
   })
 
@@ -252,17 +312,17 @@ const PESTANAS_POR_SECCION = [
     pantallas: [
       { ruta: "/combustibles/cuadratura/mandante", activa: "Por mandante" },
       { ruta: "/combustibles/cuadratura/estanques", activa: "Estanques" },
-      { ruta: "/combustibles/cuadratura/proveedor", activa: "Proveedor y terreno" },
+      { ruta: "/combustibles/cuadratura/proveedor", activa: "Facturado y terreno" },
       { ruta: "/combustibles/cuadratura/tarjeta-y-terreno", activa: "Tarjeta y terreno" },
       { ruta: "/combustibles/cuadratura/sellos", activa: "Sellos" },
     ],
   },
   {
-    seccion: "Consumo y rendimiento",
+    seccion: "Consumo",
     barra: BARRAS.consumo,
     pantallas: [
       { ruta: "/combustibles/consumo/rendimiento/camiones", activa: "Rendimiento" },
-      { ruta: "/combustibles/consumo/litros", activa: "Consumo" },
+      { ruta: "/combustibles/consumo/litros", activa: "Litros" },
       { ruta: "/combustibles/consumo/motor-en-vacio", activa: "Motor en vacío" },
     ],
   },
@@ -292,7 +352,7 @@ test.describe("Control operacional — pestañas de sección", () => {
     })
   }
 
-  test("«Motor en vacío» es la pestaña activa y «Consumo» conserva la faena y el período de la URL", async ({ page }) => {
+  test("«Motor en vacío» es la pestaña activa y «Litros» conserva la faena y el período de la URL", async ({ page }) => {
     // `periodo` y `faena` son el contexto que `FUEL_CARRY_PARAMS` arrastra entre
     // las pestañas: cambiar de vista no obliga a volver a filtrar.
     await page.goto("/combustibles/consumo/motor-en-vacio?faena=ws-e2e&periodo=2025-03")
@@ -300,18 +360,18 @@ test.describe("Control operacional — pestañas de sección", () => {
     const barra = barraDe(page, BARRAS.consumo)
     await expect(barra.locator('[aria-current="page"]')).toHaveText(empiezaCon("Motor en vacío"))
 
-    await barra.getByRole("link", { name: "Consumo", exact: true }).click()
+    await barra.getByRole("link", { name: "Litros", exact: true }).click()
     await expect(page).toHaveURL((url) => url.pathname === "/combustibles/consumo/litros")
 
     const url = new URL(page.url())
     expect(url.searchParams.get("faena")).toBe("ws-e2e")
     expect(url.searchParams.get("periodo")).toBe("2025-03")
-    await expect(barra.locator('[aria-current="page"]')).toHaveText("Consumo")
+    await expect(barra.locator('[aria-current="page"]')).toHaveText("Litros")
   })
 
   test("sin faena en la URL, cambiar de pestaña no inventa filtros", async ({ page }) => {
     await page.goto("/combustibles/consumo/motor-en-vacio")
-    await barraDe(page, BARRAS.consumo).getByRole("link", { name: "Consumo", exact: true }).click()
+    await barraDe(page, BARRAS.consumo).getByRole("link", { name: "Litros", exact: true }).click()
     await expect(page).toHaveURL((url) => url.pathname === "/combustibles/consumo/litros")
     // El período sí puede aparecer (la pantalla lo recupera de la cookie y lo escribe para que el enlace sea compartible); la faena no.
     expect(new URL(page.url()).searchParams.has("faena")).toBe(false)
@@ -487,8 +547,8 @@ test.describe("Control operacional — rutas retiradas", () => {
     const url = new URL(page.url())
     expect(url.searchParams.get("hasta")).toBe("2026-07-31")
     expect(url.searchParams.get("desde")).not.toBe("basura")
-    await expectPageTitle(page, "Consumo y rendimiento")
-    await expect(barraDe(page, BARRAS.consumo).locator('[aria-current="page"]')).toHaveText("Consumo")
+    await expectPageTitle(page, "Litros cargados")
+    await expect(barraDe(page, BARRAS.consumo).locator('[aria-current="page"]')).toHaveText("Litros")
   })
 })
 
@@ -542,7 +602,10 @@ test.describe("Control operacional — tiles del panel", () => {
   test("la tabla de activos separa mano de obra de OT y compras de repuestos y servicios", async ({ page }) => {
     // Plan 2026-11-07: el costo manual de la OT es sólo mano de obra / taller, y
     // las OC vinculadas al equipo tienen su propia columna. El administrador del
-    // seed tiene OT y `purchasing:view`, así que ve ambas.
+    // seed tiene OT y `purchasing:view`, así que ve ambas. Desde la mejora UI/UX
+    // 2026-11-13 la tabla abre con seis columnas: las de costo se piden por la URL
+    // de la vista, que es lo que guarda el menú «Columnas».
+    await page.goto(`/control-operacional?control-operacional-activos_cols=${["code", "maintenanceCost", "purchaseAmount"].join(",")}`)
     const table = page.getByRole("table", { name: "Activos operacionales" })
     await expect(table).toBeVisible()
     const header = (label: string) =>
@@ -597,7 +660,10 @@ test.describe("Control operacional — tiles del panel", () => {
 
       await tile.click()
       await expectPorRevisar(page)
-      await expect(page.getByText(total === 1 ? "1 cosa espera a una persona." : `${total} cosas esperan a una persona.`)).toBeVisible()
+      // El total vive sólo en la pestaña «Pendientes N» (A5); incluye los casos en
+      // seguimiento, que el tile del panel cuenta aparte.
+      const pendientes = Number((await barraDe(page, BARRAS.revisar).getByRole("link", { name: /^Pendientes/ }).innerText()).replace(/\D/g, ""))
+      expect(pendientes).toBeGreaterThanOrEqual(total)
     } finally {
       await withSql(async (sql) => { await sql`delete from fuel_review_marks where id = ${pedidoId}` })
     }
@@ -700,8 +766,8 @@ test.describe("Control operacional — roles acotados", () => {
 
     // El panel abre, pero sólo con las columnas de combustible: sin flota,
     // inspecciones ni costos de otros dominios.
-    await page.goto("/control-operacional")
-    await expect(page).toHaveURL(/\/control-operacional$/)
+    await page.goto(`/control-operacional?control-operacional-activos_cols=${["code", "fuelLiters", "inspectionCount", "fuelBilledAmount"].join(",")}`)
+    await expect(page).toHaveURL((url) => url.pathname === "/control-operacional")
     await expectPageTitle(page, "Panel operacional")
     const table = page.getByRole("table", { name: "Activos operacionales" })
     await expect(table).toBeVisible()

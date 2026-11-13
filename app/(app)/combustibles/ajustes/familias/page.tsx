@@ -27,11 +27,11 @@ export default async function AjustesFamiliasPage() {
         actions={<FuelHeaderActions />}
       />
       <div className="space-y-4">
-        <DegradedDataBanner degraded={Array.from({ length: degraded }, () => "fuente")} total={total} />
+        <DegradedDataBanner degraded={degraded} total={total} />
         <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">
           La familia define con quién se compara cada tipo de equipo en «Consumo › Rendimiento». Un tipo fuera de las familias no aparece en esas vistas, pero sus litros siguen contando en el resto del módulo.
         </p>
-        {degraded > 0 && types.length === 0 ? null : <EquipmentFamiliesTable types={types} catalogHref={can(session, "admin:fleet_catalog") ? "/admin/flota-catalogos/tipos-equipo" : null} />}
+        {degraded.length > 0 && types.length === 0 ? null : <EquipmentFamiliesTable types={types} catalogHref={can(session, "admin:fleet_catalog") ? "/admin/flota-catalogos/tipos-equipo" : null} />}
       </div>
     </PageContainer>
   )

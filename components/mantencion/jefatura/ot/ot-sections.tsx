@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { CheckSquare, Package, Square } from "@phosphor-icons/react/dist/ssr"
+import { CheckCircle, Circle, CheckSquare, Package, Square } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { DetailItem } from "@/components/ui/detail-item"
@@ -13,8 +13,8 @@ import { OT_ITEM_KIND_LABELS, type OtItemKind } from "@/lib/mantencion/work-orde
 import type { WorkOrderDetail, WorkOrderItemDetail, WorkOrderPartsRequest } from "@/lib/services/mantencion/work-orders/types"
 import { SparePartIdentity, SparePartName, SparePartReference, sparePartIdentity } from "@/components/mantencion/spare-part-reference"
 import { SectionCard } from "../shared/section-card"
-import { OT_STATE_META, equipmentText } from "./ot-labels"
-import { formatDay, formatTimeOnly, sortEventsNewestFirst } from "./ot-format"
+import { OT_STATE_META } from "./ot-labels"
+import { formatDay, sortEventsNewestFirst } from "./ot-format"
 import { formatDateTime, todayInChile } from "@/lib/utils"
 import { EstimateCell } from "./ot-table"
 
@@ -37,7 +37,119 @@ function Pending({ children }: { children: ReactNode }) {
   return <p className="text-sm text-[var(--color-text-muted)]">{children}</p>
 }
 
-/** ORDEN DE TRABAJO: Nº, equipo, REPARACIÓN / MANTENCIÓN, fecha de la OT y solicitante. */
+/**
+ * Qué falta para que la orden avance, en una frase. Es el «siguiente paso» del bloque «Avance»: el estado dice dónde está
+ * la orden y esto dice qué sigue, sin que haya que deducirlo de cuatro tarjetas vacías.
+ */
+export function nextStepText(detail: Pick<WorkOrderDetail, "status" | "assignedToName" | "needsLinkedRecord">): string {
+  switch (detail.status) {
+    case "solicitada": return "Falta asignar un mecánico."
+    case "asignada": return detail.assignedToName ? `Falta que ${detail.assignedToName} registre el ingreso del equipo al taller.` : "Falta registrar el ingreso del equipo al taller."
+    case "en_ejecucion": return detail.needsLinkedRecord ? "Falta registrar el trabajo y la salida de taller." : "Falta registrar la salida de taller."
+    case "trabajo_terminado": return "Falta recibir el equipo, a cargo de quien lo retira del taller."
+    case "recepcionada": return "Falta la conformidad en faena del administrador de contrato; con ella la orden se cierra."
+    case "cerrada": return "La orden está cerrada."
+    case "anulada": return "La orden está anulada."
+  }
+}
+
+interface Stage {
+  key: string
+  label: string
+  at: string | null
+  /** Detalle de la etapa, un renglón por elemento; cada renglón junta sus partes con « · ». */
+  lines: string[]
+}
+
+function stagesOf(detail: WorkOrderDetail): Stage[] {
+  const { entry, exit, reception, faenaReception } = detail
+  const workshop = entry
+    ? entry.workshopName
+      ? `${entry.workshopName} (${entry.workshopKind === "interno" ? "interno" : "externo"})`
+      : entry.workshopKind === "interno" ? "Taller interno" : "Taller externo"
+    : null
+  const join = (...parts: Array<string | null | undefined | false>) => parts.filter(Boolean).join(" · ")
+  const recorded = (name: string | null, at: string) => (name ? `Registrada por ${name} · ${formatDateTime(at)}` : `Registrada el ${formatDateTime(at)}`)
+  return [
+    {
+      key: "entry",
+      label: "Ingreso a taller",
+      at: entry?.entryAt ?? null,
+      lines: entry
+        ? [
+            join(workshop, entry.workshopManagerName && `Encargado ${entry.workshopManagerName}`),
+            join(
+              entry.operatorName && `Operador ${entry.operatorName}`,
+              entry.odometer != null && `Kilómetro ${formatNumber(entry.odometer)}`,
+              entry.hourmeter != null && `Horómetro ${formatNumber(entry.hourmeter)}`,
+            ),
+            entry.startedByName ? `Registrado por ${entry.startedByName}` : "",
+          ].filter(Boolean)
+        : [],
+    },
+    {
+      key: "exit",
+      label: "Salida de taller",
+      at: exit?.exitAt ?? null,
+      lines: exit?.finishedByName ? [`Registrada por ${exit.finishedByName}`] : [],
+    },
+    {
+      key: "reception",
+      label: "Recepción del equipo",
+      at: reception?.receivedAt ?? null,
+      lines: reception ? [`Recibió ${reception.receiverName}`, recorded(reception.recordedByName, reception.recordedAt)] : [],
+    },
+    {
+      key: "faena",
+      label: "Conformidad en faena",
+      at: faenaReception?.receivedAt ?? null,
+      lines: faenaReception ? [`Recibió ${faenaReception.receiverName}`, recorded(faenaReception.recordedByName, faenaReception.closedAt)] : [],
+    },
+  ]
+}
+
+/**
+ * «Avance»: el estado de la orden, lo que falta, y las cuatro etapas del taller en línea, cada una con su fecha o
+ * «Pendiente». Reemplaza a cuatro tarjetas casi vacías («Aún no…») que repetían el estado en prosa (auditoría
+ * 2026-11-13, M6). Va ANTES del resto de las tarjetas: lo primero que se quiere saber de una orden es dónde está.
+ */
+export function OtProgressSection({ detail }: { detail: WorkOrderDetail }) {
+  const stages = stagesOf(detail)
+  return (
+    <SectionCard title="Avance" description="Dónde está la orden y qué sigue. Cada etapa muestra quién la registró.">
+      <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span data-testid="ot-estado"><MetaBadge meta={OT_STATE_META[detail.status]} size="sm" /></span>
+        <p className="text-sm text-[var(--color-text)]">{nextStepText(detail)}</p>
+        {detail.entry && detail.status === "en_ejecucion" && (
+          <p className="text-sm text-[var(--color-text-muted)]">
+            Entrega estimada: <EstimateCell row={detail} />
+          </p>
+        )}
+      </div>
+      <ol aria-label="Etapas de la orden" className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+        {stages.map((stage) => {
+          const done = stage.at !== null
+          return (
+            <li key={stage.key} className="min-w-0 border-t-2 pt-2" style={{ borderColor: done ? "var(--color-success)" : "var(--color-border)" }}>
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
+                {done
+                  ? <CheckCircle size={16} weight="fill" aria-hidden className="shrink-0 text-[var(--color-success-ink)]" />
+                  : <Circle size={16} aria-hidden className="shrink-0 text-[var(--color-text-subtle)]" />}
+                {stage.label}
+              </p>
+              <p className={done ? "mt-0.5 font-mono text-sm tabular-nums text-[var(--color-text)]" : "mt-0.5 text-sm text-[var(--color-text-muted)]"}>
+                {done ? formatDateTime(stage.at!) : "Pendiente"}
+              </p>
+              {stage.lines.map((line) => <p key={line} className="mt-0.5 break-words text-xs text-[var(--color-text-muted)]">{line}</p>)}
+            </li>
+          )
+        })}
+      </ol>
+    </SectionCard>
+  )
+}
+
+/** Orden de trabajo: tipo, fecha, solicitante, mecánico y quién la creó. El folio, el equipo y la faena ya están en el título de la página. */
 export function OtHeaderSection({ detail }: { detail: WorkOrderDetail }) {
   return (
     <SectionCard title="Orden de trabajo" description="Reparación / mantención">
@@ -46,12 +158,8 @@ export function OtHeaderSection({ detail }: { detail: WorkOrderDetail }) {
         <PaperCheck checked={detail.maintenance} label="Mantención" />
       </div>
       <dl className={GRID}>
-        <DetailItem layout="stacked" label="Nº (folio)" value={detail.folio} mono />
-        <DetailItem layout="stacked" label="Equipo" value={equipmentText(detail)} mono />
-        <DetailItem layout="stacked" label="Estado" value={<MetaBadge meta={OT_STATE_META[detail.status]} size="sm" />} />
-        <DetailItem layout="stacked" label="Fecha OT" value={formatDay(detail.requestDate)} mono />
+        <DetailItem layout="stacked" label="Fecha de la orden" value={formatDay(detail.requestDate)} mono />
         <DetailItem layout="stacked" label="Solicitante" value={detail.requesterName} />
-        <DetailItem layout="stacked" label="Faena" value={detail.worksiteName} />
         <DetailItem layout="stacked" label="Tipo de equipo" value={detail.equipmentType} />
         <DetailItem
           layout="stacked"
@@ -74,12 +182,12 @@ export function OtRepairSection({ detail }: { detail: WorkOrderDetail }) {
 }
 
 function DoneCell({ item }: { item: WorkOrderItemDetail }) {
-  if (item.done === "si") return <span className="font-semibold text-[var(--color-success-ink)]">SÍ</span>
-  if (item.done === "no") return <span className="font-semibold text-[var(--color-signal-ink)]">NO</span>
+  if (item.done === "si") return <span className="font-semibold text-[var(--color-success-ink)]">Sí</span>
+  if (item.done === "no") return <span className="font-semibold text-[var(--color-signal-ink)]">No</span>
   return <span className="text-[var(--color-text-muted)]">Pendiente</span>
 }
 
-/** «TRABAJOS ANEXOS (REPARACIÓN)» y «REGISTRO DE MANTENCIONES SOLICITADAS O ASIGNADAS EN TALLER»: líneas numeradas con SÍ / NO. */
+/** «TRABAJOS ANEXOS (REPARACIÓN)» y «REGISTRO DE MANTENCIONES SOLICITADAS O ASIGNADAS EN TALLER»: líneas numeradas con Sí / No. */
 export function OtItemsSection({ detail, kind }: { detail: WorkOrderDetail; kind: OtItemKind }) {
   const items = detail.items.filter((item) => item.kind === kind).sort((a, b) => a.sortOrder - b.sortOrder)
   if (kind === "anexo" && !detail.repair && items.length === 0) return null
@@ -89,7 +197,7 @@ export function OtItemsSection({ detail, kind }: { detail: WorkOrderDetail; kind
       {items.length === 0 ? (
         <Pending>No hay líneas en esta lista.</Pending>
       ) : (
-        <TableRoot aria-label={title} className="-mx-5 w-auto rounded-none border-0">
+        <TableRoot aria-label={title} framed={false} className="-mx-5 w-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -124,7 +232,7 @@ export function OtItemsSection({ detail, kind }: { detail: WorkOrderDetail; kind
   )
 }
 
-const TEXT_LINK = "font-mono text-[13px] font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
+const TEXT_LINK = "font-mono text-sm font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
 
 /** Una línea recibida completa ya no se espera: la fecha estimada pasada sólo cuenta mientras falte algo por llegar. */
 function lineOverdue(line: WorkOrderPartsRequest, today: string): boolean {
@@ -202,7 +310,7 @@ export function OtPartsRequestsSection({
                   <ResponsiveDataListField label="Recibido">
                     <span className="font-mono tabular-nums">{formatNumber(line.quantityReceived)}/{formatNumber(line.quantity)}</span>
                   </ResponsiveDataListField>
-                  <ResponsiveDataListField label="OC"><span className="font-mono">{line.orderCode ?? "—"}</span></ResponsiveDataListField>
+                  <ResponsiveDataListField label="Orden de compra"><span className="font-mono">{line.orderCode ?? "—"}</span></ResponsiveDataListField>
                   <ResponsiveDataListField label="Entrega estimada">
                     <EstimateCell row={{ estimatedDeliveryDate: line.estimatedDelivery, estimateOverdue: lineOverdue(line, today) }} />
                   </ResponsiveDataListField>
@@ -211,15 +319,15 @@ export function OtPartsRequestsSection({
             ))}
           </ul>
           <div className="hidden md:block">
-            <TableRoot aria-label="Repuestos pedidos" className="-mx-5 w-auto rounded-none border-0">
+            <TableRoot aria-label="Repuestos pedidos" framed={false} className="-mx-5 w-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Solicitud</TableHead>
                     <TableHead>Repuesto</TableHead>
-                    <TableHead>Cant.</TableHead>
+                    <TableHead>Cantidad</TableHead>
                     <TableHead>Estado</TableHead>
-                    <TableHead>OC</TableHead>
+                    <TableHead>Orden de compra</TableHead>
                     <TableHead>Entrega estimada</TableHead>
                     <TableHead>Recibido</TableHead>
                   </TableRow>
@@ -230,15 +338,15 @@ export function OtPartsRequestsSection({
                       <TableCell className="whitespace-nowrap">
                         {canOpenRequests
                           ? <Link href={`/solicitudes/${line.requestId}`} className={TEXT_LINK}>{line.requestCode}</Link>
-                          : <span className="font-mono text-[13px]">{line.requestCode}</span>}
+                          : <span className="font-mono text-sm">{line.requestCode}</span>}
                       </TableCell>
                       <TableCell><SparePartReference name={line.description} product={line} canOpen={canOpenSpareParts} /></TableCell>
                       <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{quantityText(line)}</TableCell>
                       <TableCell><StateBadge state={line.itemStatus} entity="item" size="sm" /></TableCell>
-                      <TableCell className="whitespace-nowrap font-mono text-[13px]">
+                      <TableCell className="whitespace-nowrap font-mono text-sm">
                         {line.orderCode ?? <span className="text-[var(--color-text-muted)]">—</span>}
                       </TableCell>
-                      <TableCell className="text-[13px]">
+                      <TableCell className="text-sm">
                         <EstimateCell row={{ estimatedDeliveryDate: line.estimatedDelivery, estimateOverdue: lineOverdue(line, today) }} />
                       </TableCell>
                       <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">
@@ -265,7 +373,7 @@ export function OtPartsRequestsSection({
                 <span className="text-[var(--color-text-muted)]"> · </span>
                 {openable.has(part.recordId)
                   ? <Link href={`/mantencion/registros/${part.recordId}`} className={TEXT_LINK}>{part.recordFolio ?? "Registro"}</Link>
-                  : <span className="font-mono text-[13px] text-[var(--color-text-muted)]">{part.recordFolio ?? "Registro"}</span>}
+                  : <span className="font-mono text-sm text-[var(--color-text-muted)]">{part.recordFolio ?? "Registro"}</span>}
               </li>
             ))}
           </ul>
@@ -281,83 +389,6 @@ export function OtObservationsSection({ detail }: { detail: WorkOrderDetail }) {
       {detail.observations
         ? <p className="whitespace-pre-wrap text-sm text-[var(--color-text)]">{detail.observations}</p>
         : <Pending>Sin observaciones.</Pending>}
-    </SectionCard>
-  )
-}
-
-/** INGRESO A TALLER: encargado, taller, hora, kilómetro, operador, fecha, horómetro y fecha estimada de entrega. */
-export function OtEntrySection({ detail }: { detail: WorkOrderDetail }) {
-  const entry = detail.entry
-  return (
-    <SectionCard title="Ingreso a taller">
-      {!entry ? (
-        <Pending>El equipo aún no ingresa al taller. El mecánico registra el ingreso desde su app o la jefatura desde aquí.</Pending>
-      ) : (
-        <dl className={GRID}>
-          <DetailItem layout="stacked" label="Encargado" value={entry.workshopManagerName} />
-          <DetailItem layout="stacked" label="Taller" value={entry.workshopName ? `${entry.workshopName} (${entry.workshopKind === "interno" ? "interno" : "externo"})` : entry.workshopKind === "interno" ? "Taller interno" : "Taller externo"} />
-          <DetailItem layout="stacked" label="Operador" value={entry.operatorName} />
-          <DetailItem layout="stacked" label="Fecha ingreso" value={formatDay(entry.entryAt)} mono />
-          <DetailItem layout="stacked" label="Hora ingreso" value={formatTimeOnly(entry.entryAt)} mono />
-          <DetailItem layout="stacked" label="Fec. estimada entrega" value={<EstimateCell row={detail} />} />
-          <DetailItem layout="stacked" label="Kilómetro" value={entry.odometer != null ? formatNumber(entry.odometer) : null} mono />
-          <DetailItem layout="stacked" label="Horómetro" value={entry.hourmeter != null ? formatNumber(entry.hourmeter) : null} mono />
-          <DetailItem layout="stacked" label="Ingreso registrado por" value={entry.startedByName} />
-        </dl>
-      )}
-    </SectionCard>
-  )
-}
-
-export function OtExitSection({ detail }: { detail: WorkOrderDetail }) {
-  const exit = detail.exit
-  return (
-    <SectionCard title="Salida taller">
-      {!exit ? (
-        <Pending>El equipo aún no sale del taller.</Pending>
-      ) : (
-        <dl className={GRID}>
-          <DetailItem layout="stacked" label="Fecha" value={formatDay(exit.exitAt)} mono />
-          <DetailItem layout="stacked" label="Hora" value={formatTimeOnly(exit.exitAt)} mono />
-          <DetailItem layout="stacked" label="Registrada por" value={exit.finishedByName} />
-        </dl>
-      )}
-    </SectionCard>
-  )
-}
-
-export function OtReceptionSection({ detail }: { detail: WorkOrderDetail }) {
-  const reception = detail.reception
-  return (
-    <SectionCard title="Recepción" description="La registra quien retira el equipo del taller.">
-      {!reception ? (
-        <Pending>Aún no se registra la recepción.</Pending>
-      ) : (
-        <dl className={GRID}>
-          <DetailItem layout="stacked" label="Fecha" value={formatDay(reception.receivedAt)} mono />
-          <DetailItem layout="stacked" label="Hora" value={formatTimeOnly(reception.receivedAt)} mono />
-          <DetailItem layout="stacked" label="Sr." value={reception.receiverName} />
-          <DetailItem layout="stacked" label="Registrada por" value={reception.recordedByName ? `${reception.recordedByName} · ${formatDateTime(reception.recordedAt)}` : formatDateTime(reception.recordedAt)} />
-        </dl>
-      )}
-    </SectionCard>
-  )
-}
-
-export function OtFaenaReceptionSection({ detail }: { detail: WorkOrderDetail }) {
-  const faena = detail.faenaReception
-  return (
-    <SectionCard title="Recepción en faena" description="Es la conformidad del administrador de contrato y cierra la OT.">
-      {!faena ? (
-        <Pending>Aún sin conformidad en faena.</Pending>
-      ) : (
-        <dl className={GRID}>
-          <DetailItem layout="stacked" label="Fecha" value={formatDay(faena.receivedAt)} mono />
-          <DetailItem layout="stacked" label="Hora" value={formatTimeOnly(faena.receivedAt)} mono />
-          <DetailItem layout="stacked" label="Sr." value={faena.receiverName} />
-          <DetailItem layout="stacked" label="Registrada por" value={faena.recordedByName ? `${faena.recordedByName} · ${formatDateTime(faena.closedAt)}` : formatDateTime(faena.closedAt)} />
-        </dl>
-      )}
     </SectionCard>
   )
 }

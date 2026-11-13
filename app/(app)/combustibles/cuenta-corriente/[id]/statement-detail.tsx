@@ -12,11 +12,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { EmptyState } from "@/components/ui/empty-state"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { describeStatementStatus, getStatementDisplayStatus, statementPendingAmount } from "@/lib/combustibles/calculations"
 import { FUEL_STATEMENT_STATUS_LABELS } from "@/lib/combustibles/labels"
-import { fuelLoadHref } from "@/lib/combustibles/routes"
+import { FUEL_PATHS, fuelLoadHref } from "@/lib/combustibles/routes"
 import { toast } from "@/lib/toast"
 import { formatCLP, formatDate, formatQty, todayInChile } from "@/lib/utils"
 
@@ -131,36 +132,45 @@ export function StatementDetail({ statement, today }: { statement: StatementData
       <Card>
         <CardHeader><CardTitle as="h2" className={CARD_TITLE}>Cargas del estado de cuenta ({loads.length})</CardTitle></CardHeader>
         <CardContent>
-          <div className="-mx-4 overflow-x-auto rounded-lg border px-4 sm:mx-0 sm:px-0">
-            <Table className="min-w-[760px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Equipo</TableHead>
-                  <TableHead>Faena</TableHead>
-                  <TableHead>Producto</TableHead>
-                  <TableHead>N.º factura</TableHead>
-                  <TableHead className="text-right">Litros</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loads.map((l) => (
-                  <TableRow key={l.id}>
-                    <TableCell className="font-mono text-sm">
-                      <Link href={fuelLoadHref({ origen: "factura", id: l.id })} className="underline-offset-2 hover:underline">{formatDate(l.loadDate)}</Link>
-                    </TableCell>
-                    <TableCell>{l.vehicle ? (l.vehicle.code ? `${l.vehicle.code} · ${l.vehicle.plate}` : l.vehicle.plate) : "—"}</TableCell>
-                    <TableCell className="max-w-40 truncate">{l.worksite?.name ?? "—"}</TableCell>
-                    <TableCell>{l.product}</TableCell>
-                    <TableCell className="font-mono text-sm">{l.receiptNumber ?? "—"}</TableCell>
-                    <TableCell className="text-right font-mono">{formatQty(l.liters)}</TableCell>
-                    <TableCell className="text-right font-mono">{formatCLP(l.totalAmount)}</TableCell>
+          {loads.length === 0 ? (
+            <EmptyState
+              compact
+              title="Este estado de cuenta no tiene cargas"
+              description="Se arma con las cargas facturadas del proveedor en el mes. Revisa las facturas del período para ver si falta alguna."
+              action={<Button asChild variant="secondary" size="sm"><Link href={FUEL_PATHS.pagos}>Ver facturas</Link></Button>}
+            />
+          ) : (
+            <TableRoot framed={false} aria-label="Cargas del estado de cuenta">
+              <Table className="min-w-[760px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Equipo</TableHead>
+                    <TableHead>Faena</TableHead>
+                    <TableHead>Producto</TableHead>
+                    <TableHead>N.º factura</TableHead>
+                    <TableHead className="text-right">Litros</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {loads.map((l) => (
+                    <TableRow key={l.id}>
+                      <TableCell className="font-mono text-sm">
+                        <Link href={fuelLoadHref({ origen: "factura", id: l.id })} className="underline-offset-2 hover:underline">{formatDate(l.loadDate)}</Link>
+                      </TableCell>
+                      <TableCell>{l.vehicle ? (l.vehicle.code ? `${l.vehicle.code} · ${l.vehicle.plate}` : l.vehicle.plate) : "—"}</TableCell>
+                      <TableCell className="max-w-40 truncate">{l.worksite?.name ?? "—"}</TableCell>
+                      <TableCell>{l.product}</TableCell>
+                      <TableCell className="font-mono text-sm">{l.receiptNumber ?? "—"}</TableCell>
+                      <TableCell className="text-right font-mono">{formatQty(l.liters)}</TableCell>
+                      <TableCell className="text-right font-mono">{formatCLP(l.totalAmount)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableRoot>
+          )}
         </CardContent>
       </Card>
     </div>

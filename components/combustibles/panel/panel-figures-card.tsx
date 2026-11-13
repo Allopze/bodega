@@ -41,18 +41,21 @@ function FigureRow({ figure }: { figure: PanelFigure }) {
   return (
     <div className="grid grid-cols-1 items-end gap-x-4 gap-y-1 border-t sm:grid-cols-[minmax(0,1fr)_auto] border-[var(--color-border)] py-3.5 first:border-t-0 first:pt-0 last:pb-0">
       <p className="text-sm text-[var(--color-text-muted)]">{figure.label}</p>
-      <div className="max-sm:order-3 sm:col-start-2 sm:row-span-2 sm:row-start-1">
-        <PanelHistory points={figure.history} ariaLabel={`${figure.label}, últimos ${figure.history.length} períodos`} />
-      </div>
+      {/* Sin cifra no hay barras que comparar: una serie vacía dibujada de todos modos se lee como un dato. */}
+      {figure.value === null ? null : (
+        <div className="max-sm:order-3 sm:col-start-2 sm:row-span-2 sm:row-start-1">
+          <PanelHistory points={figure.history} ariaLabel={`${figure.label}, últimos ${figure.history.length} períodos`} />
+        </div>
+      )}
       {figure.value === null ? (
-        <p className="text-lg font-semibold text-[var(--color-text-muted)]">Sin datos</p>
+        <p className="text-lg font-semibold text-[var(--color-text-muted)] sm:col-span-2">Sin datos</p>
       ) : (
-        <p className="font-mono text-[26px] font-semibold leading-tight tabular-nums tracking-tight text-[var(--color-text)]">
+        <p className="font-sans text-3xl font-semibold leading-tight tabular-nums text-[var(--color-text)]">
           {figure.value}
           {figure.unitTitle ? (
-            <abbr title={figure.unitTitle} className="ml-1.5 cursor-help font-sans text-sm font-medium tracking-normal text-[var(--color-text-muted)] no-underline decoration-dotted underline-offset-2 hover:underline">{figure.unit}</abbr>
+            <abbr title={figure.unitTitle} className="ml-1.5 cursor-help text-sm font-medium text-[var(--color-text-muted)] no-underline decoration-dotted underline-offset-2 hover:underline">{figure.unit}</abbr>
           ) : (
-            <span className="ml-1.5 font-sans text-sm font-medium tracking-normal text-[var(--color-text-muted)]">{figure.unit}</span>
+            <span className="ml-1.5 text-sm font-medium text-[var(--color-text-muted)]">{figure.unit}</span>
           )}
         </p>
       )}

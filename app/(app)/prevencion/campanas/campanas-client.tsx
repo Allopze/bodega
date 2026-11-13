@@ -143,7 +143,7 @@ export function CampanasClient({
       ) : (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
           <div className="overflow-x-auto">
-            <TableRoot className="rounded-none border-0">
+            <TableRoot framed={false}>
             <Table className="text-left">
               <caption className="sr-only">Campañas de capacitación</caption>
               <TableHeader>

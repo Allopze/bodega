@@ -52,7 +52,7 @@ export default async function EstadoCuentaPage({ params }: { params: Promise<{ i
         description={`Estado de cuenta · ${loads.length} ${loads.length === 1 ? "carga" : "cargas"}`}
         breadcrumb={
           <FuelBreadcrumbs items={[
-            { label: "Pagos", href: FUEL_PATHS.pagos },
+            { label: "Facturas y pagos", href: FUEL_PATHS.pagos },
             { label: "Estados de cuenta", href: FUEL_PATHS.estados },
             { label: `${supplierName} ${fuelMonthLabel(statement.month).toLowerCase()}` },
           ]} />

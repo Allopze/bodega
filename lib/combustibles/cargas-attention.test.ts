@@ -107,8 +107,15 @@ describe("la línea de «todo despejado» (UX-13)", () => {
     }
   })
 
-  it("nombra el período que ya resuelve la página", () => {
-    expect(attentionClearText("en noviembre")).toBe("Nada por validar, observar ni completar en noviembre")
-    expect(attentionClearText("en la semana del 26 de octubre")).toBe("Nada por validar, observar ni completar en la semana del 26 de octubre")
+  it("nombra el período que ya resuelve la página, con su «en»", () => {
+    expect(attentionClearText("noviembre")).toBe("Nada por validar, observar ni completar en noviembre")
+    expect(attentionClearText("la semana del 26 de octubre")).toBe("Nada por validar, observar ni completar en la semana del 26 de octubre")
+    expect(attentionClearText("2026")).toBe("Nada por validar, observar ni completar en 2026")
+  })
+
+  it("no afirma «nada pendiente» si la lista muestra cargas con algo abierto: las nombra", () => {
+    expect(attentionClearText("noviembre", 9)).toBe("Nada por validar ni completar en noviembre; 9 cargas con algo pendiente")
+    expect(attentionClearText("noviembre", 1)).toBe("Nada por validar ni completar en noviembre; 1 carga con algo pendiente")
+    expect(attentionClearText("noviembre", 0)).toBe("Nada por validar, observar ni completar en noviembre")
   })
 })

@@ -68,7 +68,7 @@ test.describe("OT · repuestos pedidos", () => {
 
     // OT asignada al mecánico de Biodiversa, para que el segundo test la vea.
     await page.goto("/mantencion/ot")
-    await page.getByRole("button", { name: /^(Nueva OT|Crear la primera orden)$/ }).first().click()
+    await page.getByRole("button", { name: /^(Nueva orden|Crear la primera orden)$/ }).first().click()
     const hoja = page.getByRole("dialog", { name: "Nueva orden de trabajo" })
     await expect(hoja).toBeVisible()
     await hoja.locator("#ot-equipo").click()
@@ -76,7 +76,7 @@ test.describe("OT · repuestos pedidos", () => {
     await page.getByRole("option", { name: new RegExp(equipo.code) }).first().click()
     await selectRadixById(page, "ot-mecanico", NOMBRE_MECANICO)
     await hoja.locator("#ot-reparacion-desc").fill("QA_ Fuga en el circuito hidráulico")
-    await hoja.getByRole("button", { name: "Crear OT", exact: true }).click()
+    await hoja.getByRole("button", { name: "Crear orden", exact: true }).click()
     await expect(page).toHaveURL(/\/mantencion\/ot\/[^/]+$/, { timeout: 30_000 })
     otId = new URL(page.url()).pathname.split("/").pop() ?? ""
     const titulo = await page.getByRole("heading", { level: 1 }).first().innerText()

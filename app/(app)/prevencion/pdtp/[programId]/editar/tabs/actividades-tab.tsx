@@ -274,7 +274,7 @@ export function ActividadesTab({
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
-          <TableRoot className="rounded-none border-0">
+          <TableRoot framed={false}>
           <Table className="text-sm">
             <caption className="sr-only">Actividades del programa PDTP</caption>
             <TableHeader>

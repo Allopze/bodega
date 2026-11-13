@@ -119,7 +119,7 @@ describe("fichas de repuesto — secciones", () => {
   it("una línea sin OC ni precio no inventa un costo", () => {
     render(<RecentLinesSection lines={[{ ...LINE, orderId: null, orderCode: null, orderStatus: null, supplierName: null, unitPrice: null }]} access={FULL_ACCESS} />)
     const table = screen.getByRole("region", { name: "Tabla de últimas solicitudes y órdenes de compra" })
-    expect(within(table).getByText("Sin OC")).toBeTruthy()
+    expect(within(table).getByText("Sin orden de compra")).toBeTruthy()
     expect(within(table).getByText("Sin precio")).toBeTruthy()
   })
 

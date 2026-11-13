@@ -39,7 +39,7 @@ export interface OtActionsProps {
   mechanics: Array<{ id: string; name: string; worksiteNames: string[] }> | null
   /** Sólo se carga cuando se puede registrar o corregir el ingreso. */
   entryCatalogs: { workshops: Array<{ id: string; name: string }>; drivers: Array<{ id: string; name: string }> } | null
-  /** Quien actúa: «Sr.» por defecto al recepcionar. */
+  /** Quien actúa: «Recibió» por defecto al recibir el equipo. */
   actorName: string
   pdfHref: string
   /**
@@ -165,7 +165,7 @@ export function OtActions(props: OtActionsProps) {
         </Button>
       )}
       {allowed.has("receive") && (
-        <Button variant="primary" size="sm" onClick={() => setDialog("receive")}>Recepcionar</Button>
+        <Button variant="primary" size="sm" onClick={() => setDialog("receive")}>Recibir equipo</Button>
       )}
       {allowed.has("conform") && (
         <Button variant="primary" size="sm" onClick={() => setDialog("conform")}>

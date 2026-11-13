@@ -96,7 +96,7 @@ export function StepReview({
         {(draft.noRemovedSeal || draft.noInstalledSeal) && <Row label="Motivo sin sello" value={draft.noSealReason || "—"} step="seals" onEdit={goTo} />}
         <Row label="Conductor" value={driverName || "—"} step="people" onEdit={goTo} />
         <Row label="Supervisor" value={supervisorName || "—"} step="people" onEdit={goTo} />
-        {loadingPointName && <div className="border-b border-[var(--color-border)] py-3"><dt className="text-sm text-[var(--color-text-muted)]">Lugar de carga</dt><dd className="text-lg font-semibold">{loadingPointName}</dd></div>}
+        {loadingPointName && <div className="border-b border-[var(--color-border)] py-3"><dt className="text-sm text-[var(--color-text-muted)]">Punto de carga</dt><dd className="text-lg font-semibold">{loadingPointName}</dd></div>}
       </dl>
       {photoEntries.length > 0 && (
         <div className="flex flex-wrap gap-3" aria-label="Fotos adjuntas">

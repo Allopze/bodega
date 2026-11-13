@@ -3,6 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
@@ -87,6 +88,14 @@ export function ThresholdsForm({ settings }: { settings: PerformanceControlSetti
   }
 
   const busy = save.pending || running
+  // Cambiar un valor y guardar recorre las cargas anteriores: se avisa ANTES de guardar. El servicio no calcula de
+  // antemano cuántas cargas se moverán (sólo lo cuenta mientras recalcula), así que el aviso dice qué va a pasar y que el
+  // número llega al terminar.
+  const pairs: Array<[string, number]> = [
+    [minSamples, settings.minSamples], [maxKmPerLiter, settings.maxKmPerLiter], [maxLitersPerHour, settings.maxLitersPerHour],
+    [windowMinutes, settings.duplicateWindowMinutes], [litersTolerance, settings.duplicateLitersTolerance],
+  ]
+  const dirty = pairs.some(([text, saved]) => text.trim() !== decimalText(saved))
 
   return (
     <div className="max-w-3xl space-y-8">
@@ -116,6 +125,11 @@ export function ThresholdsForm({ settings }: { settings: PerformanceControlSetti
             <Input id="thr-liters" inputMode="decimal" value={litersTolerance} onChange={(event) => setLitersTolerance(event.target.value)} error={!!save.fieldError("duplicateLitersTolerance")} className="max-w-36 font-mono tabular-nums" />
           </Field>
         </div>
+        {dirty && !running ? (
+          <Callout tone="warning" className="mt-4">
+            Al guardar estos valores se vuelven a revisar <strong>todas las cargas anteriores</strong> de tus faenas: algunas pueden pasar a «Por decidir» y otras dejar de estarlo. Cuántas cambiaron se informa al terminar.
+          </Callout>
+        ) : null}
         {save.message ? <p role="alert" className="mt-3 text-sm text-[var(--color-danger-ink)]">{save.message}</p> : null}
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <Button type="submit" loading={save.pending} disabled={running}>Guardar</Button>
@@ -138,7 +152,7 @@ export function ThresholdsForm({ settings }: { settings: PerformanceControlSetti
           </div>
         ) : null}
         {summary && !running ? (
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm text-[var(--color-text)]">
+          <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm text-[var(--color-text)]">
             <p>{recomputeSummaryText(summary)}</p>
             {summary.flagged > 0 ? (
               <p className="mt-2">

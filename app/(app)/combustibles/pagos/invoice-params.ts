@@ -1,4 +1,5 @@
 import { FUEL_LOAD_STATUS_LABELS } from "@/lib/combustibles/labels"
+import { SERVICE_TYPE_LABELS } from "@/lib/combustibles/source-labels"
 
 /**
  * Parámetros de URL de «Pagos › Facturas» y las palabras con que se muestran.
@@ -13,10 +14,7 @@ import { FUEL_LOAD_STATUS_LABELS } from "@/lib/combustibles/labels"
 export const INVOICE_PAGE_SIZE = 50
 
 /** El tipo de tarjeta de la carga, con el nombre del glosario (no las siglas TCT / TAE). */
-export const SERVICE_TYPE_LABELS: Record<string, string> = {
-  TCT: "Tarjeta Copec de equipos",
-  TAE: "Tarjeta Copec de abastecimiento",
-}
+export { SERVICE_TYPE_LABELS }
 
 export const INVOICE_FILTER_KEYS = ["faena", "equipo", "estado", "servicio", "proveedor", "producto", "productoId"] as const
 

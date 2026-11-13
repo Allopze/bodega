@@ -7,7 +7,7 @@ import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import type { EquipmentFileLitersMonth } from "@/lib/combustibles/equipment/types"
 import { MONTH_LABELS, MONTH_NAMES, countOf, formatQty } from "@/lib/utils"
-import { AXIS_TICK, compactNumber } from "../../../control/_charts/chart-shared"
+import { AXIS_TICK, compactNumber } from "../../../_shared/chart-shared"
 import { useChartMotion } from "@/components/ui/chart-interactions"
 
 /**

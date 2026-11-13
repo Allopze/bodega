@@ -19,7 +19,7 @@ export default async function ImportEquipmentPage() {
       <PageHeader
         title="Importar equipos"
         description="Carga equipos y sus lecturas iniciales desde una planilla de Excel."
-        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Equipos", href: "/mantencion/equipos" }, { label: "Importar" }]}
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Equipos", href: "/mantencion/equipos" }, { label: "Importar" }]}
       />
       <EquipmentImportPanel />
     </PageContainer>

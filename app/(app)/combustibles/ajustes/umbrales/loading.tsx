@@ -1,5 +1,5 @@
 import { SettingsLoading } from "../settings-loading"
 
 export default function Loading() {
-  return <SettingsLoading title="¿Cuándo una carga pide revisión?" shape="form" />
+  return <SettingsLoading title="Umbrales de revisión" shape="form" />
 }

@@ -11,7 +11,7 @@ import {
   purchaseSummary,
   type SparePartLinkAccess,
 } from "@/components/mantencion/repuestos/spare-part-detail-sections"
-import { Badge } from "@/components/ui/badge"
+import { Callout } from "@/components/ui/callout"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { can, requirePermission } from "@/lib/auth/can"
@@ -88,10 +88,9 @@ export default async function SparePartDetailPage({ params }: { params: Promise<
       />
 
       {!part.isActive && (
-        <p className="mb-3 text-sm text-[var(--color-text-muted)]">
-          <Badge variant="default" size="sm" className="mr-2 align-middle">Inactivo</Badge>
+        <Callout tone="warning" title="Este repuesto está inactivo" className="mb-3">
           No se ofrece al pedir repuestos ni al armar órdenes de compra. Su historial se conserva.
-        </p>
+        </Callout>
       )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">

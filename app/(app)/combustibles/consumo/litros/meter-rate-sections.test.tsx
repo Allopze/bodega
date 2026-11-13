@@ -5,7 +5,7 @@ import type { MeterRateMonth, MeterRateSeries } from "@/lib/combustibles/meter-r
 
 vi.mock("next/link", () => ({ default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a> }))
 // Recharts sólo corre en el navegador: acá importa lo que la sección dice alrededor del gráfico.
-vi.mock("../../control/_charts/overview-charts-lazy", () => ({ MeterRateChart: ({ series }: { series: { unit: string } }) => <div data-testid="rate-chart">{series.unit}</div> }))
+vi.mock("../_components/charts/overview-charts-lazy", () => ({ MeterRateChart: ({ series }: { series: { unit: string } }) => <div data-testid="rate-chart">{series.unit}</div> }))
 
 import { MeterRateSections } from "./meter-rate-sections"
 

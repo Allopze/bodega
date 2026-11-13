@@ -9,6 +9,10 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { FileInput } from "@/components/ui/file-input"
 import { Field } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Sheet, SheetBody, SheetCloseButton, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle,
+} from "@/components/ui/sheet"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { toast } from "@/lib/toast"
 import { formatDate } from "@/lib/utils"
 import { uploadFleetDocumentAction, deleteFleetDocumentAction } from "../actions"
@@ -40,22 +44,11 @@ export function FleetDocumentsPanel({
   documents: FleetDocument[]
   canManageDocuments: boolean
 }) {
-  const [uploadState, uploadAction, uploadPending] = useActionState<ActionState, FormData>(uploadFleetDocumentAction, { ok: false, message: "" })
   const [deleteState, deleteAction, deletePending] = useActionState<ActionState, FormData>(deleteFleetDocumentAction, { ok: false, message: "" })
-  const [selectedType, setSelectedType] = React.useState("")
-  const [expiresAt, setExpiresAt] = React.useState("")
-  // Borrar un SOAP o un seguro es irreversible y el disparador era un botón de
-  // icono que enviaba el form al primer clic, sin confirmación.
+  // Anular un SOAP o un seguro deja de regir y requiere motivo: el disparador es
+  // un botón de icono, así que no envía nada hasta que se confirma.
   const [pendingDelete, setPendingDelete] = React.useState<FleetDocument | null>(null)
   const [, startTransition] = useTransition()
-
-  React.useEffect(() => {
-    if (uploadState.ok && uploadState.message) {
-      toast.success(uploadState.message)
-    } else if (uploadState.ok === false && uploadState.message) {
-      toast.error(uploadState.message)
-    }
-  }, [uploadState])
 
   React.useEffect(() => {
     if (deleteState.ok && deleteState.message) {
@@ -68,7 +61,7 @@ export function FleetDocumentsPanel({
   return (
     <>
       {documents.length > 0 && (
-        <div className="mb-4 space-y-2">
+        <div className="space-y-2">
           {documents.map((document) => (
             <div key={document.id} className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] py-2 text-sm last:border-b-0">
               <div className="min-w-0">
@@ -95,7 +88,7 @@ export function FleetDocumentsPanel({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  aria-label={`Eliminar ${document.fileName}`}
+                  aria-label={`Anular ${document.fileName}`}
                   disabled={deletePending}
                   onClick={() => setPendingDelete(document)}
                 >
@@ -131,49 +124,101 @@ export function FleetDocumentsPanel({
       />}
 
       {documents.length === 0 && (
-        <p className="mb-4 text-xs text-[var(--color-text-subtle)]">Sin documentos registrados.</p>
+        <p className="text-xs text-[var(--color-text-subtle)]">
+          Sin archivos subidos.{canManageDocuments ? " Usa «Subir documento» para agregar el primero." : ""}
+        </p>
       )}
 
-      {canManageDocuments && <form action={uploadAction} className="flex flex-col gap-3">
-        <input type="hidden" name="vehicleId" value={vehicleId} />
-
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <Field label="Tipo" htmlFor="fleetDocumentType" required>
-            <input type="hidden" name="documentType" value={selectedType} />
-            <Select value={selectedType || undefined} onValueChange={setSelectedType}>
-              <SelectTrigger id="fleetDocumentType" className="w-full"><SelectValue placeholder="Selecciona tipo" /></SelectTrigger>
-              <SelectContent>
-                {DOC_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field label="Vencimiento" htmlFor="fleetDocExpiresAt" helper="Opcional">
-            <DatePicker
-              id="fleetDocExpiresAt"
-              name="expiresAt"
-              value={expiresAt}
-              onChange={setExpiresAt}
-            />
-          </Field>
-
-          <Field label="Archivo" htmlFor="fleetDocFile" required>
-            <FileInput
-              id="fleetDocFile"
-              name="file"
-              accept="application/pdf,image/jpeg,image/png"
-              required
-            />
-          </Field>
-        </div>
-
-        <div className="flex justify-end">
-          <Button type="submit" variant="secondary" size="sm" disabled={uploadPending || !selectedType}>
-            <UploadSimple size={14} />
-            {uploadPending ? "Subiendo..." : "Subir documento"}
-          </Button>
-        </div>
-      </form>}
     </>
+  )
+}
+
+/**
+ * «Subir documento»: el botón vive en la cabecera de la tarjeta «Documentos» y el
+ * formulario en una hoja, no siempre abierto sobre la lista (regla A3). El
+ * formulario se monta dentro de la hoja: al cerrarla se desmonta y el tipo, la
+ * fecha y el archivo sin enviar no reaparecen.
+ */
+export function FleetDocumentUpload({ vehicleId }: { vehicleId: string }) {
+  const [open, setOpen] = React.useState(false)
+  return (
+    <>
+      <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(true)}>
+        <UploadSimple size={14} aria-hidden />
+        Subir documento
+      </Button>
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent>
+          <UploadForm vehicleId={vehicleId} onDone={() => setOpen(false)} onCancel={() => setOpen(false)} />
+        </SheetContent>
+      </Sheet>
+    </>
+  )
+}
+
+function UploadForm({ vehicleId, onDone, onCancel }: { vehicleId: string; onDone: () => void; onCancel: () => void }) {
+  const [selectedType, setSelectedType] = React.useState("")
+  const [expiresAt, setExpiresAt] = React.useState("")
+  const [state, formAction] = useActionState<ActionState, FormData>(
+    async (previous, formData) => {
+      const result = await uploadFleetDocumentAction(previous, formData)
+      if (result.ok) {
+        toast.success(result.message || "Documento subido")
+        onDone()
+      }
+      return result
+    },
+    { ok: false, message: "" },
+  )
+
+  return (
+    <form action={formAction} className="flex min-h-0 flex-1 flex-col">
+      <input type="hidden" name="vehicleId" value={vehicleId} />
+      <SheetHeader>
+        <div>
+          <SheetTitle>Subir documento</SheetTitle>
+          <SheetDescription>El archivo queda como respaldo del vehículo; si indicas un vencimiento, rige hasta que lo reemplaces.</SheetDescription>
+        </div>
+        <SheetCloseButton />
+      </SheetHeader>
+
+      <SheetBody className="space-y-4">
+        {state.message && !state.ok && (
+          <p role="alert" className="text-sm text-[var(--color-danger)]">{state.message}</p>
+        )}
+        <Field label="Tipo" htmlFor="fleetDocumentType" required>
+          <input type="hidden" name="documentType" value={selectedType} />
+          <Select value={selectedType || undefined} onValueChange={setSelectedType}>
+            <SelectTrigger id="fleetDocumentType" className="w-full"><SelectValue placeholder="Selecciona tipo" /></SelectTrigger>
+            <SelectContent>
+              {DOC_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field label="Vencimiento" htmlFor="fleetDocExpiresAt" helper="Opcional">
+          <DatePicker
+            id="fleetDocExpiresAt"
+            name="expiresAt"
+            value={expiresAt}
+            onChange={setExpiresAt}
+          />
+        </Field>
+
+        <Field label="Archivo" htmlFor="fleetDocFile" required helper="PDF, JPG o PNG">
+          <FileInput
+            id="fleetDocFile"
+            name="file"
+            accept="application/pdf,image/jpeg,image/png"
+            required
+          />
+        </Field>
+      </SheetBody>
+
+      <SheetFooter>
+        <Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button>
+        <SubmitButton label="Subir documento" loadingLabel="Subiendo..." disabled={!selectedType} />
+      </SheetFooter>
+    </form>
   )
 }

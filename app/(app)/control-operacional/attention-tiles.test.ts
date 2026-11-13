@@ -179,30 +179,47 @@ describe("documentsTile", () => {
 })
 
 describe("fuelReviewTile", () => {
-  it("suma las cuatro colas de «Por revisar» y las detalla", () => {
+  it("la cifra es lo que se resuelve ahora; los casos van aparte con su nombre", () => {
     expect(fuelReviewTile(fuelCounts({ carga: 3, caso: 2, patente: 1, pedido: 1 }))).toMatchObject({
-      value: 7,
+      value: 5,
       valueKind: "number",
-      detail: "3 cargas por decidir · 2 casos · 1 patente sin vincular · 1 pedido de revisión",
+      detail: "3 cargas por decidir · 1 patente sin vincular · 1 pedido de revisión · 2 casos en seguimiento",
       tone: "signal",
       href: "/combustibles/revisar",
     })
   })
 
+  it("482 casos históricos no tapan las 10 cargas del mes", () => {
+    expect(fuelReviewTile(fuelCounts({ carga: 10, caso: 482 }))).toMatchObject({
+      value: 10,
+      valueKind: "number",
+      detail: "10 cargas por decidir · 482 casos en seguimiento",
+    })
+  })
+
+  it("sin nada que decidir pero con casos abiertos, lo dice con palabras y no con un 0", () => {
+    expect(fuelReviewTile(fuelCounts({ caso: 482 }))).toMatchObject({
+      value: "Nada por decidir",
+      valueKind: "text",
+      detail: "482 casos en seguimiento",
+      tone: "signal",
+    })
+  })
+
   it("no nombra las partes en cero", () => {
-    expect(fuelReviewTile(fuelCounts({ caso: 2, pedido: 5 }))).toMatchObject({ value: 7, detail: "2 casos · 5 pedidos de revisión" })
+    expect(fuelReviewTile(fuelCounts({ caso: 2, pedido: 5 }))).toMatchObject({ value: 5, detail: "5 pedidos de revisión · 2 casos en seguimiento" })
     expect(fuelReviewTile(fuelCounts({ patente: 3 }))).toMatchObject({ value: 3, detail: "3 patentes sin vincular" })
   })
 
   it("concuerda en singular y en plural", () => {
     expect(fuelReviewTile(fuelCounts({ carga: 1, caso: 1, patente: 1, pedido: 1 })).detail)
-      .toBe("1 carga por decidir · 1 caso · 1 patente sin vincular · 1 pedido de revisión")
+      .toBe("1 carga por decidir · 1 patente sin vincular · 1 pedido de revisión · 1 caso en seguimiento")
     expect(fuelReviewTile(fuelCounts({ carga: 2, caso: 2, patente: 2, pedido: 2 })).detail)
-      .toBe("2 cargas por decidir · 2 casos · 2 patentes sin vincular · 2 pedidos de revisión")
+      .toBe("2 cargas por decidir · 2 patentes sin vincular · 2 pedidos de revisión · 2 casos en seguimiento")
   })
 
   it("el valor viaja como número (KpiCard le pone los miles) y el detalle los separa como el resto de la plataforma", () => {
-    expect(fuelReviewTile(fuelCounts({ carga: 1234, caso: 6 }))).toMatchObject({ value: 1240, valueKind: "number", detail: "1.234 cargas por decidir · 6 casos" })
+    expect(fuelReviewTile(fuelCounts({ carga: 1234, caso: 6 }))).toMatchObject({ value: 1234, valueKind: "number", detail: "1.234 cargas por decidir · 6 casos en seguimiento" })
   })
 
   it("con las cuatro colas vacías dice «Al día»", () => {
@@ -219,7 +236,7 @@ describe("fuelReviewTile", () => {
     const tile = fuelReviewTile(fuelCounts({ carga: 4, caso: null, pedido: 1 }))
     expect(tile.value).toBe("Sin dato")
     expect(tile.valueKind).toBe("text")
-    expect(tile.detail).toBe("4 cargas por decidir · Casos: no se pudo calcular · 1 pedido de revisión")
+    expect(tile.detail).toBe("4 cargas por decidir · 1 pedido de revisión · Casos: no se pudo calcular")
     expect(tile.tone).toBe("neutral")
 
     const other = fuelReviewTile(fuelCounts({ carga: null, patente: 2 }))
@@ -278,13 +295,14 @@ describe("cifra o palabra: el tipo del valor decide cómo se pinta", () => {
       fuelReviewTile(fuelCounts({ carga: 1234 })),
       fuelReviewTile(fuelCounts()),
       fuelReviewTile(fuelCounts({ caso: null })),
+      fuelReviewTile(fuelCounts({ caso: 482 })),
     ]
     for (const tile of tiles) {
       if (tile.valueKind === "number") expect(typeof tile.value, `${tile.label}`).toBe("number")
       else expect(typeof tile.value, `${tile.label}`).toBe("string")
     }
     expect(tiles.filter((tile) => tile.valueKind === "text").map((tile) => tile.value)).toEqual([
-      "Ninguno", "Sin equipos", "Sin dato", "Ninguna", "Ninguno", "Al día", "Sin dato",
+      "Ninguno", "Sin equipos", "Sin dato", "Ninguna", "Ninguno", "Al día", "Sin dato", "Nada por decidir",
     ])
   })
 })

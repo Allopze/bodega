@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { VehiclePurchaseRecord } from "@/lib/services/vehicle-purchase-history"
 import type { EquipmentDetailData } from "./equipment-detail-types"
@@ -15,6 +15,7 @@ vi.mock("@/components/ui/page-header", () => ({
 // Las acciones de servidor traen consigo la base de datos; esta prueba sólo mira lo que la ficha dibuja.
 vi.mock("@/app/(app)/mantencion/equipos/actions", () => ({ updateEquipmentAction: vi.fn() }))
 vi.mock("@/app/(app)/mantencion/equipos/[id]/actions", () => ({ exportEquipmentHistoryAction: vi.fn() }))
+vi.mock("@/app/(app)/mantencion/ot/actions", () => ({ createWorkOrderAction: vi.fn() }))
 
 import { EquipmentDetailView } from "./equipment-detail-view"
 
@@ -85,5 +86,38 @@ describe("ficha del equipo: «Repuestos y servicios comprados»", () => {
     render(view({ purchases: [catalogado], purchaseLinks: { ...links, canOpenSpareParts: false } }))
     expect(screen.queryByRole("link", { name: "Filtro hidráulico" })).toBeNull()
     expect(screen.getByText((_, element) => element?.textContent === "RPT-001 · N° de parte 1R-0750" && element.children.length === 2)).toBeDefined()
+  })
+})
+
+describe("ficha del equipo: crear una orden de trabajo y el enlace a Flota", () => {
+  const newOrder = {
+    equipment: [{ id: "veh-1", code: "KA-107", plate: "DCHR-67", typeName: "Camión", worksiteId: "ws-1", worksiteName: "Santa Fe", unit: "km" as const }],
+    mechanics: null,
+    worksiteMechanics: [{ id: "m-1", name: "Javier Roa", worksiteId: "ws-1" }],
+    today: "2026-11-13",
+    defaultRequesterName: "Ana Pérez",
+    defaultVehicleId: "veh-1",
+  }
+
+  it("«Crear orden de trabajo» abre el formulario con el equipo ya elegido", async () => {
+    render(<EquipmentDetailView data={data()} edit={null} canSeeSchedules={false} canExport={false} justCreated={false} newOrder={newOrder} />)
+    fireEvent.click(screen.getByRole("button", { name: /Crear orden de trabajo/ }))
+    const sheet = within(await screen.findByRole("dialog"))
+    expect((sheet.getByRole("combobox", { name: /Equipo/ }) as HTMLInputElement).value).toContain("KA-107")
+    // Con el equipo elegido, el botón de crear no queda apagado por falta de equipo.
+    expect(sheet.getByText(/Faena: Santa Fe/)).toBeTruthy()
+  })
+
+  it("sin permiso para crear órdenes (o con el equipo dado de baja) no hay botón", () => {
+    render(view())
+    expect(screen.queryByRole("button", { name: /Crear orden de trabajo/ })).toBeNull()
+  })
+
+  it("con acceso a Flota, la ficha enlaza al mismo vehículo; sin él, no", () => {
+    const { unmount } = render(view({ canViewFleet: true }))
+    expect(screen.getByRole("link", { name: "Ver la ficha de KA-107 en Flota" }).getAttribute("href")).toBe("/flota/veh-1")
+    unmount()
+    render(view({ canViewFleet: false }))
+    expect(screen.queryByRole("link", { name: /en Flota/ })).toBeNull()
   })
 })

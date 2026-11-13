@@ -36,6 +36,18 @@ describe("ThresholdsForm", () => {
     expect(screen.getByRole("link", { name: "Ver las cargas por decidir" })).toHaveAttribute("href", "/combustibles/revisar?tipo=carga")
   })
 
+  it("avisa ANTES de guardar que se revisarán todas las cargas anteriores, sólo si algún valor cambió", () => {
+    render(<ThresholdsForm settings={DEFAULT_PERFORMANCE_CONTROL_SETTINGS} />)
+    expect(screen.queryByText(/todas las cargas anteriores/)).toBeNull()
+
+    fireEvent.change(screen.getByLabelText(/Máximo posible, en litros por hora/), { target: { value: "10" } })
+    expect(screen.getByText(/todas las cargas anteriores/)).toBeInTheDocument()
+
+    // Volver al valor guardado quita el aviso: no hay nada que recalcular.
+    fireEvent.change(screen.getByLabelText(/Máximo posible, en litros por hora/), { target: { value: String(DEFAULT_PERFORMANCE_CONTROL_SETTINGS.maxLitersPerHour).replace(".", ",") } })
+    expect(screen.queryByText(/todas las cargas anteriores/)).toBeNull()
+  })
+
   it("si nada cambió no recalcula las cargas anteriores", async () => {
     save.mockResolvedValue({ ok: true, message: "Los umbrales ya estaban así: no hay nada que recalcular.", data: { changed: false } })
     render(<ThresholdsForm settings={DEFAULT_PERFORMANCE_CONTROL_SETTINGS} />)

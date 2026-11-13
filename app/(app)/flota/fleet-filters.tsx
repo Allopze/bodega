@@ -1,12 +1,13 @@
 "use client"
 
-import { useRouter, useSearchParams } from "next/navigation"
+import * as React from "react"
 import { Field } from "@/components/ui/field"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
 import { FLEET_STOPPED_FILTER, FLEET_STOPPED_FILTER_LABEL } from "@/lib/fleet-overview-filters"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 
 interface FleetFiltersProps {
   operationalStatuses: string[]
@@ -26,24 +27,39 @@ function formatFleetStatusFilter(value: string) {
   return value === FLEET_STOPPED_FILTER ? FLEET_STOPPED_FILTER_LABEL : formatFuelVehicleStatus(value)
 }
 
+/**
+ * El buscador escribe en la URL cuando la persona deja de teclear (`router.replace`
+ * con `scroll: false`, sin recargar la página). Si la URL cambia desde otro lado
+ * —un chip quitado, «Limpiar filtros»—, el campo se vuelve a alinear con ella.
+ */
+function SearchInput({ current }: { current: string }) {
+  const { setFilter } = useUrlFilters()
+  const [value, setValue] = React.useState(current)
+  const [lastSynced, setLastSynced] = React.useState(current)
+  if (lastSynced !== current) {
+    setLastSynced(current)
+    setValue(current)
+  }
+  React.useEffect(() => {
+    if (value.trim() === current) return
+    const timer = window.setTimeout(() => setFilter("q", value.trim()), 400)
+    return () => window.clearTimeout(timer)
+  }, [value, current, setFilter])
+  return (
+    <Field label="Buscar" htmlFor="fleet-search" className="w-full sm:w-64">
+      <Input
+        id="fleet-search"
+        type="search"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        placeholder="Patente, marca, modelo, faena..."
+      />
+    </Field>
+  )
+}
+
 export function FleetFilters({ operationalStatuses, responsibleUsers, current, warningDays }: FleetFiltersProps) {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-
-  function setFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString())
-    params.delete("page")
-    if (value) {
-      params.set(key, value)
-    } else {
-      params.delete(key)
-    }
-    router.replace(`?${params.toString()}`, { scroll: false })
-  }
-
-  function clearFilters() {
-    router.replace("/flota", { scroll: false })
-  }
+  const { setFilter, clearFilters } = useUrlFilters()
 
   const activeChips: ActiveFilterChip[] = []
   if (current.estado) {
@@ -77,27 +93,13 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
     <FilterToolbar
       activeChips={activeChips}
       onRemoveChip={(key) => setFilter(key, "")}
-      onClearAll={clearFilters}
+      onClearAll={() => clearFilters()}
       hasActiveFilters={activeChips.length > 0}
     >
-      <form action="/flota" method="get" className="w-full sm:w-64">
-        {current.estado && <input type="hidden" name="estado" value={current.estado} />}
-        {current.responsable && <input type="hidden" name="responsable" value={current.responsable} />}
-        {current.vencimiento && <input type="hidden" name="vencimiento" value={current.vencimiento} />}
-        {current.revision && <input type="hidden" name="revision" value={current.revision} />}
-        <Field label="Buscar" htmlFor="fleet-search">
-          <Input
-            id="fleet-search"
-            name="q"
-            type="search"
-            defaultValue={current.q ?? ""}
-            placeholder="Patente, marca, modelo, faena..."
-          />
-        </Field>
-      </form>
+      <SearchInput current={current.q ?? ""} />
 
       <Select
-        defaultValue={current.estado ?? "all"}
+        value={current.estado ?? "all"}
         onValueChange={(v) => setFilter("estado", v === "all" ? "" : v)}
       >
         <SelectTrigger className="w-full text-xs sm:w-56" aria-label="Estado operacional"><SelectValue placeholder="Todos los estados" /></SelectTrigger>
@@ -111,7 +113,7 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
       </Select>
 
       <Select
-        defaultValue={current.responsable ?? "all"}
+        value={current.responsable ?? "all"}
         onValueChange={(v) => setFilter("responsable", v === "all" ? "" : v)}
       >
         <SelectTrigger className="w-full text-xs sm:w-48" aria-label="Responsable"><SelectValue placeholder="Todos los responsables" /></SelectTrigger>
@@ -124,7 +126,7 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
       </Select>
 
       <Select
-        defaultValue={current.vencimiento ?? "all"}
+        value={current.vencimiento ?? "all"}
         onValueChange={(v) => setFilter("vencimiento", v === "all" ? "" : v)}
       >
         <SelectTrigger className="w-full text-xs sm:w-52" aria-label="Vencimiento documental"><SelectValue placeholder="Filtro de vencimiento" /></SelectTrigger>

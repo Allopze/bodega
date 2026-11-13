@@ -126,9 +126,10 @@ describe("«Hoja de vida»", () => {
   it("la tabla no lleva marco propio dentro de la tarjeta y los folios llegan a 44 px en móvil", () => {
     render(<EquipmentLifeSection code="KA-107" life={{ totals, hasMore: true, limit: 20, rows: [lifeRow()] }} />)
     const region = screen.getByRole("region", { name: "Mantenciones del equipo KA-107" })
-    expect(region.className).toContain("border-0")
-    expect(region.className).toContain("rounded-none")
-    expect(screen.getByRole("link", { name: "MP-SAN-9101" }).className).toContain("min-h-11")
+    // `framed={false}`: ni borde, ni radio, ni fondo propios dentro de la tarjeta.
+    expect(region.className).not.toMatch(/\bborder\b/)
+    expect(region.className).not.toContain("rounded-[var(--radius-2xl)]")
+    expect(within(region).getByRole("link", { name: "MP-SAN-9101" }).className).toContain("min-h-11")
     expect(screen.getByRole("link", { name: "Mostrar más" }).className).toContain("min-h-11")
   })
 })
@@ -166,6 +167,6 @@ describe("«Órdenes de trabajo» de la hoja de vida", () => {
     const { rerender } = render(<EquipmentLifeSection life={life({ rows: [], total: 0 })} code="KA-107" />)
     expect(screen.getByText("Este equipo aún no tiene órdenes de trabajo")).toBeTruthy()
     rerender(<EquipmentLifeSection life={life(workOrders({ total: 14 }))} code="KA-107" />)
-    expect(screen.getByRole("link", { name: "Ver todas en la lista de órdenes" }).getAttribute("href")).toBe("/mantencion/ot?q=KA-107")
+    expect(screen.getByRole("link", { name: "Ver todas en la lista de órdenes" }).getAttribute("href")).toBe("/mantencion/ot?estado=abiertas&q=KA-107")
   })
 })

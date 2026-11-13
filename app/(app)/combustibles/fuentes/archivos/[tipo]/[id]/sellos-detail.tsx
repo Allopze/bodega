@@ -142,7 +142,7 @@ export async function SellosDetail({ session, id }: { session: Session; id: stri
 
       <Section title={`Cargas conservadas (${formatQty(batch.submissions.length)})`}>
         {batch.status === "reverted" ? <p className="mb-4 text-sm text-[var(--color-text-muted)]">Las cargas se eliminaron al revertir el archivo. El resumen queda disponible para auditoría.</p> : null}
-        <TableRoot aria-label="Cargas conservadas del histórico de sellos">
+        <TableRoot framed={false} aria-label="Cargas conservadas del histórico de sellos">
           <Table className="min-w-[960px]">
             <TableHeader>
               <TableRow>
@@ -187,7 +187,7 @@ export async function SellosDetail({ session, id }: { session: Session; id: stri
 
       {batch.rejections.length > 0 ? (
         <Section title={`Filas rechazadas (${formatQty(batch.rejections.length)})`}>
-          <TableRoot aria-label="Filas rechazadas del histórico de sellos">
+          <TableRoot framed={false} aria-label="Filas rechazadas del histórico de sellos">
             <Table className="min-w-[720px]">
               <TableHeader>
                 <TableRow>

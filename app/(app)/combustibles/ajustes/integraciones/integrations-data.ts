@@ -23,7 +23,7 @@ export interface IntegrationsData {
   runsFailed: boolean
   copec: IntegrationConfigView<CopecAdminStatus>
   visionlink: IntegrationConfigView<VisionLinkAdminStatus>
-  degraded: number
+  degraded: string[]
 }
 
 /** Lecturas de «Integraciones». Nunca devuelve un valor secreto: sólo banderas, orígenes y fechas. */
@@ -57,6 +57,6 @@ export async function loadIntegrationsData(): Promise<IntegrationsData> {
       credentialsOrigin: credentialsOriginText([visionFields.clientId.source, visionFields.clientSecret.source]),
       status: visionStatus,
     },
-    degraded: health === failed ? 1 : 0,
+    degraded: health === failed ? ["corridas de las integraciones"] : [],
   }
 }

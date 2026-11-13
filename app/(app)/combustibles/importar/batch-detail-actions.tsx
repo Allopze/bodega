@@ -38,7 +38,7 @@ export function LinkPlateForm({
         </SelectContent>
       </Select>
       <Button type="submit" size="sm" disabled={!vehicleId || pending}>
-        {pending ? "Vinculando..." : "Vincular"}
+        {pending ? "Vinculando…" : "Vincular"}
       </Button>
       {state.fieldErrors && <span className="text-xs text-[var(--color-danger)]">Revisa los datos</span>}
     </form>
