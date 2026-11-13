@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { PageHeader } from "@/components/ui/page-header"
+import { ResponsiveDataListCard } from "@/components/ui/responsive-data-list"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { plural, unitName } from "@/lib/mantencion/format"
@@ -211,7 +212,66 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
           )}
         </div>
         {op.message && op.messageTone === "error" && <Callout tone="danger" role="alert">{op.message}</Callout>}
-        <TableRoot aria-label="Vehículos de la flota por incorporar">
+        {/* Bajo md, una tarjeta por vehículo con los mismos campos: siete columnas con campos no caben en 390 px (auditoría 2026-11-13, M13).
+            Los ids llevan «-m»: las dos vistas viven en el DOM y un id repetido no es válido. */}
+        <ul aria-label="Vehículos de la flota por incorporar, como tarjetas" className="grid gap-3 md:hidden">
+          {visible.length === 0 && (
+            <li className="py-6 text-center text-sm text-[var(--color-text-muted)]">Ningún vehículo coincide con la búsqueda o la faena elegida.</li>
+          )}
+          {visible.map((item) => {
+            const draft = drafts[item.vehicleId] ?? initialDraft(item)
+            const rowErrors = errors[item.vehicleId] ?? []
+            const label = item.code ?? item.plate
+            return (
+              <li key={item.vehicleId}>
+                <ResponsiveDataListCard
+                  title={<span className="font-mono text-sm font-semibold">{item.code ?? "Sin código"}</span>}
+                  description={<>{item.typeName} · {item.worksiteName} · <span className="font-mono">{item.plate}</span></>}
+                  status={(
+                    <Checkbox
+                      id={`incorporar-m-${item.vehicleId}`} labelHidden label={`Incorporar ${label}`}
+                      checked={selected.has(item.vehicleId)} disabled={!!item.blocker}
+                      onChange={(event) => toggle([item.vehicleId], event.target.checked)}
+                    />
+                  )}
+                  className={rowErrors.length ? "bg-[var(--color-danger-tint)]/40" : undefined}
+                >
+                  {rowErrors.length > 0 && <p className="col-span-2 text-xs text-[var(--color-danger-ink)]">{rowErrors.join(" ")}</p>}
+                  {item.blocker ? (
+                    <p className="col-span-2 text-sm text-[var(--color-warning-ink)]">{item.blocker}</p>
+                  ) : (
+                    <div className="col-span-2 flex flex-col gap-2">
+                      <Combobox
+                        aria-label={`Marca de ${label}`} className="w-full" placeholder={canCreateBrands ? "Busca o escribe una marca" : "Busca la marca"}
+                        options={brandOptions} value={draft.brand} allowCustomValue={canCreateBrands}
+                        onChange={(value) => patch(item.vehicleId, { brand: value })}
+                      />
+                      {isNewBrand(draft.brand) && <p className="text-xs text-[var(--color-text-muted)]">Marca nueva: se agrega a la lista al incorporar.</p>}
+                      <OptionSelect
+                        aria-label={`Pauta de ${label}`} className="h-11 w-full" emptyLabel="Sin pauta" options={scheduleOptions(item.unit)}
+                        value={draft.scheduleId} onValueChange={(value) => patch(item.vehicleId, { scheduleId: value })}
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            aria-label={`Lectura actual de ${label}, en ${unitName(item.unit)}`} inputMode="decimal" className="h-11 w-full tabular-nums"
+                            placeholder="Lectura" value={draft.reading} onChange={(event) => patch(item.vehicleId, { reading: event.target.value })}
+                          />
+                          <span className="text-xs text-[var(--color-text-muted)]">{UNIT_SHORT[item.unit]}</span>
+                        </div>
+                        <DatePicker
+                          ariaLabel={`Fecha de la lectura de ${label}`} className="h-11 w-full" placeholder="Hoy" max={today}
+                          value={draft.date} disabled={!draft.reading.trim()} onChange={(value) => patch(item.vehicleId, { date: value })}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </ResponsiveDataListCard>
+              </li>
+            )
+          })}
+        </ul>
+        <TableRoot aria-label="Vehículos de la flota por incorporar" className="hidden md:block">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">

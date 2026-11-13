@@ -61,7 +61,8 @@ function readEquipmentForm(formData: FormData): EquipmentInput {
     model: text(formData, "model", 120),
     year: year ? (/^\d{4}$/.test(year) ? Number(year) : Number.NaN) : null,
     worksiteId: text(formData, "worksiteId", 64),
-    newWorksiteName: text(formData, "newWorksiteName", 120),
+    // El formulario ya no crea faenas: el nombre escrito se ignora y `createEquipment`/`updateEquipment` rechazan `__new__`.
+    newWorksiteName: "",
     scheduleId: text(formData, "scheduleId", 64) || null,
     initialReading: numberOrNull(text(formData, "initialReading", 20)),
     initialReadingDate: text(formData, "initialReadingDate", 10) || null,

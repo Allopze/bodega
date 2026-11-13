@@ -166,24 +166,23 @@ describe("alta", () => {
     expect(!noMeter.ok && noMeter.fieldErrors.equipmentTypeId).toMatch(/no se mide en kilómetros ni en horas/)
   })
 
-  it("una faena nueva escrita con otra tilde o mayúscula reutiliza la existente (regla 17)", async () => {
+  it("el equipo sólo se asigna a una faena que ya existe: «Nueva faena…» se rechaza aunque el nombre coincida con una existente", async () => {
     const before = (await testDb.select().from(schema.worksites)).length
-    const vehicleId = await createdId(await createEquipment(actor, input({ code: "KA-504", plate: "HJKL-12", worksiteId: NEW_WORKSITE, newWorksiteName: "  cholguán " })))
-    const [vehicle] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, vehicleId))
-    expect(vehicle?.worksiteId).toBe(WS.cholguan)
+    for (const typed of ["  cholguán ", "Flor del Laja", "teno"]) {
+      const result = await createEquipment(actor, input({ code: "KA-504", plate: "HJKL-12", worksiteId: NEW_WORKSITE, newWorksiteName: typed }))
+      expect(!result.ok && result.fieldErrors.worksiteId).toMatch(/No puedes crear faenas nuevas desde un equipo/)
+    }
+    // No quedó ni el equipo ni ninguna faena nueva.
     expect((await testDb.select().from(schema.worksites)).length).toBe(before)
+    expect(await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.code, "KA-504"))).toHaveLength(0)
   })
 
-  it("una faena realmente nueva se crea con su folio, y una inactiva se rechaza", async () => {
-    const vehicleId = await createdId(await createEquipment(actor, input({ code: "KA-505", plate: "KLPR-12", worksiteId: NEW_WORKSITE, newWorksiteName: "Flor del Laja" })))
-    const [vehicle] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, vehicleId))
-    const [site] = await testDb.select().from(schema.worksites).where(eq(schema.worksites.id, vehicle!.worksiteId))
-    expect(site?.name).toBe("Flor del Laja")
-    const [settings] = await testDb.select().from(schema.mantWorksiteSettings).where(eq(schema.mantWorksiteSettings.worksiteId, site!.id))
-    expect(settings?.folioCode).toMatch(/^[A-Z]{3}$/)
-
-    const inactive = await createEquipment(actor, input({ code: "KA-506", plate: "WXYZ-34", worksiteId: NEW_WORKSITE, newWorksiteName: "teno" }))
-    expect(!inactive.ok && inactive.fieldErrors.worksiteId).toMatch(/existe pero está inactiva/)
+  it("editar un equipo tampoco crea faenas", async () => {
+    const vehicleId = await createdId(await createEquipment(actor, input({ code: "KA-505", plate: "KLPR-12" })))
+    const before = (await testDb.select().from(schema.worksites)).length
+    const result = await updateEquipment(actor, vehicleId, input({ code: "KA-505", plate: "KLPR-12", worksiteId: NEW_WORKSITE, newWorksiteName: "Flor del Laja" }), { active: true, retiredReason: "" })
+    expect(!result.ok && result.fieldErrors.worksiteId).toMatch(/No puedes crear faenas nuevas desde un equipo/)
+    expect((await testDb.select().from(schema.worksites)).length).toBe(before)
   })
 })
 

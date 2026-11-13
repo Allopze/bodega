@@ -126,9 +126,10 @@ describe("«Hoja de vida»", () => {
   it("la tabla no lleva marco propio dentro de la tarjeta y los folios llegan a 44 px en móvil", () => {
     render(<EquipmentLifeSection code="KA-107" life={{ totals, hasMore: true, limit: 20, rows: [lifeRow()] }} />)
     const region = screen.getByRole("region", { name: "Mantenciones del equipo KA-107" })
-    expect(region.className).toContain("border-0")
-    expect(region.className).toContain("rounded-none")
-    expect(screen.getByRole("link", { name: "MP-SAN-9101" }).className).toContain("min-h-11")
+    // `framed={false}`: ni borde, ni radio, ni fondo propios dentro de la tarjeta.
+    expect(region.className).not.toMatch(/\bborder\b/)
+    expect(region.className).not.toContain("rounded-[var(--radius-2xl)]")
+    expect(within(region).getByRole("link", { name: "MP-SAN-9101" }).className).toContain("min-h-11")
     expect(screen.getByRole("link", { name: "Mostrar más" }).className).toContain("min-h-11")
   })
 })

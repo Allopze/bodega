@@ -13,9 +13,10 @@ const SELECT_CLASS = "h-11 w-full text-xs sm:h-8 sm:w-44"
 
 const STATE_OPTIONS: OptionSelectOption[] = MANT_EQUIPMENT_STATES.map((value) => ({ value, label: EQUIPMENT_STATE_LABEL[value] }))
 
+// Opciones cortas: el rótulo del filtro y de su chip ya dicen «Estimación GPS» (antes salía «Estimación GPS: Vencida (estimación GPS)»).
 const GPS_STATE_OPTIONS: OptionSelectOption[] = [
-  { value: "vencida", label: "Vencida (estimación GPS)" },
-  { value: "proxima", label: "Próxima (estimación GPS)" },
+  { value: "vencida", label: "Vencida" },
+  { value: "proxima", label: "Próxima" },
 ]
 
 export interface EquipmentFilterOptions {
@@ -54,7 +55,8 @@ export function EquipmentFilters({ options, canViewGps = true }: { options: Equi
   add("faena", "Faena", filters.worksiteId, labelOf(options.worksites, filters.worksiteId))
   add("tipo", "Tipo", filters.typeId, labelOf(options.types, filters.typeId))
   add("pauta", "Pauta", filters.scheduleId, filters.scheduleId === NO_SCHEDULE ? "Sin pauta" : labelOf(options.schedules, filters.scheduleId))
-  add("estado", "Estado", filters.state, labelOf(STATE_OPTIONS, filters.state))
+  // «Mantención» y no «Estado»: para Flota el estado de un equipo es operativo / en mantención / fuera de servicio.
+  add("estado", "Mantención", filters.state, labelOf(STATE_OPTIONS, filters.state))
   if (canViewGps) add("estimacionGps", "Estimación GPS", filters.gpsEstimate, labelOf(GPS_STATE_OPTIONS, filters.gpsEstimate))
   // «En taller» llega desde el tile del panel; no tiene control propio, sólo su chip para quitarlo (A2).
   if (filters.inWorkshop) chips.push({ key: "taller", label: "Situación", value: "1", displayValue: "En taller" })

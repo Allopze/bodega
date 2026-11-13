@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { ExportButton } from "@/components/ui/export-button"
+import { NewWorkOrderCta, type NewOtSheetProps } from "@/components/mantencion/jefatura/ot/new-ot-sheet"
 import { updateEquipmentAction } from "@/app/(app)/mantencion/equipos/actions"
 import { exportEquipmentHistoryAction } from "@/app/(app)/mantencion/equipos/[id]/actions"
 import { brandAndModel } from "@/lib/mantencion/format"
@@ -31,6 +32,7 @@ export function EquipmentDetailView({
   canSeeSchedules,
   canExport,
   justCreated,
+  newOrder = null,
 }: {
   data: EquipmentDetailData
   /** `null` si la persona no puede administrar equipos: la ficha es sólo de lectura. */
@@ -39,6 +41,11 @@ export function EquipmentDetailView({
   /** `mant:export`: muestra «Exportar historial» (el servidor lo vuelve a exigir). */
   canExport: boolean
   justCreated: boolean
+  /**
+   * Para «Crear orden de trabajo» con este equipo ya elegido; `null` si quien mira no puede crear órdenes o el equipo está
+   * dado de baja (el formulario lo rechazaría). Lo arma la página con el mismo alcance que la lista de órdenes.
+   */
+  newOrder?: NewOtSheetProps | null
 }) {
   const [editing, setEditing] = React.useState(false)
   const router = useRouter()
@@ -65,6 +72,7 @@ export function EquipmentDetailView({
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Equipos", href: "/mantencion/equipos" }, { label: data.code }]}
         actions={(
           <>
+            {newOrder && !editing && <NewWorkOrderCta {...newOrder} triggerLabel="Crear orden de trabajo" triggerVariant="primary" />}
             {canExport && <ExportButton action={exportEquipmentHistoryAction} filters={data.vehicleId} label="Exportar historial" />}
             {edit && !editing && <Button variant="secondary" size="sm" onClick={() => setEditing(true)}><PencilSimple size={14} aria-hidden />Editar ficha</Button>}
           </>

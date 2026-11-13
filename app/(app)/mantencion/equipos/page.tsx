@@ -1,11 +1,11 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { Info, Plus } from "@phosphor-icons/react/dist/ssr"
-import { Button } from "@/components/ui/button"
+import { Info } from "@phosphor-icons/react/dist/ssr"
 import { Callout } from "@/components/ui/callout"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
+import { AddEquipmentButton } from "@/components/mantencion/jefatura/equipos/add-equipment-button"
 import { MechanicAppInstallDialog } from "@/components/mantencion/jefatura/shared/mechanic-app-install-dialog"
 import { EquipmentExportButton } from "@/components/mantencion/jefatura/equipos/equipment-export-button"
 import { EquipmentFilters } from "@/components/mantencion/jefatura/equipos/equipment-filters"
@@ -20,7 +20,7 @@ import {
 import { loadFleet } from "@/lib/services/mantencion/fleet"
 import { listIncorporationCandidates } from "@/lib/services/mantencion/fleet-incorporation"
 
-export const metadata: Metadata = { title: "Equipos de mantención" }
+export const metadata: Metadata = { title: "Equipos" }
 export const dynamic = "force-dynamic"
 
 export default async function EquipmentPage({ searchParams }: { searchParams: Promise<RawSearchParams> }) {
@@ -67,6 +67,9 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
   const canManage = can(session, "mant:equipment:manage")
   // Vehículos de la flota sin ficha de mantención: se incorporan sin volver a escribirlos.
   const pendingFleet = canManage ? (await listIncorporationCandidates(equipmentScope(viewer))).length : 0
+  const showNoSchedule = withoutSchedule > 0 && filters.scheduleId !== NO_SCHEDULE
+  // Con la lista vacía, «Incorporar los N vehículos de la flota» ya es el llamado del estado vacío: dos iguales no suman.
+  const showPendingFleet = pendingFleet > 0 && !(rows.length === 0 && !hasEquipmentListFilters(filters))
   const canExport = can(session, "mant:export")
   // La app se reparte por QR. Quien administra los dispositivos lo hace desde «Dispositivos» (ítem del menú, con su
   // propio botón «Instalar app»); la supervisión de faena, que no entra ahí, la reparte desde esta cabecera.
@@ -83,26 +86,32 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
           <div className="flex flex-wrap items-center gap-2">
             {canShareApp && <MechanicAppInstallDialog />}
             {canExport && <EquipmentExportButton rows={rows} includeRetired={filters.includeRetired} filterLabels={filterLabels} />}
-            {canManage && <Button asChild variant="secondary" size="sm"><Link href="/mantencion/equipos/importar">Importar</Link></Button>}
-            {canManage && <Button asChild size="sm"><Link href="/mantencion/equipos/nuevo"><Plus size={14} aria-hidden />Nuevo equipo</Link></Button>}
+            {canManage && <AddEquipmentButton pendingFleet={pendingFleet} />}
           </div>
         )}
       />
       <div className="flex flex-col gap-4">
-        {withoutSchedule > 0 && filters.scheduleId !== NO_SCHEDULE && (
-          <Callout tone="warning" icon={<Info size={16} />} title={`${plural(withoutSchedule, "equipo activo no tiene", "equipos activos no tienen")} pauta asignada`}>
-            El mecánico no podrá registrarles una mantención preventiva.{" "}
-            <Link href={`/mantencion/equipos?pauta=${NO_SCHEDULE}`} className="font-semibold underline underline-offset-2">Ver cuáles</Link>
-          </Callout>
-        )}
-        {pendingFleet > 0 && (
-          <Callout tone="info" icon={<Info size={16} />} title={`${plural(pendingFleet, "vehículo de la flota aún no está", "vehículos de la flota aún no están")} en Mantención`}>
-            Ya tienen código, patente, tipo y faena en la flota: sólo falta su marca y su pauta.{" "}
-            <Link href="/mantencion/equipos/incorporar" className="font-semibold underline underline-offset-2">Incorporarlos</Link>
+        {(showNoSchedule || showPendingFleet) && (
+          // Una sola tira con lo que falta completar (antes eran dos avisos que empujaban la lista).
+          <Callout tone={showNoSchedule ? "warning" : "info"} icon={<Info size={16} />} title="Falta completar">
+            <ul className="flex flex-col gap-1">
+              {showNoSchedule && (
+                <li>
+                  {plural(withoutSchedule, "equipo activo no tiene", "equipos activos no tienen")} pauta: el mecánico no podrá registrarles una mantención preventiva.{" "}
+                  <Link href={`/mantencion/equipos?pauta=${NO_SCHEDULE}`} className="font-semibold underline underline-offset-2">Ver cuáles</Link>
+                </li>
+              )}
+              {showPendingFleet && (
+                <li>
+                  {plural(pendingFleet, "vehículo de la flota aún no está", "vehículos de la flota aún no están")} en Mantención: sólo falta su marca y su pauta.{" "}
+                  <Link href="/mantencion/equipos/incorporar" className="font-semibold underline underline-offset-2">Incorporarlos</Link>
+                </li>
+              )}
+            </ul>
           </Callout>
         )}
         <EquipmentFilters options={options} canViewGps={canViewFleet} />
-        <EquipmentTable rows={rows} canManage={canManage} canViewGps={canViewFleet} filtered={hasEquipmentListFilters(filters)} />
+        <EquipmentTable rows={rows} canManage={canManage} canViewGps={canViewFleet} filtered={hasEquipmentListFilters(filters)} pendingFleet={pendingFleet} />
       </div>
     </PageContainer>
   )

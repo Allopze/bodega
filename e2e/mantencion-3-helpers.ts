@@ -61,7 +61,7 @@ export async function scheduleState(name: string) {
 
 export async function fillEquipmentForm(page: Page, values: {
   code: string; plate?: string; noPlate?: boolean; type: RegExp; brand: string; model: string; year: string
-  worksite: string; newWorksite?: string; schedule?: string; reading?: string
+  worksite: string; schedule?: string; reading?: string
 }) {
   await page.getByRole("textbox", { name: "Código interno", exact: true }).fill(values.code)
   if (values.noPlate) await page.getByLabel("Sin patente", { exact: true }).check()
@@ -70,8 +70,7 @@ export async function fillEquipmentForm(page: Page, values: {
   await selectRadixById(page, "eq-brand", values.brand)
   await page.getByRole("textbox", { name: "Modelo", exact: true }).fill(values.model)
   await page.getByRole("textbox", { name: "Año", exact: true }).fill(values.year)
-  await selectRadixById(page, "eq-worksite", values.newWorksite ? "Nueva faena…" : values.worksite)
-  if (values.newWorksite) await page.getByRole("textbox", { name: "Nombre de la faena nueva", exact: true }).fill(values.newWorksite)
+  await selectRadixById(page, "eq-worksite", values.worksite)
   if (values.schedule) await selectRadixById(page, "eq-schedule", new RegExp(`^${values.schedule}`))
   if (values.reading) await page.getByLabel(/^Lectura actual/).fill(values.reading)
 }

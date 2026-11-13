@@ -39,6 +39,8 @@ export interface NewOtSheetProps {
   /** Rótulo del botón que abre el formulario (por defecto «Nueva orden»). */
   triggerLabel?: string
   triggerVariant?: "primary" | "secondary"
+  /** Equipo que viene elegido al abrir (la ficha del equipo lo precarga); sin él, se busca uno. */
+  defaultVehicleId?: string
 }
 
 export interface FormValues {
@@ -55,9 +57,9 @@ export interface FormValues {
   assignedToUserId: string
 }
 
-function initialValues(props: Pick<NewOtSheetProps, "today" | "defaultRequesterName">): FormValues {
+function initialValues(props: Pick<NewOtSheetProps, "today" | "defaultRequesterName" | "defaultVehicleId">): FormValues {
   return {
-    vehicleId: "", repair: true, maintenance: false, requestDate: props.today, requesterName: props.defaultRequesterName,
+    vehicleId: props.defaultVehicleId ?? "", repair: true, maintenance: false, requestDate: props.today, requesterName: props.defaultRequesterName,
     repairDescription: "", observations: "", totalCost: "", annexItems: [], maintenanceItems: [], assignedToUserId: "",
   }
 }

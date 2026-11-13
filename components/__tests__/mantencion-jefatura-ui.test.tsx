@@ -177,7 +177,7 @@ describe("EquipmentTable", () => {
     render(<EquipmentTable rows={[equipmentRow(1, { state: "vencida", stateOrder: 0, noPlate: true, showPlate: false })]} canManage filtered={false} />)
     const row = screen.getByRole("row", { name: /KA-001/ })
     expect(within(row).getByText("Vencida")).toBeDefined()
-    expect(within(row).getByText("Sin patente")).toBeDefined()
+    expect(within(row).getByText(/Sin patente/)).toBeDefined()
     expect(within(row).queryByText(/En taller/)).toBeNull()
   })
 
@@ -193,6 +193,27 @@ describe("EquipmentTable", () => {
     const fresh = screen.getByRole("row", { name: /KA-002/ })
     expect(within(fresh).getByText("En taller · 1 día")).toBeDefined()
     expect(within(fresh).queryByText("Sin actualizar")).toBeNull()
+  })
+
+  it("el equipo se nombra como en el resto del área: código y, debajo, «Tipo · patente»", () => {
+    render(<EquipmentTable rows={[equipmentRow(1)]} canManage filtered={false} />)
+    const row = screen.getByRole("row", { name: /KA-001/ })
+    expect(within(row).getByRole("link", { name: "KA-001" }).getAttribute("href")).toBe("/mantencion/equipos/v1")
+    expect(within(row).getByText("Camión · PL-1")).toBeDefined()
+  })
+
+  it("la columna de la pauta se llama «Mantención» (no «Estado») y «Estimación GPS» explica de dónde sale", () => {
+    render(<EquipmentTable rows={[equipmentRow(1)]} canManage filtered={false} />)
+    expect(screen.getByRole("columnheader", { name: /Mantención/ })).toBeDefined()
+    expect(screen.queryByRole("columnheader", { name: /^Estado/ })).toBeNull()
+    expect(screen.getByRole("columnheader", { name: "Estimación GPS" })).toBeDefined()
+  })
+
+  it("sin equipos pero con vehículos en la flota, el llamado principal es incorporarlos", () => {
+    render(<EquipmentTable rows={[]} canManage filtered={false} pendingFleet={89} />)
+    expect(screen.getByRole("link", { name: "Incorporar los 89 vehículos de la flota" }).getAttribute("href")).toBe("/mantencion/equipos/incorporar")
+    expect(screen.getByRole("link", { name: "Nuevo equipo" })).toBeDefined()
+    expect(screen.getByRole("link", { name: "Importar desde Excel" })).toBeDefined()
   })
 
   it("la marca no se repite cuando el modelo ya la trae", () => {
@@ -249,9 +270,10 @@ describe("EquipmentForm", () => {
     expect((screen.getByLabelText("Sin patente", { exact: true }) as HTMLInputElement).checked).toBe(true)
   })
 
-  it("«Nueva faena…» muestra el campo del nombre, y la pauta sólo se ofrece del mismo tipo de unidad", () => {
-    renderForm({ worksiteId: "__new__", equipmentTypeId: "t-h" })
-    expect(screen.getByLabelText("Nombre de la faena nueva", { exact: true })).toBeDefined()
+  it("no ofrece «Nueva faena…» ni el campo del nombre, y la pauta sólo se ofrece del mismo tipo de unidad", () => {
+    renderForm({ equipmentTypeId: "t-h" })
+    expect(screen.queryByLabelText("Nombre de la faena nueva", { exact: true })).toBeNull()
+    expect(screen.queryByText("Nueva faena…")).toBeNull()
     expect(screen.getByText(/Solo aparecen pautas en horas/)).toBeDefined()
   })
 

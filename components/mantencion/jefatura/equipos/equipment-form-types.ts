@@ -18,7 +18,6 @@ export interface EquipmentFormValues {
   model: string
   year: string
   worksiteId: string
-  newWorksiteName: string
   scheduleId: string
   initialReading: string
   initialReadingDate: string
@@ -28,5 +27,5 @@ export interface EquipmentFormValues {
 
 export const EMPTY_EQUIPMENT_VALUES: EquipmentFormValues = {
   code: "", plate: "", noPlate: false, equipmentTypeId: "", brandId: "", model: "", year: "", worksiteId: "",
-  newWorksiteName: "", scheduleId: "", initialReading: "", initialReadingDate: "", retired: false, retiredReason: "",
+  scheduleId: "", initialReading: "", initialReadingDate: "", retired: false, retiredReason: "",
 }
