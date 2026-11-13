@@ -48,6 +48,11 @@ export interface DataTableProps<T extends Record<string, unknown>> {
    * (8+ columnas); en las estrechas no hay scroll que compensar.
    */
   stickyFirstColumn?: boolean
+  /**
+   * `false` quita el marco de la tabla cuando ya está dentro de una superficie
+   * (`Card`, `Section`): ver `TableRoot.framed`. Por defecto `true`.
+   */
+  framed?: boolean
   emptyTitle?:  string
   emptyDescription?: string
   emptyAction?: React.ReactNode

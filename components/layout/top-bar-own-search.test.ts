@@ -32,4 +32,8 @@ describe("buscador de la shell", () => {
     // Las demás pantallas de Prevención conservan el de la shell.
     expect(hidesShellSearch("/prevencion/capa")).toBe(false)
   })
+  it("Flota (F1): la lista y la ficha traen su búsqueda; Conductores y Monitoreo usan la de la shell", () => {
+    for (const path of ["/flota", "/flota/veh-1"]) expect(hidesShellSearch(path), path).toBe(true)
+    for (const path of ["/flota/conductores", "/flota/monitoreo"]) expect(hidesShellSearch(path), path).toBe(false)
+  })
 })

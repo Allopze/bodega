@@ -13,10 +13,17 @@ interface TableRootProps extends React.HTMLAttributes<HTMLDivElement> {
    * Usar en listados largos (>20 filas visibles); innecesario si hay paginación.
    */
   stickyHeader?: boolean
+  /**
+   * `false` quita el marco propio (borde, radio y fondo) cuando la tabla vive
+   * dentro de otra superficie (`Card`, `Section`, `<details>`): dos marcos
+   * concéntricos con el mismo radio son una tarjeta dentro de una tarjeta
+   * (auditoría UI/UX Control operacional 2026-11-13, §8). Por defecto `true`.
+   */
+  framed?: boolean
 }
 
 const TableRoot = React.forwardRef<HTMLDivElement, TableRootProps>(
-  ({ className, stickyHeader = false, ...props }, ref) => (
+  ({ className, stickyHeader = false, framed = true, ...props }, ref) => (
     <div
       ref={ref}
       // UI-03 (auditoría 2026-09-05): Axe detectaba esta región desplazable
@@ -37,7 +44,7 @@ const TableRoot = React.forwardRef<HTMLDivElement, TableRootProps>(
         // 390px (auditoría 2026-07-24, A-7).
         "relative w-full overflow-x-auto overscroll-x-contain",
         stickyHeader && "max-h-[70vh] overflow-y-auto overscroll-y-contain",
-        "rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)]",
+        framed && "rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)]",
         className,
       )}
       {...props}
