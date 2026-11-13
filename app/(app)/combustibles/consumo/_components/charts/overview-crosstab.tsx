@@ -15,7 +15,7 @@ export function OverviewCrosstab({ crosstab, label, emptyText }: { crosstab: Cro
     return <EmptyState compact title="Sin cargas para mostrar" description={emptyText} />
   }
   return (
-    <TableRoot aria-label={label}>
+    <TableRoot framed={false} aria-label={label}>
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">

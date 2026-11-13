@@ -30,7 +30,7 @@ export function EquipmentMonthTable({ rows, total, pagination, hrefForPage }: Pr
     return <p className="text-sm text-[var(--color-text-muted)]">No hay telemetría en este período. Prueba con otro período o agrega la telemetría de los equipos.</p>
   }
   return (
-    <TableRoot aria-label="Motor en vacío por equipo y mes">
+    <TableRoot framed={false} aria-label="Motor en vacío por equipo y mes">
       <Table>
         <TableHeader>
           <TableRow>

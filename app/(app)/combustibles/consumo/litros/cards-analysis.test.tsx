@@ -54,3 +54,24 @@ describe("CardsAnalysis · «Ver datos» de la evolución por equipo → Excel",
     expect(evolutionTable({ excel })?.props.excel).toEqual(excel)
   })
 })
+
+describe("CardsAnalysis · a lo más tres gráficos a la vista", () => {
+  const full: Partial<CardsAnalysisProps> = {
+    canViewCosts: true,
+    dashboard: { kpis: {}, seriesPorPeriodo: [{}], topPatentesPorConsumo: [], topPatentesPorGasto: [], transaccionesPorPatente: [], rendimientoPorPatente: [], alerts: [] } as never,
+    byEquipmentType: [{ equipmentTypeName: "Camión", totalLiters: 10, totalAmount: 1, uniqueVehicles: 1 }] as never,
+    scatter: [{ medidoPor: "km", x: 1, y: 1 }] as never,
+    heatmap: [{ worksiteName: "A", equipmentLabel: "B", liters: 1, amount: null, intensity: 1 }] as never,
+  }
+
+  it("la dispersión, la evolución por equipo, la matriz y los rankings van en bloques plegados", () => {
+    // `FoldBlock` es el bloque plegable (un `Disclosure`): el árbol de elementos lo trae por su nombre.
+    const folded = collectElements(CardsAnalysis({ ...props, ...full })).filter((el) => typeof el.type === "function" && (el.type as { name: string }).name === "FoldBlock")
+    expect(folded.map((el) => el.props.title)).toEqual([
+      "Litros contra odómetro y horómetro",
+      "Evolución por equipo",
+      "¿Dónde y qué equipo consume más?",
+      "Patentes bajo observación",
+    ])
+  })
+})

@@ -101,6 +101,23 @@ describe("rendimiento por equipo (R-03, R-06)", () => {
     expect(out.match(/—/g)?.length).toBeGreaterThanOrEqual(4)
   })
 
+  it("un equipo sin ninguna cifra no se lista como una fila de «—» y se dice cuántos quedaron fuera", () => {
+    const empty: EquipmentStatRow = { ...row, vehicleId: "v2", code: "KA-02", plate: "CD5678", n: 0, mean: null, sd: null, cv: null, modelMean: null, deltaModelPct: null, historyMean: null, deltaHistoryPct: null, worseThanModel: false, worseThanHistory: false }
+    const out = html(<EquipmentStatsTable rows={[row, empty]} />)
+    expect(out).toContain("KA-01")
+    expect(out).not.toContain("KA-02")
+    expect(out).toContain("1 equipo de la lista no tiene rendimiento calculado y no se muestra aquí")
+  })
+
+  it("si ninguno tiene cifras explica por qué y ofrece quitar los filtros", () => {
+    const empty: EquipmentStatRow = { ...row, mean: null, sd: null, cv: null, modelMean: null, deltaModelPct: null, historyMean: null, deltaHistoryPct: null, worseThanModel: false, worseThanHistory: false }
+    const out = html(<EquipmentStatsTable rows={[empty]} clearFiltersHref="?periodo=2026-03" />)
+    expect(out).toContain("Ningún equipo tiene rendimiento calculado")
+    expect(out).not.toContain("<table")
+    expect(out).toContain('href="?periodo=2026-03"')
+    expect(out).toContain("Quitar filtros")
+  })
+
   it("el código del equipo abre su ficha cuando se le da el enlace", () => {
     const out = html(<EquipmentStatsTable rows={[row]} equipmentHref={(id) => `/combustibles/consumo/equipos/${id}?periodo=2026-03`} />)
     expect(out).toContain('href="/combustibles/consumo/equipos/v1?periodo=2026-03"')
@@ -132,6 +149,12 @@ describe("rendimiento por faena: ranking", () => {
     expect(out).toContain("Parejo · 10 cargas")
     expect(out).toContain("Irregular · 4 cargas")
     expect(out).toContain("Aún sin 2 cargas para saber si es parejo")
+  })
+
+  it("sin rendimientos por faena el vacío trae su acción", () => {
+    const out = html(<WorksiteRanking rows={[]} clearFiltersHref="?periodo=2026-03" />)
+    expect(out).toContain("Sin rendimientos calculados")
+    expect(out).toContain('href="?periodo=2026-03"')
   })
 
   it("km/L pone la mejor faena arriba: más es mejor", () => {

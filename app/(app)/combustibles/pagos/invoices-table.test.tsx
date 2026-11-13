@@ -67,6 +67,25 @@ describe("InvoicesTable", () => {
     expect(within(cards).getByRole("link", { name: /ver factura f-881204/i })).toBeInTheDocument()
   })
 
+  it("cuenta facturas (no cargas) y nombra el equipo como en las demás tablas: código arriba, medidor y patente debajo", () => {
+    renderTable()
+
+    expect(screen.getByText(/factura en esta lista/)).toBeInTheDocument()
+    expect(screen.queryByText(/cargas? en esta lista/)).toBeNull()
+    const table = screen.getByRole("table")
+    expect(within(table).getByText("CM-11")).toHaveClass("font-mono")
+    expect(within(table).getByText("120.300 km · AA-BB-11")).toBeInTheDocument()
+  })
+
+  it("el proveedor y el número de factura no se parten ni desbordan: una línea, con el nombre completo en un title", () => {
+    renderTable([{ ...row, supplierName: "Combustibles y Lubricantes del Sur S.A." }])
+    const table = screen.getByRole("table")
+
+    expect(within(table).getByTitle("Combustibles y Lubricantes del Sur S.A.")).toHaveClass("truncate")
+    expect(within(table).getByRole("columnheader", { name: "N.º factura" })).toHaveClass("whitespace-nowrap")
+    expect(within(table).getByText("F-881204")).toHaveClass("whitespace-nowrap")
+  })
+
   it("pagina con enlaces que conservan el resto de la URL", () => {
     renderTable([row], 120)
 

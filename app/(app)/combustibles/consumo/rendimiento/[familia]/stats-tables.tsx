@@ -48,7 +48,7 @@ export function WorksiteStatsTable({ rows }: { rows: WorksiteStatRow[] }) {
     return <EmptyState compact title="Sin rendimientos calculados" description="Ninguna faena tiene cargas con rendimiento calculado y sin decisión pendiente con estos filtros. Amplía el período o quita la faena." />
   }
   return (
-    <TableRoot aria-label="Cifras estadísticas del rendimiento por faena">
+    <TableRoot framed={false} aria-label="Cifras estadísticas del rendimiento por faena">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -208,7 +208,7 @@ export function EquipmentStatsTable({ rows: allRows, equipmentHref, clearFilters
 export function EquipmentStatisticsTable({ rows }: { rows: EquipmentStatRow[] }) {
   if (rows.length === 0) return null
   return (
-    <TableRoot aria-label="Cifras estadísticas del rendimiento por equipo">
+    <TableRoot framed={false} aria-label="Cifras estadísticas del rendimiento por equipo">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">

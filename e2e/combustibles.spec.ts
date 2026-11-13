@@ -8,7 +8,7 @@ import { openAddDataSelector } from "./combustibles-control-helpers"
  * apunta a la pantalla nueva que heredó lo que antes se probaba aquí:
  *
  *   /combustibles                 → Panel de combustible (tira de cinco pasos)
- *   /combustibles/consumo/litros  → «Consumo y rendimiento › Consumo» (antes el tablero de /combustibles)
+ *   /combustibles/consumo/litros  → «Consumo › Litros cargados» (antes el tablero de /combustibles)
  *   /combustibles/pagos           → Pagos › Facturas (antes /combustibles/facturas)
  *   /combustibles/pagos/nueva     → Nueva factura (antes /combustibles/nueva)
  *   /combustibles/pagos/estados   → Estados de cuenta (antes /combustibles/cuenta-corriente)
@@ -57,21 +57,24 @@ test.describe("Combustibles module", () => {
     await expect(page.getByRole("heading", { name: "El período en tres cifras", level: 2 })).toBeVisible()
   })
 
-  test("Consumo y rendimiento › Consumo muestra los litros por mes, de dónde vinieron y las patentes para mirar", async ({ page }) => {
+  test("Consumo › Litros cargados muestra los litros por mes, de dónde vinieron y las patentes para mirar", async ({ page }) => {
     await page.goto("/combustibles/consumo/litros")
-    await expectPageTitle(page, "Consumo y rendimiento")
+    await expectPageTitle(page, "Litros cargados")
     const pestanas = page.getByRole("navigation", { name: "Vistas de consumo y rendimiento" })
-    await expect(pestanas.getByRole("link", { name: "Consumo", exact: true })).toHaveAttribute("aria-current", "page")
+    await expect(pestanas.getByRole("link", { name: "Litros", exact: true })).toHaveAttribute("aria-current", "page")
     for (const titulo of [
       "Litros por mes, según de dónde salió",
       "De dónde vino lo cargado",
       // CHART-016: la tasa (km/L, L/h) mes a mes, de las lecturas de medidor de Copec; las barras de abajo siguen siendo las de cargas.
       "Rendimiento por mes",
-      "Kilómetros contra litros",
-      "Horas contra litros",
       "Patentes para mirar",
     ]) {
       await expect.soft(page.getByRole("heading", { name: titulo, level: 2 }), `sección «${titulo}»`).toBeVisible()
+    }
+    // Las series de medidor (km y horas contra litros) van plegadas: se abren a demanda.
+    await page.locator("summary").filter({ hasText: "Kilómetros y horas contra litros" }).click()
+    for (const titulo of ["Kilómetros contra litros", "Horas contra litros"]) {
+      await expect.soft(page.getByRole("heading", { name: titulo, level: 2 }), `serie «${titulo}»`).toBeVisible()
     }
     // Los análisis pesados viven plegados en la URL (`?seccion=`): cerrados traen su enlace «Ver».
     await expect(page.getByRole("link", { name: /^Ver Más análisis de tarjetas/ })).toBeVisible()
@@ -79,7 +82,7 @@ test.describe("Combustibles module", () => {
 
   test("Pagos › Facturas (la facturación relocalizada) carga con su barra de vistas y sus acciones", async ({ page }) => {
     await page.goto("/combustibles/pagos")
-    await expectPageTitle(page, "Pagos")
+    await expectPageTitle(page, "Facturas y pagos")
     const pestanas = page.getByRole("navigation", { name: "Pagos", exact: true })
     await expect(pestanas.getByRole("link", { name: "Facturas", exact: true })).toHaveAttribute("aria-current", "page")
     await expect(pestanas.getByRole("link", { name: "Estados de cuenta", exact: true })).toBeVisible()
@@ -212,14 +215,14 @@ test.describe("Combustibles module", () => {
   })
 
   // Reportes y Análisis de rendimiento se fusionaron en «Consumo y rendimiento»
-  // (2026-10-22) y, con el rediseño (2026-10-31), esas vistas son «Consumo» (con el
+  // (2026-10-22) y, con el rediseño (2026-10-31), esas vistas son «Litros» (con el
   // análisis de tarjetas plegado en `?seccion=tarjetas`) y «Rendimiento». Las URL
   // viejas siguen vivas en marcadores y correos.
   test("retired fuel report and analysis routes redirect into Consumo y rendimiento", async ({ page }) => {
     await page.goto("/combustibles/reportes?desde=2026-07-01&hasta=2026-07-31")
     await expect(page).toHaveURL((url) => url.pathname === "/combustibles/consumo/litros" && url.searchParams.get("seccion") === "tarjetas" && url.searchParams.get("desde") === "2026-07-01")
     await expect(page.getByRole("navigation", { name: "Vistas de consumo y rendimiento" })
-      .getByRole("link", { name: "Consumo", exact: true })).toHaveAttribute("aria-current", "page")
+      .getByRole("link", { name: "Litros", exact: true })).toHaveAttribute("aria-current", "page")
 
     await page.goto("/combustibles/analisis")
     await expect(page).toHaveURL(/\/combustibles\/consumo\/rendimiento\/camiones/)
