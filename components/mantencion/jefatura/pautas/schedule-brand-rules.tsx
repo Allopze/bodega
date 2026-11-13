@@ -72,7 +72,7 @@ export function ScheduleBrandRules({ scheduleId, brands, rows }: {
         })}
       </ul>
       {/* Sin borde propio: la tarjeta ya enmarca. Las casillas son una sola parada de Tab (flechas), así que la región de scroll no necesita la suya. */}
-      <TableRoot className="rounded-none border-0" tabIndex={undefined}>
+      <TableRoot framed={false} tabIndex={undefined}>
         <p id={hintId} className="sr-only">
           Las casillas son una sola parada de tabulación: usa las flechas para moverte y Enter o espacio para cambiar la regla.
         </p>

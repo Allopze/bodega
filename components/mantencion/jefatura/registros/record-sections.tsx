@@ -136,7 +136,7 @@ export function PreventiveSection({ detail }: { detail: RecordDetail }) {
         description={`${formatNumber(done)} realizados · ${formatNumber(notDone)} no realizados · ${formatNumber(notApplicable)} no aplica`}
       >
         {/* Sin marco propio dentro de la tarjeta (el borde ya es el de la tarjeta). */}
-        <TableRoot aria-label="Resultado de la pauta por sistema" className="rounded-none border-0">
+        <TableRoot aria-label="Resultado de la pauta por sistema" framed={false}>
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
