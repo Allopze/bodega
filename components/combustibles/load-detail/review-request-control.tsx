@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { toast } from "@/lib/toast"
 import type { FuelLogSource } from "@/lib/combustibles/fuel-log-shared"
-import { requestReviewAction, withdrawReviewRequestAction } from "@/app/(app)/combustibles/bitacora/actions"
+import { requestReviewAction, withdrawReviewRequestAction } from "@/app/(app)/combustibles/cargas/actions"
 
 const NOTE_MIN = 10
 const NOTE_MAX = 500

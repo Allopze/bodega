@@ -16,7 +16,7 @@ import type { FuelLogFilters, FuelLogSource } from "@/lib/combustibles/fuel-log-
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { BitacoraTable, rowKey, type EnrichedRow } from "./bitacora-table"
-import { CargasExportButton } from "../bitacora/export-button"
+import { CargasExportButton } from "./export-button"
 import type { TaeExportFilters } from "../tae/actions"
 import { CargasFilters, type CargasFilterLookups } from "./cargas-filters"
 

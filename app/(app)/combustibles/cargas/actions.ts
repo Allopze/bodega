@@ -81,7 +81,7 @@ async function buildWorkbook(rows: FuelLogRow[], includePersonal: boolean) {
     { header: "Cómo llegó", key: "origin", width: 26 },
     { header: "Faena", key: "worksiteName", width: 20 },
     { header: "Proveedor", key: "supplierName", width: 18 },
-    { header: "Lugar de carga", key: "loadingPointName", width: 20 },
+    { header: "Punto de carga", key: "loadingPointName", width: 20 },
     { header: "Código equipo", key: "equipmentCode", width: 14 },
     { header: "Patente", key: "plate", width: 12 },
     { header: "Tipo de equipo", key: "equipmentTypeName", width: 16 },

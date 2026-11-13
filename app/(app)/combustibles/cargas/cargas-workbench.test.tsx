@@ -18,7 +18,7 @@ vi.mock("./bitacora-table", () => ({
   rowKey: (row: { source: string; id: string }) => `${row.source}:${row.id}`,
   BitacoraTable: ({ rows }: { rows: unknown[] }) => <table data-testid="bitacora"><tbody><tr><td>{rows.length} filas</td></tr></tbody></table>,
 }))
-vi.mock("../bitacora/export-button", () => ({ CargasExportButton: () => null }))
+vi.mock("./export-button", () => ({ CargasExportButton: () => null }))
 vi.mock("@/components/combustibles/add-fuel-data-button", () => ({ AddFuelDataButton: () => null }))
 vi.mock("@/components/combustibles/fuel-header-actions", () => ({ FuelHeaderActions: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
 vi.mock("@/components/combustibles/fuel-breadcrumbs", () => ({ FuelBreadcrumbs: () => null }))

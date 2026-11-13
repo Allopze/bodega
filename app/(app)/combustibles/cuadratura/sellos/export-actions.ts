@@ -73,7 +73,7 @@ export async function exportSealsXlsxAction(input: { query: string }): Promise<E
     { header: "Faena", key: "worksite", width: 22 },
     { header: "Equipo", key: "equipment", width: 14 },
     { header: "Patente", key: "plate", width: 12 },
-    { header: "Lugar de carga", key: "point", width: 26 },
+    { header: "Punto de carga", key: "point", width: 26 },
     { header: "Medio", key: "medium", width: 18 },
     { header: "Litros", key: "liters", width: 12, numFmt: "#,##0.0" },
     { header: "Medidor", key: "meter", width: 12, numFmt: "#,##0" },

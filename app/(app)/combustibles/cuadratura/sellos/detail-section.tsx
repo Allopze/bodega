@@ -47,7 +47,7 @@ export function DetailSection({ rows, pagination, hrefForPage, canViewPhotos, cl
           <TableRow>
             <TableHead>Fecha y hora</TableHead>
             <TableHead>Equipo</TableHead>
-            <TableHead>Lugar de carga</TableHead>
+            <TableHead>Punto de carga</TableHead>
             <TableHead>Medio</TableHead>
             <TableHead className="text-right">Litros</TableHead>
             <TableHead className="text-right" title="Lectura del odómetro (km) u horómetro (h)">Medidor</TableHead>
