@@ -178,7 +178,7 @@ export function IntegrationSettingsDialog({
               <Switch
                 checked={syncEnabled}
                 onCheckedChange={setSyncEnabled}
-                label={`Activar la actualización de ${providerName}`}
+                label={`Activar la ${syncLabel.charAt(0).toLowerCase()}${syncLabel.slice(1)} de ${providerName}`}
                 id={`${idPrefix}-sync-enabled`}
               />
               <input type="hidden" name="syncEnabled" value={syncEnabled ? "on" : ""} />

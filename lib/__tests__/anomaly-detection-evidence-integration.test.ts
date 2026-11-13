@@ -206,6 +206,7 @@ describe("lecturas del detalle de proveedor (fuel_meter_readings)", () => {
   const vehJumpId = nanoid()
   const vehMixId = nanoid()
   const vehSlowId = nanoid()
+  const vehGpsId = nanoid()
 
   const reading = (vehicleId: string, over: Partial<typeof schema.fuelMeterReadings.$inferInsert>) => ({
     id: nanoid(),
@@ -227,7 +228,7 @@ describe("lecturas del detalle de proveedor (fuel_meter_readings)", () => {
       id: eqTypeId, slug: `lect-camion-${nanoid().slice(0, 6)}`, name: "Camión lecturas",
     })
     await inMemoryDb.insert(schema.fuelVehicles).values(
-      [vehRegId, vehJumpId, vehMixId, vehSlowId].map((id) => ({
+      [vehRegId, vehJumpId, vehMixId, vehSlowId, vehGpsId].map((id) => ({
         id, plate: `LEC${nanoid().slice(0, 5).toUpperCase()}`, type: "camion",
         equipmentTypeId: eqTypeId, worksiteId: wsId, meterType: "odometer", isActive: true,
       })),
@@ -287,6 +288,23 @@ describe("lecturas del detalle de proveedor (fuel_meter_readings)", () => {
     expect(regresivos.some((c) => c.vehicleId === vehMixId)).toBe(false)
     const { cases: saltos } = await getAnomalyCases({ ruleCode: "salto_medidor_implausible" }, TEST_SESSION)
     expect(saltos.some((c) => c.vehicleId === vehMixId)).toBe(false)
+  })
+
+  it("una serie de GPS que retrocede o salta no crea casos: sólo se vigila lo tecleado en el surtidor", async () => {
+    await inMemoryDb.insert(schema.fuelMeterReadings).values([
+      reading(vehGpsId, { source: "gps_wialon", occurredAt: "2026-06-01T12:00:00.000Z", value: 300_000 }),
+      // Cambio de equipo/calibración: baja de golpe…
+      reading(vehGpsId, { source: "gps_wialon", occurredAt: "2026-06-01T13:00:00.000Z", value: 5_000 }),
+      // …y luego sube más de lo posible en una hora.
+      reading(vehGpsId, { source: "gps_wialon", occurredAt: "2026-06-01T14:00:00.000Z", value: 900_000 }),
+    ])
+
+    await runAllBatchRules()
+
+    const { cases: regresivos } = await getAnomalyCases({ ruleCode: "kilometraje_regresivo" }, TEST_SESSION)
+    expect(regresivos.some((c) => c.vehicleId === vehGpsId)).toBe(false)
+    const { cases: saltos } = await getAnomalyCases({ ruleCode: "salto_medidor_implausible" }, TEST_SESSION)
+    expect(saltos.some((c) => c.vehicleId === vehGpsId)).toBe(false)
   })
 })
 

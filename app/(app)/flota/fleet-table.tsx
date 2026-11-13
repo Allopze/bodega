@@ -6,6 +6,7 @@ import { DataTable } from "@/components/ui/data-table"
 import { ExpiryStatus } from "@/components/ui/expiry-status"
 import { TableCell } from "@/components/ui/table"
 import { MetaBadge } from "@/components/states/state-badge"
+import { meterSourceLabel } from "@/lib/combustibles/meter-source"
 import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
 import { expiryState } from "@/lib/expiry"
 import { formatCLP } from "@/lib/utils"
@@ -24,14 +25,9 @@ function formatUnitCost(value: number | null, label: string | null): string {
   return `$${value.toLocaleString("es-CL", { maximumFractionDigits: 1 })}/${unit}`
 }
 
-function meterSourceLabel(source: string | null): string | undefined {
-  return source === "copec_tct"
-    ? "Lectura Copec"
-    : source === "gps_wialon"
-      ? "Lectura GPS Wialon"
-      : source === "gps_onway"
-        ? "Lectura GPS OnWay"
-        : undefined
+function meterSourceTooltip(source: string | null): string | undefined {
+  const label = meterSourceLabel(source)
+  return label ? `Lectura ${label}` : undefined
 }
 
 /**
@@ -137,7 +133,7 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
               <TableCell
                 className="text-right font-mono"
                 title={[
-                  meterSourceLabel(vehicle.meterSource),
+                  meterSourceTooltip(vehicle.meterSource),
                   vehicle.meterSeriesIncomplete ? "El recorrido es una cota inferior: parte de la serie se descartó por lecturas inválidas." : null,
                   vehicle.meterSeriesCovered === false ? "Costo por km/h no calculado: la serie no cubre los 12 meses." : null,
                 ].filter(Boolean).join(" ") || undefined}

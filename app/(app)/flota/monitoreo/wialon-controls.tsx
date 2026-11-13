@@ -29,13 +29,13 @@ export function WialonControls({ status }: { status: WialonAdminStatus }) {
       <IntegrationSettingsDialog
         idPrefix="wialon"
         providerName="Wialon"
-        description="Token de API de Wialon Hosting. El cruce con la flota usa el vínculo manual, la patente o el código del equipo."
+        description="Token de API de Wialon Hosting. El cruce con la flota usa el vínculo manual, la patente del perfil de la unidad, su VIN, el código o el nombre."
         canStoreSecrets={canStoreSecrets}
         withoutKeyringNote="La URL, los parámetros y el interruptor sí se pueden guardar; el token debe venir de WIALON_TOKEN en el servidor."
         hasStoredSettings={status.hasStoredSettings}
         syncEnabled={fields.syncEnabled.value?.trim() === "true"}
         syncLabel="Actualización automática"
-        syncDescription="Cada 5 minutos la plataforma lee el último mensaje de cada unidad, desfasada de OnWay."
+        syncDescription="Cada 5 minutos la plataforma lee los medidores y el último mensaje de cada unidad, desfasada de OnWay. Con Monitoreo GPS abierto, la posición se actualiza cada 10 segundos."
         saveAction={saveWialonSettingsAction}
         clearAction={clearWialonSettingsAction}
         testAction={testWialonConnectionAction}
@@ -63,22 +63,25 @@ export function WialonControls({ status }: { status: WialonAdminStatus }) {
           </summary>
           <div className="mt-3 space-y-3">
             <p className="text-xs text-[var(--color-text-muted)]">
-              El nombre del parámetro en el mensaje de Wialon. Si la cuenta usa otro nombre, cámbialo aquí;
-              un valor ausente se muestra como «sin dato», no como 0.
+              El odómetro y el horómetro salen de los contadores que mantiene Wialon. Sólo si la cuenta los
+              lleva en un sensor propio, escribe aquí el nombre de su parámetro en el mensaje; un valor
+              ausente se muestra como «sin dato», no como 0.
             </p>
             <SettingTextField
               id="wialon-odometer-param"
               name="odometerParam"
               label="Odómetro"
               status={fields.odometerParam}
-              placeholder="mileage"
+              placeholder="Contador de Wialon"
+              hint="Vacío = contador de Wialon."
             />
             <SettingTextField
               id="wialon-hour-meter-param"
               name="hourMeterParam"
               label="Horómetro"
               status={fields.hourMeterParam}
-              placeholder="engine_hours"
+              placeholder="Contador de Wialon"
+              hint="Vacío = contador de Wialon."
             />
             <SettingTextField
               id="wialon-fuel-level-param"

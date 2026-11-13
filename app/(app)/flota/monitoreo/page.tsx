@@ -8,7 +8,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { readOnwayAdminStatus } from "@/lib/integrations/onway/onway-settings"
 import { readWialonAdminStatus } from "@/lib/integrations/wialon/wialon-settings"
 import { can } from "@/lib/auth/can"
-import { getFleetGpsAlerts, getFleetGpsMonitoring, isGpsCaptureStale, listLinkableVehicles, listWialonUnitsForLinking } from "@/lib/services/fleet-gps"
+import { getFleetGpsAlerts, getFleetGpsMonitoring, isGpsCaptureStale, listExcludedGpsDevices, listGpsDevicesForLinking, listLinkableVehicles } from "@/lib/services/fleet-gps"
 import { formatDateTime } from "@/lib/utils"
 import { Callout } from "@/components/ui/callout"
 import { FleetGpsWorkspace } from "./fleet-gps-workspace"
@@ -30,17 +30,26 @@ function staleSinceLabel(observedAt: string): string {
   return `${days} día${days === 1 ? "" : "s"}`
 }
 
-export default async function FleetGpsMonitoringPage() {
+/** `?pestana=configuracion` abre la pestaña Configuración (los avisos de pendientes enlazan acá). */
+const SETTINGS_TAB_HREF = "/flota/monitoreo?pestana=configuracion"
+
+export default async function FleetGpsMonitoringPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const sp = await searchParams
+  const openSettings = sp.pestana === "configuracion"
   let session
   try { session = await requirePermission("flota:view") }
   catch { redirect("/forbidden") }
 
   const [monitoring, alerts] = await Promise.all([getFleetGpsMonitoring(session), getFleetGpsAlerts(session)])
-  const [adminStatus, wialonStatus, wialonLinks] = monitoring.canManage
+  const [adminStatus, wialonStatus, deviceLinks] = monitoring.canManage
     ? await Promise.all([
         readOnwayAdminStatus(),
         readWialonAdminStatus(),
-        Promise.all([listWialonUnitsForLinking(session), listLinkableVehicles(session)]),
+        Promise.all([listGpsDevicesForLinking(session), listExcludedGpsDevices(session), listLinkableVehicles(session)]),
       ])
     : [null, null, null]
   const latestSyncAt = [monitoring.providerLatestAt.onway, monitoring.providerLatestAt.wialon]
@@ -125,8 +134,8 @@ export default async function FleetGpsMonitoringPage() {
       {monitoring.canManage && Number(monitoring.unmatchedByProvider.onway ?? 0) > 0 ? (
         <Callout tone="warning" className="mt-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <span><strong>{monitoring.unmatchedByProvider.onway} dispositivo{monitoring.unmatchedByProvider.onway === 1 ? "" : "s"} de OnWay sin patente única</strong> en el catálogo de Flota. La posición se descarta hasta corregirlo.</span>
-            <Link href="/admin/flota-catalogos/vehiculos" className="shrink-0 font-semibold underline">Revisar catálogo de vehículos</Link>
+            <span><strong>{monitoring.unmatchedByProvider.onway} dispositivo{monitoring.unmatchedByProvider.onway === 1 ? "" : "s"} de OnWay sin vehículo</strong>: la patente no calza con una única patente del catálogo. Vincúlalo a mano o exclúyelo si no es de la flota.</span>
+            <Link href={SETTINGS_TAB_HREF} scroll={false} className="shrink-0 font-semibold underline">Vincular en Configuración</Link>
           </div>
         </Callout>
       ) : null}
@@ -135,7 +144,7 @@ export default async function FleetGpsMonitoringPage() {
         <Callout tone="warning" className="mt-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <span><strong>{monitoring.unmatchedByProvider.wialon} unidad{monitoring.unmatchedByProvider.wialon === 1 ? "" : "es"} de Wialon sin vehículo</strong>. La posición se conserva, pero no entra al panel hasta vincularla.</span>
-            <Link href="#configuracion" className="shrink-0 font-semibold underline">Vincular en Configuración</Link>
+            <Link href={SETTINGS_TAB_HREF} scroll={false} className="shrink-0 font-semibold underline">Vincular en Configuración</Link>
           </div>
         </Callout>
       ) : null}
@@ -163,9 +172,11 @@ export default async function FleetGpsMonitoringPage() {
           canViewHistory={can(session, "flota:view_gps_history")}
           adminStatus={adminStatus}
           wialonStatus={wialonStatus}
-          wialonUnits={wialonLinks?.[0] ?? []}
-          linkableVehicles={wialonLinks?.[1] ?? []}
+          gpsDevices={deviceLinks?.[0] ?? []}
+          excludedDevices={deviceLinks?.[1] ?? []}
+          linkableVehicles={deviceLinks?.[2] ?? []}
           blockedAlertsCount={blockedAlerts}
+          openSettings={openSettings}
         />
       </div>
     </PageContainer>

@@ -1,5 +1,5 @@
 /**
- * Sincronización diaria VisionLink → `fuel_telemetry_daily`.
+ * Sincronización diaria VisionLink → `fuel_telemetry_daily` y `fuel_meter_readings`.
  *
  * El equipo se cruza por número de serie (`fuel_vehicles.serial_number`): en
  * VisionLink el nombre del equipo es texto libre y la patente no existe. Un
@@ -11,6 +11,11 @@
  * un lote no borra lo que trajo la API. Si ambas fuentes informan el mismo día,
  * la consulta de ralentí ya toma una sola (`dailyTelemetry`).
  *
+ * Además del ralentí, cada día trae el horómetro acumulado oficial de Cat (SMU):
+ * se guarda como lectura `visionlink_api` de los equipos con medidor en horas
+ * (una por equipo y día, al cierre del día local), que alimenta la serie del
+ * medidor y la estimación de mantención. Un horómetro con *callout* no se guarda.
+ *
  * Idempotente: la llave es equipo + día + fuente, y cada corrida reescribe la
  * ventana completa, porque VisionLink corrige días ya informados cuando el
  * equipo vuelve a tener señal.
@@ -18,10 +23,19 @@
 import { isNotNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelTelemetryDaily, fuelVehicles } from "@/db/schema"
+import { saveMeterReadings, type ParsedMeterReading } from "@/lib/combustibles/meter-readings"
 import { nanoid } from "@/lib/id"
+import { buildVehicleResolverByPlate } from "@/lib/integrations/fleet-gps/identity"
 import { todayInChile } from "@/lib/utils"
 import { fetchVisionLinkUtilization, type VisionLinkCredentials, type VisionLinkUtilization } from "./visionlink-client"
-import { previousDay, visionLinkDayToTelemetry, type VisionLinkDaySkip, type VisionLinkTelemetryRow } from "./visionlink-telemetry"
+import {
+  previousDay,
+  visionLinkDayToMeterReading,
+  visionLinkDayToTelemetry,
+  type VisionLinkDaySkip,
+  type VisionLinkMeterReading,
+  type VisionLinkTelemetryRow,
+} from "./visionlink-telemetry"
 
 export const VISIONLINK_API_SOURCE = "visionlink-api"
 
@@ -41,9 +55,18 @@ export interface SyncVisionLinkResult {
   unmatched: Array<{ serialNumber: string; equipmentId: string | null; model: string | null }>
   inserted: number
   updated: number
+  /** Lecturas de horómetro (`fuel_meter_readings`, fuente `visionlink_api`) escritas. */
+  meterReadingsSaved: number
   /** Días descartados por motivo. No se llama `skipped`: ese es el aviso de `withCronLock`. */
   skippedDays: Partial<Record<VisionLinkDaySkip, number>>
 }
+
+export interface VisionLinkMeterVehicle {
+  plate: string
+  meterType: string
+}
+
+export type PlannedMeterReading = VisionLinkMeterReading & { vehicleId: string; serialNumber: string }
 
 export function splitRange(from: string, to: string, maxDays = MAX_WINDOW_DAYS): Array<{ startDate: string; endDate: string }> {
   const windows: Array<{ startDate: string; endDate: string }> = []
@@ -64,7 +87,12 @@ export function planVisionLinkRows(
   utilizations: VisionLinkUtilization[],
   vehicleIdBySerial: Map<string, string>,
   lastDay: string,
-): Pick<SyncVisionLinkResult, "assets" | "matched" | "unmatched" | "skippedDays"> & { rows: Array<VisionLinkTelemetryRow & { vehicleId: string }> } {
+  vehiclesById: ReadonlyMap<string, VisionLinkMeterVehicle> = new Map(),
+): Pick<SyncVisionLinkResult, "assets" | "matched" | "unmatched" | "skippedDays"> & {
+  rows: Array<VisionLinkTelemetryRow & { vehicleId: string }>
+  meterReadings: PlannedMeterReading[]
+} {
+  const meterReadings: PlannedMeterReading[] = []
   const rows: Array<VisionLinkTelemetryRow & { vehicleId: string }> = []
   const unmatched: SyncVisionLinkResult["unmatched"] = []
   const skippedDays: SyncVisionLinkResult["skippedDays"] = {}
@@ -79,13 +107,21 @@ export function planVisionLinkRows(
       continue
     }
     matched++
+    const hasHourMeter = vehiclesById.get(vehicleId)?.meterType === "hour_meter"
     for (const daily of asset.dailyUtilizations ?? []) {
+      // El horómetro es independiente de las horas de funcionamiento: un día
+      // con ralentí inválido igual trae su acumulado. Sólo se exige que el día
+      // esté cerrado (un parcial dejaría una lectura menor que la del día siguiente).
+      if (hasHourMeter && (daily.assetLocalDate ?? "") <= lastDay) {
+        const meter = visionLinkDayToMeterReading(daily)
+        if ("reading" in meter) meterReadings.push({ ...meter.reading, vehicleId, serialNumber: serial })
+      }
       const result = visionLinkDayToTelemetry(daily, lastDay)
       if ("skip" in result) skippedDays[result.skip] = (skippedDays[result.skip] ?? 0) + 1
       else rows.push({ ...result.row, vehicleId })
     }
   }
-  return { assets: matched + unmatched.length, matched, unmatched, skippedDays, rows }
+  return { assets: matched + unmatched.length, matched, unmatched, skippedDays, rows, meterReadings }
 }
 
 export async function syncVisionLink(
@@ -110,12 +146,14 @@ export async function syncVisionLink(
   }
   const utilizations = [...bySerial.values()]
 
-  const vehicles = await db.select({ id: fuelVehicles.id, serialNumber: fuelVehicles.serialNumber })
+  const vehicles = await db.select({
+    id: fuelVehicles.id, serialNumber: fuelVehicles.serialNumber, plate: fuelVehicles.plate, meterType: fuelVehicles.meterType,
+  })
     .from(fuelVehicles)
     .where(isNotNull(fuelVehicles.serialNumber))
   const vehicleIdBySerial = new Map(vehicles.map((vehicle) => [vehicle.serialNumber!.toUpperCase(), vehicle.id]))
 
-  const plan = planVisionLinkRows(utilizations, vehicleIdBySerial, to)
+  const plan = planVisionLinkRows(utilizations, vehicleIdBySerial, to, new Map(vehicles.map((vehicle) => [vehicle.id, vehicle])))
   // Un INSERT … ON CONFLICT no puede tocar la misma fila dos veces: si dos
   // equipos de VisionLink apuntaran al mismo vehículo, gana el último.
   const unique = new Map(plan.rows.filter((row) => row.day >= from).map((row) => [`${row.vehicleId}|${row.day}`, row]))
@@ -141,5 +179,32 @@ export async function syncVisionLink(
     }
   }
 
-  return { from, to, assets: plan.assets, matched: plan.matched, unmatched: plan.unmatched, inserted, updated, skippedDays: plan.skippedDays }
+  const vehicleById = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle]))
+  const meterReadings: ParsedMeterReading[] = []
+  for (const reading of plan.meterReadings) {
+    const vehicle = vehicleById.get(reading.vehicleId)
+    if (!vehicle || reading.day < from) continue
+    meterReadings.push({
+      // Patente EXACTA del catálogo: es la que el resolver encuentra primero.
+      plate: vehicle.plate,
+      sourceRef: `visionlink:${reading.serialNumber}:${reading.day}`,
+      occurredAt: reading.occurredAt,
+      value: reading.value,
+      liters: null,
+      stationName: null,
+      cardNumber: null,
+      providerPerformance: null,
+      rawPayload: { provider: "visionlink", serialNumber: reading.serialNumber, day: reading.day },
+    })
+  }
+  let meterReadingsSaved = 0
+  for (let index = 0; index < meterReadings.length; index += 500) {
+    const saved = await saveMeterReadings(db, "visionlink_api", meterReadings.slice(index, index + 500), buildVehicleResolverByPlate(vehicles))
+    meterReadingsSaved += saved.saved
+  }
+
+  return {
+    from, to, assets: plan.assets, matched: plan.matched, unmatched: plan.unmatched, inserted, updated, meterReadingsSaved,
+    skippedDays: plan.skippedDays,
+  }
 }

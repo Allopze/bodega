@@ -1,3 +1,4 @@
+import type { MantGpsReadingSource } from "@/lib/mantencion/gps-estimate"
 import { nameKey } from "@/lib/mantencion/normalize"
 import { stateRank } from "@/lib/mantencion/status"
 import { MANT_EQUIPMENT_STATES, type MantEquipmentState, type MantUnit } from "@/lib/mantencion/types"
@@ -125,6 +126,8 @@ export interface EquipmentListRow extends Record<string, unknown> {
   workshopStale: boolean
   /** Estimación GPS, separada del estado oficial; `null` si no hay lectura más nueva. */
   gpsState: MantEquipmentState | null
+  /** Fuente de la estimación (`gps` o `visionlink`); ausente = GPS. */
+  gpsSource?: MantGpsReadingSource | null
   gpsReading: number | null
   gpsReadingDate: string | null
   gpsNextReading: number | null
@@ -159,6 +162,7 @@ export function toEquipmentListRow(row: FleetRow): EquipmentListRow {
     workshopDays: row.workshop?.daysStopped ?? null,
     workshopStale: row.workshop?.stale ?? false,
     gpsState: row.gpsStatus?.state ?? null,
+    gpsSource: row.gpsReadingSource,
     gpsReading: row.gpsStatus?.currentReading?.value ?? null,
     gpsReadingDate: row.gpsStatus?.currentReading?.date ?? null,
     gpsNextReading: row.gpsStatus?.nextReading ?? null,

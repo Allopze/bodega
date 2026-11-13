@@ -187,6 +187,83 @@ describe("getFleetOverview", () => {
     expect(vehicle.fuelCostPerUnit).toBe(40)
   })
 
+  it("en horómetro, VisionLink (el acumulado de Cat) va antes que el GPS cuando cubre la ventana", async () => {
+    findManyVehicles.mockResolvedValue([{
+      id: "veh-1", plate: "AA-BB-11", type: "excavadora", isActive: true, operationalStatus: "operativo",
+      performanceUnit: "liters_per_hour", worksite: { name: "Faena Uno" }, responsibleUser: null,
+    }])
+    const today = todayInChile()
+    const since = addMonths(today, -12)
+    const recent = addMonths(today, -1)
+    const reading = (id: string, source: string, occurredAt: string, value: number) =>
+      ({ id, vehicleId: "veh-1", source, meterType: "hour_meter", occurredAt: `${occurredAt}T12:00:00.000Z`, value, acceptedReset: false })
+    selectResults.push(
+      { data: [{ vehicleId: "veh-1", totalFuelAmount: 100_000, totalLiters: 80, loadCount: 2 }] },
+      { data: [
+        // Copec sólo trae lo reciente: no cubre la ventana, así que no gana.
+        reading("copec-1", "copec_tct", recent, 7_000),
+        reading("copec-2", "copec_tct", today, 7_100),
+        reading("wialon-1", "gps_wialon", since, 6_000),
+        reading("wialon-2", "gps_wialon", today, 7_090),
+        reading("vl-1", "visionlink_api", since, 6_010),
+        reading("vl-2", "visionlink_api", today, 7_100),
+      ] },
+      { data: [] },
+      { data: [] },
+    )
+
+    const [vehicle] = await getFleetOverview(globalSession)
+    if (!vehicle) throw new Error("Se esperaba el vehículo")
+
+    expect(vehicle).toMatchObject({ meterSource: "visionlink_api", meterSeriesCovered: true, lastHourMeterReading: 7_100, hoursRun: 1_090 })
+  })
+
+  it("si Copec cubre la ventana sigue primero: es lo tecleado en la carga", async () => {
+    findManyVehicles.mockResolvedValue([{
+      id: "veh-1", plate: "AA-BB-11", type: "excavadora", isActive: true, operationalStatus: "operativo",
+      performanceUnit: "liters_per_hour", worksite: { name: "Faena Uno" }, responsibleUser: null,
+    }])
+    const today = todayInChile()
+    const since = addMonths(today, -12)
+    const reading = (id: string, source: string, occurredAt: string, value: number) =>
+      ({ id, vehicleId: "veh-1", source, meterType: "hour_meter", occurredAt: `${occurredAt}T12:00:00.000Z`, value, acceptedReset: false })
+    selectResults.push(
+      { data: [{ vehicleId: "veh-1", totalFuelAmount: 100_000, totalLiters: 80, loadCount: 2 }] },
+      { data: [
+        reading("copec-1", "copec_tct", since, 6_000),
+        reading("copec-2", "copec_tct", today, 7_000),
+        reading("vl-1", "visionlink_api", since, 6_010),
+        reading("vl-2", "visionlink_api", today, 7_100),
+      ] },
+      { data: [] },
+      { data: [] },
+    )
+
+    const [vehicle] = await getFleetOverview(globalSession)
+    expect(vehicle).toMatchObject({ meterSource: "copec_tct", lastHourMeterReading: 7_000 })
+  })
+
+  it("VisionLink sólo informa horómetro: en un equipo de odómetro no entra aunque tenga lecturas", async () => {
+    findManyVehicles.mockResolvedValue([{
+      id: "veh-1", plate: "AA-BB-11", type: "camioneta", isActive: true, operationalStatus: "operativo",
+      performanceUnit: "km_per_liter", worksite: { name: "Faena Uno" }, responsibleUser: null,
+    }])
+    const today = todayInChile()
+    const since = addMonths(today, -12)
+    selectResults.push(
+      { data: [{ vehicleId: "veh-1", totalFuelAmount: 100_000, totalLiters: 80, loadCount: 2 }] },
+      { data: [
+        { id: "vl-1", vehicleId: "veh-1", source: "visionlink_api", meterType: "odometer", occurredAt: `${since}T12:00:00.000Z`, value: 100, acceptedReset: false },
+        { id: "vl-2", vehicleId: "veh-1", source: "visionlink_api", meterType: "odometer", occurredAt: `${today}T12:00:00.000Z`, value: 200, acceptedReset: false },
+      ] },
+      { data: [] },
+      { data: [] },
+    )
+
+    const [vehicle] = await getFleetOverview(globalSession)
+    expect(vehicle).toMatchObject({ meterSource: null, lastOdometerReading: null })
+  })
+
   it("deja el costo por km/h vacío si la única serie no cubre la ventana", async () => {
     findManyVehicles.mockResolvedValue([{
       id: "veh-1", plate: "AA-BB-11", type: "camioneta", isActive: true, operationalStatus: "operativo",

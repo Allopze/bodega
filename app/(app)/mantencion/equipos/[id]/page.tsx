@@ -89,6 +89,7 @@ export default async function EquipmentDetailPage({
     workshop: workshop ? { entryDate: workshop.entryDate, daysStopped: workshop.daysStopped, stale: workshop.stale, lastActivityDate: workshop.lastActivityDate } : null,
     gpsStatus: row.gpsStatus,
     gpsReadingAt: row.gpsReadingAt,
+    gpsReadingSource: row.gpsReadingSource,
     recordCount,
     life: { rows: life.rows, totals, hasMore: life.hasMore, limit: lifeLimit, workOrders, historical: { total: historical.total, vehicleId: id } },
     insurance,

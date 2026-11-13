@@ -188,3 +188,44 @@ describe("corrección de lectura de medidor", () => {
     expect(untouched!.status).toBe("dismissed")
   })
 })
+
+describe("piso de la lectura tecleada: sólo cargas y detalle de Copec", () => {
+  // El GPS tiene su propia calibración: un odómetro de GPS adelantado no puede
+  // bloquear la carga manual correcta del surtidor.
+  const GPS_VEHICLE_ID = "far-gps-floor-vehicle"
+  const reading = (source: string, ref: string, value: number) => ({
+    id: `far-gps-floor-${ref}`, vehicleId: GPS_VEHICLE_ID, plate: "FAR-GPS", source, sourceRef: ref,
+    occurredAt: "2026-07-05T12:00:00.000Z", meterType: "odometer", value,
+  })
+
+  beforeAll(async () => {
+    await inMemoryDb.insert(schema.fuelVehicles).values({
+      id: GPS_VEHICLE_ID, plate: "FAR-GPS", type: "camion", equipmentTypeId: EQUIPMENT_TYPE_ID,
+      worksiteId: WORKSITE_ID, meterType: "odometer", isActive: true,
+    })
+  })
+
+  it("una lectura de GPS mayor no es el piso ni bloquea la carga manual", async () => {
+    await inMemoryDb.insert(schema.fuelMeterReadings).values([
+      reading("gps_wialon", "w1", 90_000),
+      reading("gps_onway", "o1", 95_000),
+      reading("visionlink_api", "v1", 99_000),
+    ])
+
+    await expect(lastKnownMeterReading(inMemoryDb as never, GPS_VEHICLE_ID, "odometer", { before: "2026-07-10" })).resolves.toBeNull()
+    await expect(meterReadingFieldErrors(inMemoryDb as never, {
+      vehicleId: GPS_VEHICLE_ID, loadDate: "2026-07-10", odometerReading: 50_000,
+    })).resolves.toBeNull()
+  })
+
+  it("una lectura de Copec mayor sí es el piso", async () => {
+    await inMemoryDb.insert(schema.fuelMeterReadings).values(reading("copec_tct", "c1", 60_000))
+
+    await expect(lastKnownMeterReading(inMemoryDb as never, GPS_VEHICLE_ID, "odometer", { before: "2026-07-10" }))
+      .resolves.toEqual({ value: 60_000, on: "2026-07-05" })
+    const errors = await meterReadingFieldErrors(inMemoryDb as never, {
+      vehicleId: GPS_VEHICLE_ID, loadDate: "2026-07-10", odometerReading: 50_000,
+    })
+    expect(errors?.odometerReading?.[0]).toContain("menor que la última registrada")
+  })
+})

@@ -2,13 +2,16 @@
  * Sincronización Wialon → `fleet_gps_latest_positions` y `fuel_meter_readings`.
  *
  * Wialon no reemplaza a OnWay: cubre los equipos que OnWay no tiene. La unidad
- * se vincula por link manual, patente, código o nombre; si hay ambigüedad queda
+ * se resuelve, en este orden, por vínculo manual, exclusión, patente del perfil
+ * (`registration_plate`), patente de las propiedades internas, VIN contra el
+ * número de serie del catálogo, código y nombre; si hay ambigüedad queda
  * pendiente y una persona la resuelve. Nunca se crea un vehículo.
  *
  * Cada corrida reescribe el último mensaje de la unidad. Las lecturas de
- * medidor usan la hora del mensaje como clave natural, así que repetir la
- * corrida no duplica la serie. No se escribe `fuel_telemetry_daily`: VisionLink
- * sigue siendo la fuente diaria de horas/litros de los equipos Cat.
+ * medidor llevan la hora del mensaje y su clave natural es la HORA UTC: repetir
+ * la corrida no duplica la serie y una unidad que reporta cada 5 minutos deja
+ * una lectura por hora, no 12. No se escribe `fuel_telemetry_daily`:
+ * VisionLink sigue siendo la fuente diaria de horas/litros de los equipos Cat.
  */
 import { and, desc, eq, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
@@ -16,7 +19,12 @@ import { fleetGpsDeviceLinks, fleetGpsLatestPositions, fleetGpsSyncRuns, fuelVeh
 import { saveMeterReadings, type ParsedMeterReading } from "@/lib/combustibles/meter-readings"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
-import { buildVehicleIdentityIndex, matchVehicleByIdentity, normalizeGpsKey, normalizePlate } from "@/lib/integrations/fleet-gps/identity"
+import {
+  buildVehicleIdentityIndex,
+  buildVehicleResolverByPlate,
+  matchVehicleByIdentity,
+  normalizeGpsKey,
+} from "@/lib/integrations/fleet-gps/identity"
 import { fetchWialonUnits, extractWialonTelemetry, logoutWialonSession, WialonClientError } from "./wialon-client"
 import type { WialonTelemetryParams, WialonUnit } from "./wialon-contract"
 import { loadWialonConfig } from "./wialon-settings"
@@ -41,21 +49,32 @@ interface VehicleRow {
   id: string
   plate: string
   code: string | null
+  serialNumber: string | null
   worksiteId: string
   meterType: string
   tankCapacityLiters: number | null
 }
 
+/** Estado de un vínculo guardado: apunta a un vehículo, o la unidad se declaró ajena a la flota. */
+export interface WialonLinkState {
+  status: "linked" | "excluded"
+  vehicleId: string | null
+}
+
 interface PlannedUnit {
   unit: WialonUnit
   vehicleId: string
-  reason: "link" | "plate" | "code" | "text"
+  reason: "link" | "plate" | "vin" | "code" | "text"
 }
 
 export interface WialonUnitPlan {
   matched: PlannedUnit[]
   unmatched: WialonUnit[]
   ambiguous: Array<{ unit: WialonUnit; candidates: number }>
+  /** Unidades que una persona declaró ajenas a la flota: no son trabajo pendiente. */
+  excluded: WialonUnit[]
+  /** Vehículos con más de una unidad apuntándoles (un aviso, no un cambio de estado). */
+  duplicateVehicleIds: string[]
   duplicateVehicleWarnings: string[]
 }
 
@@ -72,52 +91,100 @@ function propertyValue(unit: WialonUnit, keys: readonly string[]): string | null
 }
 
 /**
- * Resuelve cada unidad contra el catálogo. El link manual manda; después la
- * patente de una propiedad, el código, el nombre y una patente embebida. Una
- * unidad que apunta a un vehículo que ya tiene otro dispositivo se conserva,
- * pero se avisa para que alguien revise si es un duplicado.
+ * Resuelve cada unidad contra el catálogo, en este orden: vínculo manual,
+ * exclusión, patente del perfil de Wialon, patente de las propiedades
+ * internas (respaldo), VIN contra el número de serie, código y nombre. Un
+ * vínculo manual a un vehículo que ya no existe se ignora y la unidad vuelve al
+ * cruce automático. Una unidad que apunta a un vehículo que ya tiene otro
+ * dispositivo se conserva, pero se avisa para que alguien revise si es un
+ * duplicado.
  */
 export function planWialonUnits(
   units: readonly WialonUnit[],
   vehicles: readonly VehicleRow[],
-  links: ReadonlyMap<string, string>,
+  links: ReadonlyMap<string, WialonLinkState>,
 ): WialonUnitPlan {
   const vehicleById = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle]))
   const index = buildVehicleIdentityIndex(vehicles)
+  const bySerial = new Map<string, VehicleRow[]>()
+  for (const vehicle of vehicles) {
+    const key = vehicle.serialNumber ? normalizeGpsKey(vehicle.serialNumber) : ""
+    if (key) bySerial.set(key, [...(bySerial.get(key) ?? []), vehicle])
+  }
   const matched: PlannedUnit[] = []
   const unmatched: WialonUnit[] = []
   const ambiguous: WialonUnitPlan["ambiguous"] = []
+  const excluded: WialonUnit[] = []
   const vehicleUsage = new Map<string, number>()
 
+  const accept = (unit: WialonUnit, vehicleId: string, reason: PlannedUnit["reason"]) => {
+    matched.push({ unit, vehicleId, reason })
+    vehicleUsage.set(vehicleId, (vehicleUsage.get(vehicleId) ?? 0) + 1)
+  }
+
   for (const unit of units) {
-    const linkedVehicleId = links.get(unit.id)
-    if (linkedVehicleId && vehicleById.has(linkedVehicleId)) {
-      matched.push({ unit, vehicleId: linkedVehicleId, reason: "link" })
-      vehicleUsage.set(linkedVehicleId, (vehicleUsage.get(linkedVehicleId) ?? 0) + 1)
+    const link = links.get(unit.id)
+    if (link?.status === "linked" && link.vehicleId && vehicleById.has(link.vehicleId)) {
+      accept(unit, link.vehicleId, "link")
+      continue
+    }
+    if (link?.status === "excluded") {
+      excluded.push(unit)
+      continue
+    }
+
+    // La patente manda sobre todo lo demás: primero la del perfil, que es el
+    // campo pensado para eso, y las propiedades internas sólo como respaldo.
+    let resolved: "matched" | "ambiguous" | null = null
+    const plates = [...new Set([unit.profile.registrationPlate, propertyValue(unit, PLATE_PROPERTY_KEYS)]
+      .filter((plate): plate is string => Boolean(plate)))]
+    for (const plate of plates) {
+      const match = matchVehicleByIdentity({ plate }, index)
+      if (match.kind === "matched") {
+        accept(unit, match.vehicle.id, "plate")
+        resolved = "matched"
+        break
+      }
+      if (match.kind === "ambiguous") {
+        ambiguous.push({ unit, candidates: match.candidates.length })
+        resolved = "ambiguous"
+        break
+      }
+    }
+    if (resolved) continue
+
+    const vinKey = unit.profile.vin ? normalizeGpsKey(unit.profile.vin) : ""
+    const vinCandidates = vinKey ? bySerial.get(vinKey) : undefined
+    if (vinCandidates?.length === 1) {
+      accept(unit, vinCandidates[0]!.id, "vin")
+      continue
+    }
+    if (vinCandidates && vinCandidates.length > 1) {
+      ambiguous.push({ unit, candidates: vinCandidates.length })
       continue
     }
 
     const match = matchVehicleByIdentity({
-      plate: propertyValue(unit, PLATE_PROPERTY_KEYS),
       code: propertyValue(unit, CODE_PROPERTY_KEYS),
       name: unit.name,
     }, index)
-
-    if (match.kind === "matched") {
-      matched.push({ unit, vehicleId: match.vehicle.id, reason: match.reason })
-      vehicleUsage.set(match.vehicle.id, (vehicleUsage.get(match.vehicle.id) ?? 0) + 1)
-    } else if (match.kind === "ambiguous") {
-      ambiguous.push({ unit, candidates: match.candidates.length })
-    } else {
-      unmatched.push(unit)
-    }
+    if (match.kind === "matched") accept(unit, match.vehicle.id, match.reason)
+    else if (match.kind === "ambiguous") ambiguous.push({ unit, candidates: match.candidates.length })
+    else unmatched.push(unit)
   }
 
-  const duplicateVehicleWarnings = [...vehicleUsage.entries()]
+  const duplicateVehicleIds = [...vehicleUsage.entries()]
     .filter(([, count]) => count > 1)
-    .map(([vehicleId]) => `WIALON_DUPLICATE_UNITS:${vehicleId}`)
+    .map(([vehicleId]) => vehicleId)
 
-  return { matched, unmatched, ambiguous, duplicateVehicleWarnings }
+  return {
+    matched,
+    unmatched,
+    ambiguous,
+    excluded,
+    duplicateVehicleIds,
+    duplicateVehicleWarnings: duplicateVehicleIds.map((vehicleId) => `WIALON_DUPLICATE_UNITS:${vehicleId}`),
+  }
 }
 
 export interface SyncWialonOptions {
@@ -133,6 +200,8 @@ export interface SyncWialonResult {
   matched: number
   unmatched: number
   ambiguous: number
+  /** Unidades excluidas por una persona: no cuentan como pendientes. */
+  excluded: number
   duplicateUnits: number
   removedUnits: number
   positionsUpserted: number
@@ -155,6 +224,15 @@ function safeErrorCode(error: unknown): string {
   if (error instanceof WialonSyncError) return error.code
   if (error instanceof Error && error.message.startsWith("WIALON_")) return error.message
   return "WIALON_SYNC_FAILED"
+}
+
+/**
+ * Clave natural de una lectura de medidor: unidad, medidor y HORA UTC del
+ * mensaje. `saveMeterReadings` hace upsert por esta clave, así que la serie
+ * guarda una lectura por hora (la última de esa hora) en vez de una por corrida.
+ */
+export function meterSourceRef(unitId: string, meterType: string, occurredAt: string): string {
+  return `wialon:${unitId}:${meterType}:${occurredAt.slice(0, 13)}Z`
 }
 
 export async function syncWialon(options: SyncWialonOptions = {}): Promise<SyncWialonResult> {
@@ -183,18 +261,30 @@ export async function syncWialon(options: SyncWialonOptions = {}): Promise<SyncW
         id: fuelVehicles.id,
         plate: fuelVehicles.plate,
         code: fuelVehicles.code,
+        serialNumber: fuelVehicles.serialNumber,
         worksiteId: fuelVehicles.worksiteId,
         meterType: fuelVehicles.meterType,
         tankCapacityLiters: fuelVehicles.tankCapacityLiters,
       }).from(fuelVehicles),
       db.select({
         externalDeviceId: fleetGpsDeviceLinks.externalDeviceId,
+        status: fleetGpsDeviceLinks.status,
         vehicleId: fleetGpsDeviceLinks.vehicleId,
       }).from(fleetGpsDeviceLinks).where(eq(fleetGpsDeviceLinks.provider, "wialon")),
     ])
 
     const vehicleById = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle]))
-    const plan = planWialonUnits(fetched.units, vehicles, new Map(links.map((link) => [link.externalDeviceId, link.vehicleId])))
+    const plan = planWialonUnits(fetched.units, vehicles, new Map(links.map((link) => [
+      link.externalDeviceId,
+      { status: link.status === "excluded" ? "excluded" : "linked", vehicleId: link.vehicleId } satisfies WialonLinkState,
+    ])))
+    if (plan.duplicateVehicleIds.length > 0) {
+      // Un aviso para quien revise la flota: varias unidades en un mismo
+      // vehículo suelen ser un equipo duplicado en Wialon o un cruce errado.
+      logger.warn("[flota/wialon/sync] varias unidades apuntan al mismo vehículo", {
+        vehicleIds: plan.duplicateVehicleIds,
+      })
+    }
     const matchedByUnit = new Map(plan.matched.map((match) => [match.unit.id, match]))
     const params = telemetryParams(config)
 
@@ -225,7 +315,8 @@ export async function syncWialon(options: SyncWialonOptions = {}): Promise<SyncW
         const values = {
           provider: "wialon" as const,
           externalDeviceId: unit.id,
-          externalGroupId: unit.groupId ?? "0",
+          // Wialon no entrega un grupo en `avl_unit`; la columna es obligatoria.
+          externalGroupId: "0",
           vehicleId: vehicle?.id ?? null,
           worksiteId: vehicle?.worksiteId ?? null,
           sourcePlate: unit.name,
@@ -240,6 +331,7 @@ export async function syncWialon(options: SyncWialonOptions = {}): Promise<SyncW
           // el último valor conocido.
           sourceStatus: telemetry.ignition === null ? "ignition_unknown" : null,
           gpsReportedAt: telemetry.gpsReportedAt,
+          metersReportedAt: telemetry.metersReportedAt,
           gprsReportedAt: null,
           gpsStatus: telemetry.satellites === null ? null : `sats:${telemetry.satellites}`,
           gprsStatus: null,
@@ -298,14 +390,17 @@ export async function syncWialon(options: SyncWialonOptions = {}): Promise<SyncW
       for (const match of plan.matched) {
         const telemetry = telemetryByUnit.get(match.unit.id)
         const vehicle = vehicleById.get(match.vehicleId)
-        if (!telemetry || !vehicle || !telemetry.gpsReportedAt) continue
+        if (!telemetry || !vehicle) continue
         if (vehicle.meterType !== "odometer" && vehicle.meterType !== "hour_meter") continue
+        // La hora de la lectura es la del mensaje del que salió el medidor, no
+        // la de la última posición GPS.
+        const occurredAt = telemetry.metersReportedAt ?? telemetry.gpsReportedAt
         const value = vehicle.meterType === "odometer" ? telemetry.odometer : telemetry.hourMeter
-        if (value === null) continue
+        if (!occurredAt || value === null) continue
         meterReadings.push({
           plate: vehicle.plate,
-          sourceRef: `wialon:${match.unit.id}:${vehicle.meterType}:${telemetry.gpsReportedAt}`,
-          occurredAt: telemetry.gpsReportedAt,
+          sourceRef: meterSourceRef(match.unit.id, vehicle.meterType, occurredAt),
+          occurredAt,
           value,
           liters: null,
           stationName: null,
@@ -314,29 +409,15 @@ export async function syncWialon(options: SyncWialonOptions = {}): Promise<SyncW
           rawPayload: {
             provider: "wialon",
             unitId: match.unit.id,
-            param: vehicle.meterType === "odometer" ? config.odometerParam : config.hourMeterParam,
-            messageTime: telemetry.gpsReportedAt,
+            // Vacío = contador de Wialon (cnm / cneh).
+            param: (vehicle.meterType === "odometer" ? config.odometerParam : config.hourMeterParam) || "counter",
+            messageTime: occurredAt,
           },
         })
       }
 
       if (meterReadings.length > 0) {
-        // La lectura se escribe con la patente EXACTA del vehículo que hizo
-        // match. La normalización sólo sirve de respaldo cuando es única: dos
-        // patentes distintas que normalizan igual no deben atribuirse a ciegas.
-        const vehicleByExactPlate = new Map(vehicles.map((vehicle) => [vehicle.plate, vehicle]))
-        const vehicleByNormalizedPlate = new Map<string, VehicleRow | null>()
-        for (const vehicle of vehicles) {
-          const key = normalizePlate(vehicle.plate)
-          if (!key) continue
-          vehicleByNormalizedPlate.set(key, vehicleByNormalizedPlate.has(key) ? null : vehicle)
-        }
-        const saved = await saveMeterReadings(tx, "gps_wialon", meterReadings, (plate) => {
-          const exact = vehicleByExactPlate.get(plate)
-          if (exact) return { id: exact.id, meterType: exact.meterType }
-          const normalized = vehicleByNormalizedPlate.get(normalizePlate(plate))
-          return normalized ? { id: normalized.id, meterType: normalized.meterType } : undefined
-        })
+        const saved = await saveMeterReadings(tx, "gps_wialon", meterReadings, buildVehicleResolverByPlate(vehicles))
         metersSaved = saved.saved
       }
 
@@ -348,11 +429,14 @@ export async function syncWialon(options: SyncWialonOptions = {}): Promise<SyncW
         devicesReceived: fetched.units.length,
         devicesAccepted: plan.matched.length,
         devicesRejected: fetched.units.length - withPosition.length,
+        // Las excluidas no cuentan: declarar que un equipo es ajeno a la flota
+        // lo saca de lo pendiente.
         devicesUnmatched: plan.unmatched.length + plan.ambiguous.length,
         alertsReceived: 0,
         pointsReceived: 0,
         tripsReceived: 0,
-        finishedAt: observedAt,
+        // La hora real de término; `observedAt` es la de inicio de la lectura.
+        finishedAt: new Date().toISOString(),
       }).where(eq(fleetGpsSyncRuns.id, runId))
     })
 
@@ -362,6 +446,7 @@ export async function syncWialon(options: SyncWialonOptions = {}): Promise<SyncW
       matched: plan.matched.length,
       unmatched: plan.unmatched.length,
       ambiguous: plan.ambiguous.length,
+      excluded: plan.excluded.length,
       duplicateUnits: plan.duplicateVehicleWarnings.length,
       removedUnits,
       positionsUpserted,
@@ -405,4 +490,67 @@ export async function hasStalledWialonCronRun(now = new Date()): Promise<boolean
     .limit(1)
   if (!latest || latest.status !== "running") return false
   return now.getTime() - new Date(latest.startedAt).getTime() > 15 * 60_000
+}
+
+export interface RefreshWialonPositionsResult {
+  observedAt: string
+  /** Unidades ya presentes cuya posición se actualizó. */
+  updated: number
+}
+
+/**
+ * Lectura en vivo: sólo la posición de unidades que YA están en
+ * `fleet_gps_latest_positions`. No inserta, no borra, no cambia de vehículo y
+ * no escribe lecturas de medidor ni corridas en la bitácora (serían 8.640 al
+ * día): todo eso es del cron de 5 minutos. Reutiliza la sesión cacheada del
+ * cliente y NO la cierra; la corrida del cron sí lo hace, y la siguiente
+ * lectura en vivo abre una nueva.
+ */
+export async function refreshWialonPositions(
+  options: { now?: Date; fetchImpl?: typeof fetch } = {},
+): Promise<RefreshWialonPositionsResult> {
+  const config = await loadWialonConfig()
+  if (!config.hasCredentials) throw new WialonSyncError("WIALON_CREDENTIALS_REQUIRED")
+
+  const observedAt = (options.now ?? new Date()).toISOString()
+  try {
+    const fetched = await fetchWialonUnits(
+      { baseUrl: config.baseUrl, token: config.token },
+      { fetchImpl: options.fetchImpl, positionsOnly: true },
+    )
+    if (fetched.units.length === 0) throw new WialonSyncError("WIALON_SNAPSHOT_EMPTY")
+
+    const params = telemetryParams(config)
+    const updates = fetched.units.flatMap((unit) => {
+      const telemetry = extractWialonTelemetry(unit, params)
+      return telemetry ? [{ unitId: unit.id, telemetry }] : []
+    })
+
+    let updated = 0
+    await db.transaction(async (tx) => {
+      for (const { unitId, telemetry } of updates) {
+        const rows = await tx.update(fleetGpsLatestPositions).set({
+          latitude: telemetry.latitude,
+          longitude: telemetry.longitude,
+          speedKph: telemetry.speedKph,
+          headingDegrees: telemetry.headingDegrees,
+          gpsReportedAt: telemetry.gpsReportedAt,
+          gpsStatus: telemetry.satellites === null ? null : `sats:${telemetry.satellites}`,
+          movementState: telemetry.movementState,
+          // Un mensaje sin encendido no lo pisa: se conserva el último valor conocido.
+          ...(telemetry.ignition === null ? {} : { ignition: telemetry.ignition, sourceStatus: null }),
+          observedAt,
+          updatedAt: observedAt,
+        }).where(and(
+          eq(fleetGpsLatestPositions.provider, "wialon"),
+          eq(fleetGpsLatestPositions.externalDeviceId, unitId),
+        )).returning({ id: fleetGpsLatestPositions.id })
+        updated += rows.length
+      }
+    })
+    return { observedAt, updated }
+  } catch (error) {
+    if (error instanceof WialonClientError || error instanceof WialonSyncError) throw error
+    throw new WialonSyncError("WIALON_SYNC_FAILED")
+  }
 }

@@ -491,6 +491,8 @@ export const pgliteTestFiles = [
   // (Carril D) «Días fuera de servicio» y «En taller ahora» de OT, `stale` y
   // totales del panel frente a la flota y el Excel.
   "lib/__tests__/mantencion-panel-pglite.test.ts",
+  // Estimación de mantención con lectura GPS o VisionLink más nueva que la oficial (y regresión de `!isActive`).
+  "lib/__tests__/mantencion-gps-estimate-pglite.test.ts",
   // (Carril E) la base rechaza fotos duplicadas, orden repetido y `sort_order`
   // negativo (migración 0371).
   "db/__tests__/mantencion-photo-constraints.test.ts",
@@ -563,6 +565,8 @@ export const pgliteTestFiles = [
   // Refresco en vivo de Monitoreo GPS: una lectura por minuto como mucho, sin
   // adelantarse al cron ni escribir en su bitácora.
   "lib/integrations/onway/onway-live-pglite.test.ts",
+  // Refresco en vivo de Wialon cada 10 s: separación compartida, ventana del cron, lock y marca de captura.
+  "lib/integrations/wialon/wialon-live-pglite.test.ts",
   // Catálogo de repuestos (fase 2): orden por vehículo, N° de parte duplicado,
   // inactivos excluidos, SKU RPT-NNN y ficha con historial de precio.
   "lib/__tests__/spare-parts-catalog-pglite.test.ts",

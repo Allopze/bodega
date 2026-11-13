@@ -11,6 +11,7 @@ import { isIP } from "node:net"
 import type {
   WialonCredentials,
   WialonPosition,
+  WialonProfile,
   WialonSensor,
   WialonTelemetry,
   WialonTelemetryParams,
@@ -219,7 +220,8 @@ export async function loginWialon(
   const body = await request<Record<string, unknown>>(
     credentials,
     "token/login",
-    { token: credentials.token },
+    // `fl` es obligatorio en token/login; 1 = sesión básica (sólo se leen unidades).
+    { token: credentials.token, fl: 1 },
     null,
     options.fetchImpl ?? fetch,
   )
@@ -316,6 +318,31 @@ function parseSensor(value: unknown): WialonSensor[] {
   }]
 }
 
+/** Nombres de los campos de perfil (`pflds`) que la plataforma lee. Se buscan por `n`: el id numérico lo asigna cada cuenta. */
+const PROFILE_FIELD_NAMES = {
+  registrationPlate: "registration_plate",
+  vin: "vin",
+  brand: "brand",
+  model: "model",
+} as const
+
+function parseProfile(value: unknown): WialonProfile {
+  const byName = new Map<string, string>()
+  // `pflds` llega como objeto por id; se acepta también un arreglo.
+  for (const entry of Object.values(asRecord(value) ?? (Array.isArray(value) ? value : {}))) {
+    const field = asRecord(entry)
+    const name = asString(field?.n)?.trim().toLowerCase()
+    const fieldValue = asString(field?.v)?.trim()
+    if (name && fieldValue) byName.set(name, fieldValue)
+  }
+  return {
+    registrationPlate: byName.get(PROFILE_FIELD_NAMES.registrationPlate) ?? null,
+    vin: byName.get(PROFILE_FIELD_NAMES.vin) ?? null,
+    brand: byName.get(PROFILE_FIELD_NAMES.brand) ?? null,
+    model: byName.get(PROFILE_FIELD_NAMES.model) ?? null,
+  }
+}
+
 function parseUnit(value: unknown): WialonUnit | null {
   const item = asRecord(value)
   if (!item) return null
@@ -331,17 +358,32 @@ function parseUnit(value: unknown): WialonUnit | null {
   return {
     id,
     name: asString(item.nm) ?? id,
-    sysName: asString(item.sys_name),
-    groupId: asString(item.grp) ?? asString(item.fid),
     uniqueId: asString(item.uid),
     hardwareType: asString(item.hw),
     customProperties: asRecord(item.prp) ?? {},
+    counters: {
+      mileageKm: positiveNumber(item.cnm),
+      engineHours: positiveNumber(item.cneh),
+    },
+    connected: asOptionalBoolean(item.netconn),
+    profile: parseProfile(item.pflds),
     sensors,
     position,
     lastMessageParams: asRecord(lastMessage?.p) ?? {},
+    // `lmsg.t` manda; `pos.t` sólo cuando el mensaje no trae hora propia.
     lastMessageAt: epochToIso(asNumber(lastMessage?.t) ?? position?.t ?? null),
   }
 }
+
+/**
+ * Flags de `avl_unit` (help.wialon.com/en/api): 0x1 base (nm, id), 0x2 prp
+ * (propiedades internas de la interfaz, NO la patente), 0x100 avanzadas (uid,
+ * hw), 0x400 posición y último mensaje, 0x1000 sensores, 0x2000 contadores
+ * (cnm km, cneh horas), 0x200000 netconn, 0x800000 campos de perfil (pflds).
+ */
+const UNIT_FLAGS_FULL = 0x1 | 0x2 | 0x100 | 0x400 | 0x1000 | 0x2000 | 0x200000 | 0x800000
+/** Refresco en vivo: sólo lo que mueve el mapa (base, posición y mensaje, sensores para el encendido). */
+const UNIT_FLAGS_POSITIONS = 0x1 | 0x400 | 0x1000
 
 /**
  * Unidades con su último mensaje. La respuesta puede venir paginada; el tope
@@ -350,7 +392,7 @@ function parseUnit(value: unknown): WialonUnit | null {
  */
 export async function fetchWialonUnits(
   credentials: WialonCredentials,
-  options: { fetchImpl?: FetchLike; now?: () => number } = {},
+  options: { fetchImpl?: FetchLike; now?: () => number; positionsOnly?: boolean } = {},
 ): Promise<WialonUnitsResult> {
   const body = await wialonCall<{ items?: unknown }>(credentials, "core/search_items", {
     spec: {
@@ -360,7 +402,7 @@ export async function fetchWialonUnits(
       sortType: "sys_name",
     },
     force: 1,
-    flags: 1 | 2 | 1024 | 4096,
+    flags: options.positionsOnly ? UNIT_FLAGS_POSITIONS : UNIT_FLAGS_FULL,
     from: 0,
     to: 0,
   }, options)
@@ -435,8 +477,10 @@ export function extractWialonTelemetry(
     ? "ignition"
     : unit.sensors.find((sensor) => /ignic|ignition|encendido/i.test(`${sensor.name ?? ""} ${sensor.p}`))?.p
   const ignition = asOptionalBoolean(ignitionParam ? unit.lastMessageParams[ignitionParam] : null)
-  const odometerSensor = unit.sensors.find((sensor) => sensor.p === params.odometerParam)
-  const hourMeterSensor = unit.sensors.find((sensor) => sensor.p === params.hourMeterParam)
+  const odometerParam = params.odometerParam.trim()
+  const hourMeterParam = params.hourMeterParam.trim()
+  const odometerSensor = odometerParam ? unit.sensors.find((sensor) => sensor.p === odometerParam) : undefined
+  const hourMeterSensor = hourMeterParam ? unit.sensors.find((sensor) => sensor.p === hourMeterParam) : undefined
 
   return {
     latitude: position.y,
@@ -448,17 +492,17 @@ export function extractWialonTelemetry(
     // `pos.t` es la hora de la posición que se está mostrando. Si la unidad
     // lleva días sin señal, la posición es vieja aunque el mensaje sea nuevo.
     gpsReportedAt: epochToIso(position.t) ?? unit.lastMessageAt,
+    // Los medidores salen del último mensaje y de los contadores del servidor,
+    // no de la posición: una unidad parada en un túnel sigue sumando horas.
+    metersReportedAt: unit.lastMessageAt,
     satellites: position.sc === null ? null : Math.max(0, Math.round(position.sc)),
-    odometer: normalizeMeterValue(
-      positiveNumber(unit.lastMessageParams[params.odometerParam]),
-      odometerSensor?.unit,
-      "odometer",
-    ),
-    hourMeter: normalizeMeterValue(
-      positiveNumber(unit.lastMessageParams[params.hourMeterParam]),
-      hourMeterSensor?.unit,
-      "hour",
-    ),
+    // Un parámetro configurado explícitamente manda; vacío = contador de Wialon.
+    odometer: odometerParam
+      ? normalizeMeterValue(positiveNumber(unit.lastMessageParams[odometerParam]), odometerSensor?.unit, "odometer")
+      : unit.counters.mileageKm,
+    hourMeter: hourMeterParam
+      ? normalizeMeterValue(positiveNumber(unit.lastMessageParams[hourMeterParam]), hourMeterSensor?.unit, "hour")
+      : unit.counters.engineHours,
     fuelLevel: resolveFuelLevel(unit, params.fuelLevelParam, fuelTankCapacityLiters),
     movementState: speedKph > 0 ? "moving" : "stopped",
   }

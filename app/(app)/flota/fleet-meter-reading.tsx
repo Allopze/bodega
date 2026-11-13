@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Warning } from "@phosphor-icons/react"
 import { Tooltip } from "@/components/ui/tooltip"
 import { inboxRowKey } from "@/lib/combustibles/inbox/types"
+import { meterSourceLabel } from "@/lib/combustibles/meter-source"
 import { fuelInboxHref } from "@/lib/combustibles/routes"
 import { formatQty } from "@/lib/utils"
 import type { getFleetOverview } from "@/lib/services/fleet"
@@ -26,13 +27,8 @@ export function FleetMeterReading({ vehicle }: { vehicle: Pick<VehicleRow, "last
       : null
   if (reading === null) return <>—</>
 
-  const sourceLabel = vehicle.meterSource === "copec_tct"
-    ? "Lectura Copec"
-    : vehicle.meterSource === "gps_wialon"
-      ? "Lectura GPS Wialon"
-      : vehicle.meterSource === "gps_onway"
-        ? "Lectura GPS OnWay"
-        : null
+  const sourceName = meterSourceLabel(vehicle.meterSource)
+  const sourceLabel = sourceName ? `Lectura ${sourceName}` : null
   const readingNode = sourceLabel
     ? <Tooltip content={sourceLabel} side="top"><span>{reading}</span></Tooltip>
     : <>{reading}</>

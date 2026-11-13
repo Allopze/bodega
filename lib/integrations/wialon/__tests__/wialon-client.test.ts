@@ -29,11 +29,12 @@ function unit(overrides: Partial<WialonUnit> = {}): WialonUnit {
   return {
     id: "unit-1",
     name: "CAMION ABCD12",
-    sysName: "CAMIONABCD12",
-    groupId: "10",
     uniqueId: "imei-1",
     hardwareType: "teltonika",
     customProperties: {},
+    counters: { mileageKm: 5_000, engineHours: 120 },
+    connected: true,
+    profile: { registrationPlate: null, vin: null, brand: null, model: null },
     sensors: [{ p: "fuel_level", name: "Nivel", type: 1, unit: "%" }],
     position: { x: -70.65, y: -33.45, s: 12, c: 90, sc: 8, t: 1_760_000_000 },
     lastMessageParams: { mileage: 1234, engine_hours: 0, fuel_level: 50, ignition: 1 },
@@ -47,10 +48,11 @@ afterEach(() => {
 })
 
 describe("cliente Wialon", () => {
-  it("hace token/login y devuelve el sid", async () => {
+  it("hace token/login con fl y devuelve el sid", async () => {
     const fetchImpl = fetchMock((svc, params) => {
       expect(svc).toBe("token/login")
       expect(params.token).toBe("secret")
+      expect(params.fl).toBe(1)
       return jsonResponse({ sid: "sid-1" })
     })
     await expect(loginWialon({ baseUrl: "https://hst-api.wialon.com", token: "secret" }, { fetchImpl }))
@@ -63,24 +65,33 @@ describe("cliente Wialon", () => {
       .resolves.toBe("eid-1")
   })
 
-  it("lista unidades con el último mensaje y la sesión cacheada", async () => {
+  it("pide los flags documentados y normaliza contadores, conexión y perfil", async () => {
     const calls: string[] = []
     const fetchImpl = fetchMock((svc, params) => {
       calls.push(svc)
-      if (svc === "token/login") return jsonResponse({ sid: "sid-1" })
-      expect(Number(params.flags) & 4096).toBe(4096)
+      if (svc === "token/login") return jsonResponse({ eid: "sid-1" })
+      // base | prp | avanzadas | pos+lmsg | sens | contadores | netconn | pflds
+      expect(params.flags).toBe(0x1 | 0x2 | 0x100 | 0x400 | 0x1000 | 0x2000 | 0x200000 | 0x800000)
       return jsonResponse({
         items: [{
           id: 42,
           nm: "CAMION ABCD12",
-          sys_name: "CAMIONABCD12",
-          grp: 10,
           uid: "imei-1",
           hw: "teltonika",
           prp: { patente: "ABCD12" },
           sens: { "1": { p: "fuel_level", n: "Nivel", m: "%" } },
           pos: { x: -70.65, y: -33.45, s: 12, c: 90, sc: 8, t: 1_760_000_000 },
-          lmsg: { t: 1_760_000_000, p: { mileage: 1234, engine_hours: 10 } },
+          lmsg: { t: 1_760_000_300, p: { fuel_level: 50 } },
+          cnm: 12_345.6,
+          cneh: 987.5,
+          netconn: 1,
+          pflds: {
+            "7": { id: 7, n: "registration_plate", v: "ABCD-12" },
+            "8": { id: 8, n: "vin", v: "9BWZZZ377VT004251" },
+            "9": { id: 9, n: "brand", v: "Volvo" },
+            "10": { id: 10, n: "model", v: "FH" },
+            "11": { id: 11, n: "otro", v: "x" },
+          },
         }],
       })
     })
@@ -92,10 +103,40 @@ describe("cliente Wialon", () => {
     expect(result.units[0]).toMatchObject({
       id: "42",
       name: "CAMION ABCD12",
-      groupId: "10",
+      uniqueId: "imei-1",
+      hardwareType: "teltonika",
       customProperties: { patente: "ABCD12" },
       sensors: [{ p: "fuel_level", unit: "%" }],
+      counters: { mileageKm: 12_345.6, engineHours: 987.5 },
+      connected: true,
+      profile: { registrationPlate: "ABCD-12", vin: "9BWZZZ377VT004251", brand: "Volvo", model: "FH" },
+      lastMessageAt: new Date(1_760_000_300_000).toISOString(),
     })
+    expect(result.units[0]).not.toHaveProperty("sysName")
+    expect(result.units[0]).not.toHaveProperty("groupId")
+  })
+
+  it("un contador en 0 o ausente es «sin dato», y una unidad sin posición sigue listándose", async () => {
+    const fetchImpl = fetchMock((svc) => {
+      if (svc === "token/login") return jsonResponse({ eid: "sid-1" })
+      return jsonResponse({ items: [{ id: 1, nm: "SIN GPS", cnm: 0, netconn: 0, pos: null, lmsg: { t: 1_760_000_000, p: {} } }] })
+    })
+    const result = await fetchWialonUnits({ baseUrl: "https://hst-api.wialon.com", token: "secret" }, { fetchImpl })
+    expect(result.units[0]).toMatchObject({
+      counters: { mileageKm: null, engineHours: null },
+      connected: false,
+      profile: { registrationPlate: null, vin: null },
+      position: null,
+    })
+  })
+
+  it("el refresco en vivo pide sólo base, posición y sensores", async () => {
+    const fetchImpl = fetchMock((svc, params) => {
+      if (svc === "token/login") return jsonResponse({ eid: "sid-1" })
+      expect(params.flags).toBe(0x1 | 0x400 | 0x1000)
+      return jsonResponse({ items: [] })
+    })
+    await fetchWialonUnits({ baseUrl: "https://hst-api.wialon.com", token: "secret" }, { fetchImpl, positionsOnly: true })
   })
 
   it("cierra la sesión cacheada al terminar la corrida", async () => {
@@ -158,9 +199,10 @@ describe("cliente Wialon", () => {
 })
 
 describe("extractWialonTelemetry", () => {
-  const params = { odometerParam: "mileage", hourMeterParam: "engine_hours", fuelLevelParam: "fuel_level" }
+  const params = { odometerParam: "", hourMeterParam: "", fuelLevelParam: "fuel_level" }
+  const sensorParams = { ...params, odometerParam: "mileage", hourMeterParam: "engine_hours" }
 
-  it("normaliza posición, encendido y medidores sin inventar ceros", () => {
+  it("normaliza posición, encendido y medidores desde los contadores de Wialon", () => {
     const telemetry = extractWialonTelemetry(unit(), params)
     expect(telemetry).toMatchObject({
       latitude: -33.45,
@@ -168,12 +210,34 @@ describe("extractWialonTelemetry", () => {
       speedKph: 12,
       headingDegrees: 90,
       ignition: true,
-      odometer: 1234,
-      hourMeter: null,
+      odometer: 5_000,
+      hourMeter: 120,
       fuelLevel: 50,
       movementState: "moving",
       satellites: 8,
     })
+  })
+
+  it("un parámetro configurado explícitamente manda sobre el contador", () => {
+    const telemetry = extractWialonTelemetry(unit({
+      lastMessageParams: { mileage: 1234, engine_hours: 0 },
+    }), sensorParams)
+    // engine_hours = 0 es «sin dato»: no cae al contador, porque el parámetro manda.
+    expect(telemetry).toMatchObject({ odometer: 1234, hourMeter: null })
+  })
+
+  it("sin contador ni parámetro no inventa medidores", () => {
+    const telemetry = extractWialonTelemetry(unit({ counters: { mileageKm: null, engineHours: null } }), params)
+    expect(telemetry).toMatchObject({ odometer: null, hourMeter: null })
+  })
+
+  it("los medidores llevan la hora del último mensaje, no la de la posición", () => {
+    const telemetry = extractWialonTelemetry(unit({
+      position: { x: -70.65, y: -33.45, s: 0, c: 0, sc: 8, t: 1_760_000_000 },
+      lastMessageAt: "2026-11-12T12:00:00.000Z",
+    }), params)
+    expect(telemetry?.metersReportedAt).toBe("2026-11-12T12:00:00.000Z")
+    expect(telemetry?.gpsReportedAt).toBe(new Date(1_760_000_000_000).toISOString())
   })
 
   it("devuelve null sin posición válida", () => {
@@ -212,7 +276,7 @@ describe("extractWialonTelemetry", () => {
         { p: "engine_hours", name: "Horómetro", type: 1, unit: "s" },
         { p: "fuel_level", name: "Nivel", type: 1, unit: "%" },
       ],
-    }), params)
+    }), sensorParams)
     expect(telemetry).toMatchObject({ odometer: 1.5, hourMeter: 1 })
   })
 

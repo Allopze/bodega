@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, inArray, isNotNull, type SQL } from "drizzle-orm"
+import { and, eq, inArray, isNotNull, max, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import { fleetGpsLatestPositions } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
@@ -37,6 +37,7 @@ async function selectLatestGps(where: SQL | undefined): Promise<LatestGpsRow[]> 
     ignition: fleetGpsLatestPositions.ignition,
     sourceStatus: fleetGpsLatestPositions.sourceStatus,
     gpsReportedAt: fleetGpsLatestPositions.gpsReportedAt,
+    metersReportedAt: fleetGpsLatestPositions.metersReportedAt,
     gprsReportedAt: fleetGpsLatestPositions.gprsReportedAt,
     gpsStatus: fleetGpsLatestPositions.gpsStatus,
     gprsStatus: fleetGpsLatestPositions.gprsStatus,
@@ -90,4 +91,19 @@ export async function loadMergedGpsByVehicle(
 ): Promise<MergedVehicleGps[]> {
   const rows = await loadLatestGpsRows(session, options)
   return mergeLatestGpsByVehicle(rows, { now: options.now, staleMinutes: options.staleMinutes })
+}
+
+/**
+ * Última vez que la plataforma escribió una posición de `provider`, en ISO.
+ * Es la señal común de «hay datos nuevos»: la mueve tanto el cron como el
+ * refresco en vivo, así que sirve para decidir si volver a consultar y para
+ * que cada página abierta sepa si debe recargar.
+ */
+export async function latestProviderObservedAt(provider: "onway" | "wialon"): Promise<string | null> {
+  const [row] = await db.select({ at: max(fleetGpsLatestPositions.observedAt) })
+    .from(fleetGpsLatestPositions)
+    .where(eq(fleetGpsLatestPositions.provider, provider))
+  if (!row?.at) return null
+  const parsed = new Date(row.at)
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null
 }

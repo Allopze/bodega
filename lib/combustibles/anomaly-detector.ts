@@ -819,10 +819,12 @@ function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
       } catch { failed++ }
     }
 
-    // Detalle del proveedor: una fila por transacción, con el odómetro que el
+    // Detalle de Copec: una fila por transacción, con el odómetro que el
     // operario tipeó en el surtidor. Es la fuente donde el error de dedo aparece
     // de verdad —en la muestra real, 27 de 249 pares consecutivos retroceden— y
-    // la única que hasta ahora no miraba nadie.
+    // la única que hasta ahora no miraba nadie. El GPS no entra: una regresión
+    // de su odómetro es un cambio de equipo o de calibración, no un error de
+    // tipeo, y además escribe una fila por hora que llenaba el tope de filas.
     const readings = await meterReadingRows(meterType, page.ids)
     for (const { prev, curr } of providerReadingPairs(readings)
       .filter(({ prev, curr }) => curr.value < prev.value)) {
@@ -850,7 +852,7 @@ function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
   }
 }
 
-/** Serie del detalle de proveedor para un tipo de medidor, ya ordenada. */
+/** Serie del detalle de Copec (lo tecleado en el surtidor) para un tipo de medidor, ya ordenada. */
 async function meterReadingRows(meterType: "km" | "hora", vehicleIds: readonly string[]) {
   if (vehicleIds.length === 0) return []
   return db.select({
@@ -869,11 +871,14 @@ async function meterReadingRows(meterType: "km" | "hora", vehicleIds: readonly s
     .leftJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
     .where(and(
       eq(fuelMeterReadings.meterType, meterType === "hora" ? "hour_meter" : "odometer"),
+      // Sólo lo tecleado: GPS y VisionLink tienen su propia calibración y el GPS
+      // escribe muchas filas por equipo (una por hora).
+      eq(fuelMeterReadings.source, "copec_tct"),
       inArray(fuelMeterReadings.vehicleId, [...vehicleIds]),
     ))
-    // La serie es por equipo Y por fuente: el odómetro que reporta Copec y el que
-    // reporta GPS son el mismo medidor físico, pero cada fuente arrastra su
-    // propio desfase, así que compararlos entre sí inventa saltos que no existen.
+    // La serie es por equipo Y por fuente: aunque hoy sólo entre una, el orden
+    // por fuente mantiene a `consecutiveMeterPairs` sin mezclar series si se
+    // vuelve a abrir el filtro.
     .orderBy(fuelMeterReadings.vehicleId, fuelMeterReadings.source, fuelMeterReadings.occurredAt)
     .limit(BATCH_SCAN_ROW_LIMIT)
 }
