@@ -38,7 +38,8 @@ test("importa y consulta historia, conserva pendientes y permite conciliarlos", 
     await login(page, "jefe.mant@e2e.chome.cl")
     await page.goto("/mantencion/registros")
     await page.getByRole("link", { name: "Historial anterior", exact: true }).click()
-    await page.getByRole("link", { name: "Importar historial anterior", exact: true }).click()
+    // Sin historial, la acción está en la cabecera y también en el estado vacío (A4): ambas llevan al mismo lugar.
+    await page.getByRole("link", { name: "Importar historial anterior", exact: true }).first().click()
     await expect(page.locator("#historical-import-file")).toBeEnabled()
     await page.locator("#historical-import-file").setInputFiles(payload)
     await expect(page.getByText(/2 respuestas · 2 nuevas/)).toBeVisible()

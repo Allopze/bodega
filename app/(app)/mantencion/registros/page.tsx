@@ -100,7 +100,10 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
   if (raw.revision === undefined || raw.revision === "") {
     // Sin pestaña en la URL: «Por revisar» para quien revisa y «Todos» para quien sólo mira. El destino lleva
     // `?revision=` para que la pestaña activa se vea marcada y los enlaces que piden «todos» lo digan.
-    redirect(hrefWith(params, { revision: canReview ? "pendiente" : "todos" }))
+    // Si la URL ya trae un filtro (`?estado=anulado`, `?equipo=…`), quien la armó pidió ese subconjunto
+    // completo: recortarlo a «Por revisar» escondía, p. ej., los anulados enlazados desde un registro.
+    const hasFilters = Object.keys(params).some((key) => key !== "pagina" && key !== "page")
+    redirect(hrefWith(params, { revision: canReview && !hasFilters ? "pendiente" : "todos" }))
   }
   const query = parseRecordQuery(raw)
 
