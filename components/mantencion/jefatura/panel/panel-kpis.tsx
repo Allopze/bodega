@@ -47,6 +47,7 @@ export function PanelKpis({ data, unassignedOrders = null }: { data: PanelData; 
     >
       {unassignedOrders !== null && (
         <KpiCard
+          icon={null}
           label="Órdenes por asignar"
           value={unassignedOrders === 0 ? "Ninguna" : unassignedOrders}
           valueKind={unassignedOrders === 0 ? "text" : "number"}
@@ -56,6 +57,7 @@ export function PanelKpis({ data, unassignedOrders = null }: { data: PanelData; 
         />
       )}
       <KpiCard
+        icon={null}
         label="Mantenciones vencidas"
         value={overdue}
         detail={overdueDetail(fleet.counts)}
@@ -65,6 +67,7 @@ export function PanelKpis({ data, unassignedOrders = null }: { data: PanelData; 
         empty={overdueEmpty ? { message: "Aún no hay equipos con pauta y lectura", actionLabel: overdueEmpty.actionLabel } : undefined}
       />
       <KpiCard
+        icon={null}
         label={`Registros · ${period}`}
         value={records.total}
         detail={`${plural(records.preventive, "preventiva", "preventivas")} · ${plural(records.corrective, "correctiva", "correctivas")}`}
