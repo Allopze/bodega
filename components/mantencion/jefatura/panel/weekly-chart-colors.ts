@@ -1,6 +1,13 @@
+import { CHART_COLORS } from "@/lib/chart-palette"
+
 /**
- * Colores del módulo (decisión D9): preventiva verde, correctiva naranja.
- * El naranjo de marca (#f39200) da 2,4:1 sobre blanco y no cumple el 3:1 de
- * WCAG 1.4.11 para elementos gráficos; la serie usa un tono más oscuro.
+ * Colores del gráfico semanal: preventiva con el verde de marca y correctiva con
+ * el azul de la paleta categórica. Ambos son tokens (`--color-primary`,
+ * `--color-chart-2`), con el contraste de gráficos (3:1, WCAG 1.4.11) ya
+ * comprobado por `design-tokens-contrast.test.ts`.
+ *
+ * Antes eran dos hex fijos y la correctiva iba en naranja: ese tono es el
+ * semántico de «pendiente» (`--color-signal`), así que un registro correctivo ya
+ * firmado se leía como trabajo por hacer (auditoría 2026-11-13, M14).
  */
-export const WEEKLY_COLORS = { preventive: "#1e6e3e", corrective: "#c96a00" } as const
+export const WEEKLY_COLORS = { preventive: CHART_COLORS.brand, corrective: CHART_COLORS.blue } as const

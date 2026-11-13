@@ -25,6 +25,7 @@ vi.mock("@/lib/services/mantencion/panel", () => ({
     weeks: [{ start: "2026-10-19", preventive: 3, corrective: 1 }, { start: "2026-10-26", preventive: 2, corrective: 0 }],
   }),
 }))
+vi.mock("@/lib/services/mantencion/work-orders/query", () => ({ countUnassignedWorkOrders: async () => 2 }))
 vi.mock("@/components/ui/page-header", () => ({ PageHeader: () => null }))
 vi.mock("@/components/mantencion/jefatura/panel/panel-filters-bar", () => ({ PanelFiltersBar: () => null }))
 vi.mock("@/components/mantencion/jefatura/panel/panel-kpis", () => ({ PanelKpis: () => null, PanelStrip: () => null }))

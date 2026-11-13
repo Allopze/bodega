@@ -1,18 +1,22 @@
 import Link from "next/link"
-import { CalendarX, ClipboardText, Truck, Warning } from "@phosphor-icons/react/dist/ssr"
+import { ClipboardText, Notebook, Warning } from "@phosphor-icons/react/dist/ssr"
 import { KpiCard } from "@/components/ui/kpi-card"
-import { formatHours, plural } from "@/lib/mantencion/format"
+import { formatHours, formatNumber, plural } from "@/lib/mantencion/format"
 import type { PanelData } from "@/lib/services/mantencion/panel"
 import { fleetCoverage, overdueDetail, type FleetCoverage } from "@/lib/services/mantencion/panel-coverage"
 import { PANEL_PERIOD_PHRASE } from "@/lib/services/mantencion/panel-filters"
 
 /**
- * Los cuatro indicadores del panel (regla A1: máximo cuatro tarjetas sobre el
- * contenido, cada una accionable). Decisión del tope: de los cinco indicadores
- * que pide la especificación, «Horas hombre del período» baja a la tira
- * compacta de texto de abajo (`PanelStrip`) porque no abre ningún subconjunto
- * propio —sus correctivas ya son el destino de «Registros»— y el resto sí
- * cambia una decisión: dónde mirar primero.
+ * Los indicadores del panel (regla A1: máximo cuatro tarjetas sobre el contenido,
+ * cada una accionable): «Órdenes por asignar» (lo primero que hace la jefatura),
+ * «Mantenciones vencidas» y «Registros» del período. Antes eran cuatro, con
+ * «Equipos en taller» y «Días fuera de servicio»; salieron por A5 (auditoría
+ * 2026-11-13, M4): los equipos en taller son la lista «En taller ahora» (y la
+ * cifra vive en el panel operacional), y los días fuera de servicio no abrían
+ * ningún subconjunto propio, así que bajan a la tira de texto (`PanelStrip`).
+ *
+ * «Mantenciones vencidas» es la única cifra de vencidas del panel: la barra de la
+ * flota ya no la repite.
  *
  * Cada tarjeta lleva a su subconjunto, no al total. Si no hay nada que ver, el
  * tile lo dice con palabras en vez de un «0» pelado.
@@ -22,38 +26,37 @@ import { PANEL_PERIOD_PHRASE } from "@/lib/services/mantencion/panel-filters"
  * Y si ninguno se puede evaluar, no hay cifra que mostrar: el tile pasa a su
  * estado vacío (A1) con la acción que lo resuelve en vez de un «0» pelado.
  *
- * En teléfono son dos por fila (2×2) y no cuatro apilados: apilados se comían
- * ~540 px antes del primer contenido accionable.
+ * `unassignedOrders` es `null` para quien no puede ver órdenes de trabajo: el
+ * tile no se ofrece (un enlace a una pantalla prohibida no es una acción).
  */
-export function PanelKpis({ data }: { data: PanelData }) {
-  const { records, fleet, workshop, stoppedDays, filters, from } = data
+export function PanelKpis({ data, unassignedOrders = null }: { data: PanelData; unassignedOrders?: number | null }) {
+  const { records, fleet, filters, from } = data
   const period = PANEL_PERIOD_PHRASE[filters.period]
   const worksite = filters.worksiteId ? `&faena=${encodeURIComponent(filters.worksiteId)}` : ""
   const since = from ? `&desde=${from}` : ""
   const overdue = fleet.counts.vencida
   const coverage = fleetCoverage(fleet.counts)
   const overdueEmpty = coverage.evaluable === 0 ? overdueEmptyState(coverage, worksite) : null
+  const tiles = unassignedOrders === null ? 2 : 3
 
   return (
     <section
       aria-label="Indicadores"
       // En 2×2 cada tile mide ~175 px y el rótulo (`truncate` en KpiCard) quedaba en «Mantenciones ve…», sin el período. Bajo `sm` se
       // deja envolver y los tiles de una fila se igualan. Lo correcto sería que KpiCard envuelva su rótulo; mientras tanto, local y acotado.
-      className="mb-4 grid grid-cols-2 gap-2 sm:mb-5 sm:gap-3 xl:grid-cols-4"
+      className={`mb-4 grid grid-cols-2 gap-2 sm:mb-5 sm:gap-3 ${tiles === 3 ? "xl:grid-cols-3" : "xl:grid-cols-2"}`}
     >
-      <KpiCard
-        icon={<ClipboardText size={16} aria-hidden />}
-        label={`Registros · ${period}`}
-        value={records.total}
-        detail={`${plural(records.preventive, "preventiva", "preventivas")} · ${plural(records.corrective, "correctiva", "correctivas")}`}
-        // Sin registros en el período, lo accionable es ampliar el período.
-        href={records.total === 0 && filters.period !== "todo"
-          ? `/mantencion/panel?periodo=todo${worksite}`
-          : `/mantencion/registros?estado=vigente${since}${worksite}`}
-        empty={records.total === 0
-          ? { message: "Aún no hay registros en este período", actionLabel: filters.period === "todo" ? "Ir a Registros" : "Ver todo el historial" }
-          : undefined}
-      />
+      {unassignedOrders !== null && (
+        <KpiCard
+          icon={<ClipboardText size={16} aria-hidden />}
+          label="Órdenes por asignar"
+          value={unassignedOrders === 0 ? "Ninguna" : unassignedOrders}
+          valueKind={unassignedOrders === 0 ? "text" : "number"}
+          detail={unassignedOrders === 0 ? "Todas las órdenes tienen mecánico" : "Esperan un mecánico para entrar a taller"}
+          tone={unassignedOrders > 0 ? "signal" : "neutral"}
+          href={`/mantencion/ot?estado=solicitada${worksite}`}
+        />
+      )}
       <KpiCard
         icon={<Warning size={16} aria-hidden />}
         label="Mantenciones vencidas"
@@ -65,26 +68,17 @@ export function PanelKpis({ data }: { data: PanelData }) {
         empty={overdueEmpty ? { message: "Aún no hay equipos con pauta y lectura", actionLabel: overdueEmpty.actionLabel } : undefined}
       />
       <KpiCard
-        icon={<Truck size={16} aria-hidden />}
-        label="Equipos en taller"
-        value={workshop.equipment}
-        detail={workshop.equipment === 0
-          ? "Ninguno detenido"
-          : workshop.stale > 0 ? `${plural(workshop.stale, "sin actualizar", "sin actualizar")} hace más de 2 días` : "Todos con estado al día"}
-        tone={workshop.stale > 0 ? "signal" : "neutral"}
-        // Al listado de EQUIPOS en taller, no al de registros: el tile cuenta equipos (una OT en ejecución
-        // también retiene el equipo, y un equipo con dos correctivas abiertas cuenta una vez), y sólo la
-        // lista de equipos vuelve a dar esa cifra. `loadPanel` y la lista salen del mismo `loadFleet`.
-        href={`/mantencion/equipos?taller=1${worksite}`}
-      />
-      <KpiCard
-        icon={<CalendarX size={16} aria-hidden />}
-        label={`Días fuera de servicio · ${period}`}
-        value={stoppedDays.total}
-        detail={stoppedDays.total === 0 ? "Ningún equipo detenido" : `En ${plural(stoppedDays.equipment, "equipo", "equipos")} · ver las correctivas que pasaron por taller`}
-        // Ninguna lista reproduce estos días (suman tramos de ingreso a salida, también de OT y recortados al
-        // período): lo más cercano son las correctivas del período con paso por taller, y el detalle lo dice.
-        href={`/mantencion/registros?tipo=C&situacion=paso_taller&estado=vigente${since}${worksite}`}
+        icon={<Notebook size={16} aria-hidden />}
+        label={`Registros · ${period}`}
+        value={records.total}
+        detail={`${plural(records.preventive, "preventiva", "preventivas")} · ${plural(records.corrective, "correctiva", "correctivas")}`}
+        // Sin registros en el período, lo accionable es ampliar el período.
+        href={records.total === 0 && filters.period !== "todo"
+          ? `/mantencion/panel?periodo=todo${worksite}`
+          : `/mantencion/registros?estado=vigente${since}${worksite}`}
+        empty={records.total === 0
+          ? { message: "Aún no hay registros en este período", actionLabel: filters.period === "todo" ? "Ir a Registros firmados" : "Ver todo el historial" }
+          : undefined}
       />
     </section>
   )
@@ -108,7 +102,7 @@ function overdueEmptyState(coverage: FleetCoverage, worksite: string): { href: s
  * con la misma regla de la pestaña «Por revisar» de Registros).
  */
 export function PanelStrip({ data }: { data: PanelData }) {
-  const { records, fleet, filters, from } = data
+  const { records, fleet, stoppedDays, filters, from } = data
   const worksite = filters.worksiteId ? `&faena=${encodeURIComponent(filters.worksiteId)}` : ""
   const since = from ? `&desde=${from}` : ""
   return (
@@ -126,6 +120,11 @@ export function PanelStrip({ data }: { data: PanelData }) {
         Horas hombre · {PANEL_PERIOD_PHRASE[filters.period]}:{" "}
         <strong className="font-mono font-semibold tabular-nums text-[var(--color-text)]">{formatHours(records.hours)}</strong>
         {" "}en {plural(records.corrective, "correctiva", "correctivas")}
+      </span>
+      <span>
+        Días fuera de servicio · {PANEL_PERIOD_PHRASE[filters.period]}:{" "}
+        <strong className="font-mono font-semibold tabular-nums text-[var(--color-text)]">{formatNumber(stoppedDays.total)}</strong>
+        {stoppedDays.total > 0 && <> en {plural(stoppedDays.equipment, "equipo", "equipos")}</>}
       </span>
       <span>
         Equipos activos: <strong className="font-mono font-semibold tabular-nums text-[var(--color-text)]">{fleet.active}</strong>
