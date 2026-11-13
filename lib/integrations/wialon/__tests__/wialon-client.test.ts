@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   extractWialonTelemetry,
+  fetchWialonCalculatedSensors,
   fetchWialonUnits,
+  wialonFuelSensorRequests,
   loginWialon,
   logoutWialonSession,
   normalizeWialonBaseUrl,
@@ -35,7 +37,7 @@ function unit(overrides: Partial<WialonUnit> = {}): WialonUnit {
     counters: { mileageKm: 5_000, engineHours: 120 },
     connected: true,
     profile: { registrationPlate: null, vin: null, brand: null, model: null },
-    sensors: [{ p: "fuel_level", name: "Nivel", type: 1, unit: "%" }],
+    sensors: [{ id: null, p: "fuel_level", name: "Nivel", type: null, unit: "%" }],
     position: { x: -70.65, y: -33.45, s: 12, c: 90, sc: 8, t: 1_760_000_000 },
     lastMessageParams: { mileage: 1234, engine_hours: 0, fuel_level: 50, ignition: 1 },
     lastMessageAt: "2026-11-12T12:00:00.000Z",
@@ -262,7 +264,7 @@ describe("extractWialonTelemetry", () => {
 
   it("usa el sensor de ignición de la cuenta cuando no existe el parámetro estándar", () => {
     const telemetry = extractWialonTelemetry(unit({
-      sensors: [{ p: "io_239", name: "ignicion", type: 1, unit: "Encendido/Apagado" }],
+      sensors: [{ id: null, p: "io_239", name: "ignicion", type: null, unit: "Encendido/Apagado" }],
       lastMessageParams: { io_239: 1, mileage: 1234 },
     }), params)
     expect(telemetry?.ignition).toBe(true)
@@ -272,9 +274,9 @@ describe("extractWialonTelemetry", () => {
     const telemetry = extractWialonTelemetry(unit({
       lastMessageParams: { mileage: 1_500, engine_hours: 3_600, fuel_level: 50 },
       sensors: [
-        { p: "mileage", name: "Odómetro", type: 1, unit: "m" },
-        { p: "engine_hours", name: "Horómetro", type: 1, unit: "s" },
-        { p: "fuel_level", name: "Nivel", type: 1, unit: "%" },
+        { id: null, p: "mileage", name: "Odómetro", type: null, unit: "m" },
+        { id: null, p: "engine_hours", name: "Horómetro", type: null, unit: "s" },
+        { id: null, p: "fuel_level", name: "Nivel", type: null, unit: "%" },
       ],
     }), sensorParams)
     expect(telemetry).toMatchObject({ odometer: 1.5, hourMeter: 1 })
@@ -287,12 +289,87 @@ describe("extractWialonTelemetry", () => {
 
   it("sólo acepta nivel de estanque cuando la unidad es porcentaje", () => {
     const liters = extractWialonTelemetry(unit({
-      sensors: [{ p: "fuel_level", name: "Nivel", type: 1, unit: "L" }],
+      sensors: [{ id: null, p: "fuel_level", name: "Nivel", type: null, unit: "L" }],
     }), params)
     expect(liters?.fuelLevel).toBeNull()
     const percent = extractWialonTelemetry(unit({
-      sensors: [{ p: "fuel_level", name: "Nivel", type: 1, unit: "%" }],
+      sensors: [{ id: null, p: "fuel_level", name: "Nivel", type: null, unit: "%" }],
     }), params)
     expect(percent?.fuelLevel).toBe(50)
+  })
+})
+
+// Forma real de la cuenta (2026-11-12): el tipo de sensor llega como texto, el
+// encendido es un `io_239` de tipo «engine operation» y el combustible un
+// `io_270` de tipo «fuel level» en litros, que necesita el valor calculado.
+describe("sensores por tipo", () => {
+  const params = { odometerParam: "", hourMeterParam: "", fuelLevelParam: "fuel_level" }
+  const fuelSensor = { id: "3", p: "io_270", name: "Combustible", type: "fuel level", unit: "l" }
+
+  it("lee el tipo de sensor como texto y conserva su id", async () => {
+    const fetchImpl = fetchMock((svc) => svc === "token/login"
+      ? jsonResponse({ eid: "sid-1" })
+      : jsonResponse({ items: [{
+        id: 7, nm: "TO37 D6R",
+        sens: { "3": { id: 3, n: "Control de Combustible", t: "fuel level", m: "l", p: "io_270" } },
+        pos: { x: -72, y: -37, s: 0, c: 0, sc: 9, t: 1_760_000_000 },
+        lmsg: { t: 1_760_000_000, p: { io_270: 812 } },
+      }] }))
+    const { units } = await fetchWialonUnits({ baseUrl: "https://hst-api.wialon.com", token: "t" }, { fetchImpl })
+    expect(units[0]?.sensors).toEqual([{ id: "3", p: "io_270", name: "Control de Combustible", type: "fuel level", unit: "l" }])
+  })
+
+  it("usa el sensor de tipo «engine operation» como encendido", () => {
+    const telemetry = extractWialonTelemetry(unit({
+      sensors: [{ id: "1", p: "io_239", name: "Sensor de ignición del motor", type: "engine operation", unit: "On/Off" }],
+      lastMessageParams: { io_239: 0 },
+    }), params)
+    expect(telemetry?.ignition).toBe(false)
+  })
+
+  it("el sensor de combustible sólo se usa con el valor calculado por Wialon, nunca el crudo", () => {
+    const raw = unit({ sensors: [fuelSensor], lastMessageParams: { io_270: 812 } })
+    expect(extractWialonTelemetry(raw, params, 400)?.fuelLevel).toBeNull()
+    const calculated = unit({ sensors: [fuelSensor], lastMessageParams: { io_270: 812 }, calculatedSensors: { "3": 100 } })
+    expect(extractWialonTelemetry(calculated, params, 400)?.fuelLevel).toBe(25)
+    // Litros sin capacidad de estanque no se convierten en porcentaje.
+    expect(extractWialonTelemetry(calculated, params, null)?.fuelLevel).toBeNull()
+  })
+
+  it("pide en lote el valor calculado de los sensores de combustible e ignora los N/A", async () => {
+    expect(wialonFuelSensorRequests([unit({ id: "7", sensors: [fuelSensor] }), unit({ id: "8", sensors: [] })]))
+      .toEqual([{ unitId: "7", sensorIds: ["3"] }])
+    let batch: unknown
+    const fetchImpl = fetchMock((svc, params) => {
+      if (svc === "token/login") return jsonResponse({ eid: "sid-1" })
+      batch = params
+      return jsonResponse([{ "3": 120.5 }, { "4": -348201.3876 }, { error: 7 }])
+    })
+    const values = await fetchWialonCalculatedSensors(
+      { baseUrl: "https://hst-api.wialon.com", token: "t" },
+      [{ unitId: "7", sensorIds: ["3"] }, { unitId: "8", sensorIds: ["4"] }, { unitId: "9", sensorIds: ["5"] }],
+      { fetchImpl },
+    )
+    expect(batch).toMatchObject({ params: [{ svc: "unit/calc_last_message", params: { unitId: 7, sensors: [3], flags: 1 } }, {}, {}] })
+    expect([...values.entries()]).toEqual([["7", { "3": 120.5 }]])
+  })
+})
+
+describe("parámetros configurados que la unidad no publica", () => {
+  it("cae al contador cuando la unidad no trae el parámetro ni tiene sensor sobre él", () => {
+    // Cuenta real: `.env` con mileage/engine_hours, mensajes sólo con io_*.
+    const telemetry = extractWialonTelemetry(unit({ sensors: [], lastMessageParams: { io_239: 1 } }), {
+      odometerParam: "mileage", hourMeterParam: "engine_hours", fuelLevelParam: "io_270",
+    })
+    expect(telemetry).toMatchObject({ odometer: 5_000, hourMeter: 120 })
+  })
+
+  it("el combustible configurado usa el valor calculado de su sensor si existe", () => {
+    const telemetry = extractWialonTelemetry(unit({
+      sensors: [{ id: "3", p: "io_270", name: "Combustible", type: "fuel level", unit: "l" }],
+      lastMessageParams: { io_270: 812 },
+      calculatedSensors: { "3": 200 },
+    }), { odometerParam: "", hourMeterParam: "", fuelLevelParam: "io_270" }, 400)
+    expect(telemetry?.fuelLevel).toBe(50)
   })
 })

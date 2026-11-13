@@ -21,10 +21,17 @@ export interface WialonPosition {
 }
 
 export interface WialonSensor {
-  /** Parámetro del mensaje al que está asociado. */
+  /** Id del sensor dentro de la unidad (clave de `sens`); lo pide `unit/calc_last_message`. */
+  id: string | null
+  /** Parámetro (o expresión) del mensaje al que está asociado. */
   p: string
   name: string | null
-  type: number | null
+  /**
+   * Tipo de sensor como lo entrega Wialon, en texto: `"engine operation"`,
+   * `"fuel level"`, `"voltage"`, `"mileage"`… (verificado contra la cuenta real
+   * el 2026-11-12; antes se parseaba como número y se perdía).
+   */
+  type: string | null
   unit: string | null
 }
 
@@ -62,6 +69,13 @@ export interface WialonUnit {
   sensors: WialonSensor[]
   position: WialonPosition | null
   lastMessageParams: Record<string, unknown>
+  /**
+   * Valores YA calculados por Wialon (`unit/calc_last_message`) por id de
+   * sensor: aplican la tabla de calibración y la validación del sensor, cosa
+   * que el parámetro crudo no hace. Sólo los pide el cron, para los sensores de
+   * combustible; ausente = no se pidió o Wialon no lo pudo calcular.
+   */
+  calculatedSensors?: Record<string, number>
   /** Hora del último mensaje (`lmsg.t`); puede ser posterior a la de la posición (`pos.t`). */
   lastMessageAt: string | null
 }

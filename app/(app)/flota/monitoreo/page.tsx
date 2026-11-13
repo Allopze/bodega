@@ -79,8 +79,8 @@ export default async function FleetGpsMonitoringPage({
         ]} />}
         actions={monitoring.canManage && adminStatus && wialonStatus ? (
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <OnwayControls status={adminStatus} />
-            <WialonControls status={wialonStatus} />
+            <OnwayControls status={adminStatus} namedActions />
+            <WialonControls status={wialonStatus} namedActions />
           </div>
         ) : undefined}
       />
@@ -89,14 +89,14 @@ export default async function FleetGpsMonitoringPage({
 
       {onwayIsStale && monitoring.providerLatestAt.onway ? (
         <Callout tone="warning" className="mt-3">
-          <strong>Consulta a OnWay atrasada:</strong> la plataforma no recibe una posición nueva de OnWay desde hace {staleSinceLabel(monitoring.providerLatestAt.onway)}. Las ubicaciones de OnWay reflejan el último reporte recibido, no una lectura en tiempo real.
+          <strong>Consulta a OnWay atrasada:</strong> la plataforma no consulta a OnWay con éxito desde hace {staleSinceLabel(monitoring.providerLatestAt.onway)}. Las ubicaciones de OnWay son las de esa última consulta, no una lectura en tiempo real.
           {monitoring.canManage ? <span> Revisa la corrida de OnWay en <em>Configurar</em> o ejecuta una actualización manual.</span> : null}
         </Callout>
       ) : null}
 
       {wialonIsStale && monitoring.providerLatestAt.wialon ? (
         <Callout tone="warning" className="mt-3">
-          <strong>Consulta a Wialon atrasada:</strong> la plataforma no recibe una posición nueva de Wialon desde hace {staleSinceLabel(monitoring.providerLatestAt.wialon)}. Las ubicaciones de Wialon reflejan el último reporte recibido, no una lectura en tiempo real.
+          <strong>Consulta a Wialon atrasada:</strong> la plataforma no consulta a Wialon con éxito desde hace {staleSinceLabel(monitoring.providerLatestAt.wialon)}. Las ubicaciones de Wialon son las de esa última consulta, no una lectura en tiempo real.
           {monitoring.canManage ? <span> Revisa la corrida de Wialon en <em>Configurar</em> o ejecuta una actualización manual.</span> : null}
         </Callout>
       ) : null}

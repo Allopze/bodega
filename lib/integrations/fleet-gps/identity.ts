@@ -36,6 +36,18 @@ export function plateCandidatesFromText(value: string): string[] {
   return [...new Set(matches.map(normalizeGpsKey))]
 }
 
+/**
+ * Códigos internos embebidos en un nombre libre, ya normalizados. Las unidades
+ * de Wialon se nombran «CARGADOR FRONTAL CR-52», «EXCAVADORA GR-11» o
+ * «TO37 D6R»: el código va como una palabra con letras Y dígitos. Una palabra
+ * sólo de letras («CAT») o sólo de dígitos («6125») no se toma: calzaría con
+ * cualquier cosa.
+ */
+export function codeCandidatesFromText(value: string): string[] {
+  const tokens = value.split(/[\s(),;/]+/).map(normalizeGpsKey)
+  return [...new Set(tokens.filter((token) => token.length >= 3 && token.length <= 12 && /[A-Z]/.test(token) && /\d/.test(token)))]
+}
+
 export interface VehicleIdentity {
   id: string
   plate: string
@@ -102,6 +114,17 @@ export function matchVehicleByIdentity(
       const match = uniqueMatch(index.byPlate.get(candidate))
       if (match.kind !== "unmatched") return withReason(match, "text")
     }
+    // Código interno dentro del nombre. Si dos palabras apuntan a vehículos
+    // distintos, no se elige: queda ambiguo para que una persona lo vincule.
+    const byCode = new Map<string, VehicleIdentity>()
+    for (const candidate of codeCandidatesFromText(input.name)) {
+      const vehicles = index.byCode.get(candidate) ?? []
+      if (vehicles.length > 1) return { kind: "ambiguous", candidates: vehicles }
+      if (vehicles[0]) byCode.set(vehicles[0].id, vehicles[0])
+    }
+    if (byCode.size > 1) return { kind: "ambiguous", candidates: [...byCode.values()] }
+    const [codeMatch] = byCode.values()
+    if (codeMatch) return { kind: "matched", vehicle: codeMatch, reason: "text" }
   }
   return { kind: "unmatched" }
 }

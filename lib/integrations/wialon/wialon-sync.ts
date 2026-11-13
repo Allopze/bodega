@@ -25,7 +25,7 @@ import {
   matchVehicleByIdentity,
   normalizeGpsKey,
 } from "@/lib/integrations/fleet-gps/identity"
-import { fetchWialonUnits, extractWialonTelemetry, logoutWialonSession, WialonClientError } from "./wialon-client"
+import { fetchWialonUnits, fetchWialonCalculatedSensors, wialonFuelSensorRequests, extractWialonTelemetry, logoutWialonSession, WialonClientError } from "./wialon-client"
 import type { WialonTelemetryParams, WialonUnit } from "./wialon-contract"
 import { loadWialonConfig } from "./wialon-settings"
 
@@ -255,6 +255,28 @@ export async function syncWialon(options: SyncWialonOptions = {}): Promise<SyncW
       { fetchImpl: options.fetchImpl },
     )
     if (fetched.units.length === 0) throw new WialonSyncError("WIALON_SNAPSHOT_EMPTY")
+
+    // Combustible: el valor calculado por Wialon (tabla de calibración y
+    // validación del sensor). Es un complemento: si falla, la corrida sigue
+    // con posición y medidores y el nivel queda sin dato, nunca en 0.
+    const fuelRequests = wialonFuelSensorRequests(fetched.units)
+    if (fuelRequests.length > 0) {
+      try {
+        const calculated = await fetchWialonCalculatedSensors(
+          { baseUrl: config.baseUrl, token: config.token },
+          fuelRequests,
+          { fetchImpl: options.fetchImpl },
+        )
+        for (const unit of fetched.units) {
+          const values = calculated.get(unit.id)
+          if (values) unit.calculatedSensors = values
+        }
+      } catch (error) {
+        logger.warn("[flota/wialon/sync] no se pudo calcular el nivel de combustible", {
+          code: error instanceof WialonClientError ? error.code : "WIALON_CALC_FAILED",
+        })
+      }
+    }
 
     const [vehicles, links] = await Promise.all([
       db.select({

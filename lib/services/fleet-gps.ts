@@ -192,7 +192,11 @@ export async function getFleetGpsMonitoring(session: Session) {
       })
     }
     if (row.provider === "onway" || row.provider === "wialon") {
-      const at = row.gpsReportedAt ?? row.observedAt
+      // Hora de la CONSULTA, no del reporte del equipo: de noche las máquinas
+      // detenidas no reportan y el aviso «consulta atrasada» saltaba con la
+      // integración sana. La antigüedad de cada equipo ya la marca su fila
+      // (`gpsIsStale`).
+      const at = row.observedAt
       if (!providerLatestAt[row.provider] || at > providerLatestAt[row.provider]!) {
         providerLatestAt[row.provider] = at
       }
