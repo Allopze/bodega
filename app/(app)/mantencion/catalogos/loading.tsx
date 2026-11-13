@@ -1,6 +1,6 @@
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
-import { Skeleton, SkeletonRow } from "@/components/ui/skeleton"
+import { SkeletonRow } from "@/components/ui/skeleton"
 
 export default function Loading() {
   return (

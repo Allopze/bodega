@@ -52,7 +52,7 @@ describe("SparePartsCatalogView — estados vacíos", () => {
   it("catálogo vacío: explica cómo se llena y ofrece crear el primero, sin pestañas ni exportar", () => {
     renderView()
     expect(screen.getByRole("heading", { name: "Todavía no hay repuestos en el catálogo" })).toBeTruthy()
-    expect(screen.getByText("Se agregan al armar una OC de repuestos o desde aquí.")).toBeTruthy()
+    expect(screen.getByText("Se agregan al armar una orden de compra de repuestos o desde aquí.")).toBeTruthy()
     expect(screen.queryByRole("navigation", { name: "Estado de los repuestos" })).toBeNull()
     expect(screen.queryByRole("button", { name: /Exportar Excel/ })).toBeNull()
     // El botón del encabezado y el del estado vacío son dos entradas al mismo formulario.

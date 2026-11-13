@@ -104,7 +104,7 @@ function emptyCopy(tab: SparePartTab, hasInactive: boolean) {
   }
   return {
     title: "Todavía no hay repuestos en el catálogo",
-    description: "Se agregan al armar una OC de repuestos o desde aquí.",
+    description: "Se agregan al armar una orden de compra de repuestos o desde aquí.",
     cta: true,
   }
 }

@@ -244,7 +244,7 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
                 label="Costo mano de obra / taller externo (CLP, opcional)"
                 htmlFor="ot-costo"
                 error={fieldError("totalCost")}
-                helper="Sólo mano de obra o taller externo. Los repuestos y servicios comprados por OC se suman solos desde la solicitud vinculada."
+                helper="Sólo mano de obra o taller externo. Los repuestos y servicios comprados con orden de compra se suman solos desde la solicitud vinculada."
               >
                 <Input
                   id="ot-costo"

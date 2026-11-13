@@ -304,7 +304,7 @@ export function HoursCard({ data }: { data: PanelData }) {
             key: row.worksiteId,
             label: row.worksiteName,
             value: row.hours,
-            href: `/mantencion/registros?tipo=C&estado=vigente&faena=${encodeURIComponent(row.worksiteId)}${data.from ? `&desde=${data.from}` : ""}`,
+            href: `/mantencion/registros?revision=todos&tipo=C&estado=vigente&faena=${encodeURIComponent(row.worksiteId)}${data.from ? `&desde=${data.from}` : ""}`,
           }))}
         />
       )}

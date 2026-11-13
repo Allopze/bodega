@@ -23,26 +23,27 @@ const BASE = {
   canExport: true, canObserve: false, canReview: false, canVoid: false, canCorrect: false, queue: null,
 }
 
-describe("RecordActions: menú Exportar", () => {
+describe("RecordActions: exportar", () => {
   afterEach(() => { cleanup(); vi.clearAllMocks() })
 
-  it("ofrece PDF (enlace de descarga) y Excel (acción) dentro de un solo botón «Exportar»", async () => {
+  it("el Excel es el «Exportar Excel» de la plataforma y el PDF es una acción aparte", async () => {
     exportRecordAction.mockResolvedValue({ ok: true, data: { base64: "AAAA", filename: "registro-MP-BIO-0001.xlsx" } })
     render(<RecordActions {...BASE} />)
-    expect(screen.queryByRole("link", { name: /PDF/ })).toBeNull()
+    // Ya no hay un menú «Exportar ▾» que esconda las dos descargas.
+    expect(screen.queryByRole("button", { name: "Exportar" })).toBeNull()
 
-    fireEvent.keyDown(screen.getByRole("button", { name: "Exportar" }), { key: "Enter" })
-    const pdf = await screen.findByRole("menuitem", { name: "PDF" })
+    const pdf = screen.getByRole("link", { name: "Descargar PDF" })
     expect(pdf.getAttribute("href")).toBe("/api/mantencion/registros/rec-1/pdf")
     expect(pdf.hasAttribute("download")).toBe(true)
 
-    fireEvent.click(screen.getByRole("menuitem", { name: "Excel" }))
+    fireEvent.click(screen.getByRole("button", { name: "Exportar Excel" }))
     await waitFor(() => expect(downloaded).toHaveBeenCalledWith("registro-MP-BIO-0001.xlsx"))
     expect(exportRecordAction).toHaveBeenCalledWith({ recordId: "rec-1" })
   })
 
-  it("sin permiso de exportar no se dibuja el menú", () => {
+  it("sin permiso de exportar no se dibuja ninguna de las dos descargas", () => {
     render(<RecordActions {...BASE} canExport={false} />)
-    expect(screen.queryByRole("button", { name: "Exportar" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Exportar Excel" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Descargar PDF" })).toBeNull()
   })
 })

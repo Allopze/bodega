@@ -97,7 +97,7 @@ export function RecordsFilters({ options }: { options: RecordFilterOptions }) {
         <OptionSelect aria-label="Filtrar por faena" className={BAR_SELECT_CLASS} emptyLabel="Todas las faenas" options={worksiteOptions} value={getFilter("faena")} onValueChange={(v) => setFilter("faena", v)} />
       )}
       <OptionSelect aria-label="Filtrar por tipo de mantención" className={BAR_SELECT_CLASS} emptyLabel="Todos los tipos" options={KIND_OPTIONS} value={getFilter("tipo")} onValueChange={(v) => setFilter("tipo", v)} />
-      <OptionSelect aria-label="Filtrar por quién hizo el trabajo" className={BAR_SELECT_CLASS} emptyLabel="Hecho por: todos" options={options.executors} value={getFilter("hecho")} onValueChange={(v) => setFilter("hecho", v)} />
+      <OptionSelect aria-label="Filtrar por quién hizo el trabajo" className={BAR_SELECT_CLASS} emptyLabel="Todos los mecánicos" options={options.executors} value={getFilter("hecho")} onValueChange={(v) => setFilter("hecho", v)} />
       {/* Bajo `sm` las dos fechas comparten fila: apiladas costaban dos filas de 44 px. */}
       <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
         <div className="min-w-0 sm:w-32">

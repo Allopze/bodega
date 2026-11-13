@@ -41,7 +41,7 @@ describe("indicadores del panel (A1)", () => {
     const hrefOf = (name: RegExp) => screen.getByRole("link", { name }).getAttribute("href")
     expect(hrefOf(/^Órdenes por asignar/)).toBe("/mantencion/ot?estado=solicitada&faena=ws-1")
     expect(hrefOf(/^Mantenciones vencidas/)).toBe("/mantencion/equipos?estado=vencida&faena=ws-1")
-    expect(hrefOf(/^Registros · /)).toBe("/mantencion/registros?estado=vigente&desde=2026-09-29&faena=ws-1")
+    expect(hrefOf(/^Registros · /)).toBe("/mantencion/registros?revision=todos&estado=vigente&desde=2026-09-29&faena=ws-1")
     // A5: el taller es la lista «En taller ahora» y los días van en la tira; ya no son tarjetas.
     expect(screen.queryByRole("link", { name: /^Equipos en taller/ })).toBeNull()
     expect(screen.queryByRole("link", { name: /^Días fuera de servicio/ })).toBeNull()

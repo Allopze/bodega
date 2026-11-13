@@ -75,7 +75,7 @@ export function PanelKpis({ data, unassignedOrders = null }: { data: PanelData; 
         // Sin registros en el período, lo accionable es ampliar el período.
         href={records.total === 0 && filters.period !== "todo"
           ? `/mantencion/panel?periodo=todo${worksite}`
-          : `/mantencion/registros?estado=vigente${since}${worksite}`}
+          : `/mantencion/registros?revision=todos&estado=vigente${since}${worksite}`}
         empty={records.total === 0
           ? { message: "Aún no hay registros en este período", actionLabel: filters.period === "todo" ? "Ir a Registros firmados" : "Ver todo el historial" }
           : undefined}

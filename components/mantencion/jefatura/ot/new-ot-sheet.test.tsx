@@ -37,11 +37,11 @@ describe("«Nueva orden»", () => {
     expect((sheet.getByRole("button", { name: "Crear orden" }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it("el campo de costo dice mano de obra / taller externo y aclara que lo comprado por OC se suma solo", async () => {
+  it("el campo de costo dice mano de obra / taller externo y aclara que lo comprado con orden de compra se suma solo", async () => {
     render(<NewWorkOrderCta {...BASE} />)
     const sheet = await openSheet()
     expect(sheet.getByLabelText("Costo mano de obra / taller externo (CLP, opcional)")).toBeTruthy()
-    expect(sheet.getByText("Sólo mano de obra o taller externo. Los repuestos y servicios comprados por OC se suman solos desde la solicitud vinculada.")).toBeTruthy()
+    expect(sheet.getByText("Sólo mano de obra o taller externo. Los repuestos y servicios comprados con orden de compra se suman solos desde la solicitud vinculada.")).toBeTruthy()
     expect(sheet.queryByText(/Costo total/)).toBeNull()
   })
 

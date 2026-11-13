@@ -341,7 +341,7 @@ export function PurchasedForSection({ usage, access }: { usage: SparePartVehicle
   )
 }
 
-/* ── Últimas solicitudes y OC ──────────────────────────────────────────────── */
+/* ── Últimas solicitudes y órdenes de compra ──────────────────────────────────────────────── */
 
 function LineCodes({ line, access }: { line: SparePartPurchaseLine; access: SparePartLinkAccess }) {
   return (
@@ -351,7 +351,7 @@ function LineCodes({ line, access }: { line: SparePartPurchaseLine; access: Spar
         : <span className={`text-xs ${MUTED}`}>Sin solicitud</span>}
       {line.orderId && line.orderCode
         ? <Code href={access.canOpenOrders ? `/compras/${line.orderId}` : null}>{line.orderCode}</Code>
-        : <span className={`text-xs ${MUTED}`}>Sin OC</span>}
+        : <span className={`text-xs ${MUTED}`}>Sin orden de compra</span>}
       {line.orderStatus && <StateBadge state={line.orderStatus} entity="oc" size="sm" />}
     </div>
   )
@@ -399,7 +399,7 @@ export function RecentLinesSection({ lines, access }: { lines: SparePartPurchase
                 <TableHeader>
                   <TableRow>
                     <TableHead>Fecha</TableHead>
-                    <TableHead>Solicitud y OC</TableHead>
+                    <TableHead>Solicitud y orden de compra</TableHead>
                     <TableHead>Equipo</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
                     <TableHead className="text-right">Precio unitario</TableHead>
