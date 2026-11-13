@@ -101,7 +101,7 @@ export function GpsCrossChecks({
         key: "channels",
         label: "Combustible por canal",
         value: single === 0 ? "Ninguno" : `${single} ${single === 1 ? "vehículo" : "vehículos"} con un solo canal`,
-        detail: `${taeOnly} solo en ${COPEC_CHANNEL_LABELS.TAE.toLowerCase()} · ${tctOnly} solo en ${COPEC_CHANNEL_LABELS.TCT.toLowerCase()} · ${bothChannels} en ambos.`,
+        detail: `${taeOnly} solo en ${COPEC_CHANNEL_LABELS.TAE.toLowerCase()} · ${tctOnly} solo en la ${COPEC_CHANNEL_LABELS.TCT.replace("Tarjeta", "tarjeta")} · ${bothChannels} en ambos.`,
         href: FUEL_PATHS.cuadraturaTarjetaTerreno,
         linkLabel: "Ver cuadratura",
       })

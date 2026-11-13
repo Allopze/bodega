@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { ClipboardText, Notebook, Warning } from "@phosphor-icons/react/dist/ssr"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { formatHours, formatNumber, plural } from "@/lib/mantencion/format"
 import type { PanelData } from "@/lib/services/mantencion/panel"
@@ -48,7 +47,6 @@ export function PanelKpis({ data, unassignedOrders = null }: { data: PanelData; 
     >
       {unassignedOrders !== null && (
         <KpiCard
-          icon={<ClipboardText size={16} aria-hidden />}
           label="Órdenes por asignar"
           value={unassignedOrders === 0 ? "Ninguna" : unassignedOrders}
           valueKind={unassignedOrders === 0 ? "text" : "number"}
@@ -58,7 +56,6 @@ export function PanelKpis({ data, unassignedOrders = null }: { data: PanelData; 
         />
       )}
       <KpiCard
-        icon={<Warning size={16} aria-hidden />}
         label="Mantenciones vencidas"
         value={overdue}
         detail={overdueDetail(fleet.counts)}
@@ -68,7 +65,6 @@ export function PanelKpis({ data, unassignedOrders = null }: { data: PanelData; 
         empty={overdueEmpty ? { message: "Aún no hay equipos con pauta y lectura", actionLabel: overdueEmpty.actionLabel } : undefined}
       />
       <KpiCard
-        icon={<Notebook size={16} aria-hidden />}
         label={`Registros · ${period}`}
         value={records.total}
         detail={`${plural(records.preventive, "preventiva", "preventivas")} · ${plural(records.corrective, "correctiva", "correctivas")}`}

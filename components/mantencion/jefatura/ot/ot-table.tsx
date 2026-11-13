@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRo
 import { plural } from "@/lib/mantencion/format"
 import type { WorkOrderListRow } from "@/lib/services/mantencion/work-orders/types"
 import { formatDate, formatDateTime } from "@/lib/utils"
+import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
 import { OT_STATE_META, equipmentText, workOrderTypeText } from "./ot-labels"
 
 /** Lo vencido va en tono de señal, nunca rojo (el rojo es de lo anulado). */
@@ -108,7 +109,7 @@ export function OtTable({ rows }: { rows: WorkOrderListRow[] }) {
                     {row.folio}
                   </Link>
                 </TableCell>
-                <TableCell className="whitespace-nowrap font-mono text-sm">{equipmentText(row)}</TableCell>
+                <TableCell><VehicleIdentity code={row.equipmentCode} plate={row.equipmentPlate} /></TableCell>
                 <TableCell>{row.worksiteName}</TableCell>
                 <TableCell className="whitespace-nowrap">{workOrderTypeText(row)}</TableCell>
                 <TableCell><StatusCell row={row} /></TableCell>
