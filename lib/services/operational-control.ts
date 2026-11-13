@@ -112,7 +112,8 @@ export type OperationalAsset = {
   gpsPerformanceStatus: "ok" | "insufficient_series" | "insufficient_period" | "no_fuel" | "not_applicable"
   /** Costo total del período ÷ avance GPS; `null` sin costo completo o cobertura. */
   gpsCostPerUnit: number | null
-  gpsMeterSource: "gps_wialon" | "gps_onway" | null
+  /** Serie de `fuel_meter_readings` con que se calculó el avance (VisionLink = horómetro oficial de Cat). */
+  gpsMeterSource: "visionlink_api" | "gps_wialon" | "gps_onway" | null
   /** Proveedor del que salieron odómetro y horómetro; no se mezclan fuentes. */
   gpsMeterProvider: string | null
   /** Estimación de mantención con la lectura GPS; nunca reemplaza el estado oficial. */
@@ -241,35 +242,39 @@ export interface OperationalControlHubOptions {
 type GpsPerformanceStatus = "ok" | "insufficient_series" | "insufficient_period" | "no_fuel" | "not_applicable"
 
 /**
- * Avance del medidor GPS en el período. Se elige UNA fuente: Wialon si tiene
- * serie suficiente, si no OnWay. Nunca se encadenan puntos de proveedores
- * distintos, porque son medidores y calibraciones distintas.
+ * Avance del medidor en el período. Se elige UNA fuente, la primera que cubra el
+ * período completo: para horómetro, VisionLink (el acumulado oficial de Cat) y
+ * después Wialon y OnWay; para odómetro, Wialon y OnWay. Nunca se encadenan
+ * puntos de proveedores distintos, porque son medidores y calibraciones
+ * distintas.
  */
+type GpsAdvanceSource = "visionlink_api" | "gps_wialon" | "gps_onway"
+
 function computeGpsAdvance(
   vehicle: { id: string; performanceUnit: string; equipmentTypeSlug: string | null },
   series: ReadonlyMap<string, MeterSeriesPoint[]>,
   period: { from: string; to: string },
   jumpRule: { config: string | null },
-): { advance: number | null; source: "gps_wialon" | "gps_onway" | null; status: GpsPerformanceStatus } {
+): { advance: number | null; source: GpsAdvanceSource | null; status: GpsPerformanceStatus } {
   if (vehicle.performanceUnit !== "km_per_liter" && vehicle.performanceUnit !== "liters_per_hour") {
     return { advance: null, source: null, status: "not_applicable" }
   }
   const meterType = vehicle.performanceUnit === "km_per_liter" ? "odometer" : "hour_meter"
-  const wialon = series.get(`${vehicle.id}:gps_wialon:${meterType}`) ?? []
-  const onway = series.get(`${vehicle.id}:gps_onway:${meterType}`) ?? []
+  const candidates: GpsAdvanceSource[] = meterType === "hour_meter"
+    ? ["visionlink_api", "gps_wialon", "gps_onway"]
+    : ["gps_wialon", "gps_onway"]
+  const pointsOf = (source: GpsAdvanceSource) => series.get(`${vehicle.id}:${source}:${meterType}`) ?? []
   // Primero la fuente que cubre el período COMPLETO: tener dos puntos de hace
   // tres días no sirve para dividir los 90 días de gasto.
-  const wialonCovers = meterSeriesCoversPeriod(wialon, period.from, period.to)
-  const onwayCovers = meterSeriesCoversPeriod(onway, period.from, period.to)
-  const source = wialonCovers ? "gps_wialon" as const : onwayCovers ? "gps_onway" as const : null
+  const source = candidates.find((candidate) => meterSeriesCoversPeriod(pointsOf(candidate), period.from, period.to)) ?? null
   if (!source) {
     // Se informa la fuente que existe para que la UI no diga «sin proveedor»;
     // el estado distingue serie insuficiente de período incompleto.
-    const fallbackSource = wialon.length >= 2 ? "gps_wialon" as const : onway.length >= 2 ? "gps_onway" as const : null
+    const fallbackSource = candidates.find((candidate) => pointsOf(candidate).length >= 2) ?? null
     return { advance: null, source: fallbackSource, status: fallbackSource ? "insufficient_period" : "insufficient_series" }
   }
 
-  const points = source === "gps_wialon" ? wialon : onway
+  const points = pointsOf(source)
   const maxPerDay = maxMeterRatePerDayOf(
     jumpRule,
     meterType === "odometer" ? "km" : "hora",
@@ -509,7 +514,7 @@ export async function getOperationalControlHub(
         .from(fuelMeterReadings)
         .innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelMeterReadings.vehicleId))
         .where(and(
-          inArray(fuelMeterReadings.source, ["gps_wialon", "gps_onway"]),
+          inArray(fuelMeterReadings.source, ["gps_wialon", "gps_onway", "visionlink_api"]),
           inArray(fuelMeterReadings.vehicleId, vehicles.map((vehicle) => vehicle.id)),
           // Rango sobre la columna indexada; el día sólo se usa para reducir a
           // una lectura diaria por fuente y medidor, no para filtrar.

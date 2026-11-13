@@ -11,6 +11,7 @@ import { isIP } from "node:net"
 import type {
   WialonCredentials,
   WialonPosition,
+  WialonProfile,
   WialonSensor,
   WialonTelemetry,
   WialonTelemetryParams,
@@ -219,7 +220,8 @@ export async function loginWialon(
   const body = await request<Record<string, unknown>>(
     credentials,
     "token/login",
-    { token: credentials.token },
+    // `fl` es obligatorio en token/login; 1 = sesión básica (sólo se leen unidades).
+    { token: credentials.token, fl: 1 },
     null,
     options.fetchImpl ?? fetch,
   )
@@ -304,16 +306,52 @@ function parsePosition(value: unknown): WialonPosition | null {
   }
 }
 
-function parseSensor(value: unknown): WialonSensor[] {
+function parseSensor(value: unknown, key?: string): WialonSensor[] {
   const record = asRecord(value)
   const parameter = asString(record?.p)
   if (!parameter) return []
+  const type = typeof record?.t === "string" ? record.t.trim().toLowerCase() : null
   return [{
+    id: asString(record?.id) ?? key ?? null,
     p: parameter,
     name: asString(record?.n),
-    type: asNumber(record?.t),
+    type: type || null,
     unit: asString(record?.m),
   }]
+}
+
+/** Tipos de sensor de Wialon que la plataforma reconoce sin configuración. */
+export const WIALON_SENSOR_TYPE = {
+  ignition: "engine operation",
+  fuelLevel: "fuel level",
+} as const
+
+/** Valor que Wialon devuelve cuando no puede calcular un sensor («N/A»). */
+const WIALON_SENSOR_NA = -348_201.3876
+
+/** Nombres de los campos de perfil (`pflds`) que la plataforma lee. Se buscan por `n`: el id numérico lo asigna cada cuenta. */
+const PROFILE_FIELD_NAMES = {
+  registrationPlate: "registration_plate",
+  vin: "vin",
+  brand: "brand",
+  model: "model",
+} as const
+
+function parseProfile(value: unknown): WialonProfile {
+  const byName = new Map<string, string>()
+  // `pflds` llega como objeto por id; se acepta también un arreglo.
+  for (const entry of Object.values(asRecord(value) ?? (Array.isArray(value) ? value : {}))) {
+    const field = asRecord(entry)
+    const name = asString(field?.n)?.trim().toLowerCase()
+    const fieldValue = asString(field?.v)?.trim()
+    if (name && fieldValue) byName.set(name, fieldValue)
+  }
+  return {
+    registrationPlate: byName.get(PROFILE_FIELD_NAMES.registrationPlate) ?? null,
+    vin: byName.get(PROFILE_FIELD_NAMES.vin) ?? null,
+    brand: byName.get(PROFILE_FIELD_NAMES.brand) ?? null,
+    model: byName.get(PROFILE_FIELD_NAMES.model) ?? null,
+  }
 }
 
 function parseUnit(value: unknown): WialonUnit | null {
@@ -326,22 +364,37 @@ function parseUnit(value: unknown): WialonUnit | null {
   const position = parsePosition(item.pos) ?? parsePosition(lastMessage?.pos)
   const sensorSource = item.sens
   const sensors = Array.isArray(sensorSource)
-    ? sensorSource.flatMap(parseSensor)
-    : Object.values(asRecord(sensorSource) ?? {}).flatMap(parseSensor)
+    ? sensorSource.flatMap((sensor) => parseSensor(sensor))
+    : Object.entries(asRecord(sensorSource) ?? {}).flatMap(([key, sensor]) => parseSensor(sensor, key))
   return {
     id,
     name: asString(item.nm) ?? id,
-    sysName: asString(item.sys_name),
-    groupId: asString(item.grp) ?? asString(item.fid),
     uniqueId: asString(item.uid),
     hardwareType: asString(item.hw),
     customProperties: asRecord(item.prp) ?? {},
+    counters: {
+      mileageKm: positiveNumber(item.cnm),
+      engineHours: positiveNumber(item.cneh),
+    },
+    connected: asOptionalBoolean(item.netconn),
+    profile: parseProfile(item.pflds),
     sensors,
     position,
     lastMessageParams: asRecord(lastMessage?.p) ?? {},
+    // `lmsg.t` manda; `pos.t` sólo cuando el mensaje no trae hora propia.
     lastMessageAt: epochToIso(asNumber(lastMessage?.t) ?? position?.t ?? null),
   }
 }
+
+/**
+ * Flags de `avl_unit` (help.wialon.com/en/api): 0x1 base (nm, id), 0x2 prp
+ * (propiedades internas de la interfaz, NO la patente), 0x100 avanzadas (uid,
+ * hw), 0x400 posición y último mensaje, 0x1000 sensores, 0x2000 contadores
+ * (cnm km, cneh horas), 0x200000 netconn, 0x800000 campos de perfil (pflds).
+ */
+const UNIT_FLAGS_FULL = 0x1 | 0x2 | 0x100 | 0x400 | 0x1000 | 0x2000 | 0x200000 | 0x800000
+/** Refresco en vivo: sólo lo que mueve el mapa (base, posición y mensaje, sensores para el encendido). */
+const UNIT_FLAGS_POSITIONS = 0x1 | 0x400 | 0x1000
 
 /**
  * Unidades con su último mensaje. La respuesta puede venir paginada; el tope
@@ -350,7 +403,7 @@ function parseUnit(value: unknown): WialonUnit | null {
  */
 export async function fetchWialonUnits(
   credentials: WialonCredentials,
-  options: { fetchImpl?: FetchLike; now?: () => number } = {},
+  options: { fetchImpl?: FetchLike; now?: () => number; positionsOnly?: boolean } = {},
 ): Promise<WialonUnitsResult> {
   const body = await wialonCall<{ items?: unknown }>(credentials, "core/search_items", {
     spec: {
@@ -360,7 +413,7 @@ export async function fetchWialonUnits(
       sortType: "sys_name",
     },
     force: 1,
-    flags: 1 | 2 | 1024 | 4096,
+    flags: options.positionsOnly ? UNIT_FLAGS_POSITIONS : UNIT_FLAGS_FULL,
     from: 0,
     to: 0,
   }, options)
@@ -385,21 +438,86 @@ export async function verifyWialonCredentials(
   await logoutWialon(credentials, sid, options)
 }
 
-function resolveFuelLevel(unit: WialonUnit, parameter: string, tankCapacityLiters: number | null): number | null {
-  const raw = asNumber(unit.lastMessageParams[parameter])
-  if (raw === null || raw < 0) return null
-  const sensor = unit.sensors.find((candidate) => candidate.p === parameter)
+function fuelPercent(value: number, sensorUnit: string | null, tankCapacityLiters: number | null): number | null {
+  if (value < 0) return null
   // Sin la unidad del sensor no se adivina: 80 litros no son 80 %.
-  if (!sensor) return null
-  const unitText = (sensor.unit ?? "").trim().toLowerCase()
-
-  if (unitText.includes("%")) {
-    return clamp(raw, 0, 100)
-  }
+  const unitText = (sensorUnit ?? "").trim().toLowerCase()
+  if (unitText.includes("%")) return clamp(value, 0, 100)
   if ((unitText === "l" || unitText.includes("litro")) && tankCapacityLiters != null && tankCapacityLiters > 0) {
-    return clamp((raw / tankCapacityLiters) * 100, 0, 100)
+    return clamp((value / tankCapacityLiters) * 100, 0, 100)
   }
   return null
+}
+
+/**
+ * Nivel de combustible en %. Un parámetro configurado que viene en el mensaje
+ * manda (crudo, como siempre). Si no, se usa el sensor de tipo «fuel level» de
+ * la cuenta, pero SÓLO con su valor calculado por Wialon: el crudo de un `io_*`
+ * de combustible suele necesitar la tabla de calibración y leerlo directo
+ * inventaría litros.
+ */
+function resolveFuelLevel(unit: WialonUnit, parameter: string, tankCapacityLiters: number | null): number | null {
+  const configured = parameter.trim()
+  if (configured && Object.hasOwn(unit.lastMessageParams, configured)) {
+    const sensor = unit.sensors.find((candidate) => candidate.p === configured)
+    if (!sensor) return null
+    // Si Wialon calculó el sensor (calibración incluida), ese valor gana sobre el crudo.
+    const calculated = sensor.id ? unit.calculatedSensors?.[sensor.id] : undefined
+    const value = calculated ?? asNumber(unit.lastMessageParams[configured])
+    return value === null ? null : fuelPercent(value, sensor.unit, tankCapacityLiters)
+  }
+  const sensor = unit.sensors.find((candidate) => candidate.type === WIALON_SENSOR_TYPE.fuelLevel && candidate.id)
+  const calculated = sensor?.id ? unit.calculatedSensors?.[sensor.id] : undefined
+  return sensor && calculated != null ? fuelPercent(calculated, sensor.unit, tankCapacityLiters) : null
+}
+
+/** Sensores de combustible por unidad, para pedir su valor calculado. */
+export function wialonFuelSensorRequests(units: readonly WialonUnit[]): Array<{ unitId: string; sensorIds: string[] }> {
+  return units.flatMap((unit) => {
+    const sensorIds = unit.sensors
+      .filter((sensor) => sensor.type === WIALON_SENSOR_TYPE.fuelLevel && sensor.id)
+      .map((sensor) => sensor.id!)
+    return sensorIds.length > 0 ? [{ unitId: unit.id, sensorIds }] : []
+  })
+}
+
+/** Tope de pedidos por `core/batch`: Wialon rechaza los lotes demasiado grandes. */
+const CALC_BATCH_SIZE = 50
+
+/**
+ * Valores calculados del último mensaje (`unit/calc_last_message`, con
+ * `flags: 1` = usar el último valor válido si el mensaje no trae el
+ * parámetro), en lotes de `core/batch`. Devuelve unidad → sensor → valor; los
+ * «N/A» de Wialon y las respuestas con error se omiten.
+ */
+export async function fetchWialonCalculatedSensors(
+  credentials: WialonCredentials,
+  requests: ReadonlyArray<{ unitId: string; sensorIds: string[] }>,
+  options: { fetchImpl?: FetchLike; now?: () => number } = {},
+): Promise<Map<string, Record<string, number>>> {
+  const result = new Map<string, Record<string, number>>()
+  for (let offset = 0; offset < requests.length; offset += CALC_BATCH_SIZE) {
+    const chunk = requests.slice(offset, offset + CALC_BATCH_SIZE)
+    const body = await wialonCall<unknown>(credentials, "core/batch", {
+      params: chunk.map((request) => ({
+        svc: "unit/calc_last_message",
+        params: { unitId: Number(request.unitId), sensors: request.sensorIds.map(Number), flags: 1 },
+      })),
+      flags: 0,
+    }, options)
+    if (!Array.isArray(body)) throw new WialonClientError("WIALON_BAD_RESPONSE")
+    chunk.forEach((request, index) => {
+      const values = asRecord(body[index])
+      if (!values || asNumber(values.error) != null) return
+      const parsed: Record<string, number> = {}
+      for (const sensorId of request.sensorIds) {
+        const value = asNumber(values[sensorId])
+        if (value !== null && Math.abs(value - WIALON_SENSOR_NA) > 1e-6) parsed[sensorId] = value
+      }
+      if (Object.keys(parsed).length > 0) result.set(request.unitId, parsed)
+    })
+  }
+  return result
 }
 
 function normalizeMeterValue(value: number | null, unit: string | null | undefined, kind: "odometer" | "hour"): number | null {
@@ -410,6 +528,15 @@ function normalizeMeterValue(value: number | null, unit: string | null | undefin
   if (kind === "hour" && ["s", "seg", "segundo", "segundos"].includes(normalized)) return value / 3_600
   if (kind === "hour" && ["min", "minuto", "minutos"].includes(normalized)) return value / 60
   return value
+}
+
+/**
+ * ¿La unidad mide con el parámetro configurado? Sí si lo trae en el último
+ * mensaje o tiene un sensor sobre él (un mensaje puntual sin el parámetro no
+ * cambia la serie de fuente: queda sin dato, no salta al contador).
+ */
+function usesParam(unit: WialonUnit, parameter: string, sensor: WialonSensor | undefined): boolean {
+  return parameter !== "" && (Object.hasOwn(unit.lastMessageParams, parameter) || sensor !== undefined)
 }
 
 /**
@@ -428,15 +555,19 @@ export function extractWialonTelemetry(
 
   const speedKph = clamp(asNumber(position.s) ?? 0, 0, 400)
   const headingDegrees = ((asNumber(position.c) ?? 0) % 360 + 360) % 360
-  // Wialon no siempre publica `ignition`: muchas cuentas lo configuran como un
-  // sensor con nombre «ignición» sobre un `io_*`. Se usa el parámetro estándar
-  // si existe; si no, el primer sensor cuyo nombre lo declara.
+  // Wialon no siempre publica `ignition`: las cuentas lo configuran como un
+  // sensor de tipo «engine operation» sobre un `io_*` (en la cuenta real,
+  // `io_239`). Orden: parámetro estándar, sensor de ese tipo y, como último
+  // respaldo, un sensor cuyo nombre lo declara.
   const ignitionParam = Object.hasOwn(unit.lastMessageParams, "ignition")
     ? "ignition"
-    : unit.sensors.find((sensor) => /ignic|ignition|encendido/i.test(`${sensor.name ?? ""} ${sensor.p}`))?.p
+    : unit.sensors.find((sensor) => sensor.type === WIALON_SENSOR_TYPE.ignition)?.p
+      ?? unit.sensors.find((sensor) => /ignic|ignition|encendido/i.test(`${sensor.name ?? ""} ${sensor.p}`))?.p
   const ignition = asOptionalBoolean(ignitionParam ? unit.lastMessageParams[ignitionParam] : null)
-  const odometerSensor = unit.sensors.find((sensor) => sensor.p === params.odometerParam)
-  const hourMeterSensor = unit.sensors.find((sensor) => sensor.p === params.hourMeterParam)
+  const odometerParam = params.odometerParam.trim()
+  const hourMeterParam = params.hourMeterParam.trim()
+  const odometerSensor = odometerParam ? unit.sensors.find((sensor) => sensor.p === odometerParam) : undefined
+  const hourMeterSensor = hourMeterParam ? unit.sensors.find((sensor) => sensor.p === hourMeterParam) : undefined
 
   return {
     latitude: position.y,
@@ -448,17 +579,19 @@ export function extractWialonTelemetry(
     // `pos.t` es la hora de la posición que se está mostrando. Si la unidad
     // lleva días sin señal, la posición es vieja aunque el mensaje sea nuevo.
     gpsReportedAt: epochToIso(position.t) ?? unit.lastMessageAt,
+    // Los medidores salen del último mensaje y de los contadores del servidor,
+    // no de la posición: una unidad parada en un túnel sigue sumando horas.
+    metersReportedAt: unit.lastMessageAt,
     satellites: position.sc === null ? null : Math.max(0, Math.round(position.sc)),
-    odometer: normalizeMeterValue(
-      positiveNumber(unit.lastMessageParams[params.odometerParam]),
-      odometerSensor?.unit,
-      "odometer",
-    ),
-    hourMeter: normalizeMeterValue(
-      positiveNumber(unit.lastMessageParams[params.hourMeterParam]),
-      hourMeterSensor?.unit,
-      "hour",
-    ),
+    // Un parámetro configurado manda en las unidades que lo traen; en las que
+    // no (otro hardware, o el `mileage`/`engine_hours` que el `.env.example`
+    // traía de ejemplo y que la cuenta real no publica), el contador de Wialon.
+    odometer: usesParam(unit, odometerParam, odometerSensor)
+      ? normalizeMeterValue(positiveNumber(unit.lastMessageParams[odometerParam]), odometerSensor?.unit, "odometer")
+      : unit.counters.mileageKm,
+    hourMeter: usesParam(unit, hourMeterParam, hourMeterSensor)
+      ? normalizeMeterValue(positiveNumber(unit.lastMessageParams[hourMeterParam]), hourMeterSensor?.unit, "hour")
+      : unit.counters.engineHours,
     fuelLevel: resolveFuelLevel(unit, params.fuelLevelParam, fuelTankCapacityLiters),
     movementState: speedKph > 0 ? "moving" : "stopped",
   }

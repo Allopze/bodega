@@ -7,6 +7,7 @@
  * rango): ese dato queda como faltante, nunca como cero, porque un cero sí
  * entra a los promedios de ralentí.
  */
+import { chileDayStartInstant } from "@/lib/utils"
 import type { VisionLinkDailyUtilization } from "./visionlink-client"
 
 export interface VisionLinkTelemetryRow {
@@ -76,4 +77,37 @@ export function visionLinkDayToTelemetry(
 export function previousDay(day: string, days = 1): string {
   const [year = 0, month = 1, date = 1] = day.split("-").map(Number)
   return new Date(Date.UTC(year, month - 1, date - days)).toISOString().slice(0, 10)
+}
+
+export interface VisionLinkMeterReading {
+  day: string
+  /** Horómetro acumulado oficial de Cat (SMU) al cierre del día, en horas. */
+  value: number
+  /** Fin del día civil chileno, en ISO UTC. */
+  occurredAt: string
+}
+
+export type VisionLinkMeterSkip = "no_hour_meter" | "hour_meter_callout" | "invalid_day"
+
+/**
+ * Horómetro acumulado de un día de Utilization History.
+ *
+ * Un *callout* sobre `hourMeter` significa que Cat no lo da por confiable: queda
+ * sin lectura. Un horómetro en 0 también se descarta: es un equipo que todavía
+ * no reporta su acumulado, no uno recién estrenado, y una lectura de 0 horas
+ * dejaría de ser plausible contra cualquier lectura oficial posterior.
+ *
+ * `occurredAt` es el cierre del día local del equipo: la lectura representa el
+ * acumulado al terminar `assetLocalDate`, no el instante en que corrió el cron.
+ */
+export function visionLinkDayToMeterReading(
+  daily: VisionLinkDailyUtilization,
+): { reading: VisionLinkMeterReading } | { skip: VisionLinkMeterSkip } {
+  const day = daily.assetLocalDate ?? ""
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { skip: "invalid_day" }
+  if (callout(daily.hourCallouts, "hourMeter")) return { skip: "hour_meter_callout" }
+  const value = daily.hourMeter
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return { skip: "no_hour_meter" }
+  const nextDayStart = Date.parse(chileDayStartInstant(previousDay(day, -1)))
+  return { reading: { day, value: round(value, 2), occurredAt: new Date(nextDayStart - 1_000).toISOString() } }
 }

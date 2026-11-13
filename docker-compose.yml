@@ -99,8 +99,8 @@ services:
       - WIALON_ALLOWED_HOSTS=${WIALON_ALLOWED_HOSTS:-}
       - WIALON_TOKEN=${WIALON_TOKEN:-}
       - WIALON_SYNC_ENABLED=${WIALON_SYNC_ENABLED:-false}
-      - WIALON_ODOMETER_PARAM=${WIALON_ODOMETER_PARAM:-mileage}
-      - WIALON_HOUR_METER_PARAM=${WIALON_HOUR_METER_PARAM:-engine_hours}
+      - WIALON_ODOMETER_PARAM=${WIALON_ODOMETER_PARAM:-}
+      - WIALON_HOUR_METER_PARAM=${WIALON_HOUR_METER_PARAM:-}
       - WIALON_FUEL_LEVEL_PARAM=${WIALON_FUEL_LEVEL_PARAM:-fuel_level}
       # Talana (RR. HH.): sincronización diaria de trabajadores, sólo lectura.
       # Modo `off` (defecto) | `simulate` | `apply`; ver .env.example.
@@ -267,6 +267,15 @@ services:
       - ONWAY_USERNAME=${ONWAY_USERNAME:-}
       - ONWAY_PASSWORD=${ONWAY_PASSWORD:-}
       - ONWAY_SYNC_ENABLED=${ONWAY_SYNC_ENABLED:-false}
+      # Wialon: mismo respaldo del .env que la app (el token guardado en la
+      # plataforma va cifrado en system_settings, dentro del dump).
+      - WIALON_BASE_URL=${WIALON_BASE_URL:-https://hst-api.wialon.com}
+      - WIALON_ALLOWED_HOSTS=${WIALON_ALLOWED_HOSTS:-}
+      - WIALON_TOKEN=${WIALON_TOKEN:-}
+      - WIALON_SYNC_ENABLED=${WIALON_SYNC_ENABLED:-false}
+      - WIALON_ODOMETER_PARAM=${WIALON_ODOMETER_PARAM:-}
+      - WIALON_HOUR_METER_PARAM=${WIALON_HOUR_METER_PARAM:-}
+      - WIALON_FUEL_LEVEL_PARAM=${WIALON_FUEL_LEVEL_PARAM:-fuel_level}
       # Talana (RR. HH.): sincronización diaria de trabajadores, sólo lectura.
       # Modo `off` (defecto) | `simulate` | `apply`; ver .env.example.
       - TALANA_API_TOKEN=${TALANA_API_TOKEN:-}

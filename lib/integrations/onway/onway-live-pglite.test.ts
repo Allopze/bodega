@@ -45,6 +45,7 @@ beforeAll(async () => {
 })
 
 beforeEach(async () => {
+  await testDb.delete(schema.fleetGpsLatestPositions)
   await testDb.delete(schema.fleetGpsSyncRuns)
   await testDb.delete(schema.cronRuns)
   mocks.config = { username: "cuenta", password: "clave", syncEnabled: true, hasCredentials: true }
@@ -53,8 +54,8 @@ beforeEach(async () => {
   mocks.syncOnway.mockResolvedValue({ observedAt: NOW.toISOString() })
 })
 
-async function seedRun(startedAt: string, trigger: "cron" | "live" = "cron") {
-  await testDb.insert(schema.fleetGpsSyncRuns).values({ id: `gpsrun-${startedAt}`, trigger, status: "success", startedAt, finishedAt: startedAt })
+async function seedRun(startedAt: string, trigger: "cron" | "live" = "cron", provider: "onway" | "wialon" = "onway") {
+  await testDb.insert(schema.fleetGpsSyncRuns).values({ id: `gpsrun-${provider}-${startedAt}`, provider, trigger, status: "success", startedAt, finishedAt: startedAt })
 }
 
 describe("refreshOnwayLive", () => {
@@ -68,11 +69,36 @@ describe("refreshOnwayLive", () => {
     expect(await testDb.select().from(schema.cronRuns)).toEqual([])
   })
 
-  it("no vuelve a consultar el portal si cualquier corrida empezó hace menos de 50 s", async () => {
+  it("no vuelve a consultar el portal si una corrida de OnWay empezó hace menos de 50 s", async () => {
     await seedRun("2026-11-09T12:01:50.000Z", "live")
 
     expect(await refreshOnwayLive({ now: NOW })).toEqual({ outcome: "skipped", reason: "recent" })
     expect(mocks.syncOnway).not.toHaveBeenCalled()
+  })
+
+  it("devuelve la marca de captura de OnWay para que cada página sepa si ya tiene esos datos", async () => {
+    await seedRun("2026-11-09T12:01:50.000Z", "live")
+    await testDb.insert(schema.fleetGpsSyncRuns).values({ id: "run-pos", provider: "onway", trigger: "live", status: "success" })
+    await testDb.insert(schema.fleetGpsLatestPositions).values({
+      id: "pos-onway", provider: "onway", externalDeviceId: "dev-1", externalGroupId: "0",
+      sourcePlate: "X", normalizedPlate: "X", latitude: -33.4, longitude: -70.6, speedKph: 0, headingDegrees: 0,
+      ignition: false, observedAt: "2026-11-09T12:01:50.000Z", syncRunId: "run-pos",
+    })
+
+    expect(await refreshOnwayLive({ now: NOW })).toEqual({
+      outcome: "skipped",
+      reason: "recent",
+      observedAt: "2026-11-09T12:01:50.000Z",
+    })
+  })
+
+  it("una corrida reciente de Wialon no frena la lectura de OnWay", async () => {
+    // El cron y las lecturas en vivo de Wialon dejan corridas propias: miradas
+    // como «cualquier proveedor», OnWay quedaba sin leer.
+    await seedRun("2026-11-09T12:02:25.000Z", "cron", "wialon")
+
+    expect((await refreshOnwayLive({ now: NOW })).outcome).toBe("synced")
+    expect(mocks.syncOnway).toHaveBeenCalledTimes(1)
   })
 
   it("no se adelanta al cron de cada 5 minutos, que es el que trae el detalle", async () => {

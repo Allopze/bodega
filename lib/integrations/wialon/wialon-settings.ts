@@ -24,8 +24,10 @@ type EnvSource = Readonly<Record<string, string | undefined>>
 
 export const WIALON_DEFAULTS = {
   baseUrl: DEFAULT_WIALON_BASE_URL,
-  odometerParam: "mileage",
-  hourMeterParam: "engine_hours",
+  // Vacío = usar los contadores que mantiene Wialon (cnm, cneh): existen en toda
+  // unidad, a diferencia de un parámetro que cada cuenta nombra a su manera.
+  odometerParam: "",
+  hourMeterParam: "",
   fuelLevelParam: "fuel_level",
 } as const
 
@@ -79,8 +81,9 @@ function configFromValues(values: Record<WialonSettingField, string>): WialonCon
     token,
     syncEnabled: values.syncEnabled.trim() === "true",
     hasCredentials: token.length > 0,
-    odometerParam: values.odometerParam.trim() || WIALON_DEFAULTS.odometerParam,
-    hourMeterParam: values.hourMeterParam.trim() || WIALON_DEFAULTS.hourMeterParam,
+    // Sin `|| default`: vacío es un valor con significado (contador de Wialon).
+    odometerParam: values.odometerParam.trim(),
+    hourMeterParam: values.hourMeterParam.trim(),
     fuelLevelParam: values.fuelLevelParam.trim() || WIALON_DEFAULTS.fuelLevelParam,
   }
 }
@@ -178,7 +181,13 @@ export async function saveWialonSettings(
         ? input.fuelLevelParam.trim()
         : undefined,
     },
-    clear: input.clearToken ? ["token"] : [],
+    clear: [
+      ...(input.clearToken ? ["token" as const] : []),
+      // Enviar el campo vacío es pedir el contador de Wialon: se borra lo
+      // guardado (sin valor propio, `.env` y luego el contador mandan).
+      ...(input.odometerParam !== undefined && input.odometerParam.trim() === "" ? ["odometerParam" as const] : []),
+      ...(input.hourMeterParam !== undefined && input.hourMeterParam.trim() === "" ? ["hourMeterParam" as const] : []),
+    ],
   }, actor)
 }
 

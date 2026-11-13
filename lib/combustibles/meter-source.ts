@@ -3,6 +3,7 @@ export const METER_SOURCE_LABEL: Record<string, string> = {
   copec_tct: "Copec",
   gps_wialon: "GPS Wialon",
   gps_onway: "GPS OnWay",
+  visionlink_api: "VisionLink",
 }
 
 export function meterSourceLabel(source: string | null | undefined): string | null {

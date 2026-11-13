@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { DetailItem } from "@/components/ui/detail-item"
+import { MANT_GPS_SOURCE_LABEL } from "@/lib/mantencion/gps-estimate"
 import { formatReading, recordKindText, remainingText, unitName } from "@/lib/mantencion/format"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { SectionCard } from "../shared/section-card"
@@ -45,6 +46,7 @@ function WorkshopNote({ workshop }: { workshop: NonNullable<EquipmentDetailData[
 export function EquipmentStatusCard({ data }: { data: EquipmentDetailData }) {
   const { status, unit } = data
   const last = status.lastPreventive
+  const sourceLabel = MANT_GPS_SOURCE_LABEL[data.gpsReadingSource ?? "gps"]
   return (
     <SectionCard title="Mantención">
       <div className="mb-3">
@@ -66,7 +68,7 @@ export function EquipmentStatusCard({ data }: { data: EquipmentDetailData }) {
       {data.gpsStatus ? (
         <div className="mt-4 border-t border-[var(--color-border)] pt-3">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <p className="text-eyebrow">Estimación GPS</p>
+            <p className="text-eyebrow">Estimación {sourceLabel}</p>
             <EquipmentStateBadge state={data.gpsStatus.state} workshop={null} />
             {data.gpsReadingAt ? (
               <span className="text-xs text-[var(--color-text-subtle)]">Lectura del {formatDate(todayInChile(data.gpsReadingAt))}</span>
@@ -76,7 +78,7 @@ export function EquipmentStatusCard({ data }: { data: EquipmentDetailData }) {
             <DetailItem
               layout="stacked"
               mono
-              label="Última lectura GPS"
+              label={`Última lectura ${sourceLabel}`}
               value={data.gpsStatus.currentReading
                 ? <NoBreak>{formatReading(data.gpsStatus.currentReading.value, unit)}</NoBreak>
                 : null}

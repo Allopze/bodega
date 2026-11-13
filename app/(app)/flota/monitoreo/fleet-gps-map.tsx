@@ -91,7 +91,7 @@ export function FleetGpsMap({ positions }: { positions: FleetGpsPosition[] }) {
   const hasPositions = positions.length > 0
   const selected = selectedId ? positions.find((position) => position.id === selectedId) ?? null : null
 
-  // El mapa se crea una vez. La página se recarga cada minuto con posiciones
+  // El mapa se crea una vez. La página se recarga (hasta cada 10 s) con posiciones
   // nuevas (refresco en vivo): rearmarlo perdería el zoom, el encuadre y el
   // popup abierto, así que los datos nuevos entran por `setData` (abajo).
   // Falso positivo de React Doctor: los `nextMap.on(...)` se liberan con

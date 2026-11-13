@@ -40,7 +40,8 @@ function secretHelper(
     : `${current} No se puede editar sin keyring en el servidor.`
 }
 
-export function OnwayControls({ status }: { status: OnwayAdminStatus }) {
+/** `namedActions`: en el encabezado los botones dicen el proveedor (convive con Wialon). */
+export function OnwayControls({ status, namedActions = false }: { status: OnwayAdminStatus; namedActions?: boolean }) {
   const router = useRouter()
   const sync = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
   const clear = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
@@ -79,7 +80,7 @@ export function OnwayControls({ status }: { status: OnwayAdminStatus }) {
     <div className="flex flex-wrap items-center gap-2">
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogTrigger asChild>
-          <Button type="button" variant="secondary" size="sm">Configurar</Button>
+          <Button type="button" variant="secondary" size="sm">{namedActions ? "Configurar OnWay" : "Configurar"}</Button>
         </DialogTrigger>
         <DialogContent>
           <form action={formAction} className="space-y-4">
@@ -175,7 +176,7 @@ export function OnwayControls({ status }: { status: OnwayAdminStatus }) {
         onClick={() => sync.run(runOnwaySyncAction)}
       >
         <ArrowClockwise size={14} aria-hidden />
-        Actualizar ahora
+        {namedActions ? "Actualizar OnWay" : "Actualizar ahora"}
       </Button>
 
       <ConfirmDialog

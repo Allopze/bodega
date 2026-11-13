@@ -332,8 +332,14 @@ export async function getFleetOverview(
     const fuel = fuelByVehicle.get(vehicle.id)
     const totalFuelAmount = canViewFuel && canViewCosts ? Number(fuel?.totalFuelAmount ?? 0) : null
     const pickSeries = (meterType: "odometer" | "hour_meter") => {
-      const sources = ["copec_tct", "gps_wialon", "gps_onway"] as const
-      const pointsFor = (source: typeof sources[number]) =>
+      // El horómetro de Cat (VisionLink, SMU) es el acumulado oficial del equipo y
+      // va antes que el de cualquier GPS. Copec sigue primero porque es lo que se
+      // tecleó en la carga. VisionLink sólo informa horómetro: en odómetro no entra.
+      const sources = meterType === "hour_meter"
+        ? ["copec_tct", "visionlink_api", "gps_wialon", "gps_onway"] as const
+        : ["copec_tct", "gps_wialon", "gps_onway"] as const
+      type SeriesSource = typeof sources[number]
+      const pointsFor = (source: SeriesSource) =>
         meterPointsBySeries.get(`${vehicle.id}\u0000${source}\u0000${meterType}`) ?? []
       // Primero una fuente que cubra la ventana completa: así el costo del
       // período no se divide por un avance de pocos días.
@@ -343,7 +349,7 @@ export async function getFleetOverview(
       if (withTwo) return withTwo
       // Sin dos puntos no hay avance; para mostrar la última lectura se usa la
       // fuente con el punto más reciente, nunca una mezcla.
-      let fallback: typeof sources[number] | null = null
+      let fallback: SeriesSource | null = null
       let fallbackAt = ""
       for (const source of sources) {
         const last = pointsFor(source).at(-1)

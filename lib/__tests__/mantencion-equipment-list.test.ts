@@ -22,6 +22,7 @@ function row(code: string, state: MantEquipmentState, overrides: Partial<FleetRo
     gpsStatus: null,
     gpsReading: null,
     gpsReadingAt: null,
+    gpsReadingSource: null,
     workshop: null,
     ...rest,
   }

@@ -309,6 +309,7 @@ ENV_WHITELIST=(
   # dump) y sólo se abre con DTE_SETTINGS_KEYRING, que también se respalda acá.
   TALANA_API_TOKEN TALANA_SYNC_MODE
   VISIONLINK_CLIENT_ID VISIONLINK_CLIENT_SECRET VISIONLINK_SCOPE VISIONLINK_SYNC_ENABLED
+  WIALON_BASE_URL WIALON_ALLOWED_HOSTS WIALON_TOKEN WIALON_SYNC_ENABLED WIALON_ODOMETER_PARAM WIALON_HOUR_METER_PARAM WIALON_FUEL_LEVEL_PARAM
   # Cloudreve (storage de documentos SST): la URL y el backend son configuración
   # funcional; las credenciales son el respaldo del .env del servidor (las
   # cifradas viven en system_settings y viajan en el dump PG). Mismo caso que

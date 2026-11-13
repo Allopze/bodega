@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { formatCLP, formatDate, formatDateTime } from "@/lib/utils"
 import { EQUIPMENT_STATE_LABEL } from "@/lib/mantencion/format"
+import { meterSourceLabel } from "@/lib/combustibles/meter-source"
 import { fuelEquipmentHref } from "@/lib/combustibles/routes"
 import type { OperationalAsset } from "@/lib/services/operational-control"
 
@@ -32,7 +33,9 @@ function providerName(provider: string): string {
 function formatGpsSource(asset: OperationalAsset): string {
   const sources = asset.gpsProviders.length > 0 ? asset.gpsProviders.map(providerName).join(" + ") : "—"
   const meter = asset.gpsMeterProvider ? ` · medidor ${providerName(asset.gpsMeterProvider)}` : ""
-  return `${sources}${meter}`
+  // El rendimiento sale de la serie con más cobertura; si es la de Cat, se dice.
+  const performance = asset.gpsMeterSource === "visionlink_api" ? ` · rendimiento ${meterSourceLabel(asset.gpsMeterSource)}` : ""
+  return `${sources}${meter}${performance}`
 }
 
 function formatGpsMaintenance(asset: OperationalAsset): string | null {

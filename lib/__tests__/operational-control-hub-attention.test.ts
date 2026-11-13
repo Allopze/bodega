@@ -49,9 +49,12 @@ vi.mock("@/db", async () => {
 })
 
 // El hub sólo usa `can`; el módulo real arrastra next-auth y las cabeceras de Next.
-vi.mock("@/lib/auth/can", () => ({
-  can: (session: Session | null, permission: string) => session?.user?.permissions?.includes(permission as never) ?? false,
-}))
+vi.mock("@/lib/auth/can", () => {
+  const can = (session: Session | null, permission: string) => session?.user?.permissions?.includes(permission as never) ?? false
+  // `canAny` lo usan módulos que el panel importa de forma transitiva (cadena
+  // documental); sin él el mock rompía todos los casos al cargar.
+  return { can, canAny: (session: Session | null, ...permissions: string[]) => permissions.some((permission) => can(session, permission)) }
+})
 
 vi.mock("@/lib/services/system-settings", () => ({
   getFleetAdminSettings: mocks.fleetSettings,

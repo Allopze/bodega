@@ -120,11 +120,12 @@ export function buildSourceStatusRow(input: SourceStatusInput, now: number = Dat
     if (!actions.some((action) => action.kind === "settings")) actions.push({ label: "Ver configuración", kind: "settings" })
   }
   if (unmatchedCount > 0) {
+    // Los dos proveedores se resuelven igual: vínculo manual o exclusión con motivo.
     if (provider === "onway") {
-      messages.push(`${unmatchedCount} ${plural(unmatchedCount, "dispositivo", "dispositivos")} sin una patente única en el catálogo de Flota: su posición se descarta hasta corregirlo.`)
-      actions.push({ label: "Revisar catálogo de vehículos", kind: "link", href: "/admin/flota-catalogos/vehiculos" })
+      messages.push(`${unmatchedCount} ${plural(unmatchedCount, "dispositivo", "dispositivos")} sin una patente única en el catálogo de Flota: ${plural(unmatchedCount, "vincúlalo a mano o exclúyelo si no es", "vincúlalos a mano o exclúyelos si no son")} de la flota.`)
+      actions.push({ label: "Vincular dispositivos", kind: "settings" })
     } else {
-      messages.push(`${unmatchedCount} ${plural(unmatchedCount, "unidad", "unidades")} sin vehículo: la posición se conserva, pero no entra al panel hasta vincularla.`)
+      messages.push(`${unmatchedCount} ${plural(unmatchedCount, "unidad", "unidades")} sin vehículo: la posición se conserva, pero no entra al panel hasta vincularla o excluirla.`)
       actions.push({ label: "Vincular unidades", kind: "settings" })
     }
   }

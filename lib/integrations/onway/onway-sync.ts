@@ -3,6 +3,7 @@ import { db } from "@/db"
 import {
   fleetGpsAlerts,
   fleetGpsAlertTypes,
+  fleetGpsDeviceLinks,
   fleetGpsLatestPositions,
   fleetGpsPositionHistory,
   fleetGpsSyncRuns,
@@ -10,11 +11,12 @@ import {
   fuelVehicles,
 } from "@/db/schema"
 import { saveMeterReadings, type ParsedMeterReading } from "@/lib/combustibles/meter-readings"
+import { buildVehicleResolverByPlate } from "@/lib/integrations/fleet-gps/identity"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { fetchOnwayTelemetry, OnwayClientError } from "./onway-client"
 import { resolveOnwayDriverMappings } from "./onway-driver-mappings"
-import { reconcileOnwayDevices } from "./onway-reconciliation"
+import { reconcileOnwayDevices, type OnwayDeviceLink } from "./onway-reconciliation"
 import { readOnwayConfig } from "./onway-settings"
 import { applyOnwayAlertRules } from "./onway-automation"
 
@@ -58,6 +60,11 @@ function historyWindow(options: SyncOnwayOptions, now: Date): { from: string; to
   return { from: new Date(now.getTime() - hours * 60 * 60_000).toISOString(), to: now.toISOString() }
 }
 
+/** `YYYY-MM-DDTHH` en UTC del instante (sin minutos ni `Z`). */
+function hourBucketUtc(occurredAt: string): string {
+  return new Date(occurredAt).toISOString().slice(0, 13)
+}
+
 function telemetryMeterReading(input: {
   plate: string
   externalDeviceId: string
@@ -70,7 +77,10 @@ function telemetryMeterReading(input: {
   if (value === null) return null
   return {
     plate: input.plate,
-    sourceRef: `onway:${input.externalDeviceId}:${input.meterType}:${input.occurredAt}`,
+    // Una lectura por equipo y por HORA UTC: `saveMeterReadings` hace upsert de
+    // valor y fecha, así que queda la última de cada hora y la serie no crece
+    // una fila por corrida del cron.
+    sourceRef: `onway:${input.externalDeviceId}:${input.meterType}:${hourBucketUtc(input.occurredAt)}Z`,
     occurredAt: input.occurredAt,
     value,
     liters: null,
@@ -147,7 +157,16 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
       worksiteId: fuelVehicles.worksiteId,
       meterType: fuelVehicles.meterType,
     }).from(fuelVehicles)
-    const reconciliation = reconcileOnwayDevices(snapshot.devices, vehicles)
+    const linkRows = await db.select({
+      externalDeviceId: fleetGpsDeviceLinks.externalDeviceId,
+      status: fleetGpsDeviceLinks.status,
+      vehicleId: fleetGpsDeviceLinks.vehicleId,
+    }).from(fleetGpsDeviceLinks).where(eq(fleetGpsDeviceLinks.provider, "onway"))
+    const links = new Map<string, OnwayDeviceLink>(linkRows.map((row) => [
+      row.externalDeviceId,
+      { status: row.status === "excluded" ? "excluded" : "linked", vehicleId: row.vehicleId },
+    ]))
+    const reconciliation = reconcileOnwayDevices(snapshot.devices, vehicles, links)
     const matchByDevice = new Map(reconciliation.matched.map((row) => [row.device.externalDeviceId, row]))
     const detailsByDevice = new Map(telemetry.details.map((detail) => [detail.deviceId, detail]))
     let driverMappings = new Map<string, { id: string; workerId: string }>()
@@ -194,6 +213,9 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
         const values = {
           ...snapshotValues,
           gpsReportedAt: detail?.gpsReportedAt ?? null,
+          // Hora a la que el equipo reportó los medidores; va en `values` y no en
+          // `snapshotValues` para que el refresco en vivo la conserve.
+          metersReportedAt: detail?.gpsReportedAt ?? null,
           gprsReportedAt: detail?.gprsReportedAt ?? null,
           gpsStatus: detail?.gpsStatus ?? null,
           gprsStatus: detail?.gprsStatus ?? null,
@@ -233,10 +255,7 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
         })].filter((reading): reading is ParsedMeterReading => reading !== null) : []
       })
       if (meters.length > 0) {
-        await saveMeterReadings(tx, "gps_onway", meters, (plate) => {
-          const vehicle = vehicles.find((row) => row.plate.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase() === plate)
-          return vehicle ? { id: vehicle.id, meterType: vehicle.meterType } : undefined
-        })
+        await saveMeterReadings(tx, "gps_onway", meters, buildVehicleResolverByPlate(vehicles))
       }
 
       const alerts = telemetry.alerts.flatMap((alert) => {
@@ -342,7 +361,7 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
         alertsReceived: alerts.length,
         pointsReceived: history.length,
         tripsReceived: trips.length,
-        finishedAt: observedAt,
+        finishedAt: new Date().toISOString(),
       }).where(eq(fleetGpsSyncRuns.id, runId))
     })
 

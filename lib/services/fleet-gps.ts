@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, desc, eq, gte, isNull, lte, or, sql } from "drizzle-orm"
+import { and, desc, eq, gte, isNull, lte, notExists, or, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fleetGpsAlerts, fleetGpsDeviceLinks, fleetGpsDriverMappings, fleetGpsLatestPositions, fleetGpsPositionHistory, fleetGpsSyncRuns, fleetGpsTrips, fuelVehicles, workers, worksites } from "@/db/schema"
 import { can, canAccessWorksite } from "@/lib/auth/can"
@@ -49,6 +49,8 @@ export interface FleetGpsPosition {
   sources: FleetGpsSource[]
 }
 
+export type GpsProvider = "onway" | "wialon"
+
 export interface FleetGpsProviderRun {
   provider: string
   id: string
@@ -89,6 +91,7 @@ async function loadRawPositions(session: Session) {
     ignition: fleetGpsLatestPositions.ignition,
     sourceStatus: fleetGpsLatestPositions.sourceStatus,
     gpsReportedAt: fleetGpsLatestPositions.gpsReportedAt,
+    metersReportedAt: fleetGpsLatestPositions.metersReportedAt,
     gprsReportedAt: fleetGpsLatestPositions.gprsReportedAt,
     gpsStatus: fleetGpsLatestPositions.gpsStatus,
     gprsStatus: fleetGpsLatestPositions.gprsStatus,
@@ -126,6 +129,7 @@ function toMergeRow(row: RawPositionRow): LatestGpsRow {
     ignition: row.ignition,
     sourceStatus: row.sourceStatus,
     gpsReportedAt: row.gpsReportedAt,
+    metersReportedAt: row.metersReportedAt,
     gprsReportedAt: row.gprsReportedAt,
     gpsStatus: row.gpsStatus,
     gprsStatus: row.gprsStatus,
@@ -142,6 +146,25 @@ function toMergeRow(row: RawPositionRow): LatestGpsRow {
     driverMappingId: row.driverMappingId,
     observedAt: row.observedAt,
   }
+}
+
+/**
+ * Dispositivos sin vehículo que una persona todavía tiene que resolver: sin
+ * vínculo y sin haber sido declarados «excluidos» (equipo de terceros, unidad
+ * de prueba). Una exclusión no es trabajo pendiente.
+ */
+function pendingDeviceFilter(provider: GpsProvider) {
+  return and(
+    eq(fleetGpsLatestPositions.provider, provider),
+    isNull(fleetGpsLatestPositions.vehicleId),
+    notExists(
+      db.select({ one: sql`1` }).from(fleetGpsDeviceLinks).where(and(
+        eq(fleetGpsDeviceLinks.provider, fleetGpsLatestPositions.provider),
+        eq(fleetGpsDeviceLinks.externalDeviceId, fleetGpsLatestPositions.externalDeviceId),
+        eq(fleetGpsDeviceLinks.status, "excluded"),
+      )),
+    ),
+  )
 }
 
 export async function getFleetGpsMonitoring(session: Session) {
@@ -169,7 +192,11 @@ export async function getFleetGpsMonitoring(session: Session) {
       })
     }
     if (row.provider === "onway" || row.provider === "wialon") {
-      const at = row.gpsReportedAt ?? row.observedAt
+      // Hora de la CONSULTA, no del reporte del equipo: de noche las máquinas
+      // detenidas no reportan y el aviso «consulta atrasada» saltaba con la
+      // integración sana. La antigüedad de cada equipo ya la marca su fila
+      // (`gpsIsStale`).
+      const at = row.observedAt
       if (!providerLatestAt[row.provider] || at > providerLatestAt[row.provider]!) {
         providerLatestAt[row.provider] = at
       }
@@ -207,14 +234,8 @@ export async function getFleetGpsMonitoring(session: Session) {
         where: eq(fleetGpsSyncRuns.provider, "wialon"),
         orderBy: [desc(fleetGpsSyncRuns.startedAt)],
       }),
-      db.$count(fleetGpsLatestPositions, and(
-        eq(fleetGpsLatestPositions.provider, "onway"),
-        isNull(fleetGpsLatestPositions.vehicleId),
-      )),
-      db.$count(fleetGpsLatestPositions, and(
-        eq(fleetGpsLatestPositions.provider, "wialon"),
-        isNull(fleetGpsLatestPositions.vehicleId),
-      )),
+      db.$count(fleetGpsLatestPositions, pendingDeviceFilter("onway")),
+      db.$count(fleetGpsLatestPositions, pendingDeviceFilter("wialon")),
     ])
 
     providerRuns = { onway: onwayRun ?? null, wialon: wialonRun ?? null }
@@ -268,7 +289,9 @@ export async function getFleetGpsHistory(session: Session, vehicleId: string, fr
   return { points, trips }
 }
 
-export interface WialonLinkableUnit {
+/** Un dispositivo GPS (equipo OnWay o unidad Wialon) con su vínculo actual. */
+export interface GpsLinkableDevice {
+  provider: GpsProvider
   unitId: string
   unitName: string
   observedAt: string
@@ -280,6 +303,16 @@ export interface WialonLinkableUnit {
   manualLinkId: string | null
 }
 
+/** Un dispositivo que una persona declaró ajeno a la flota. */
+export interface ExcludedGpsDevice {
+  provider: GpsProvider
+  unitId: string
+  /** `null` si el proveedor ya no lo informa. */
+  unitName: string | null
+  reason: string
+  excludedAt: string
+}
+
 export interface LinkableVehicle {
   id: string
   plate: string
@@ -288,14 +321,16 @@ export interface LinkableVehicle {
 }
 
 /**
- * Unidades Wialon con su vínculo actual, para la pantalla de configuración.
- * Sólo `flota:manage_gps`; las unidades sin vehículo no tienen faena, así que
- * se listan globalmente para que una persona las resuelva.
+ * Dispositivos de ambos proveedores con su vínculo actual, para la pantalla de
+ * configuración. Sólo `flota:manage_gps`; los dispositivos sin vehículo no
+ * tienen faena, así que se listan globalmente para que una persona los
+ * resuelva. Los excluidos no aparecen: tienen su propia lista.
  */
-export async function listWialonUnitsForLinking(session: Session, limit = 200): Promise<WialonLinkableUnit[]> {
+export async function listGpsDevicesForLinking(session: Session, limit = 200): Promise<GpsLinkableDevice[]> {
   if (!can(session, "flota:manage_gps")) return []
   const scope = worksiteScopeSql(session, fuelVehicles.worksiteId)
-  return db.select({
+  const rows = await db.select({
+    provider: fleetGpsLatestPositions.provider,
     unitId: fleetGpsLatestPositions.externalDeviceId,
     unitName: fleetGpsLatestPositions.sourcePlate,
     observedAt: fleetGpsLatestPositions.observedAt,
@@ -307,20 +342,55 @@ export async function listWialonUnitsForLinking(session: Session, limit = 200): 
     manualLinkId: fleetGpsDeviceLinks.id,
   }).from(fleetGpsLatestPositions)
     .leftJoin(fleetGpsDeviceLinks, and(
-      eq(fleetGpsDeviceLinks.provider, "wialon"),
+      eq(fleetGpsDeviceLinks.provider, fleetGpsLatestPositions.provider),
       eq(fleetGpsDeviceLinks.externalDeviceId, fleetGpsLatestPositions.externalDeviceId),
     ))
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, fleetGpsLatestPositions.vehicleId))
     .leftJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId))
     .where(and(
-      eq(fleetGpsLatestPositions.provider, "wialon"),
-      // Una unidad vinculada a un equipo de otra faena no se puede reasignar
-      // desde acá. Las no vinculadas no tienen faena: se dejan ver para que
-      // alguien del alcance las resuelva.
+      or(eq(fleetGpsLatestPositions.provider, "onway"), eq(fleetGpsLatestPositions.provider, "wialon")),
+      or(isNull(fleetGpsDeviceLinks.status), eq(fleetGpsDeviceLinks.status, "linked")),
+      // Un dispositivo vinculado a un equipo de otra faena no se puede reasignar
+      // desde acá. Los no vinculados no tienen faena: se dejan ver para que
+      // alguien del alcance los resuelva.
       scope ? or(isNull(fleetGpsLatestPositions.vehicleId), scope) : undefined,
     ))
-    .orderBy(sql`${fleetGpsLatestPositions.vehicleId} IS NULL DESC`, fleetGpsLatestPositions.sourcePlate)
-    .limit(Math.min(Math.max(limit, 1), 500))
+    .orderBy(
+      sql`${fleetGpsLatestPositions.vehicleId} IS NULL DESC`,
+      fleetGpsLatestPositions.provider,
+      fleetGpsLatestPositions.sourcePlate,
+    )
+    .limit(Math.min(Math.max(limit, 1), 1_000))
+  return rows.map((row) => ({ ...row, provider: row.provider as GpsProvider }))
+}
+
+/**
+ * Dispositivos excluidos, con el motivo que dejó quien los excluyó. Se lee
+ * desde los vínculos y no desde las posiciones: si el proveedor deja de
+ * informar el dispositivo, la exclusión sigue ahí y se puede restaurar.
+ */
+export async function listExcludedGpsDevices(session: Session): Promise<ExcludedGpsDevice[]> {
+  if (!can(session, "flota:manage_gps")) return []
+  const rows = await db.select({
+    provider: fleetGpsDeviceLinks.provider,
+    unitId: fleetGpsDeviceLinks.externalDeviceId,
+    unitName: fleetGpsLatestPositions.sourcePlate,
+    reason: fleetGpsDeviceLinks.reason,
+    excludedAt: fleetGpsDeviceLinks.updatedAt,
+  }).from(fleetGpsDeviceLinks)
+    .leftJoin(fleetGpsLatestPositions, and(
+      eq(fleetGpsLatestPositions.provider, fleetGpsDeviceLinks.provider),
+      eq(fleetGpsLatestPositions.externalDeviceId, fleetGpsDeviceLinks.externalDeviceId),
+    ))
+    .where(eq(fleetGpsDeviceLinks.status, "excluded"))
+    .orderBy(fleetGpsDeviceLinks.provider, fleetGpsDeviceLinks.externalDeviceId)
+  return rows.map((row) => ({
+    provider: row.provider as GpsProvider,
+    unitId: row.unitId,
+    unitName: row.unitName,
+    reason: row.reason ?? "",
+    excludedAt: row.excludedAt,
+  }))
 }
 
 /** Vehículos activos del alcance para el selector de vínculo. */

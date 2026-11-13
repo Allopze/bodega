@@ -16,7 +16,7 @@ import { formatExcelDateUTC, normKey, normalizePlate, parseChileanNumber, santia
 import { ACCOUNTABLE_FUEL_LOAD_STATUSES } from "./load-status"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
-export const METER_READING_SOURCES = ["copec_tct", "gps_onway", "gps_wialon"] as const
+export const METER_READING_SOURCES = ["copec_tct", "gps_onway", "gps_wialon", "visionlink_api"] as const
 export type MeterReadingSource = (typeof METER_READING_SOURCES)[number]
 
 export interface ParsedMeterReading {
@@ -228,7 +228,12 @@ export interface KnownMeterReading {
 
 /**
  * Última lectura conocida de un equipo antes de una fecha, mirando las dos
- * fuentes que tienen serie: las cargas propias y el detalle del proveedor.
+ * series que un operario teclea: las cargas propias y el detalle de Copec.
+ *
+ * El piso para una lectura tecleada es lo tecleado. El odómetro de GPS
+ * (`gps_onway`, `gps_wialon`) y el de VisionLink tienen su propia calibración y
+ * pueden ir por delante o por detrás del tablero del equipo: si entraran acá, un
+ * GPS adelantado bloquearía la carga manual correcta.
  *
  * Existe para validar en la captura y no sólo en la detección nocturna: el
  * detector crea un caso que alguien tiene que revisar, mientras que un error de
@@ -258,6 +263,7 @@ export async function lastKnownMeterReading(
     .where(and(
       eq(fuelMeterReadings.vehicleId, vehicleId),
       eq(fuelMeterReadings.meterType, meterType),
+      eq(fuelMeterReadings.source, "copec_tct"),
       // Fin del día CIVIL chileno expresado en UTC, no `T23:59:59.999Z`: la
       // columna guarda instantes UTC, así que una carga chilena de las 21:30 se
       // graba al día siguiente en UTC y el corte ingenuo la dejaba fuera del

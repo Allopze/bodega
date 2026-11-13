@@ -44,3 +44,18 @@ La cuenta de Wialon cubre equipos que OnWay no tiene. No se trata de reemplazar 
 3. Ejecutar «Actualizar ahora» y revisar unidades vinculadas y pendientes.
 4. Activar la actualización automática sólo después de una corrida manual correcta.
 5. Confirmar que OnWay sigue corriendo y que la cobertura OnWay no cuenta corridas Wialon.
+
+## Revisión 2026-11-12 (rama `fix/gps-conciliacion`)
+
+Un análisis contra la documentación oficial de Wialon y contra la cuenta real cambió varios puntos de arriba:
+
+- **Medidores desde los contadores del servidor.** Los parámetros `mileage` y `engine_hours` no existen en los mensajes de la cuenta (son `io_*`), así que la integración no leía ningún medidor. Ahora odómetro y horómetro salen de `cnm`/`cneh` (flag `0x2000`); un parámetro configurado sólo manda en las unidades que lo publican. Los medidores se fechan con la hora del último mensaje (`lmsg.t`, columna `meters_reported_at`), no con la de la última posición.
+- **Combustible calibrado.** El nivel sale del sensor de tipo «fuel level» con el valor calculado por Wialon (`unit/calc_last_message` en `core/batch`): en la cuenta real el crudo `io_270` valía 1.701 y el calculado 113,35 L.
+- **Encendido por tipo de sensor** («engine operation»); el tipo de sensor llega como texto.
+- **Identidad.** La patente vive en los campos de perfil (`pflds`, `registration_plate`), no en `prp`. Orden: vínculo manual → excluida → patente de perfil → `prp` → VIN contra `serial_number` → código → nombre; el nombre reconoce patentes con separadores y códigos internos embebidos («CARGADOR FRONTAL CR-52»).
+- **Exclusión.** Un dispositivo de OnWay o Wialon que no es de la flota se excluye con motivo auditado (`fleet_gps_device_links.status = 'excluded'`); deja de contar como pendiente y se puede restaurar. OnWay también respeta los vínculos manuales.
+- **Monitoreo en vivo.** Con la página abierta y visible, la posición de Wialon se refresca cada 10 s, una sola lectura compartida entre visitantes, sin crear corridas ni cerrar sesión. Fuera de la página queda el cron de 5 minutos.
+- **Series y Combustibles.** Una lectura GPS por equipo y hora. La validación de cargas manuales y los detectores de medidor miran sólo Copec: el GPS y VisionLink tienen su propia calibración (en la cuenta real, TO-37 marca 723,7 h en Wialon y 626,7 h en VisionLink).
+- **VisionLink.** Su horómetro acumulado (`hourMeter`) entra a `fuel_meter_readings` como `visionlink_api` y tiene prioridad sobre el GPS para horómetro en Flota, Panel y la estimación de Mantención. No va al mapa.
+- **Operación.** `WIALON_ODOMETER_PARAM` y `WIALON_HOUR_METER_PARAM` vacíos = contadores. Las variables `WIALON_*` entran al respaldo. La migración 0390 debe aplicarse antes de desplegar.
+

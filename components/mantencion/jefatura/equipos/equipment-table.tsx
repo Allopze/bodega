@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { Tooltip } from "@/components/ui/tooltip"
+import { MANT_GPS_SOURCE_LABEL } from "@/lib/mantencion/gps-estimate"
 import { brandAndModel, EQUIPMENT_STATE_LABEL, formatNumber, formatReading, plural, remainingText } from "@/lib/mantencion/format"
 import { matchesEquipmentSearch, type EquipmentListRow } from "@/lib/services/mantencion/equipment-list"
 import { formatDate } from "@/lib/utils"
@@ -171,7 +172,7 @@ export function EquipmentTable({ rows, canManage, canViewGps = true, filtered, p
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <EquipmentStateBadge state={row.state} workshop={row.inWorkshop ? { days: row.workshopDays ?? null } : null} />
                 {row.inWorkshop && row.workshopStale && <span className="text-xs font-semibold text-[var(--color-signal-ink)]">Sin actualizar</span>}
-                {canViewGps && row.gpsState && <span className="text-xs text-[var(--color-text-muted)]">GPS: {EQUIPMENT_STATE_LABEL[row.gpsState]}</span>}
+                {canViewGps && row.gpsState && <span className="text-xs text-[var(--color-text-muted)]">{MANT_GPS_SOURCE_LABEL[row.gpsSource ?? "gps"]}: {EQUIPMENT_STATE_LABEL[row.gpsState]}</span>}
               </span>
             </Link>
           </li>
@@ -215,7 +216,7 @@ export function EquipmentTable({ rows, canManage, canViewGps = true, filtered, p
                 {canViewGps && (
                   <TableCell className="whitespace-nowrap">
                     {row.gpsState ? (
-                      <div className="flex flex-col gap-0.5">
+                      <div className="flex flex-col gap-0.5" title={`Estimación con lectura ${MANT_GPS_SOURCE_LABEL[row.gpsSource ?? "gps"]}`}>
                         <EquipmentStateBadge state={row.gpsState} workshop={null} />
                         {row.gpsRemaining != null && (
                           <span className="text-xs text-[var(--color-text-muted)]">

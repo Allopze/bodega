@@ -70,6 +70,8 @@ export interface IntegrationSettingsDialogProps {
   syncEnabled: boolean
   /** Rótulo del interruptor; «Actualización diaria» por defecto. */
   syncLabel?: string
+  /** Rótulo del botón que abre el diálogo; con dos integraciones en una misma barra, que diga cuál. */
+  triggerLabel?: string
   /** Cuándo corre y qué hace la actualización diaria. */
   syncDescription: string
   saveAction: (prev: ActionState, formData: FormData) => Promise<ActionState>
@@ -101,6 +103,7 @@ export function IntegrationSettingsDialog({
   saveAction,
   clearAction,
   testAction,
+  triggerLabel = "Configurar",
   children,
 }: IntegrationSettingsDialogProps) {
   const router = useRouter()
@@ -157,7 +160,7 @@ export function IntegrationSettingsDialog({
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogTrigger asChild>
-          <Button type="button" variant="secondary" size="sm">Configurar</Button>
+          <Button type="button" variant="secondary" size="sm">{triggerLabel}</Button>
         </DialogTrigger>
         <DialogContent>
           <form action={formAction} className="space-y-4">
@@ -178,7 +181,7 @@ export function IntegrationSettingsDialog({
               <Switch
                 checked={syncEnabled}
                 onCheckedChange={setSyncEnabled}
-                label={`Activar la actualización de ${providerName}`}
+                label={`Activar la ${syncLabel.charAt(0).toLowerCase()}${syncLabel.slice(1)} de ${providerName}`}
                 id={`${idPrefix}-sync-enabled`}
               />
               <input type="hidden" name="syncEnabled" value={syncEnabled ? "on" : ""} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { previousDay, visionLinkDayToTelemetry } from "./visionlink-telemetry"
+import { previousDay, visionLinkDayToMeterReading, visionLinkDayToTelemetry } from "./visionlink-telemetry"
 import { planVisionLinkRows, splitRange } from "./visionlink-sync"
 
 const NO_CALLOUTS = {
@@ -98,5 +98,56 @@ describe("planVisionLinkRows", () => {
     }], new Map([["M5K05314", "veh-cr51"]]), "2026-10-29")
     expect(plan.rows).toHaveLength(1)
     expect(plan.skippedDays).toEqual({ missing_hours: 1 })
+  })
+})
+
+describe("visionLinkDayToMeterReading", () => {
+  const withMeter = { ...performanceDay, hourMeter: 8123.456, hourCallouts: { ...NO_CALLOUTS.hourCallouts, hourMeter: null } }
+
+  it("lee el horómetro acumulado al cierre del día local chileno", () => {
+    // Octubre de 2026 ya está en horario de verano chileno (UTC-3): el día
+    // termina a las 02:59:59 UTC del día siguiente.
+    expect(visionLinkDayToMeterReading(withMeter)).toEqual({
+      reading: { day: "2026-10-23", value: 8123.46, occurredAt: "2026-10-24T02:59:59.000Z" },
+    })
+  })
+
+  it("usa el desfase de invierno (UTC-4) cuando corresponde", () => {
+    const winter = visionLinkDayToMeterReading({ ...withMeter, assetLocalDate: "2026-07-10" })
+    expect(winter).toEqual({ reading: expect.objectContaining({ occurredAt: "2026-07-11T03:59:59.000Z" }) })
+  })
+
+  it("descarta el horómetro con callout, sin valor, en cero o con día inválido", () => {
+    expect(visionLinkDayToMeterReading({ ...withMeter, hourCallouts: { hourMeter: "Invalid value detected in date range" } })).toEqual({ skip: "hour_meter_callout" })
+    expect(visionLinkDayToMeterReading({ ...withMeter, hourMeter: null })).toEqual({ skip: "no_hour_meter" })
+    expect(visionLinkDayToMeterReading({ ...withMeter, hourMeter: 0 })).toEqual({ skip: "no_hour_meter" })
+    expect(visionLinkDayToMeterReading({ ...withMeter, hourMeter: Number.NaN })).toEqual({ skip: "no_hour_meter" })
+    expect(visionLinkDayToMeterReading({ ...withMeter, assetLocalDate: null })).toEqual({ skip: "invalid_day" })
+  })
+
+  it("un día sin callout de horómetro lo lee aunque sus horas de ralentí sean inválidas", () => {
+    expect(visionLinkDayToMeterReading({ ...withMeter, idleHours: null })).toEqual({ reading: expect.objectContaining({ value: 8123.46 }) })
+  })
+})
+
+describe("planVisionLinkRows: horómetro", () => {
+  const day = { ...performanceDay, hourMeter: 5000, hourCallouts: { ...NO_CALLOUTS.hourCallouts, hourMeter: null } }
+  const serials = new Map([["DKJ30153", "veh-gr10"], ["M5K05314", "veh-cr51"]])
+  const vehicles = new Map([
+    ["veh-gr10", { plate: "RKHR20", meterType: "hour_meter" }],
+    ["veh-cr51", { plate: "CR-51", meterType: "odometer" }],
+  ])
+
+  it("sólo planea lecturas de los equipos con horómetro, de días ya cerrados", () => {
+    const plan = planVisionLinkRows([
+      { equipmentHeader: { serialNumber: "DKJ30153" }, dailyUtilizations: [day, { ...day, assetLocalDate: "2026-10-30" }] },
+      { equipmentHeader: { serialNumber: "M5K05314" }, dailyUtilizations: [day] },
+    ], serials, "2026-10-29", vehicles)
+    expect(plan.meterReadings).toEqual([expect.objectContaining({ vehicleId: "veh-gr10", serialNumber: "DKJ30153", day: "2026-10-23", value: 5000 })])
+  })
+
+  it("sin catálogo de vehículos no planea lecturas", () => {
+    const plan = planVisionLinkRows([{ equipmentHeader: { serialNumber: "DKJ30153" }, dailyUtilizations: [day] }], serials, "2026-10-29")
+    expect(plan.meterReadings).toEqual([])
   })
 })

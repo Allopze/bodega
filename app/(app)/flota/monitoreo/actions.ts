@@ -31,7 +31,9 @@ import {
 import { syncWialon, WialonSyncError } from "@/lib/integrations/wialon/wialon-sync"
 import { EncryptedSettingsError } from "@/lib/services/encrypted-settings"
 import { withCronLock } from "@/lib/services/cron-lock"
+import type { GpsProvider } from "@/lib/services/fleet-gps"
 import { consumeFixedWindowLimit } from "@/lib/services/rate-limit"
+import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 import type { ActionState } from "@/lib/validation/masters"
 
 const settingsSchema = z.object({
@@ -56,40 +58,61 @@ async function requireGpsManager(): Promise<Awaited<ReturnType<typeof requirePer
   catch { return null }
 }
 
-/**
- * Faena del vehículo con el que la unidad Wialon tiene un vínculo MANUAL.
- * `null` significa que la unidad no tiene link guardado: puede estar resuelta
- * por patente/código en la última posición, pero no hay una asociación que
- * desvincular ni que pisar.
- */
-async function wialonUnitManualLinkWorksite(unitId: string): Promise<string | null> {
-  const [linked] = await db.select({ worksiteId: fuelVehicles.worksiteId })
-    .from(fleetGpsDeviceLinks)
-    .innerJoin(fuelVehicles, eq(fuelVehicles.id, fleetGpsDeviceLinks.vehicleId))
-    .where(and(
-      eq(fleetGpsDeviceLinks.provider, "wialon"),
-      eq(fleetGpsDeviceLinks.externalDeviceId, unitId),
-    ))
-    .limit(1)
-  return linked?.worksiteId ?? null
+const GPS_PROVIDER_LABEL: Record<GpsProvider, string> = { onway: "OnWay", wialon: "Wialon" }
+
+function isGpsProvider(value: unknown): value is GpsProvider {
+  return value === "onway" || value === "wialon"
 }
 
 /**
- * Faena de la asociación vigente de una unidad: primero el vínculo manual y,
- * si no hay, la última posición ya resuelta por identidad. Así una persona con
- * alcance limitado no puede pisar ni borrar la asociación de otra faena.
+ * Vínculo guardado de un dispositivo con la faena del vehículo al que apunta.
+ * `null` significa que no hay link: el dispositivo puede estar resuelto por
+ * patente, VIN o código en la última posición, pero no hay una asociación
+ * guardada que desvincular ni que pisar.
  */
-async function wialonUnitCurrentWorksite(unitId: string): Promise<string | null> {
-  const linked = await wialonUnitManualLinkWorksite(unitId)
-  if (linked) return linked
-  const [position] = await db.select({ worksiteId: fleetGpsLatestPositions.worksiteId })
+async function findDeviceLink(provider: GpsProvider, unitId: string) {
+  const [link] = await db.select({
+    status: fleetGpsDeviceLinks.status,
+    vehicleId: fleetGpsDeviceLinks.vehicleId,
+    reason: fleetGpsDeviceLinks.reason,
+    worksiteId: fuelVehicles.worksiteId,
+  })
+    .from(fleetGpsDeviceLinks)
+    .leftJoin(fuelVehicles, eq(fuelVehicles.id, fleetGpsDeviceLinks.vehicleId))
+    .where(and(
+      eq(fleetGpsDeviceLinks.provider, provider),
+      eq(fleetGpsDeviceLinks.externalDeviceId, unitId),
+    ))
+    .limit(1)
+  return link ?? null
+}
+
+async function findLatestPosition(provider: GpsProvider, unitId: string) {
+  const [position] = await db.select({
+    id: fleetGpsLatestPositions.id,
+    vehicleId: fleetGpsLatestPositions.vehicleId,
+    worksiteId: fleetGpsLatestPositions.worksiteId,
+    name: fleetGpsLatestPositions.sourcePlate,
+  })
     .from(fleetGpsLatestPositions)
     .where(and(
-      eq(fleetGpsLatestPositions.provider, "wialon"),
+      eq(fleetGpsLatestPositions.provider, provider),
       eq(fleetGpsLatestPositions.externalDeviceId, unitId),
     ))
     .limit(1)
-  return position?.worksiteId ?? null
+  return position ?? null
+}
+
+/**
+ * Faena de la asociación vigente de un dispositivo: primero el vínculo manual y,
+ * si no hay, la última posición ya resuelta por identidad. Así una persona con
+ * alcance limitado no puede pisar, excluir ni borrar la asociación de otra faena.
+ */
+function currentWorksiteOf(
+  link: Awaited<ReturnType<typeof findDeviceLink>>,
+  position: Awaited<ReturnType<typeof findLatestPosition>>,
+): string | null {
+  return (link?.status === "linked" ? link.worksiteId : null) ?? position?.worksiteId ?? null
 }
 
 export async function runOnwaySyncAction(): Promise<ActionState> {
@@ -229,7 +252,7 @@ export async function runWialonSyncAction(): Promise<ActionState> {
       message: `${incomplete ? "Sincronización parcial. " : ""}${result.matched} equipo${result.matched === 1 ? "" : "s"} actualizado${result.matched === 1 ? "" : "s"}.${detail}`,
     }
   } catch (error) {
-    logger.error("[flota/wialon/manual-sync]", { code: error instanceof Error ? error.message : "UNKNOWN" })
+    logger.error("[flota/wialon/manual-sync]", { code: error instanceof WialonClientError || error instanceof WialonSyncError ? error.code : "UNKNOWN" })
     return { ok: false, message: wialonFailureMessage(error) }
   }
 }
@@ -280,7 +303,7 @@ export async function saveWialonSettingsAction(
         message: "Este servidor no tiene keyring de cifrado. Configura DTE_SETTINGS_KEYRING y DTE_SETTINGS_ACTIVE_KEY_ID, o usa WIALON_TOKEN en el entorno.",
       }
     }
-    logger.error("[flota/wialon/save-settings]", { code: error instanceof Error ? error.message : "UNKNOWN" })
+    logger.error("[flota/wialon/save-settings]", { code: error instanceof WialonClientError || error instanceof WialonSettingsError ? error.code : "UNKNOWN" })
     return { ok: false, message: "No se pudo guardar la configuración de Wialon" }
   }
 }
@@ -327,23 +350,22 @@ export async function testWialonConnectionAction(): Promise<ActionState> {
   }
 }
 
-export async function linkWialonUnitAction(input: { unitId: string; vehicleId: string }): Promise<ActionState> {
+export async function linkGpsDeviceAction(input: {
+  provider: GpsProvider
+  unitId: string
+  vehicleId: string
+}): Promise<ActionState> {
   const session = await requireGpsManager()
-  if (!session) return { ok: false, message: "Sin permisos para vincular unidades GPS" }
+  if (!session) return { ok: false, message: "Sin permisos para vincular dispositivos GPS" }
+  if (!isGpsProvider(input.provider)) return { ok: false, message: "Proveedor GPS no reconocido." }
   if (!input.unitId.trim() || !input.vehicleId.trim()) {
-    return { ok: false, message: "Selecciona una unidad y un vehículo." }
+    return { ok: false, message: "Selecciona un dispositivo y un vehículo." }
   }
+  const { provider } = input
+  const label = GPS_PROVIDER_LABEL[provider]
 
-  const [unit] = await db.select({
-    id: fleetGpsLatestPositions.id,
-    externalDeviceId: fleetGpsLatestPositions.externalDeviceId,
-  }).from(fleetGpsLatestPositions)
-    .where(and(
-      eq(fleetGpsLatestPositions.provider, "wialon"),
-      eq(fleetGpsLatestPositions.externalDeviceId, input.unitId),
-    ))
-    .limit(1)
-  if (!unit) return { ok: false, message: "La unidad Wialon ya no está en la última lectura. Actualiza Wialon e inténtalo de nuevo." }
+  const unit = await findLatestPosition(provider, input.unitId)
+  if (!unit) return { ok: false, message: `El dispositivo de ${label} ya no está en la última lectura. Actualiza ${label} e inténtalo de nuevo.` }
 
   const [vehicle] = await db.select({
     id: fuelVehicles.id,
@@ -355,17 +377,17 @@ export async function linkWialonUnitAction(input: { unitId: string; vehicleId: s
     return { ok: false, message: "No tienes acceso a la faena de ese vehículo." }
   }
 
-  // La unidad puede estar vinculada a un vehículo de otra faena. Cambiar el
+  // El dispositivo puede estar vinculado a un vehículo de otra faena. Cambiar el
   // vínculo sin acceso a la faena actual sería reasociar un activo ajeno.
-  const currentWorksite = await wialonUnitCurrentWorksite(input.unitId)
+  const currentWorksite = currentWorksiteOf(await findDeviceLink(provider, input.unitId), unit)
   if (currentWorksite && !canAccessWorksite(session, currentWorksite)) {
-    return { ok: false, message: "No tienes acceso a la faena del vehículo al que está asociada la unidad." }
+    return { ok: false, message: "No tienes acceso a la faena del vehículo al que está asociado el dispositivo." }
   }
 
   const [otherLink] = await db.select({ unitId: fleetGpsDeviceLinks.externalDeviceId })
     .from(fleetGpsDeviceLinks)
     .where(and(
-      eq(fleetGpsDeviceLinks.provider, "wialon"),
+      eq(fleetGpsDeviceLinks.provider, provider),
       eq(fleetGpsDeviceLinks.vehicleId, vehicle.id),
       ne(fleetGpsDeviceLinks.externalDeviceId, input.unitId),
     ))
@@ -375,21 +397,23 @@ export async function linkWialonUnitAction(input: { unitId: string; vehicleId: s
   await db.transaction(async (tx) => {
     await tx.insert(fleetGpsDeviceLinks).values({
       id: `gpslink-${nanoid()}`,
-      provider: "wialon",
+      provider,
       externalDeviceId: input.unitId,
+      status: "linked",
       vehicleId: vehicle.id,
       createdByUserId: session.user.id,
       updatedAt,
     }).onConflictDoUpdate({
       target: [fleetGpsDeviceLinks.provider, fleetGpsDeviceLinks.externalDeviceId],
-      set: { vehicleId: vehicle.id, createdByUserId: session.user.id, updatedAt },
+      // Vincular un dispositivo excluido lo devuelve a la flota: el motivo de la exclusión ya no aplica.
+      set: { status: "linked", vehicleId: vehicle.id, reason: null, createdByUserId: session.user.id, updatedAt },
     })
     await tx.update(fleetGpsLatestPositions).set({
       vehicleId: vehicle.id,
       worksiteId: vehicle.worksiteId,
       updatedAt,
     }).where(and(
-      eq(fleetGpsLatestPositions.provider, "wialon"),
+      eq(fleetGpsLatestPositions.provider, provider),
       eq(fleetGpsLatestPositions.externalDeviceId, input.unitId),
     ))
     await recordAudit({
@@ -397,37 +421,50 @@ export async function linkWialonUnitAction(input: { unitId: string; vehicleId: s
       userEmail: session.user.email ?? undefined,
       action: "update",
       entityType: "fleet_gps_device_link",
-      entityId: `wialon:${input.unitId}`,
-      newState: { vehicleId: vehicle.id, plate: vehicle.plate },
+      entityId: `${provider}:${input.unitId}`,
+      newState: { status: "linked", vehicleId: vehicle.id, plate: vehicle.plate },
     }, tx)
   })
 
   revalidatePath("/flota/monitoreo")
   const warning = otherLink
-    ? ` Atención: ${vehicle.plate} ya tenía vinculada la unidad ${otherLink.unitId}.`
+    ? ` Atención: ${vehicle.plate} ya tenía vinculado el dispositivo ${otherLink.unitId}.`
     : ""
-  return { ok: true, message: `Unidad Wialon vinculada a ${vehicle.plate}.${warning}` }
+  return { ok: true, message: `Dispositivo de ${label} vinculado a ${vehicle.plate}.${warning}` }
 }
 
-export async function unlinkWialonUnitAction(input: { unitId: string }): Promise<ActionState> {
+export async function unlinkGpsDeviceAction(input: { provider: GpsProvider; unitId: string }): Promise<ActionState> {
   const session = await requireGpsManager()
-  if (!session) return { ok: false, message: "Sin permisos para desvincular unidades GPS" }
-  if (!input.unitId.trim()) return { ok: false, message: "Falta la unidad." }
+  if (!session) return { ok: false, message: "Sin permisos para desvincular dispositivos GPS" }
+  if (!isGpsProvider(input.provider)) return { ok: false, message: "Proveedor GPS no reconocido." }
+  if (!input.unitId.trim()) return { ok: false, message: "Falta el dispositivo." }
+  const { provider } = input
+  const label = GPS_PROVIDER_LABEL[provider]
 
-  // Sólo se desvincula un vínculo manual: una unidad resuelta por patente no
-  // tiene link que borrar y su posición se reasignaría en la próxima lectura.
-  const currentWorksite = await wialonUnitManualLinkWorksite(input.unitId)
-  if (!currentWorksite) {
-    return { ok: false, message: "La unidad no tiene un vínculo manual que desvincular." }
+  const link = await findDeviceLink(provider, input.unitId)
+  if (link?.status === "excluded") {
+    return { ok: false, message: "El dispositivo está excluido de la flota. Restáuralo desde «Excluidas» para volver a cruzarlo." }
   }
-  if (!canAccessWorksite(session, currentWorksite)) {
-    return { ok: false, message: "No tienes acceso a la faena del vehículo asociado a esta unidad." }
+  // Sólo se desvincula un vínculo manual. Un dispositivo cruzado por patente,
+  // VIN o código no tiene link que borrar y la próxima lectura lo volvería a
+  // cruzar: la forma de sacarlo del panel es excluirlo, con su motivo.
+  if (!link || link.status !== "linked") {
+    const position = await findLatestPosition(provider, input.unitId)
+    return {
+      ok: false,
+      message: position?.vehicleId
+        ? `El cruce de este dispositivo de ${label} es automático (patente, VIN o código) y volvería a hacerse en la próxima lectura. Si no es de la flota, exclúyelo indicando el motivo; si está cruzado con el vehículo equivocado, usa «Reasignar».`
+        : "El dispositivo no tiene un vínculo manual que desvincular.",
+    }
+  }
+  if (link.worksiteId && !canAccessWorksite(session, link.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a la faena del vehículo asociado a este dispositivo." }
   }
 
   const updatedAt = new Date().toISOString()
   await db.transaction(async (tx) => {
     await tx.delete(fleetGpsDeviceLinks).where(and(
-      eq(fleetGpsDeviceLinks.provider, "wialon"),
+      eq(fleetGpsDeviceLinks.provider, provider),
       eq(fleetGpsDeviceLinks.externalDeviceId, input.unitId),
     ))
     await tx.update(fleetGpsLatestPositions).set({
@@ -435,7 +472,7 @@ export async function unlinkWialonUnitAction(input: { unitId: string }): Promise
       worksiteId: null,
       updatedAt,
     }).where(and(
-      eq(fleetGpsLatestPositions.provider, "wialon"),
+      eq(fleetGpsLatestPositions.provider, provider),
       eq(fleetGpsLatestPositions.externalDeviceId, input.unitId),
     ))
     await recordAudit({
@@ -443,10 +480,120 @@ export async function unlinkWialonUnitAction(input: { unitId: string }): Promise
       userEmail: session.user.email ?? undefined,
       action: "delete",
       entityType: "fleet_gps_device_link",
-      entityId: `wialon:${input.unitId}`,
+      entityId: `${provider}:${input.unitId}`,
+      oldState: { status: "linked", vehicleId: link.vehicleId },
     }, tx)
   })
 
   revalidatePath("/flota/monitoreo")
-  return { ok: true, message: "Unidad Wialon desvinculada." }
+  return { ok: true, message: `Dispositivo de ${label} desvinculado.` }
+}
+
+/**
+ * Declara que un dispositivo no es de la flota (equipo de terceros, unidad de
+ * prueba): el cruce automático no lo vuelve a tocar y deja de contar como
+ * pendiente. Exige motivo y queda auditado; es reversible con
+ * `restoreGpsDeviceAction`.
+ */
+export async function excludeGpsDeviceAction(input: {
+  provider: GpsProvider
+  unitId: string
+  reason: string
+}): Promise<ActionState> {
+  const session = await requireGpsManager()
+  if (!session) return { ok: false, message: "Sin permisos para excluir dispositivos GPS" }
+  if (!isGpsProvider(input.provider)) return { ok: false, message: "Proveedor GPS no reconocido." }
+  if (!input.unitId.trim()) return { ok: false, message: "Falta el dispositivo." }
+  if (!isValidReason(input.reason)) {
+    return { ok: false, message: reasonRequiredMessage("por qué este dispositivo no es de la flota") }
+  }
+  const { provider } = input
+  const label = GPS_PROVIDER_LABEL[provider]
+  const reason = input.reason.trim()
+
+  const unit = await findLatestPosition(provider, input.unitId)
+  if (!unit) return { ok: false, message: `El dispositivo de ${label} ya no está en la última lectura. Actualiza ${label} e inténtalo de nuevo.` }
+
+  const link = await findDeviceLink(provider, input.unitId)
+  if (link?.status === "excluded") return { ok: false, message: "El dispositivo ya está excluido." }
+  // Excluir un dispositivo asociado a un vehículo de otra faena lo sacaría de
+  // un panel que esta persona no administra.
+  const currentWorksite = currentWorksiteOf(link, unit)
+  if (currentWorksite && !canAccessWorksite(session, currentWorksite)) {
+    return { ok: false, message: "No tienes acceso a la faena del vehículo al que está asociado el dispositivo." }
+  }
+
+  const updatedAt = new Date().toISOString()
+  await db.transaction(async (tx) => {
+    await tx.insert(fleetGpsDeviceLinks).values({
+      id: `gpslink-${nanoid()}`,
+      provider,
+      externalDeviceId: input.unitId,
+      status: "excluded",
+      vehicleId: null,
+      reason,
+      createdByUserId: session.user.id,
+      updatedAt,
+    }).onConflictDoUpdate({
+      target: [fleetGpsDeviceLinks.provider, fleetGpsDeviceLinks.externalDeviceId],
+      set: { status: "excluded", vehicleId: null, reason, createdByUserId: session.user.id, updatedAt },
+    })
+    // La posición se conserva (para listar la unidad), pero sin vehículo: no
+    // entra al panel ni a Control Operacional.
+    await tx.update(fleetGpsLatestPositions).set({
+      vehicleId: null,
+      worksiteId: null,
+      updatedAt,
+    }).where(and(
+      eq(fleetGpsLatestPositions.provider, provider),
+      eq(fleetGpsLatestPositions.externalDeviceId, input.unitId),
+    ))
+    await recordAudit({
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      action: "update",
+      entityType: "fleet_gps_device_link",
+      entityId: `${provider}:${input.unitId}`,
+      oldState: link ? { status: link.status, vehicleId: link.vehicleId } : undefined,
+      newState: { status: "excluded", reason },
+    }, tx)
+  })
+
+  revalidatePath("/flota/monitoreo")
+  return { ok: true, message: `Dispositivo de ${label} excluido de la flota.` }
+}
+
+/** Revierte una exclusión: borra el link y el dispositivo vuelve al cruce automático. */
+export async function restoreGpsDeviceAction(input: { provider: GpsProvider; unitId: string }): Promise<ActionState> {
+  const session = await requireGpsManager()
+  if (!session) return { ok: false, message: "Sin permisos para restaurar dispositivos GPS" }
+  if (!isGpsProvider(input.provider)) return { ok: false, message: "Proveedor GPS no reconocido." }
+  if (!input.unitId.trim()) return { ok: false, message: "Falta el dispositivo." }
+  const { provider } = input
+  const label = GPS_PROVIDER_LABEL[provider]
+
+  const link = await findDeviceLink(provider, input.unitId)
+  if (link?.status !== "excluded") return { ok: false, message: "El dispositivo no está excluido." }
+
+  await db.transaction(async (tx) => {
+    await tx.delete(fleetGpsDeviceLinks).where(and(
+      eq(fleetGpsDeviceLinks.provider, provider),
+      eq(fleetGpsDeviceLinks.externalDeviceId, input.unitId),
+      eq(fleetGpsDeviceLinks.status, "excluded"),
+    ))
+    await recordAudit({
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      action: "delete",
+      entityType: "fleet_gps_device_link",
+      entityId: `${provider}:${input.unitId}`,
+      oldState: { status: "excluded", reason: link.reason },
+    }, tx)
+  })
+
+  revalidatePath("/flota/monitoreo")
+  return {
+    ok: true,
+    message: `Dispositivo de ${label} restaurado. Volverá a cruzarse con la flota en la próxima lectura.`,
+  }
 }

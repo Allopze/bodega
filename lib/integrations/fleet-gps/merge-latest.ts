@@ -21,6 +21,11 @@ export interface LatestGpsRow {
   ignition: boolean
   sourceStatus: string | null
   gpsReportedAt: string | null
+  /**
+   * Hora del mensaje del que salieron odómetro, horómetro y nivel. Puede ser
+   * posterior a `gpsReportedAt`: un equipo sin señal GPS sigue reportando horas.
+   */
+  metersReportedAt: string | null
   gprsReportedAt: string | null
   gpsStatus: string | null
   gprsStatus: string | null
@@ -102,20 +107,31 @@ function effectiveTime(row: LatestGpsRow): string {
   return row.gpsReportedAt ?? row.observedAt
 }
 
-function newerFirst(a: LatestGpsRow, b: LatestGpsRow): number {
-  const byTime = asTimestamp(effectiveTime(b)) - asTimestamp(effectiveTime(a))
-  if (byTime !== 0) return byTime
-  const byProvider = providerRank(a.provider) - providerRank(b.provider)
-  if (byProvider !== 0) return byProvider
-  return a.externalDeviceId.localeCompare(b.externalDeviceId)
+/** Hora a la que el proveedor midió los medidores; sin ella, la de la fila. */
+function meterTime(row: LatestGpsRow): string {
+  return row.metersReportedAt ?? effectiveTime(row)
 }
 
+function compareBy(time: (row: LatestGpsRow) => string) {
+  return (a: LatestGpsRow, b: LatestGpsRow): number => {
+    const byTime = asTimestamp(time(b)) - asTimestamp(time(a))
+    if (byTime !== 0) return byTime
+    const byProvider = providerRank(a.provider) - providerRank(b.provider)
+    if (byProvider !== 0) return byProvider
+    return a.externalDeviceId.localeCompare(b.externalDeviceId)
+  }
+}
+
+const newerFirst = compareBy(effectiveTime)
+const newerMeterFirst = compareBy(meterTime)
+
+/** Primer valor no nulo (las filas ya vienen ordenadas) con la hora de su medición. */
 function newestValue<K extends keyof LatestGpsRow>(
   rows: readonly LatestGpsRow[],
   key: K,
 ): { value: LatestGpsRow[K] | null; at: string | null } {
   for (const row of rows) {
-    if (row[key] !== null && row[key] !== undefined) return { value: row[key], at: effectiveTime(row) }
+    if (row[key] !== null && row[key] !== undefined) return { value: row[key], at: meterTime(row) }
   }
   return { value: null, at: null }
 }
@@ -142,13 +158,15 @@ export function mergeLatestGpsByVehicle(
     const ordered = [...group].sort(newerFirst)
     const position = ordered[0]!
     // Los medidores salen de UN proveedor: el que reportó el medidor más
-    // reciente. Tomar el odómetro de uno y el horómetro de otro hace que el
-    // salto dependa de quién habló último.
-    const meterProvider = ordered.find((row) => row.odometer != null || row.hourMeter != null)?.provider ?? null
-    const meterRows = meterProvider ? ordered.filter((row) => row.provider === meterProvider) : []
+    // reciente (por la hora de su mensaje, no la de la posición). Tomar el
+    // odómetro de uno y el horómetro de otro hace que el salto dependa de
+    // quién habló último.
+    const byMeterTime = [...group].sort(newerMeterFirst)
+    const meterProvider = byMeterTime.find((row) => row.odometer != null || row.hourMeter != null)?.provider ?? null
+    const meterRows = meterProvider ? byMeterTime.filter((row) => row.provider === meterProvider) : []
     const odometer = newestValue(meterRows, "odometer")
     const hourMeter = newestValue(meterRows, "hourMeter")
-    const fuelLevel = newestValue(ordered, "fuelLevel")
+    const fuelLevel = newestValue(byMeterTime, "fuelLevel")
     const ignitionRow = ordered.find((row) => row.sourceStatus !== "ignition_unknown" && row.ignition != null)
     const providers = [...new Set(ordered.map((row) => row.provider))]
       .sort((a, b) => providerRank(a) - providerRank(b) || a.localeCompare(b))

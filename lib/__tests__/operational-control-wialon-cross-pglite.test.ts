@@ -139,3 +139,31 @@ describe("cruce de proveedores GPS en Control Operacional", () => {
     expect(monitoring.providerRuns.wialon?.id).toBe("run-wialon")
   })
 })
+
+describe("serie del medidor del período: VisionLink antes que el GPS", () => {
+  const reading = (vehicleId: string, plate: string, source: string, day: string, value: number) => ({
+    id: `mr-${source}-${vehicleId}-${day}`, vehicleId, plate, source, sourceRef: `${source}:${vehicleId}:${day}`,
+    occurredAt: `${day}T15:00:00.000Z`, meterType: "hour_meter", value,
+  })
+
+  beforeAll(async () => {
+    await testDb.insert(schema.fuelMeterReadings).values([
+      // vB: las dos fuentes cubren marzo; gana el acumulado oficial de Cat.
+      reading(IDS.vB, "BB-0002", "gps_wialon", "2026-03-02", 100),
+      reading(IDS.vB, "BB-0002", "gps_wialon", "2026-03-30", 300),
+      reading(IDS.vB, "BB-0002", "visionlink_api", "2026-03-02", 1100),
+      reading(IDS.vB, "BB-0002", "visionlink_api", "2026-03-30", 1310),
+      // vC: sólo el GPS cubre marzo; VisionLink trae dos días y no alcanza.
+      reading(IDS.vC, "CC-0003", "gps_wialon", "2026-03-02", 50),
+      reading(IDS.vC, "CC-0003", "gps_wialon", "2026-03-30", 250),
+      reading(IDS.vC, "CC-0003", "visionlink_api", "2026-03-28", 900),
+      reading(IDS.vC, "CC-0003", "visionlink_api", "2026-03-29", 910),
+    ])
+  })
+
+  it("usa la primera fuente que cubre el período completo y la rotula", async () => {
+    const data = await getOperationalControlHub(session(["flota:view", "combustibles:view"]), MARCH)
+    expect(data.assets.find((item) => item.id === IDS.vB)).toMatchObject({ gpsMeterSource: "visionlink_api" })
+    expect(data.assets.find((item) => item.id === IDS.vC)).toMatchObject({ gpsMeterSource: "gps_wialon" })
+  })
+})

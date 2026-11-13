@@ -19,7 +19,11 @@ import {
  * con Copec/VisionLink; el token nunca vuelve al navegador y el botón de
  * actualización manual usa el mismo sync que el cron.
  */
-export function WialonControls({ status }: { status: WialonAdminStatus }) {
+/**
+ * `namedActions`: en la barra del encabezado conviven OnWay y Wialon, así que
+ * los botones dicen el proveedor; dentro de la pestaña ya van bajo su título.
+ */
+export function WialonControls({ status, namedActions = false }: { status: WialonAdminStatus; namedActions?: boolean }) {
   const router = useRouter()
   const sync = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
   const { fields, canStoreSecrets } = status
@@ -29,13 +33,14 @@ export function WialonControls({ status }: { status: WialonAdminStatus }) {
       <IntegrationSettingsDialog
         idPrefix="wialon"
         providerName="Wialon"
-        description="Token de API de Wialon Hosting. El cruce con la flota usa el vínculo manual, la patente o el código del equipo."
+        triggerLabel={namedActions ? "Configurar Wialon" : "Configurar"}
+        description="Token de API de Wialon Hosting. El cruce con la flota usa el vínculo manual, la patente del perfil de la unidad, su VIN, el código o el nombre."
         canStoreSecrets={canStoreSecrets}
         withoutKeyringNote="La URL, los parámetros y el interruptor sí se pueden guardar; el token debe venir de WIALON_TOKEN en el servidor."
         hasStoredSettings={status.hasStoredSettings}
         syncEnabled={fields.syncEnabled.value?.trim() === "true"}
         syncLabel="Actualización automática"
-        syncDescription="Cada 5 minutos la plataforma lee el último mensaje de cada unidad, desfasada de OnWay."
+        syncDescription="Cada 5 minutos la plataforma lee los medidores y el último mensaje de cada unidad, desfasada de OnWay. Con Monitoreo GPS abierto, la posición se actualiza cada 10 segundos."
         saveAction={saveWialonSettingsAction}
         clearAction={clearWialonSettingsAction}
         testAction={testWialonConnectionAction}
@@ -63,22 +68,25 @@ export function WialonControls({ status }: { status: WialonAdminStatus }) {
           </summary>
           <div className="mt-3 space-y-3">
             <p className="text-xs text-[var(--color-text-muted)]">
-              El nombre del parámetro en el mensaje de Wialon. Si la cuenta usa otro nombre, cámbialo aquí;
-              un valor ausente se muestra como «sin dato», no como 0.
+              El odómetro y el horómetro salen de los contadores que mantiene Wialon. Sólo si la cuenta los
+              lleva en un sensor propio, escribe aquí el nombre de su parámetro en el mensaje; un valor
+              ausente se muestra como «sin dato», no como 0.
             </p>
             <SettingTextField
               id="wialon-odometer-param"
               name="odometerParam"
               label="Odómetro"
               status={fields.odometerParam}
-              placeholder="mileage"
+              placeholder="Contador de Wialon"
+              hint="Vacío = contador de Wialon."
             />
             <SettingTextField
               id="wialon-hour-meter-param"
               name="hourMeterParam"
               label="Horómetro"
               status={fields.hourMeterParam}
-              placeholder="engine_hours"
+              placeholder="Contador de Wialon"
+              hint="Vacío = contador de Wialon."
             />
             <SettingTextField
               id="wialon-fuel-level-param"
@@ -99,7 +107,7 @@ export function WialonControls({ status }: { status: WialonAdminStatus }) {
         onClick={() => sync.run(runWialonSyncAction)}
       >
         <ArrowClockwise size={14} aria-hidden />
-        Actualizar ahora
+        {namedActions ? "Actualizar Wialon" : "Actualizar ahora"}
       </Button>
     </div>
   )

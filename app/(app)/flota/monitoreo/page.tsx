@@ -9,7 +9,7 @@ import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { requirePermission } from "@/lib/auth/can"
 import { readOnwayAdminStatus } from "@/lib/integrations/onway/onway-settings"
 import { readWialonAdminStatus } from "@/lib/integrations/wialon/wialon-settings"
-import { getFleetGpsAlerts, getFleetGpsMonitoring, isGpsCaptureStale, listLinkableVehicles, listWialonUnitsForLinking } from "@/lib/services/fleet-gps"
+import { getFleetGpsAlerts, getFleetGpsMonitoring, isGpsCaptureStale, listExcludedGpsDevices, listGpsDevicesForLinking, listLinkableVehicles } from "@/lib/services/fleet-gps"
 import { formatDateTime } from "@/lib/utils"
 import { buildSourceStatusRow } from "./fleet-gps-source-status"
 import { FleetGpsWorkspace } from "./fleet-gps-workspace"
@@ -23,11 +23,11 @@ export default async function FleetGpsMonitoringPage() {
   catch { redirect("/forbidden") }
 
   const [monitoring, alerts] = await Promise.all([getFleetGpsMonitoring(session), getFleetGpsAlerts(session)])
-  const [adminStatus, wialonStatus, wialonLinks] = monitoring.canManage
+  const [adminStatus, wialonStatus, deviceLinks] = monitoring.canManage
     ? await Promise.all([
         readOnwayAdminStatus(),
         readWialonAdminStatus(),
-        Promise.all([listWialonUnitsForLinking(session), listLinkableVehicles(session)]),
+        Promise.all([listGpsDevicesForLinking(session), listExcludedGpsDevices(session), listLinkableVehicles(session)]),
       ])
     : [null, null, null]
   const latestSyncAt = [monitoring.providerLatestAt.onway, monitoring.providerLatestAt.wialon]
@@ -89,8 +89,9 @@ export default async function FleetGpsMonitoringPage() {
           alerts={alerts}
           adminStatus={adminStatus}
           wialonStatus={wialonStatus}
-          wialonUnits={wialonLinks?.[0] ?? []}
-          linkableVehicles={wialonLinks?.[1] ?? []}
+          gpsDevices={deviceLinks?.[0] ?? []}
+          excludedDevices={deviceLinks?.[1] ?? []}
+          linkableVehicles={deviceLinks?.[2] ?? []}
           blockedAlertsCount={blockedAlerts}
           sourceRows={sourceRows}
           onwayStale={onwayIsStale}

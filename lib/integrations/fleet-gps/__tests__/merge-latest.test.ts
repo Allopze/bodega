@@ -17,6 +17,7 @@ function row(overrides: Partial<LatestGpsRow> = {}): LatestGpsRow {
     ignition: false,
     sourceStatus: null,
     gpsReportedAt: "2026-11-12T12:00:00.000Z",
+    metersReportedAt: null,
     gprsReportedAt: null,
     gpsStatus: null,
     gprsStatus: null,
@@ -103,6 +104,54 @@ describe("mergeLatestGpsByVehicle", () => {
       }),
     ])
     expect(merged[0]).toMatchObject({ meterProvider: "onway", odometer: 100, hourMeter: null })
+  })
+
+  it("elige el proveedor de medidores por la hora del mensaje, no por la de la posición", () => {
+    const merged = mergeLatestGpsByVehicle([
+      // OnWay tiene la posición más fresca, pero su medidor es más viejo.
+      row({
+        id: "onway",
+        provider: "onway",
+        gpsReportedAt: "2026-11-12T12:00:00.000Z",
+        metersReportedAt: "2026-11-12T11:00:00.000Z",
+        hourMeter: 100,
+      }),
+      // Wialon tiene la posición vieja (sin señal GPS) pero un mensaje posterior.
+      row({
+        id: "wialon",
+        provider: "wialon",
+        externalDeviceId: "unit-1",
+        gpsReportedAt: "2026-11-12T10:00:00.000Z",
+        metersReportedAt: "2026-11-12T11:58:00.000Z",
+        hourMeter: 105,
+      }),
+    ])
+    expect(merged[0]).toMatchObject({
+      primaryProvider: "onway",
+      meterProvider: "wialon",
+      hourMeter: 105,
+      hourMeterAt: "2026-11-12T11:58:00.000Z",
+    })
+  })
+
+  it("la hora de odómetro, horómetro y nivel sale del mensaje; sin ella, de la posición", () => {
+    const merged = mergeLatestGpsByVehicle([
+      row({
+        provider: "wialon",
+        gpsReportedAt: "2026-11-12T10:00:00.000Z",
+        metersReportedAt: "2026-11-12T11:58:00.000Z",
+        odometer: 10,
+        hourMeter: 5,
+        fuelLevel: 40,
+      }),
+    ])
+    expect(merged[0]).toMatchObject({
+      odometerAt: "2026-11-12T11:58:00.000Z",
+      hourMeterAt: "2026-11-12T11:58:00.000Z",
+      fuelLevelAt: "2026-11-12T11:58:00.000Z",
+    })
+    const legacy = mergeLatestGpsByVehicle([row({ odometer: 10 })])
+    expect(legacy[0]!.odometerAt).toBe("2026-11-12T12:00:00.000Z")
   })
 
   it("conserva el encendido conocido aunque la última posición no lo informe", () => {

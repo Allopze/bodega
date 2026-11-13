@@ -18,13 +18,34 @@ export function normalizeGpsKey(value: string): string {
 /** Alias con el nombre que ya usa la reconciliación de OnWay. */
 export const normalizePlate = normalizeGpsKey
 
-/** Patentes chilenas: formato nuevo (BBBB11) y antiguo (BB1234). */
-const PLATE_PATTERN = /\b[A-Z]{4}\d{2}\b|\b[A-Z]{2}\d{4}\b/g
+/**
+ * Patentes chilenas: formato nuevo (BBBB11) y antiguo (BB1234). Se aceptan
+ * guion, punto, espacio o «·» entre los grupos porque el catálogo y los nombres
+ * de unidad las escriben así («Camión CBJY-18», «CB-JY-18», «XX·4243»): sin
+ * separadores, la patente embebida nunca calzaba.
+ */
+const SEP = "[-\\s.\u00b7]?"
+const PLATE_PATTERN = new RegExp(
+  `\\b[A-Z]{2}${SEP}[A-Z]{2}${SEP}\\d{2}\\b|\\b[A-Z]{2}${SEP}\\d{2}${SEP}\\d{2}\\b`,
+  "g",
+)
 
 /** Patentes embebidas en un nombre libre, ya normalizadas. */
 export function plateCandidatesFromText(value: string): string[] {
   const matches = value.toUpperCase().match(PLATE_PATTERN) ?? []
   return [...new Set(matches.map(normalizeGpsKey))]
+}
+
+/**
+ * Códigos internos embebidos en un nombre libre, ya normalizados. Las unidades
+ * de Wialon se nombran «CARGADOR FRONTAL CR-52», «EXCAVADORA GR-11» o
+ * «TO37 D6R»: el código va como una palabra con letras Y dígitos. Una palabra
+ * sólo de letras («CAT») o sólo de dígitos («6125») no se toma: calzaría con
+ * cualquier cosa.
+ */
+export function codeCandidatesFromText(value: string): string[] {
+  const tokens = value.split(/[\s(),;/]+/).map(normalizeGpsKey)
+  return [...new Set(tokens.filter((token) => token.length >= 3 && token.length <= 12 && /[A-Z]/.test(token) && /\d/.test(token)))]
 }
 
 export interface VehicleIdentity {
@@ -93,6 +114,47 @@ export function matchVehicleByIdentity(
       const match = uniqueMatch(index.byPlate.get(candidate))
       if (match.kind !== "unmatched") return withReason(match, "text")
     }
+    // Código interno dentro del nombre. Si dos palabras apuntan a vehículos
+    // distintos, no se elige: queda ambiguo para que una persona lo vincule.
+    const byCode = new Map<string, VehicleIdentity>()
+    for (const candidate of codeCandidatesFromText(input.name)) {
+      const vehicles = index.byCode.get(candidate) ?? []
+      if (vehicles.length > 1) return { kind: "ambiguous", candidates: vehicles }
+      if (vehicles[0]) byCode.set(vehicles[0].id, vehicles[0])
+    }
+    if (byCode.size > 1) return { kind: "ambiguous", candidates: [...byCode.values()] }
+    const [codeMatch] = byCode.values()
+    if (codeMatch) return { kind: "matched", vehicle: codeMatch, reason: "text" }
   }
   return { kind: "unmatched" }
+}
+
+export interface PlateResolvable {
+  id: string
+  plate: string
+  meterType: string
+}
+
+/**
+ * Resolver de patente → vehículo para `saveMeterReadings`.
+ *
+ * Primero la patente EXACTA del catálogo (la lectura se arma con ella); la
+ * normalizada sólo sirve de respaldo cuando es única. OnWay comparaba la
+ * patente normalizada del catálogo contra la cruda («CBJY18» vs «CBJY-18») y
+ * ninguna lectura `gps_onway` llegó a guardarse.
+ */
+export function buildVehicleResolverByPlate(
+  vehicles: readonly PlateResolvable[],
+): (plate: string) => { id: string; meterType: string } | undefined {
+  const byExact = new Map(vehicles.map((vehicle) => [vehicle.plate, vehicle]))
+  const byNormalized = new Map<string, PlateResolvable | null>()
+  for (const vehicle of vehicles) {
+    const key = normalizePlate(vehicle.plate)
+    if (!key) continue
+    byNormalized.set(key, byNormalized.has(key) ? null : vehicle)
+  }
+  return (plate) => {
+    const vehicle = byExact.get(plate) ?? byNormalized.get(normalizePlate(plate)) ?? undefined
+    return vehicle ? { id: vehicle.id, meterType: vehicle.meterType } : undefined
+  }
 }

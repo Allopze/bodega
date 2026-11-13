@@ -1,8 +1,9 @@
-import { desc } from "drizzle-orm"
+import { desc, eq } from "drizzle-orm"
 import { db } from "@/db"
 import { fleetGpsSyncRuns } from "@/db/schema"
 import { logger } from "@/lib/logger"
 import { withCronLock } from "@/lib/services/cron-lock"
+import { latestProviderObservedAt } from "@/lib/services/fleet-gps-latest"
 import { OnwayClientError } from "./onway-client"
 import type { OnwayLiveResult } from "./onway-live-contract"
 import { readOnwayConfig } from "./onway-settings"
@@ -13,15 +14,18 @@ export type { OnwayLiveResult } from "./onway-live-contract"
 /**
  * Refresco de posiciones mientras alguien tiene abierta Monitoreo GPS.
  *
- * La página lo pide cada minuto; aquí se decide si de verdad se consulta el
- * portal de Entel. Cada lectura es sólo el snapshot del mapa (una consulta):
- * el detalle por equipo sigue en el cron cada 5 minutos.
+ * La página lo pide cada 10 s (el ritmo de Wialon); aquí se decide si de
+ * verdad se consulta el portal de Entel, y sólo se hace una vez por minuto.
+ * Cada lectura es sólo el snapshot del mapa (una consulta): el detalle por
+ * equipo sigue en el cron cada 5 minutos.
  */
 
 /**
- * Con una corrida (de cualquier origen) que empezó hace menos que esto no se
- * vuelve a consultar el portal: dos personas mirando la página no duplican la
- * carga, y la corrida del cron también cuenta como posición fresca.
+ * Con una corrida de OnWay (de cualquier origen) que empezó hace menos que esto
+ * no se vuelve a consultar el portal: dos personas mirando la página no
+ * duplican la carga, y la corrida del cron también cuenta como posición fresca.
+ * Sólo cuentan las corridas de OnWay: una corrida de Wialon (cada 5 minutos, y
+ * ahora en vivo) no dice nada del portal de Entel.
  */
 export const ONWAY_LIVE_MIN_GAP_MS = 50_000
 
@@ -50,10 +54,13 @@ export async function refreshOnwayLive(options: { actorUserId?: string; now?: Da
 
   const [latest] = await db.select({ startedAt: fleetGpsSyncRuns.startedAt })
     .from(fleetGpsSyncRuns)
+    .where(eq(fleetGpsSyncRuns.provider, "onway"))
     .orderBy(desc(fleetGpsSyncRuns.startedAt))
     .limit(1)
   if (latest && now.getTime() - new Date(latest.startedAt).getTime() < ONWAY_LIVE_MIN_GAP_MS) {
-    return { outcome: "skipped", reason: "recent" }
+    // La marca de captura permite a cada página saber si ya tiene estos datos.
+    const observedAt = await latestProviderObservedAt("onway")
+    return { outcome: "skipped", reason: "recent", ...(observedAt ? { observedAt } : {}) }
   }
 
   try {

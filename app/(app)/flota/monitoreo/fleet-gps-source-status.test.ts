@@ -44,10 +44,10 @@ describe("buildSourceStatusRow", () => {
     expect(failedForOthers.badge).toBe("Al día")
   })
 
-  it("los dispositivos de OnWay sin patente única llevan al catálogo; las unidades de Wialon sin vehículo, a vincularlas", () => {
+  it("los dispositivos de OnWay sin patente única y las unidades de Wialon sin vehículo llevan a vincularlos en Configuración", () => {
     const onway = buildSourceStatusRow({ ...base, unmatched: 7 }, NOW)!
     expect(onway.messages[0]).toContain("7 dispositivos sin una patente única")
-    expect(onway.actions).toEqual([{ label: "Revisar catálogo de vehículos", kind: "link", href: "/admin/flota-catalogos/vehiculos" }])
+    expect(onway.actions).toEqual([{ label: "Vincular dispositivos", kind: "settings" }])
     const wialon = buildSourceStatusRow({ ...base, provider: "wialon", run: run({ provider: "wialon" }), unmatched: 1 }, NOW)!
     expect(wialon.messages[0]).toContain("1 unidad sin vehículo")
     expect(wialon.actions).toEqual([{ label: "Vincular unidades", kind: "settings" }])

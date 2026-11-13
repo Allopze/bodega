@@ -7,6 +7,7 @@ import { ExpiryStatus } from "@/components/ui/expiry-status"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { StateBadge } from "@/components/states/state-badge"
 import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
+import { meterSourceLabel } from "@/lib/combustibles/meter-source"
 import { expiryState } from "@/lib/expiry"
 import { formatCLP } from "@/lib/utils"
 import type { getFleetOverview } from "@/lib/services/fleet"
@@ -37,14 +38,9 @@ function hasFuelData(vehicle: VehicleRow): boolean {
   return (vehicle.totalLiters ?? 0) > 0 || (vehicle.loadCount ?? 0) > 0 || (vehicle.totalFuelAmount ?? 0) > 0
 }
 
-function meterSourceLabel(source: string | null): string | undefined {
-  return source === "copec_tct"
-    ? "Lectura Copec"
-    : source === "gps_wialon"
-      ? "Lectura GPS Wialon"
-      : source === "gps_onway"
-        ? "Lectura GPS OnWay"
-        : undefined
+function meterSourceTooltip(source: string | null): string | undefined {
+  const label = meterSourceLabel(source)
+  return label ? `Lectura ${label}` : undefined
 }
 
 /**
@@ -143,7 +139,7 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
               <TableCell
                 className="text-right font-mono"
                 title={[
-                  meterSourceLabel(vehicle.meterSource),
+                  meterSourceTooltip(vehicle.meterSource),
                   vehicle.meterSeriesIncomplete ? "El recorrido es una cota inferior: parte de la serie se descartó por lecturas inválidas." : null,
                   vehicle.meterSeriesCovered === false ? "Costo por km u hora no calculado: la serie no cubre los 12 meses." : null,
                 ].filter(Boolean).join(" ") || undefined}
