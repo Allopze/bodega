@@ -60,19 +60,19 @@ describe("InboxRowBadges", () => {
     expect(["Cuenta", "Resuelto", "Vinculada", "Revisado"].map(tone)).toEqual(["success", "success", "success", "success"])
   })
 
-  it("con `fresh` aparece el punto «Nuevo» con nombre accesible; sin él, no", () => {
+  it("con `fresh` aparece «Nuevo» con texto visible, no sólo un punto de color; sin él, no", () => {
     const { unmount } = render(<InboxRowBadges label="Algo" kind="patente" fresh />)
-    expect(screen.getByRole("img", { name: "Nuevo" })).toBeInTheDocument()
+    expect(screen.getByText("Nuevo")).toBeVisible()
     unmount()
 
     render(<InboxRowBadges label="Algo" kind="patente" />)
-    expect(screen.queryByRole("img", { name: "Nuevo" })).toBeNull()
+    expect(screen.queryByText("Nuevo")).toBeNull()
   })
 
   it("el punto «Nuevo» va antes que la etiqueta, y la etiqueta antes que la gravedad", () => {
     render(<InboxRowBadges label="Sello repetido" kind="caso" severity="high" fresh />)
 
-    const dot = screen.getByRole("img", { name: "Nuevo" })
+    const dot = screen.getByText("Nuevo")
     const label = screen.getByText("Sello repetido")
     const severity = screen.getByText("Alta")
     expect(dot.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()

@@ -324,18 +324,19 @@ export function FieldLoadWizard({
         )}
       </div>
 
-      <div className="sticky bottom-0 -mx-4 flex gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+      {/* En móvil la barra llega al borde y los botones son grandes (guantes); en escritorio se alinea con la columna de campos. */}
+      <div className="sticky bottom-0 -mx-4 flex gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 md:mx-0 md:justify-end md:px-0">
         {(stepIndex > 0 || onBackFromFirst) && (
-          <BigButton type="button" variant="secondary" onClick={goBack} disabled={submitting}>
+          <BigButton type="button" variant="secondary" className="md:h-11" onClick={goBack} disabled={submitting}>
             <ArrowLeft size={22} aria-hidden="true" /> Atrás
           </BigButton>
         )}
         {isReview ? (
-          <BigButton type="button" className="flex-1" onClick={() => void send(confirmation ? { acknowledgeDuplicate: true } : {})} disabled={submitting || Object.values(compressing).some(Boolean)}>
+          <BigButton type="button" className="flex-1 md:h-11 md:flex-none md:px-8" onClick={() => void send(confirmation ? { acknowledgeDuplicate: true } : {})} disabled={submitting || Object.values(compressing).some(Boolean)}>
             {submitting ? <><CircleNotch size={22} className="animate-spin" aria-hidden="true" /> Enviando…</> : confirmation ? "Registrar de todos modos" : "Enviar carga"}
           </BigButton>
         ) : (
-          <BigButton type="button" className="flex-1" onClick={goNext}>
+          <BigButton type="button" className="flex-1 md:h-11 md:flex-none md:px-8" onClick={goNext}>
             Siguiente <ArrowRight size={22} aria-hidden="true" />
           </BigButton>
         )}

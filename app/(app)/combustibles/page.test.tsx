@@ -96,11 +96,12 @@ describe("página del Panel de combustible", () => {
     expect(resolveFuelPeriodForPage).not.toHaveBeenCalled()
   })
 
-  it("jefatura: abre con la barra de avance, la tira de pasos y los dos bloques", async () => {
+  it("jefatura: abre con el avance, la tira de pasos y los dos bloques", async () => {
     await renderPage()
     expect(screen.getByRole("heading", { level: 1, name: "Panel de combustible" })).toBeInTheDocument()
     expect(screen.getByText("Cómo va el período y qué falta para cerrarlo")).toBeInTheDocument()
-    expect(screen.getByRole("progressbar", { name: /pasos listos/ })).toBeInTheDocument()
+    expect(screen.getByText(/pasos listos/)).toBeInTheDocument()
+    expect(screen.queryByRole("progressbar")).toBeNull()
     expect(screen.getByRole("heading", { level: 2, name: "Pasos para cerrar el período" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { level: 2, name: "Lo que vence primero" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { level: 2, name: "El período en tres cifras" })).toBeInTheDocument()

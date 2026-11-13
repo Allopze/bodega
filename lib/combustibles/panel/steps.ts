@@ -1,4 +1,3 @@
-import { ANOMALY_RULE_CATALOG } from "@/lib/combustibles/anomaly-rule-catalog"
 import type { MandanteReconciliationSummary } from "@/lib/combustibles/control/queries/reconciliation-summary"
 import type { WorseThanModelSummary } from "@/lib/combustibles/control/queries/worse-than-model"
 import type { FuelInboxSummary } from "@/lib/combustibles/inbox/types"
@@ -164,62 +163,6 @@ function inboxParts(summary: FuelInboxSummary): string[] {
   return parts
 }
 
-const RULE_NAME_BY_CODE = new Map<string, string>(ANOMALY_RULE_CATALOG.map((rule) => [rule.code, rule.name]))
-
-function inboxCaseBreakdown(summary: FuelInboxSummary): string | null {
-  const breakdown = summary.caseBreakdown
-  if (!breakdown || breakdown.length === 0) return null
-  const countForRule = (ruleCode: string) => breakdown
-    .filter((item) => item.ruleCode === ruleCode)
-    .reduce((sum, item) => sum + item.count, 0)
-  const parts: string[] = []
-  const regressions = countForRule("kilometraje_regresivo")
-  const hourmeterRegressions = countForRule("horometro_regresivo")
-  const meterJumps = countForRule("salto_medidor_implausible")
-  if (regressions > 0) parts.push(`${count(regressions)} ${regressions === 1 ? "regresión de kilometraje" : "regresiones de kilometraje"}`)
-  if (hourmeterRegressions > 0) parts.push(`${count(hourmeterRegressions)} ${hourmeterRegressions === 1 ? "regresión de horómetro" : "regresiones de horómetro"}`)
-  if (meterJumps > 0) parts.push(`${count(meterJumps)} ${meterJumps === 1 ? "salto de medidor" : "saltos de medidor"}`)
-
-  const variation = breakdown.filter((item) => item.ruleCode === "variacion_brusca_consumo" && item.count > 0)
-  if (variation.length > 0) {
-    const order = ["diesel", "bluemax", "gasoline", "kerosene", "historical_unattributed", "unclassified", "not_applicable"]
-    const labels: Record<string, { singular: string; plural: string }> = {
-      diesel: { singular: "Diesel", plural: "Diesel" },
-      bluemax: { singular: "BlueMax", plural: "BlueMax" },
-      gasoline: { singular: "gasolina", plural: "gasolina" },
-      kerosene: { singular: "kerosene", plural: "kerosene" },
-      historical_unattributed: { singular: "histórico sin producto atribuible", plural: "históricos sin producto atribuible" },
-      unclassified: { singular: "sin producto identificado", plural: "sin producto identificado" },
-      not_applicable: { singular: "sin producto", plural: "sin producto" },
-    }
-    const productParts = [...variation]
-      .sort((a, b) => order.indexOf(a.product) - order.indexOf(b.product))
-      .map((item) => {
-        const label = labels[item.product] ?? { singular: item.product, plural: item.product }
-        return `${count(item.count)} ${item.count === 1 ? label.singular : label.plural}`
-      })
-    parts.push(`variación brusca: ${productParts.join(" · ")}`)
-  }
-
-  const knownRules = new Set(["kilometraje_regresivo", "horometro_regresivo", "salto_medidor_implausible", "variacion_brusca_consumo"])
-  // Nunca el código crudo (`sello_repetido`): la jefatura lee el nombre de la
-  // regla; una regla sin nombre en el catálogo se agrupa como «otras reglas».
-  const otherRules = new Map<string, number>()
-  let unnamedTotal = 0
-  for (const item of breakdown) {
-    if (knownRules.has(item.ruleCode) || item.count <= 0) continue
-    const name = RULE_NAME_BY_CODE.get(item.ruleCode)
-    if (!name) {
-      unnamedTotal += item.count
-      continue
-    }
-    otherRules.set(name, (otherRules.get(name) ?? 0) + item.count)
-  }
-  for (const [name, total] of otherRules) parts.push(`${count(total)} ${total === 1 ? "caso" : "casos"} «${name}»`)
-  if (unnamedTotal > 0) parts.push(`${count(unnamedTotal)} ${unnamedTotal === 1 ? "caso" : "casos"} de otras reglas`)
-  return parts.length > 0 ? parts.join(" · ") : null
-}
-
 function reviewStep(input: PanelStepsInput, link: (href: string) => string, past: boolean, today: string): Omit<PanelStep, "number"> {
   const base = { key: "revisar", label: "Por revisar", heading: "Falta decidir" } as const
   const { inbox } = input
@@ -245,17 +188,17 @@ function reviewStep(input: PanelStepsInput, link: (href: string) => string, past
   }
   const parts = inboxParts(inbox)
   const onlyCases = inbox.byKind.caso === inbox.total && inbox.byKind.carga === 0 && inbox.byKind.patente === 0 && inbox.byKind.pedido === 0
-  const caseBreakdown = inboxCaseBreakdown(inbox)
+  // Una sola frase con lo más antiguo; el desglose por regla vive en la bandeja («Pendientes por regla»).
   const oldest = inbox.oldestWaitingSince ? waitingPhrase(inbox.oldestWaitingSince, today) : null
   const oldestText = oldest && oldest !== "Llegó hoy"
-    ? ` ${onlyCases ? "El caso pendiente más antiguo" : "Lo más antiguo por revisar"}: ${oldest.charAt(0).toLowerCase()}${oldest.slice(1)}.`
+    ? ` ${onlyCases ? "El caso más antiguo" : "Lo más antiguo"} ${oldest.charAt(0).toLowerCase()}${oldest.slice(1)}.`
     : ""
   return finish({
     ...base,
     status: "pendiente",
     figure: count(inbox.total),
     figureNote: onlyCases ? "casos por revisar" : "por decidir",
-    phrase: `${past ? "Quedaron sin decidir: " : ""}${parts.length > 0 ? `${parts.join(", ")}.` : ""}${caseBreakdown ? ` ${caseBreakdown}.` : ""}${oldestText}`.trim(),
+    phrase: `${past ? "Quedaron sin decidir: " : ""}${parts.length > 0 ? `${listOf(parts)}.` : ""}${oldestText}`.trim(),
     cta: "Revisar",
     href: link(FUEL_PATHS.revisar),
   })
@@ -314,7 +257,8 @@ function reconciliationStep(input: PanelStepsInput, link: (href: string) => stri
       ...base,
       status: "mal",
       statusLabel: "No cuadra",
-      figure: `${count(over.length)} fuera`,
+      figure: count(over.length),
+      figureNote: over.length === 1 ? "mandante fuera de tolerancia" : "mandantes fuera de tolerancia",
       phrase: `${worstText}${moreOver}`,
     })
   }

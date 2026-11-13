@@ -11,7 +11,14 @@ export function BigButton({ className, ...props }: ButtonProps) {
   return <Button {...props} className={cn("h-14 sm:h-14 min-w-14 px-5 text-base font-semibold", className)} />
 }
 
-/** Un dato por pantalla: etiqueta grande, ayuda corta y el error justo debajo del campo. */
+/** Lo que el campo de una `BigField` declara para sus lectores de pantalla: la ayuda y el error, si existen. */
+const BigFieldContext = React.createContext<{ id: string; describedBy: string | undefined } | null>(null)
+
+/**
+ * Un dato por pantalla: etiqueta grande, ayuda corta y el error justo debajo del campo.
+ * El `BigInput` con el mismo `id` queda conectado (`aria-describedby`) a la ayuda y al error
+ * sin que cada paso tenga que armar los ids a mano.
+ */
 export function BigField({
   id,
   label,
@@ -25,18 +32,23 @@ export function BigField({
   error?: string | null
   children: React.ReactNode
 }) {
+  const describedBy = [hint ? `${id}-hint` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined
   return (
-    <div className="space-y-2">
-      <label htmlFor={id} className="block text-lg font-semibold text-[var(--color-text)]">{label}</label>
-      {hint && <p id={`${id}-hint`} className="text-sm text-[var(--color-text-muted)]">{hint}</p>}
-      {children}
-      {error && <p id={`${id}-error`} role="alert" className="text-base font-medium text-[var(--color-danger-ink)]">{error}</p>}
-    </div>
+    <BigFieldContext.Provider value={{ id, describedBy }}>
+      <div className="space-y-2">
+        <label htmlFor={id} className="block text-lg font-semibold text-[var(--color-text)]">{label}</label>
+        {hint && <p id={`${id}-hint`} className="text-sm text-[var(--color-text-muted)]">{hint}</p>}
+        {children}
+        {error && <p id={`${id}-error`} role="alert" className="text-base font-medium text-[var(--color-danger-ink)]">{error}</p>}
+      </div>
+    </BigFieldContext.Provider>
   )
 }
 
 export function BigInput({ className, error, ...props }: InputProps) {
-  return <Input {...props} error={error} className={cn("h-14 sm:h-14 text-xl sm:text-xl", className)} />
+  const field = React.useContext(BigFieldContext)
+  const describedBy = props["aria-describedby"] ?? (field && field.id === props.id ? field.describedBy : undefined)
+  return <Input {...props} aria-describedby={describedBy} error={error} className={cn("h-14 sm:h-14 text-xl sm:text-xl", className)} />
 }
 
 /** Número grande: teclado decimal, sin flechas ni rueda. */

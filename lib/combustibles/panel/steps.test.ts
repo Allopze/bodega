@@ -230,56 +230,25 @@ describe("tira de cinco pasos del Panel", () => {
     it("pendiente: compone la frase con lo que hay de cada tipo y dice cuánto lleva esperando lo más antiguo", () => {
       const step = stepOf(allGood({ inbox: inbox(7, { carga: 3, patente: 2, caso: 1, pedido: 1 }, "2026-10-25T14:00:00.000Z") }), "revisar")
       expect(step).toMatchObject({ status: "pendiente", figure: "7", figureNote: "por decidir", cta: "Revisar", href: "/combustibles/revisar" })
-      expect(step.phrase).toBe("3 cargas por decidir, 2 patentes sin vincular, 1 caso, 1 pedido de revisión. Lo más antiguo por revisar: espera hace 6 días.")
+      expect(step.phrase).toBe("3 cargas por decidir, 2 patentes sin vincular, 1 caso y 1 pedido de revisión. Lo más antiguo espera hace 6 días.")
     })
 
-    it("explica las reglas, separa Diesel y BlueMax y aclara que los 62 días son del caso más antiguo", () => {
+    it("una sola frase con lo más antiguo: el desglose por regla vive en la bandeja, no en el Panel", () => {
       const summary = inbox(346, { caso: 346, carga: 0, patente: 0, pedido: 0 }, "2026-08-30T14:00:00.000Z") as FuelInboxSummary & {
         caseBreakdown: Array<{ ruleCode: string; product: string; count: number }>
       }
       summary.caseBreakdown = [
         { ruleCode: "kilometraje_regresivo", product: "not_applicable", count: 114 },
         { ruleCode: "salto_medidor_implausible", product: "not_applicable", count: 83 },
-        { ruleCode: "variacion_brusca_consumo", product: "diesel", count: 2 },
-        { ruleCode: "variacion_brusca_consumo", product: "bluemax", count: 3 },
         { ruleCode: "variacion_brusca_consumo", product: "historical_unattributed", count: 144 },
       ]
 
       const step = stepOf(allGood({ inbox: summary }), "revisar")
 
       expect(step).toMatchObject({ figure: "346", figureNote: "casos por revisar" })
-      expect(step.phrase).toBe("346 casos. 114 regresiones de kilometraje · 83 saltos de medidor · variación brusca: 2 Diesel · 3 BlueMax · 144 históricos sin producto atribuible. El caso pendiente más antiguo: espera hace 62 días.")
-    })
-
-    it("nombra cada regla por su nombre y nunca por su código crudo (UX-03)", () => {
-      const summary = inbox(15, { caso: 15, carga: 0, patente: 0, pedido: 0 }, "2026-10-31T13:00:00.000Z") as FuelInboxSummary & {
-        caseBreakdown: Array<{ ruleCode: string; product: string; count: number }>
-      }
-      summary.caseBreakdown = [
-        { ruleCode: "horometro_regresivo", product: "not_applicable", count: 12 },
-        { ruleCode: "sello_repetido", product: "not_applicable", count: 2 },
-        { ruleCode: "sello_repetido", product: "diesel", count: 1 },
-        { ruleCode: "regla_que_no_esta_en_el_catalogo", product: "not_applicable", count: 4 },
-        { ruleCode: "otra_regla_sin_nombre", product: "not_applicable", count: 1 },
-      ]
-
-      const step = stepOf(allGood({ inbox: summary }), "revisar")
-
-      expect(step.phrase).toBe("15 casos. 12 regresiones de horómetro · 3 casos «Sello repetido» · 5 casos de otras reglas.")
-      // Ninguna frase del panel puede filtrar un identificador en snake_case.
-      expect(step.phrase).not.toMatch(/[a-z]+_[a-z]+/)
-    })
-
-    it("pluraliza en singular la regla de horómetro y la regla con nombre", () => {
-      const summary = inbox(2, { caso: 2, carga: 0, patente: 0, pedido: 0 }, "2026-10-31T13:00:00.000Z") as FuelInboxSummary & {
-        caseBreakdown: Array<{ ruleCode: string; product: string; count: number }>
-      }
-      summary.caseBreakdown = [
-        { ruleCode: "horometro_regresivo", product: "not_applicable", count: 1 },
-        { ruleCode: "evidencia_faltante", product: "not_applicable", count: 1 },
-      ]
-
-      expect(stepOf(allGood({ inbox: summary }), "revisar").phrase).toBe("2 casos. 1 regresión de horómetro · 1 caso «Evidencia faltante en carga TAE».")
+      expect(step.phrase).toBe("346 casos. El caso más antiguo espera hace 62 días.")
+      // Sin jerga de modelo de datos ni códigos de regla.
+      expect(step.phrase).not.toMatch(/regresi|atribuible|[a-z]+_[a-z]+/)
     })
 
     it("en singular, y sin «lo más antiguo» si llegó hoy", () => {
@@ -301,7 +270,7 @@ describe("tira de cinco pasos del Panel", () => {
           monthKeys: ["2026-10"],
         },
       }), "cuadratura")
-      expect(step).toMatchObject({ status: "mal", statusLabel: "No cuadra", figure: "2 fuera" })
+      expect(step).toMatchObject({ status: "mal", statusLabel: "No cuadra", figure: "2", figureNote: "mandantes fuera de tolerancia" })
       expect(step.phrase).toBe("CMPC Santa Fe: diferencia de 1.320 L (3,1 %), sobre su tolerancia de 2 %. Y 1 mandante más.")
     })
 
