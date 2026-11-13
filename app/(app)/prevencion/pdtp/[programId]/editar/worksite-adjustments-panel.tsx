@@ -309,7 +309,7 @@ function AdjustmentDialog({
             </div>
             {planMode === "adjust" && (
               <div className="mt-3 overflow-x-auto">
-                <TableRoot className="rounded-none border-0">
+                <TableRoot framed={false}>
                 <Table className="text-xs">
                   <caption className="sr-only">Ajustes de programación por faena</caption>
                   <TableHeader>

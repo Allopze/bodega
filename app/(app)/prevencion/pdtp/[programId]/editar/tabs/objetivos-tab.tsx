@@ -168,7 +168,7 @@ export function ObjetivosTab({ programId, objectives, activities }: {
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
-          <TableRoot className="rounded-none border-0">
+          <TableRoot framed={false}>
             <Table className="text-sm">
               <caption className="sr-only">Objetivos del programa PDTP</caption>
               <TableHeader>

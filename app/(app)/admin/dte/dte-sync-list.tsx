@@ -38,7 +38,7 @@ export function DteSyncList({ runs }: { runs: DteSyncRunRow[] }) {
   return (
     <section className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
       <div className="overflow-x-auto">
-        <TableRoot className="rounded-none border-0">
+        <TableRoot framed={false}>
         <Table className="text-left">
           <caption className="sr-only">Corridas de sincronización DTE y su conciliación</caption>
           <TableHeader>

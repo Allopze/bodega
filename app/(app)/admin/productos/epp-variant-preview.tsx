@@ -27,7 +27,7 @@ export function VariantPreview({ variants, onRemove, onMarkDirty }: VariantPrevi
       </div>
       <div className="overflow-hidden rounded-(--radius) border border-[var(--color-border)]">
         <div className="overflow-x-auto">
-          <TableRoot className="rounded-none border-0">
+          <TableRoot framed={false}>
           <Table className="text-xs">
             <caption className="sr-only">Vista previa de variantes EPP</caption>
             <TableHeader>

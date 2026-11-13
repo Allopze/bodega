@@ -477,7 +477,7 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
               calculaba sus anchos `auto` por separado y las cantidades quedaban
               desalineadas entre grupos. Los anchos viven en el <colgroup>. */}
           <div className="hidden md:block">
-            <TableRoot className="rounded-none border-0">
+            <TableRoot framed={false}>
             <Table className="min-w-[768px] table-fixed text-sm">
               <caption className="sr-only">
                 Stock por producto, agrupado por {groupBy === "faena" ? "faena" : "producto"}

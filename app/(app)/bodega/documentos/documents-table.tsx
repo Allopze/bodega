@@ -43,7 +43,7 @@ export function DocumentsTable({ documents, detail, highlightId }: DocumentsTabl
       {/* Sin encabezado propio: el título y la descripción ya están en la página,
           y repetirlos en una tarjeta encima de la tabla los duplicaba. */}
       <div className="hidden md:block overflow-x-auto">
-        <TableRoot className="rounded-none border-0">
+        <TableRoot framed={false}>
         <Table className="text-sm">
           <caption className="sr-only">Documentos manuales de bodega ordenados del más reciente al más antiguo</caption>
           <TableHeader>

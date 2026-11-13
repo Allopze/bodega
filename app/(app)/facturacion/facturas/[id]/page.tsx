@@ -169,7 +169,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
                 Sin ítems informados. No se inventan líneas cuando la fuente solo entrega totales.
               </p>
             ) : (
-              <TableRoot className="rounded-none border-0">
+              <TableRoot framed={false}>
                 <Table className="text-left text-sm">
                   <thead>
                     <tr className="border-b border-[var(--color-border)]">

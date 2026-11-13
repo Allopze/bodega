@@ -87,7 +87,7 @@ export function KardexTable({ movements, worksites = [], canExport = false, sear
       ) : (
         <>
           <div className="hidden md:block overflow-x-auto" tabIndex={0} role="region" aria-label="Movimientos de inventario">
-            <TableRoot className="rounded-none border-0">
+            <TableRoot framed={false}>
             <Table className="text-sm" aria-label="Movimientos de inventario">
               <caption className="sr-only">Movimientos de inventario registrados, del más reciente al más antiguo</caption>
               <TableHeader>

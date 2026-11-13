@@ -115,7 +115,7 @@ export default async function ClientsPage() {
                   Sin contratos registrados. Las facturas de este cliente se pueden vincular igual, pero no habrá reporte por contrato.
                 </p>
               ) : (
-                <TableRoot className="rounded-none border-0">
+                <TableRoot framed={false}>
                   <Table className="text-left text-sm">
                     <caption className="sr-only">Contratos de {client.name}</caption>
                     <thead>

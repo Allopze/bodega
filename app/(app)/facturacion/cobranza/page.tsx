@@ -143,7 +143,7 @@ export default async function CollectionsPage({
 
           {/* ── Tabla ─────────────────────────────────────────────────────── */}
           <section className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-            <TableRoot className="rounded-none border-0">
+            <TableRoot framed={false}>
               <Table className="text-left">
                 <caption className="sr-only">Facturas por cobrar con su situación y última gestión</caption>
                 <TableHeader>
