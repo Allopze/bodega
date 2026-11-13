@@ -3,7 +3,6 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { Callout } from "@/components/ui/callout"
 import { CoverageNotice } from "@/components/charts/coverage-notice"
@@ -13,7 +12,7 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { fuelSourcesHref } from "@/lib/combustibles/coverage-notice"
 import { FLEET_OVERVIEW_LOOKBACK_MONTHS, getFleetOverviewPage } from "@/lib/services/fleet"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
-import { addDaysToPlainDate, formatCLP, todayInChile, formatQty } from "@/lib/utils"
+import { addDaysToPlainDate, countOf, formatCLP, todayInChile, formatQty } from "@/lib/utils"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { FleetFilters } from "./fleet-filters"
 import { FleetTable } from "./fleet-table"
@@ -24,9 +23,6 @@ export const metadata: Metadata = { title: "Vehículos" }
 
 const formatNumber = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 1 })
 const FLEET_PAGE_SIZE = 25
-
-/** Cómo se nombra un equipo en los avisos: su código y, si no tiene (carros, bateas), la patente. Un código vacío cuenta como ausente. */
-const vehicleIdentity = (vehicle: { code: string | null; plate: string }) => vehicle.code || vehicle.plate
 
 export default async function FlotaPage({
   searchParams,
@@ -128,46 +124,39 @@ export default async function FlotaPage({
       {/* Meses de la ventana en que Copec no trajo datos (C-4): los totales de arriba no los incluyen. */}
       <CoverageNotice gapMonths={pageData.summary.providerGapMonths} subject={fleetProviderGapSubject(FLEET_OVERVIEW_LOOKBACK_MONTHS)} sourcesHref={fuelSourcesHref(session)} className="my-2" />
 
+      {/* El aviso cuenta y lleva a la lista que cuenta lo mismo; antes enumeraba los
+          códigos, que la tabla de abajo ni siquiera mostraba (auditoría 2026-11-13, F4). */}
       {(expiredVehicles.length > 0 || expiringSoon.length > 0) && (
         <div className="flex flex-col gap-2">
           {expiredVehicles.length > 0 && (
             <Callout tone="danger">
-              <strong>Documentos vencidos:</strong>{" "}
-              {expiredVehicles.map(vehicleIdentity).join(", ")}
+              <strong>{countOf(expiredVehicles.length, "vehículo", "vehículos")} con documentos vencidos.</strong>{" "}
+              {filterVencimiento !== "vencidos" && (
+                <Link href="/flota?vencimiento=vencidos" scroll={false} className="underline underline-offset-4">Ver los vencidos</Link>
+              )}
             </Callout>
           )}
           {expiringSoon.length > 0 && (
             <Callout tone="warning">
-              <strong>Próximos a vencer ({warningDays} días):</strong>{" "}
-              {expiringSoon.map(vehicleIdentity).join(", ")}
+              <strong>{countOf(expiringSoon.length, "vehículo", "vehículos")} con documentos por vencer en {warningDays} días.</strong>{" "}
+              {filterVencimiento !== "proximos" && (
+                <Link href="/flota?vencimiento=proximos" scroll={false} className="underline underline-offset-4">Ver los próximos</Link>
+              )}
             </Callout>
           )}
         </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Filtros</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <FleetFilters
-            operationalStatuses={operationalStatuses}
-            responsibleUsers={responsibleUsers}
-            current={{ estado: filterEstado, responsable: filterResponsable, vencimiento: filterVencimiento, revision: filterRevision, q }}
-            warningDays={warningDays}
-          />
-        </CardContent>
-      </Card>
+      {/* Sin tarjetas alrededor: los filtros son una barra y la tabla es la única superficie. */}
+      <FleetFilters
+        operationalStatuses={operationalStatuses}
+        responsibleUsers={responsibleUsers}
+        current={{ estado: filterEstado, responsable: filterResponsable, vencimiento: filterVencimiento, revision: filterRevision, q }}
+        warningDays={warningDays}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Vehículos</CardTitle>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <FleetTable vehicles={pageData.rows} hasAnyVehicle={pageData.index.length > 0} canViewCosts={canViewCosts} canViewFuel={canViewFuel} today={today} warningDays={warningDays} />
-        </CardContent>
-        <ServerPagination pagination={pagination} hrefForPage={pageHref} />
-      </Card>
+      <FleetTable vehicles={pageData.rows} hasAnyVehicle={pageData.index.length > 0} canViewCosts={canViewCosts} canViewFuel={canViewFuel} today={today} warningDays={warningDays} />
+      <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>
   )
 }

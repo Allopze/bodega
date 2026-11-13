@@ -9,7 +9,7 @@ import { Callout } from "@/components/ui/callout"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ExportButton } from "@/components/ui/export-button"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
-import { PageHeader } from "@/components/ui/page-header"
+import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { DriverCandidate, DriverRosterRow } from "@/lib/services/driver-licenses-contract"
@@ -212,15 +212,28 @@ export function DriversWorkbench({
 
   return (
     <>
-      <PageHeader title="Conductores" description="Licencias de conducir por faena" actions={headerActions} />
+      <PageHeader
+        title="Conductores"
+        description="Licencias de conducir por faena"
+        breadcrumb={
+          <Breadcrumbs items={[
+            { label: "Control operacional", href: "/control-operacional" },
+            { label: "Conductores" },
+          ]} />
+        }
+        actions={headerActions}
+      />
 
       <div className="flex flex-col gap-3">
+        {/* Sin licencias registradas no hay nada que filtrar: «Requieren atención · 0 /
+            Vigentes · 0 / Todos · 0» eran tres chips para una lista vacía (F12). */}
+        {(rows.length > 0 || faena) && (
         <FilterToolbar
           className="mb-0"
           activeChips={activeChips}
           onRemoveChip={() => changeFaena(null)}
         >
-          <SegmentedControl ariaLabel="Estado de las licencias" items={estadoItems} />
+          {rows.length > 0 && <SegmentedControl ariaLabel="Estado de las licencias" items={estadoItems} />}
           {(worksites.length > 1 || faena) && (
             <Select value={faena ?? ALL_WORKSITES} onValueChange={(value) => changeFaena(value === ALL_WORKSITES ? null : value)}>
               <SelectTrigger className="w-full text-xs sm:w-56" aria-label="Faena">
@@ -235,6 +248,7 @@ export function DriversWorkbench({
             </Select>
           )}
         </FilterToolbar>
+        )}
 
         {unclassifiedWorkers > 0 && (
           <Callout tone="info" icon={<Info size={16} weight="fill" />}>
