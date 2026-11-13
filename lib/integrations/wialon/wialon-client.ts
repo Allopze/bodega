@@ -223,7 +223,7 @@ export async function loginWialon(
     null,
     options.fetchImpl ?? fetch,
   )
-  const sid = asString(body.sid)
+  const sid = asString(body.sid) ?? asString(body.eid)
   if (!sid) throw new WialonClientError("WIALON_BAD_RESPONSE")
   return sid
 }
@@ -428,7 +428,13 @@ export function extractWialonTelemetry(
 
   const speedKph = clamp(asNumber(position.s) ?? 0, 0, 400)
   const headingDegrees = ((asNumber(position.c) ?? 0) % 360 + 360) % 360
-  const ignition = asOptionalBoolean(unit.lastMessageParams.ignition)
+  // Wialon no siempre publica `ignition`: muchas cuentas lo configuran como un
+  // sensor con nombre «ignición» sobre un `io_*`. Se usa el parámetro estándar
+  // si existe; si no, el primer sensor cuyo nombre lo declara.
+  const ignitionParam = Object.hasOwn(unit.lastMessageParams, "ignition")
+    ? "ignition"
+    : unit.sensors.find((sensor) => /ignic|ignition|encendido/i.test(`${sensor.name ?? ""} ${sensor.p}`))?.p
+  const ignition = asOptionalBoolean(ignitionParam ? unit.lastMessageParams[ignitionParam] : null)
   const odometerSensor = unit.sensors.find((sensor) => sensor.p === params.odometerParam)
   const hourMeterSensor = unit.sensors.find((sensor) => sensor.p === params.hourMeterParam)
 

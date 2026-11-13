@@ -57,6 +57,12 @@ describe("cliente Wialon", () => {
       .resolves.toBe("sid-1")
   })
 
+  it("acepta el eid que devuelve token/login de Wialon Hosting", async () => {
+    const fetchImpl = fetchMock(() => jsonResponse({ eid: "eid-1", user: {} }))
+    await expect(loginWialon({ baseUrl: "https://hst-api.wialon.com", token: "secret" }, { fetchImpl }))
+      .resolves.toBe("eid-1")
+  })
+
   it("lista unidades con el último mensaje y la sesión cacheada", async () => {
     const calls: string[] = []
     const fetchImpl = fetchMock((svc, params) => {
@@ -188,6 +194,14 @@ describe("extractWialonTelemetry", () => {
   it("no inventa un apagado cuando el mensaje no trae encendido", () => {
     const telemetry = extractWialonTelemetry(unit({ lastMessageParams: { mileage: 1234 } }), params)
     expect(telemetry?.ignition).toBeNull()
+  })
+
+  it("usa el sensor de ignición de la cuenta cuando no existe el parámetro estándar", () => {
+    const telemetry = extractWialonTelemetry(unit({
+      sensors: [{ p: "io_239", name: "ignicion", type: 1, unit: "Encendido/Apagado" }],
+      lastMessageParams: { io_239: 1, mileage: 1234 },
+    }), params)
+    expect(telemetry?.ignition).toBe(true)
   })
 
   it("convierte medidores en metros o segundos a km y horas", () => {
