@@ -312,17 +312,17 @@ const PESTANAS_POR_SECCION = [
     pantallas: [
       { ruta: "/combustibles/cuadratura/mandante", activa: "Por mandante" },
       { ruta: "/combustibles/cuadratura/estanques", activa: "Estanques" },
-      { ruta: "/combustibles/cuadratura/proveedor", activa: "Proveedor y terreno" },
+      { ruta: "/combustibles/cuadratura/proveedor", activa: "Facturado y terreno" },
       { ruta: "/combustibles/cuadratura/tarjeta-y-terreno", activa: "Tarjeta y terreno" },
       { ruta: "/combustibles/cuadratura/sellos", activa: "Sellos" },
     ],
   },
   {
-    seccion: "Consumo y rendimiento",
+    seccion: "Consumo",
     barra: BARRAS.consumo,
     pantallas: [
       { ruta: "/combustibles/consumo/rendimiento/camiones", activa: "Rendimiento" },
-      { ruta: "/combustibles/consumo/litros", activa: "Consumo" },
+      { ruta: "/combustibles/consumo/litros", activa: "Litros" },
       { ruta: "/combustibles/consumo/motor-en-vacio", activa: "Motor en vacío" },
     ],
   },
@@ -352,7 +352,7 @@ test.describe("Control operacional — pestañas de sección", () => {
     })
   }
 
-  test("«Motor en vacío» es la pestaña activa y «Consumo» conserva la faena y el período de la URL", async ({ page }) => {
+  test("«Motor en vacío» es la pestaña activa y «Litros» conserva la faena y el período de la URL", async ({ page }) => {
     // `periodo` y `faena` son el contexto que `FUEL_CARRY_PARAMS` arrastra entre
     // las pestañas: cambiar de vista no obliga a volver a filtrar.
     await page.goto("/combustibles/consumo/motor-en-vacio?faena=ws-e2e&periodo=2025-03")
@@ -360,18 +360,18 @@ test.describe("Control operacional — pestañas de sección", () => {
     const barra = barraDe(page, BARRAS.consumo)
     await expect(barra.locator('[aria-current="page"]')).toHaveText(empiezaCon("Motor en vacío"))
 
-    await barra.getByRole("link", { name: "Consumo", exact: true }).click()
+    await barra.getByRole("link", { name: "Litros", exact: true }).click()
     await expect(page).toHaveURL((url) => url.pathname === "/combustibles/consumo/litros")
 
     const url = new URL(page.url())
     expect(url.searchParams.get("faena")).toBe("ws-e2e")
     expect(url.searchParams.get("periodo")).toBe("2025-03")
-    await expect(barra.locator('[aria-current="page"]')).toHaveText("Consumo")
+    await expect(barra.locator('[aria-current="page"]')).toHaveText("Litros")
   })
 
   test("sin faena en la URL, cambiar de pestaña no inventa filtros", async ({ page }) => {
     await page.goto("/combustibles/consumo/motor-en-vacio")
-    await barraDe(page, BARRAS.consumo).getByRole("link", { name: "Consumo", exact: true }).click()
+    await barraDe(page, BARRAS.consumo).getByRole("link", { name: "Litros", exact: true }).click()
     await expect(page).toHaveURL((url) => url.pathname === "/combustibles/consumo/litros")
     // El período sí puede aparecer (la pantalla lo recupera de la cookie y lo escribe para que el enlace sea compartible); la faena no.
     expect(new URL(page.url()).searchParams.has("faena")).toBe(false)
@@ -547,8 +547,8 @@ test.describe("Control operacional — rutas retiradas", () => {
     const url = new URL(page.url())
     expect(url.searchParams.get("hasta")).toBe("2026-07-31")
     expect(url.searchParams.get("desde")).not.toBe("basura")
-    await expectPageTitle(page, "Consumo y rendimiento")
-    await expect(barraDe(page, BARRAS.consumo).locator('[aria-current="page"]')).toHaveText("Consumo")
+    await expectPageTitle(page, "Litros cargados")
+    await expect(barraDe(page, BARRAS.consumo).locator('[aria-current="page"]')).toHaveText("Litros")
   })
 })
 
@@ -602,7 +602,10 @@ test.describe("Control operacional — tiles del panel", () => {
   test("la tabla de activos separa mano de obra de OT y compras de repuestos y servicios", async ({ page }) => {
     // Plan 2026-11-07: el costo manual de la OT es sólo mano de obra / taller, y
     // las OC vinculadas al equipo tienen su propia columna. El administrador del
-    // seed tiene OT y `purchasing:view`, así que ve ambas.
+    // seed tiene OT y `purchasing:view`, así que ve ambas. Desde la mejora UI/UX
+    // 2026-11-13 la tabla abre con seis columnas: las de costo se piden por la URL
+    // de la vista, que es lo que guarda el menú «Columnas».
+    await page.goto(`/control-operacional?control-operacional-activos_cols=${["code", "maintenanceCost", "purchaseAmount"].join(",")}`)
     const table = page.getByRole("table", { name: "Activos operacionales" })
     await expect(table).toBeVisible()
     const header = (label: string) =>
@@ -657,7 +660,10 @@ test.describe("Control operacional — tiles del panel", () => {
 
       await tile.click()
       await expectPorRevisar(page)
-      await expect(page.getByText(total === 1 ? "1 cosa espera a una persona." : `${total} cosas esperan a una persona.`)).toBeVisible()
+      // El total vive sólo en la pestaña «Pendientes N» (A5); incluye los casos en
+      // seguimiento, que el tile del panel cuenta aparte.
+      const pendientes = Number((await barraDe(page, BARRAS.revisar).getByRole("link", { name: /^Pendientes/ }).innerText()).replace(/\D/g, ""))
+      expect(pendientes).toBeGreaterThanOrEqual(total)
     } finally {
       await withSql(async (sql) => { await sql`delete from fuel_review_marks where id = ${pedidoId}` })
     }
@@ -760,8 +766,8 @@ test.describe("Control operacional — roles acotados", () => {
 
     // El panel abre, pero sólo con las columnas de combustible: sin flota,
     // inspecciones ni costos de otros dominios.
-    await page.goto("/control-operacional")
-    await expect(page).toHaveURL(/\/control-operacional$/)
+    await page.goto(`/control-operacional?control-operacional-activos_cols=${["code", "fuelLiters", "inspectionCount", "fuelBilledAmount"].join(",")}`)
+    await expect(page).toHaveURL((url) => url.pathname === "/control-operacional")
     await expectPageTitle(page, "Panel operacional")
     const table = page.getByRole("table", { name: "Activos operacionales" })
     await expect(table).toBeVisible()
