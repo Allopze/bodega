@@ -2,6 +2,7 @@ import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { Skeleton } from "@/components/ui/skeleton"
+import { DashboardSectionFallback } from "@/components/dashboard/dashboard-section"
 
 /**
  * Esqueleto del Panel mientras llegan sus datos. No es un `loading.tsx` a
@@ -13,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 export function PanelLoading() {
   return (
     <PageContainer>
-      <PageHeader title="Combustible" breadcrumb={<FuelBreadcrumbs />} />
+      <PageHeader title="Panel de combustible" breadcrumb={<FuelBreadcrumbs />} />
       <div aria-busy="true" aria-live="polite">
         <span className="sr-only">Cargando combustible…</span>
         <div aria-hidden className="space-y-5">
@@ -33,17 +34,9 @@ export function PanelLoading() {
               </div>
             ))}
           </div>
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-            {Array.from({ length: 2 }, (_, index) => (
-              <div key={index} className="space-y-4 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-                <Skeleton className="h-5 w-48" />
-                <Skeleton className="h-4 w-3/4" />
-                {Array.from({ length: 3 }, (_, row) => (
-                  <Skeleton key={row} className="h-12 w-full" />
-                ))}
-              </div>
-            ))}
-          </div>
+          {/* Las dos secciones de gráficos (Consumo y Eficiencia) reservan su alto. */}
+          <DashboardSectionFallback />
+          <DashboardSectionFallback />
         </div>
       </div>
     </PageContainer>

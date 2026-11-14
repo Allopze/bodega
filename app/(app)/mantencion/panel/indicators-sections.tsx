@@ -112,7 +112,6 @@ export function WorkOrdersSection({
   const { worksiteId } = common
   const faena = worksiteId ?? undefined
   const open = byStatus ? byStatus.reduce((sum, item) => sum + item.count, 0) : null
-  const unassigned = byStatus?.find((item) => item.status === "solicitada")?.count ?? 0
   const noData =
     byStatus !== null && series !== null && stats !== null &&
     open === 0 && stats.closed === 0 && stats.closedPrevious === 0 &&
@@ -120,7 +119,6 @@ export function WorkOrdersSection({
 
   const links = [
     { label: "Órdenes de trabajo", href: withParams("/mantencion/ot", { estado: "abiertas", faena }) },
-    { label: "Panel de mantención", href: withParams("/mantencion/panel", { faena }) },
   ]
 
   if (noData) {
@@ -156,9 +154,8 @@ export function WorkOrdersSection({
           label: "OT abiertas",
           value: open === null ? "Sin dato" : open === 0 ? "Ninguna" : open,
           valueKind: open === null || open === 0 ? "text" : "number",
-          hint: open !== null && unassigned > 0 ? `${unassigned} por asignar` : undefined,
-          secondary: open === null ? "No se pudo calcular" : open === 0 ? "Sin órdenes abiertas · hoy" : unassigned > 0 ? "Hoy" : "Todas con mecánico · hoy",
-          tone: unassigned > 0 ? "signal" : undefined,
+          // Las órdenes por asignar ya están en la franja «Hoy» de arriba: no se repiten acá (A5).
+          secondary: open === null ? "No se pudo calcular" : open === 0 ? "Sin órdenes abiertas · hoy" : "Hoy",
           href: otHref({ estado: "abiertas" }),
         },
         stats
@@ -305,7 +302,6 @@ export function PautasSection({
     outOfService.total === 0
 
   const links = [
-    { label: "Panel de mantención", href: withParams("/mantencion/panel", { faena }) },
     { label: "Equipos", href: withParams("/mantencion/equipos", { faena }) },
     ...(showRanking ? [{ label: "Órdenes de trabajo", href: withParams("/mantencion/ot", { estado: "abiertas", faena }) }] : []),
   ]

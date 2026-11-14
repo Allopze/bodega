@@ -3,9 +3,8 @@ import type { ReactNode } from "react"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { describeFuelPeriod } from "@/lib/combustibles/period/parse"
-import type { ConsultaPanelData, FieldPanelData, PanelDueState } from "@/lib/combustibles/panel/data"
+import type { FieldPanelData } from "@/lib/combustibles/panel/data"
 import type { PanelDueRow } from "@/lib/combustibles/panel/due"
-import { buildPanelFigures, type PanelFigureBucket } from "@/lib/combustibles/panel/figures"
 import { buildPanelSteps } from "@/lib/combustibles/panel/steps"
 
 // El enlace de Next como `<a>` plano: aquí se prueba qué dibuja el Panel, no cómo navega Next.
@@ -15,17 +14,12 @@ vi.mock("next/link", () => ({
   ),
 }))
 
-import { ConsultaPanel } from "./panel-consulta"
-import { PanelDueCard } from "./panel-due-card"
 import { PanelDueList } from "./panel-due-list"
 import { FieldPanel } from "./panel-field"
-import { PanelFiguresCard } from "./panel-figures-card"
 import { PanelProgress, PanelStepsStrip } from "./panel-steps"
 
 const TODAY = "2026-10-31"
 const october = describeFuelPeriod({ kind: "month", year: 2026, month: 10 }, "url", TODAY)
-const september = describeFuelPeriod({ kind: "month", year: 2026, month: 9 }, "url", TODAY)
-const link = (href: string) => href
 
 function row(partial: Partial<PanelDueRow> = {}): PanelDueRow {
   return {
@@ -132,82 +126,6 @@ describe("lo que vence primero", () => {
     expect(within(links[0]!).getByText("CA-14 · KPRT·14")).toHaveClass("font-semibold")
   })
 
-  describe("tarjeta", () => {
-    const card = (due: PanelDueState, period = october) => render(<PanelDueCard due={due} period={period} userId="u1" link={link} />)
-
-    it("con filas, el enlace a la bandeja lleva el total", () => {
-      card({ kind: "rows", rows, total: 9 })
-      expect(screen.getByRole("heading", { level: 2, name: "Lo que vence primero" })).toBeInTheDocument()
-      expect(screen.getByRole("link", { name: "Ver todo lo pendiente (9)" })).toHaveAttribute("href", "/combustibles/revisar")
-    })
-
-    it("en un período cerrado cambia el título y el texto", () => {
-      card({ kind: "rows", rows, total: 2 }, september)
-      expect(screen.getByRole("heading", { level: 2, name: "Lo que quedó pendiente de septiembre" })).toBeInTheDocument()
-      expect(screen.getByText(/El período está cerrado/)).toBeInTheDocument()
-    })
-
-    it("vacío confirmado: lo dice; sin confirmar: no afirma que no hay nada y manda a la bandeja", () => {
-      const { unmount } = card({ kind: "empty" })
-      expect(screen.getByText("No hay nada pendiente: todo lo que llegó ya tiene una decisión.")).toBeInTheDocument()
-      unmount()
-      card({ kind: "unknown" })
-      expect(screen.queryByText(/No hay nada pendiente/)).not.toBeInTheDocument()
-      expect(screen.getByText(/No se pudo confirmar lo que está pendiente/)).toBeInTheDocument()
-      expect(screen.getByRole("link", { name: "Abre la bandeja" })).toHaveAttribute("href", "/combustibles/revisar")
-    })
-  })
-})
-
-describe("el período en tres cifras", () => {
-  function bucket(partial: Partial<PanelFigureBucket> = {}): PanelFigureBucket {
-    return { from: "2026-01-01", to: "2026-01-31", liters: 0, loads: 0, equipment: 0, truckKm: 0, truckLiters: 0, truckExcluded: 0, machineHours: 0, machineLiters: 0, machineExcluded: 0, ...partial }
-  }
-  const figures = buildPanelFigures({
-    partialPrevLiters: null,
-    buckets: [
-      bucket({ liters: 43_000, loads: 100, equipment: 100 }), bucket({ liters: 44_000, loads: 100, equipment: 100 }), bucket({ liters: 47_000, loads: 100, equipment: 100 }),
-      bucket({ liters: 49_900, loads: 100, equipment: 121, truckKm: 5_600, truckLiters: 2_000, machineHours: 100, machineLiters: 1_350 }),
-      bucket({ liters: 46_900, loads: 100, equipment: 118, truckKm: 5_600, truckLiters: 2_000, truckExcluded: 4, machineHours: 100, machineLiters: 1_400 }),
-    ],
-  }, september, TODAY)
-
-  it("muestra las tres cifras con su unidad, su variación y su historia con rótulos", () => {
-    render(<PanelFiguresCard figures={figures} period={september} link={link} />)
-    expect(screen.getByRole("heading", { level: 2, name: "El período en tres cifras" })).toBeInTheDocument()
-    expect(screen.getByText("Litros cargados a 118 equipos")).toBeInTheDocument()
-    expect(screen.getByText("46.900")).toHaveClass("tabular-nums")
-    expect(screen.getByText("km/L")).toHaveAttribute("title", expect.stringContaining("Kilómetros recorridos por litro"))
-    expect(screen.getByText("L/h")).toHaveAttribute("title", expect.stringContaining("Litros consumidos por hora"))
-    expect(screen.getByText("4 cargas por decidir no entran al promedio")).toBeInTheDocument()
-    // Cinco barras por cifra, cada una con su rótulo, y el texto alternativo trae los valores.
-    const histories = screen.getAllByRole("img")
-    expect(histories).toHaveLength(3)
-    expect(histories[0]).toHaveAccessibleName(expect.stringContaining("Septiembre 2026: 46.900"))
-    expect(within(histories[0]!).getAllByText(/^(may|jun|jul|ago|sep)$/)).toHaveLength(5)
-    expect(screen.getByText(/Las barras muestran los últimos 5 meses/)).toBeInTheDocument()
-  })
-
-  it("la variación de «menos es mejor» va con la polaridad contraria", () => {
-    const { container } = render(<PanelFiguresCard figures={figures} period={september} link={link} />)
-    const deltas = [...container.querySelectorAll("[data-delta]")].map((el) => el.getAttribute("data-delta"))
-    // Litros: neutral. km/L sin cambio: neutral. L/h sube de 13,5 a 14: es peor.
-    expect(deltas).toEqual(["neutral", "neutral", "negative"])
-  })
-
-  it("si la consulta falló no inventa cifras", () => {
-    render(<PanelFiguresCard figures={null} period={september} link={link} />)
-    expect(screen.getByText(/No se pudieron calcular las cifras del período/)).toBeInTheDocument()
-    expect(screen.queryByRole("img")).not.toBeInTheDocument()
-  })
-
-  it("una cifra sin dato dice qué falta en vez de un cero", () => {
-    const empty = buildPanelFigures({ partialPrevLiters: null, buckets: Array.from({ length: 5 }, () => bucket()) }, september, TODAY)
-    render(<PanelFiguresCard figures={empty} period={september} link={link} />)
-    expect(screen.getAllByText("Sin datos")).toHaveLength(3)
-    expect(screen.getByText("Todavía no hay cargas en este período.")).toBeInTheDocument()
-    expect(screen.queryByText("0")).not.toBeInTheDocument()
-  })
 })
 
 describe("panel de terreno y de contrato", () => {
@@ -298,68 +216,5 @@ describe("panel de terreno y de contrato", () => {
     expect(screen.getByText(/No se pudo leer lo pendiente/)).toBeInTheDocument()
     expect(screen.getByText(/No se pudo leer el consumo de tus equipos/)).toBeInTheDocument()
     expect(screen.queryByText(/Nada te espera/)).not.toBeInTheDocument()
-  })
-})
-
-describe("panel de consulta", () => {
-  const figures = buildPanelFigures({
-    partialPrevLiters: null,
-    buckets: [
-      ...Array.from({ length: 3 }, () => ({ from: "2026-01-01", to: "2026-01-31", liters: 0, loads: 0, equipment: 0, truckKm: 0, truckLiters: 0, truckExcluded: 0, machineHours: 0, machineLiters: 0, machineExcluded: 0 })),
-      { from: "2026-08-01", to: "2026-08-31", liters: 19_700, loads: 90, equipment: 40, truckKm: 0, truckLiters: 0, truckExcluded: 0, machineHours: 0, machineLiters: 0, machineExcluded: 0 },
-      { from: "2026-09-01", to: "2026-09-30", liters: 18_900, loads: 90, equipment: 41, truckKm: 0, truckLiters: 0, truckExcluded: 0, machineHours: 0, machineLiters: 0, machineExcluded: 0 },
-    ],
-  }, september, TODAY)
-  const data: ConsultaPanelData = {
-    variant: "consulta",
-    degraded: [],
-    total: 4,
-    figures,
-    worse: { count: 2, examples: [{ vehicleId: "1", code: "CA-14", familyLabel: "Camiones", deltaPct: -22 }, { vehicleId: "2", code: "CA-22", familyLabel: "Camiones", deltaPct: -15 }] },
-    measured: true,
-    unlinkedPlates: 2,
-  }
-  const panel = (value: ConsultaPanelData, canLinkPlates = true) =>
-    render(<ConsultaPanel data={value} period={september} canLinkPlates={canLinkPlates} withPeriod={(href) => `${href}${href.includes("?") ? "&" : "?"}periodo=2026-09`} />)
-
-  it("dice los litros y los equipos con su variación, y enlaza a las cargas", () => {
-    panel(data)
-    expect(screen.getByText(/En septiembre tus faenas cargaron/)).toHaveTextContent("18.900 L en 41 equipos, 4 % menos que en agosto.")
-    expect(screen.getByRole("link", { name: /Ver las cargas/ })).toHaveAttribute("href", "/combustibles/cargas?periodo=2026-09")
-  })
-
-  it("nombra los equipos que rinden peor y enlaza al rendimiento", () => {
-    panel(data)
-    expect(screen.getByText(/rinden más de 10 % peor/).closest("p")).toHaveTextContent("CA-14 y CA-22 rinden más de 10 % peor que otros equipos de su mismo modelo.")
-    expect(screen.getByRole("link", { name: /Ver el rendimiento/ })).toHaveAttribute("href", "/combustibles/consumo?periodo=2026-09")
-  })
-
-  it("las patentes sin vincular traen su acción real, según el permiso", () => {
-    const { unmount } = panel(data)
-    expect(screen.getByText(/2 patentes/).closest("p")).toHaveTextContent("2 patentes de tarjeta no están en la flota y sus litros no cuentan en ningún equipo. Puedes vincularlas.")
-    expect(screen.getByRole("link", { name: "Vincular patentes" })).toHaveAttribute("href", "/combustibles/revisar?tipo=patente&periodo=2026-09")
-    unmount()
-    panel(data, false)
-    expect(screen.queryByRole("link", { name: "Vincular patentes" })).not.toBeInTheDocument()
-    expect(screen.getByRole("link", { name: /Ver las patentes/ })).toBeInTheDocument()
-    expect(screen.queryByText(/Puedes vincularlas/)).not.toBeInTheDocument()
-  })
-
-  it("con todo en orden lo dice, y sin datos no afirma que todo está bien", () => {
-    const { unmount } = panel({ ...data, worse: { count: 0, examples: [] }, unlinkedPlates: 0 })
-    expect(screen.getByText("Ningún equipo rinde más de 10 % peor que otros de su mismo modelo.")).toBeInTheDocument()
-    expect(screen.getByText("Todas las patentes de tarjeta están vinculadas a un equipo.")).toBeInTheDocument()
-    unmount()
-    panel({ ...data, figures: null, worse: null, unlinkedPlates: null })
-    expect(screen.getByText(/No se pudieron calcular los litros de septiembre/)).toBeInTheDocument()
-    expect(screen.getByText(/No se pudo calcular el rendimiento de los equipos/)).toBeInTheDocument()
-    expect(screen.getByText(/No se pudo contar las patentes/)).toBeInTheDocument()
-    expect(screen.queryByText(/Ningún equipo rinde/)).not.toBeInTheDocument()
-  })
-
-  it("sin cargas con rendimiento medido, «ningún equipo rinde peor» no se afirma", () => {
-    panel({ ...data, worse: { count: 0, examples: [] }, measured: false })
-    expect(screen.queryByText(/Ningún equipo rinde/)).not.toBeInTheDocument()
-    expect(screen.getByText("Todavía no hay cargas con rendimiento calculado en septiembre.")).toBeInTheDocument()
   })
 })

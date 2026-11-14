@@ -13,8 +13,8 @@ import { meanTimeToRepairHours } from "./work-orders/metrics"
 import { workOrderVisibility, workOrderVisibilitySql } from "./work-orders/access"
 
 /**
- * Datos de los Indicadores de mantención (`/mantencion/indicadores`): «cómo nos fue y hacia
- * dónde va», a diferencia del Panel, que es la bandeja de «qué falta hoy».
+ * Datos de los gráficos del Panel de mantención (`/mantencion/panel`): «cómo nos fue y hacia
+ * dónde va». Lo pendiente de hoy va en la franja «Hoy» de arriba del mismo Panel.
  *
  * Reglas (las mismas del resto del módulo):
  * - Las OT se acotan con `workOrderVisibilitySql`, igual que la lista de OT: la cifra del tile
@@ -341,14 +341,16 @@ export async function loadTopRepairEquipment(
 export interface PautaState {
   counts: Record<MantEquipmentState, number>
   total: number
+  /** Equipos detenidos en taller hoy (correctiva u OT abierta): la misma regla que la ficha y Equipos «En taller». */
+  inWorkshop: number
 }
 
-/** Estado de las pautas hoy: la única fuente es `loadFleet` (igual que el panel). */
+/** Estado de las pautas hoy: la única fuente es `loadFleet`. */
 export async function loadPautaState(viewer: MantViewer, worksiteId: string | undefined, today: string = todayInChile()): Promise<PautaState> {
   const fleet = await loadFleet({ scope: fleetScopeFor(viewer, worksiteId), today })
   const counts = Object.fromEntries(MANT_EQUIPMENT_STATES.map((state) => [state, 0])) as Record<MantEquipmentState, number>
   for (const row of fleet) counts[row.status.state] += 1
-  return { counts, total: fleet.length }
+  return { counts, total: fleet.length, inWorkshop: fleet.filter((row) => row.workshop).length }
 }
 
 export interface RecordSeriesPoint {

@@ -500,9 +500,10 @@ hermano mayor de `<main>`).
 
 ### Excepción de los tableros (`/dashboard` y los Indicadores)
 
-Sólo en `/dashboard` (todas sus vistas) y en los Indicadores de Control
-operacional (`/flota/indicadores`, `/mantencion/indicadores`,
-`/combustibles/indicadores`) la superficie no es una tarjeta flotante
+Sólo en `/dashboard` (todas sus vistas) y en los tableros de Control
+operacional (`/flota/indicadores` y los Paneles `/mantencion/panel` y
+`/combustibles`, que desde el 2026-11-14 son los Indicadores de su dominio, con
+lo pendiente en una franja arriba de los gráficos) la superficie no es una tarjeta flotante
 por bloque sino **un panel por grupo**: `DashboardPanel`
 (`components/ui/dashboard-panel.tsx`) pone el borde, `rounded-2xl` y el fondo, y
 sus celdas (`PanelBlock`, `ChartSlot`, tiles `KpiCard surface="flat"`) se separan

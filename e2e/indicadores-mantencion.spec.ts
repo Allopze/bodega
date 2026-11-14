@@ -5,7 +5,9 @@ import { resolveE2eDatabaseUrl } from "./environment"
 import { expectPageTitle, login } from "./helpers"
 
 /**
- * E2E: Indicadores de mantención (`/mantencion/indicadores`).
+ * E2E: los gráficos del Panel de mantención (`/mantencion/panel`). Eran la página «Indicadores»
+ * hasta el 2026-11-14; ahora son el Panel, con la franja «Hoy» arriba (`mantencion-2-jefatura`
+ * prueba la franja). `/mantencion/indicadores` redirige al Panel.
  *
  * Siembra SUS PROPIAS órdenes de trabajo (folios `OT-QA-IND-…`, solicitante `QA_Indicadores`)
  * directo en la base —una abierta y una cerrada de reparación con su paso por taller— para que
@@ -22,7 +24,7 @@ import { expectPageTitle, login } from "./helpers"
 test.describe.configure({ mode: "serial" })
 test.setTimeout(120_000)
 
-const RUTA = "/mantencion/indicadores"
+const RUTA = "/mantencion/panel"
 const FOLIO = "OT-QA-IND-"
 
 const chileDay = (offset = 0) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago" }).format(new Date(Date.now() + offset * 86_400_000))
@@ -90,7 +92,7 @@ test.afterAll(async () => {
   }
 })
 
-test.describe("Indicadores de mantención", () => {
+test.describe("Panel de mantención: gráficos", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
   })
@@ -101,7 +103,7 @@ test.describe("Indicadores de mantención", () => {
     page.on("console", (message) => { if (message.type() === "error" && !/favicon/i.test(message.text())) errores.push(message.text()) })
 
     await page.goto(RUTA)
-    await expectPageTitle(page, "Indicadores de mantención")
+    await expectPageTitle(page, "Panel de mantención")
     await expect(page.getByRole("region", { name: "Órdenes de trabajo", exact: true })).toBeVisible()
     await expect(page.getByRole("region", { name: "Pautas y disponibilidad", exact: true })).toBeVisible()
     await esperarGraficos(page)
@@ -110,7 +112,7 @@ test.describe("Indicadores de mantención", () => {
 
   test("las OT sembradas se ven en la tira de cifras y en los gráficos de estados y de creadas, cerradas y en cola", async ({ page }) => {
     await page.goto(RUTA)
-    await expectPageTitle(page, "Indicadores de mantención")
+    await expectPageTitle(page, "Panel de mantención")
     await esperarGraficos(page)
 
     const ordenes = page.getByRole("region", { name: "Órdenes de trabajo", exact: true })
@@ -129,7 +131,7 @@ test.describe("Indicadores de mantención", () => {
 
   test("ninguna celda visible de un panel queda vacía", async ({ page }) => {
     await page.goto(RUTA)
-    await expectPageTitle(page, "Indicadores de mantención")
+    await expectPageTitle(page, "Panel de mantención")
     await esperarGraficos(page)
 
     const vacias = await page.locator("[data-dashboard-panel] > div > *").evaluateAll((celdas) =>
@@ -143,10 +145,10 @@ test.describe("Indicadores de mantención", () => {
 
   test("la tira de cifras sustituye a los tiles: a lo más cuatro por sección y cada una lleva a su subconjunto", async ({ page }) => {
     await page.goto(RUTA)
-    await expectPageTitle(page, "Indicadores de mantención")
+    await expectPageTitle(page, "Panel de mantención")
     await esperarGraficos(page)
 
-    // Los Indicadores son gráficos: no hay tarjetas de KPI, sólo la tira compacta de cada sección.
+    // Los gráficos no llevan tarjetas de KPI, sólo la tira compacta de cada sección (la franja «Hoy» es aparte).
     await expect(page.locator("[data-kpi-card]")).toHaveCount(0)
     const cifras = { "Órdenes de trabajo": 4, "Pautas y disponibilidad": 3 } as const
     for (const [region, esperadas] of Object.entries(cifras)) {
@@ -159,28 +161,30 @@ test.describe("Indicadores de mantención", () => {
 
   test("cambiar el período escribe desde y hasta en la URL", async ({ page }) => {
     await page.goto(RUTA)
-    await expectPageTitle(page, "Indicadores de mantención")
+    await expectPageTitle(page, "Panel de mantención")
     await expect(page).not.toHaveURL(/[?&]desde=/)
 
     await page.getByRole("group", { name: "Período", exact: true }).getByRole("button", { name: "Período anterior", exact: true }).click()
     await expect(page).toHaveURL(/[?&]desde=\d{4}-\d{2}-\d{2}/)
     await expect(page).toHaveURL(/[?&]hasta=\d{4}-\d{2}-\d{2}/)
     // Se aplica con `router.replace`: la pantalla sigue en su título y no se acumulan entradas de historial.
-    await expectPageTitle(page, "Indicadores de mantención")
+    await expectPageTitle(page, "Panel de mantención")
     await esperarGraficos(page)
   })
 
   test("un rango inválido en la URL avisa y cae al período por defecto", async ({ page }) => {
     await page.goto(`${RUTA}?desde=2026-13-45&hasta=2026-01-01`)
-    await expectPageTitle(page, "Indicadores de mantención")
+    await expectPageTitle(page, "Panel de mantención")
     await expect(page.getByText("El rango de fechas de la dirección no es válido", { exact: false })).toBeVisible()
   })
 
-  test("aparece en el menú de Mantención y el ítem queda activo", async ({ page }) => {
-    await page.goto(RUTA)
-    // El menú se busca por href, no por rótulo: el href es el contrato (mismo criterio que control-operacional-navegacion).
-    const item = page.getByRole("navigation", { name: "Navegación", exact: true }).locator('a[href="/mantencion/indicadores"]').first()
-    await expect(item).toBeVisible()
-    await expect(item).toHaveAttribute("aria-current", "page")
+  test("la dirección vieja de Indicadores lleva al Panel con su período y faena", async ({ page }) => {
+    await page.goto("/mantencion/indicadores?desde=2026-01-01&hasta=2026-06-30")
+    await expect(page).toHaveURL(/\/mantencion\/panel\?desde=2026-01-01&hasta=2026-06-30$/)
+    await expectPageTitle(page, "Panel de mantención")
+    // Ya no hay ítem «Indicadores» en el menú: el Panel queda activo.
+    const nav = page.getByRole("navigation", { name: "Navegación", exact: true })
+    await expect(nav.locator('a[href="/mantencion/indicadores"]')).toHaveCount(0)
+    await expect(nav.locator('a[href="/mantencion/panel"]').first()).toHaveAttribute("aria-current", "page")
   })
 })

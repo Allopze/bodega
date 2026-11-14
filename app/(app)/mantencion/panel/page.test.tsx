@@ -1,117 +1,112 @@
 /**
- * «Ver datos» del gráfico semanal del panel ofrece Excel sólo a quien puede exportar mantención
- * (`mant:export`), y el libro dice qué faena y qué ventana miraba la pantalla.
+ * El Panel de mantención es los Indicadores con la franja «Hoy» arriba (decisión del usuario
+ * 2026-11-14). Se prueba el cableado de la página: qué se consulta según los permisos, el
+ * estado vacío único y el Excel sólo con `mant:export`.
  */
 import type { ReactNode } from "react"
 import { isValidElement } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 const session = vi.hoisted(() => ({ permissions: ["mant:records:view_all"] as string[] }))
-/** Lo que la página sabe de la flota y los registros: con equipos el panel se dibuja, sin ellos es un solo aviso. */
-const scope = vi.hoisted(() => ({ activeEquipment: 3, records: 5, workshopRows: 0 }))
+const scope = vi.hoisted(() => ({ equipment: 3, records: 5, inWorkshop: 1 }))
+const unassigned = vi.hoisted(() => vi.fn(async () => 2))
 
 vi.mock("next/navigation", () => ({ redirect: (href: string) => { throw new Error(`redirect:${href}`) } }))
 vi.mock("@/lib/auth/can", () => ({
   requireAnyPermission: async () => ({ user: { id: "u-1", permissions: session.permissions } }),
   can: (current: { user?: { permissions?: string[] } } | null, permission: string) => Boolean(current?.user?.permissions?.includes(permission)),
 }))
+vi.mock("@/lib/services/mantencion/access", () => ({ viewerFromSession: () => ({ userId: "u-1" }) }))
 vi.mock("@/lib/services/mantencion/panel", () => ({
-  loadPanelWorksites: async () => [{ id: "ws-1", name: "Biodiversa" }],
-  loadPanel: async () => ({
-    filters: { period: "30" },
-    fleet: { active: scope.activeEquipment, counts: {} },
-    records: { total: scope.records },
-    workshop: { rows: Array.from({ length: scope.workshopRows }, (_, index) => ({ recordId: `rec-${index}` })) },
-    weeks: [{ start: "2026-10-19", preventive: 3, corrective: 1 }, { start: "2026-10-26", preventive: 2, corrective: 0 }],
-  }),
+  loadPanelWorksites: async () => [{ id: "ws-1", name: "Biodiversa" }, { id: "ws-2", name: "Cholguán" }],
+  countPendingReview: async () => 4,
 }))
-vi.mock("@/lib/services/mantencion/work-orders/query", () => ({ countUnassignedWorkOrders: async () => 2 }))
-vi.mock("@/components/ui/page-header", () => ({ PageHeader: () => null }))
-vi.mock("@/components/mantencion/jefatura/panel/panel-filters-bar", () => ({ PanelFiltersBar: () => null }))
-vi.mock("@/components/mantencion/jefatura/panel/panel-kpis", () => ({ PanelKpis: () => null, PanelStrip: () => null }))
-vi.mock("@/components/mantencion/jefatura/panel/panel-cards", () => ({
-  FleetCard: () => null, HoursCard: () => null, NotDoneCard: () => null, UpcomingCard: () => null, WeeklyCard: () => null, WorkshopCard: () => null,
+vi.mock("@/lib/services/mantencion/work-orders/query", () => ({ countUnassignedWorkOrders: unassigned }))
+vi.mock("@/lib/services/mantencion/indicators", () => ({
+  loadWorkOrderSeries: async () => [{ key: "2026-10", created: 1, closed: 0, backlog: 1 }],
+  loadWorkOrderPeriodStats: async () => ({}),
+  loadOpenWorkOrdersByStatus: async () => [],
+  loadTopRepairEquipment: async () => [],
+  loadPautaState: async () => ({ counts: {}, total: scope.equipment, inWorkshop: scope.inWorkshop }),
+  loadRecordIndicators: async () => ({ points: [{ key: "2026-10", preventive: scope.records, corrective: 0, partial: false }], preventive: scope.records, preventivePrevious: 0 }),
+  loadOutOfService: async () => ({ points: [], total: 0, previous: 0 }),
 }))
+vi.mock("@/components/ui/page-header", () => ({ PageHeader: () => null, Breadcrumbs: () => null }))
+vi.mock("@/components/dashboard/indicator-filters", () => ({ IndicatorFilters: () => null }))
+vi.mock("./indicators-sections", () => ({ WorkOrdersSection: () => null, PautasSection: () => null }))
 vi.mock("./panel-export-button", () => ({ PanelExportButton: () => null }))
 
 import MantencionPanelPage from "./page"
-import { WeeklyCard } from "@/components/mantencion/jefatura/panel/panel-cards"
+import { PageHeader } from "@/components/ui/page-header"
 import { PanelEmptyState } from "@/components/mantencion/jefatura/panel/panel-empty"
-import { PanelKpis } from "@/components/mantencion/jefatura/panel/panel-kpis"
+import { PanelToday } from "@/components/mantencion/jefatura/panel/panel-today"
+import { WorkOrdersSection } from "./indicators-sections"
+import { PanelExportButton } from "./panel-export-button"
 
 afterEach(() => {
   session.permissions = ["mant:records:view_all"]
-  Object.assign(scope, { activeEquipment: 3, records: 5, workshopRows: 0 })
+  Object.assign(scope, { equipment: 3, records: 5, inWorkshop: 1 })
+  unassigned.mockClear()
 })
 
-function findElement(node: ReactNode, type: unknown): { props: Record<string, unknown> } | null {
-  if (!isValidElement(node)) return null
-  if (node.type === type) return node as unknown as { props: Record<string, unknown> }
-  const children = (node.props as { children?: ReactNode }).children
-  for (const child of Array.isArray(children) ? children : [children]) {
-    const found = findElement(child as ReactNode, type)
-    if (found) return found
+type Found = { props: Record<string, unknown> }
+function findElement(node: ReactNode, type: unknown): Found | null {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findElement(child as ReactNode, type)
+      if (found) return found
+    }
+    return null
   }
-  return null
+  if (!isValidElement(node)) return null
+  if (node.type === type) return node as unknown as Found
+  return findElement((node.props as { children?: ReactNode }).children, type)
 }
 
-async function weeklyCard(searchParams: Record<string, string> = {}) {
-  const tree = await MantencionPanelPage({ searchParams: Promise.resolve(searchParams) })
-  const card = findElement(tree, WeeklyCard)
-  if (!card) throw new Error("no se encontró el gráfico semanal")
-  return card
-}
+const page = (searchParams: Record<string, string> = {}) => MantencionPanelPage({ searchParams: Promise.resolve(searchParams) })
 
-describe("/mantencion/panel · «Ver datos» → Excel", () => {
-  it("quien sólo puede ver el panel no recibe la descarga", async () => {
-    expect((await weeklyCard()).props.excel).toBeUndefined()
+describe("/mantencion/panel · franja «Hoy» y gráficos", () => {
+  it("con permiso de órdenes la franja trae las órdenes por asignar y se pintan los gráficos de OT", async () => {
+    session.permissions = ["mant:records:view_all", "mant:ot:view_all"]
+    const tree = await page()
+    expect(findElement(tree, PanelToday)!.props).toMatchObject({ unassignedOrders: 2, inWorkshop: 1, pendingReview: 4, worksiteId: null })
+    expect(findElement(tree, WorkOrdersSection)).not.toBeNull()
   })
 
-  it("con `mant:export` ofrece Excel y declara el alcance en «Metadatos»", async () => {
-    session.permissions = ["mant:records:view_all", "mant:export"]
-    expect((await weeklyCard()).props.excel).toEqual({
-      permission: "mant:export",
-      notes: ["Últimas 2 semanas · todas las faenas del alcance."],
-    })
+  it("sin permiso de órdenes no se consultan ni se ofrecen", async () => {
+    const tree = await page()
+    expect(unassigned).not.toHaveBeenCalled()
+    expect(findElement(tree, PanelToday)!.props.unassignedOrders).toBeNull()
+    expect(findElement(tree, WorkOrdersSection)).toBeNull()
   })
 
-  it("con una faena elegida el libro dice cuál", async () => {
+  it("la faena elegida acota la franja; una faena fuera del alcance se ignora", async () => {
+    session.permissions = ["mant:records:view_all", "mant:ot:view_all"]
+    expect(findElement(await page({ faena: "ws-2" }), PanelToday)!.props.worksiteId).toBe("ws-2")
+    expect(unassigned).toHaveBeenLastCalledWith(expect.anything(), "ws-2")
+    expect(findElement(await page({ faena: "otra" }), PanelToday)!.props.worksiteId).toBeNull()
+  })
+})
+
+describe("/mantencion/panel · Excel", () => {
+  it("sólo con `mant:export`, y con la faena elegida", async () => {
+    expect(findElement(await page(), PageHeader)!.props.actions).toBeUndefined()
     session.permissions = ["mant:records:view_all", "mant:export"]
-    const excel = (await weeklyCard({ faena: "ws-1" })).props.excel as { notes: string[] }
-    expect(excel.notes).toEqual(["Últimas 2 semanas · Biodiversa."])
+    const actions = findElement(await page({ faena: "ws-1" }), PageHeader)!.props.actions as ReactNode
+    expect(findElement(actions, PanelExportButton)!.props.params).toEqual({ faena: "ws-1" })
   })
 })
 
 describe("/mantencion/panel · sin equipos en el alcance", () => {
-  async function page() {
-    return MantencionPanelPage({ searchParams: Promise.resolve({}) })
-  }
-
-  it("sin equipos, registros ni taller muestra un solo estado vacío y no el panel", async () => {
-    Object.assign(scope, { activeEquipment: 0, records: 0, workshopRows: 0 })
+  it("sin equipos ni registros muestra un solo estado vacío y no la franja ni los gráficos", async () => {
+    Object.assign(scope, { equipment: 0, records: 0, inWorkshop: 0 })
     const tree = await page()
     expect(findElement(tree, PanelEmptyState)).not.toBeNull()
-    expect(findElement(tree, PanelKpis)).toBeNull()
-    expect(findElement(tree, WeeklyCard)).toBeNull()
+    expect(findElement(tree, PanelToday)).toBeNull()
   })
 
-  it("quien administra equipos recibe la frase de «agrega o importa»; quien sólo mira, no", async () => {
-    Object.assign(scope, { activeEquipment: 0, records: 0, workshopRows: 0 })
-    expect(findElement(await page(), PanelEmptyState)!.props.canManage).toBe(false)
-    session.permissions = ["mant:records:view_all", "mant:equipment:manage"]
-    expect(findElement(await page(), PanelEmptyState)!.props.canManage).toBe(true)
-  })
-
-  it("con equipos el panel se dibuja completo", async () => {
-    const tree = await page()
-    expect(findElement(tree, PanelEmptyState)).toBeNull()
-    expect(findElement(tree, PanelKpis)).not.toBeNull()
-  })
-
-  it("sin flota activa pero con registros o con un equipo detenido, el panel sigue siendo útil", async () => {
-    Object.assign(scope, { activeEquipment: 0, records: 2, workshopRows: 0 })
-    expect(findElement(await page(), PanelEmptyState)).toBeNull()
-    Object.assign(scope, { activeEquipment: 0, records: 0, workshopRows: 1 })
+  it("con registros el panel se dibuja aunque la flota activa sea cero", async () => {
+    Object.assign(scope, { equipment: 0, records: 2, inWorkshop: 0 })
     expect(findElement(await page(), PanelEmptyState)).toBeNull()
   })
 })

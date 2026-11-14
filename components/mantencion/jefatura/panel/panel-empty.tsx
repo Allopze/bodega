@@ -2,18 +2,25 @@ import Link from "next/link"
 import { Truck } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import type { PanelData } from "@/lib/services/mantencion/panel"
+
+/** Lo que el Panel ya cargó del alcance elegido. `null` = esa consulta no corrió o falló: no prueba que esté vacío. */
+export interface PanelScopeCounts {
+  equipment: number | null
+  inWorkshop: number | null
+  records: number | null
+  workOrders: number | null
+}
 
 /**
- * Sin equipos en el alcance, el panel entero está vacío por UNA causa: tiles en
- * cero, una tira de ceros y cinco tarjetas vacías eran siete avisos para un solo
- * problema (auditoría UX-13, 2026-11-07). La causa raíz sale de lo que la página
- * ya cargó: ningún equipo activo, ningún registro en el período y ningún equipo
- * detenido. Con registros o equipos en taller el panel sigue siendo útil aunque la
- * flota activa sea cero (por ejemplo, equipos dados de baja con historial).
+ * Sin equipos en el alcance, el panel entero está vacío por UNA causa: una franja en
+ * cero y secciones de gráficos vacías eran varios avisos para un solo problema
+ * (auditoría UX-13, 2026-11-07). Sólo cuenta como vacío lo que se pudo consultar: si la
+ * flota o los registros fallaron, el aviso de datos degradados lo dice y el panel se
+ * dibuja con lo que hay. Con registros, órdenes o equipos en taller el panel sigue siendo
+ * útil aunque la flota activa sea cero (por ejemplo, equipos dados de baja con historial).
  */
-export function hasNoEquipmentInScope(data: PanelData): boolean {
-  return data.fleet.active === 0 && data.records.total === 0 && data.workshop.rows.length === 0
+export function hasNoEquipmentInScope({ equipment, inWorkshop, records, workOrders }: PanelScopeCounts): boolean {
+  return equipment === 0 && inWorkshop === 0 && records === 0 && (workOrders === null || workOrders === 0)
 }
 
 /**

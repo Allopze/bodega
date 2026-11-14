@@ -33,7 +33,7 @@ test.describe("Combustibles module", () => {
     await login(page)
   })
 
-  test("el Panel abre con la tira de cinco pasos y el período en tres cifras", async ({ page }) => {
+  test("el Panel abre con la tira de cinco pasos y debajo los gráficos", async ({ page }) => {
     await page.goto("/combustibles")
     await expectPageTitle(page, "Panel de combustible")
 
@@ -54,7 +54,9 @@ test.describe("Combustibles module", () => {
     for (const [clave, destino] of destinos) {
       await expect.soft(pasos.locator(`li[data-step="${clave}"]`).getByRole("link"), `paso «${clave}»`).toHaveAttribute("href", destino)
     }
-    await expect(page.getByRole("heading", { name: "El período en tres cifras", level: 2 })).toBeVisible()
+    // Debajo van los gráficos (los Indicadores son el Panel desde 2026-11-14), no las tarjetas de antes.
+    await expect(page.getByRole("heading", { name: "Consumo", level: 2, exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "El período en tres cifras" })).toHaveCount(0)
   })
 
   test("Consumo › Litros cargados muestra los litros por mes, de dónde vinieron y las patentes para mirar", async ({ page }) => {

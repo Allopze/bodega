@@ -64,7 +64,8 @@ describe("WorkOrdersSection", () => {
     expect(strip).toHaveLength(4)
     const abiertas = within(region).getByRole("link", { name: /^OT abiertas/ })
     expect(abiertas.getAttribute("href")).toBe("/mantencion/ot?estado=abiertas")
-    expect(abiertas.textContent).toContain("2 por asignar")
+    // Las órdenes por asignar van en la franja «Hoy» del Panel, no repetidas en esta cifra (A5).
+    expect(abiertas.textContent).not.toContain("por asignar")
     // 4 vs 2 cerradas: +100 %, como texto junto a la cifra.
     expect(within(region).getByRole("link", { name: /^OT cerradas en el período/ }).textContent).toContain("+100 % vs. período anterior")
     expect(within(region).getByText("27 h")).toBeTruthy()
@@ -122,7 +123,7 @@ describe("WorkOrdersSection", () => {
 
 describe("PautasSection", () => {
   const base = {
-    pautas: { counts: counts({ vencida: 2, proxima: 1, al_dia: 5, sin_lecturas: 2, sin_pauta: 3, baja: 1 }), total: 14 },
+    pautas: { counts: counts({ vencida: 2, proxima: 1, al_dia: 5, sin_lecturas: 2, sin_pauta: 3, baja: 1 }), total: 14, inWorkshop: 1 },
     records: { points: [{ key: "2026-11", preventive: 3, corrective: 1, partial: true }], preventive: 3, preventivePrevious: 2 },
     outOfService: { points: [{ key: "2026-11", days: 4.5, partial: true }], total: 4.5, totalPrevious: 3 },
     ranking: [{ vehicleId: "v1", code: "KA-1", plate: "AAAA-01", count: 3 }],
@@ -191,7 +192,7 @@ describe("PautasSection", () => {
     const { container } = render(
       <PautasSection
         {...common}
-        pautas={{ counts: counts(), total: 0 }}
+        pautas={{ counts: counts(), total: 0, inWorkshop: 0 }}
         records={{ points: [{ key: "2026-11", preventive: 0, corrective: 0, partial: true }], preventive: 0, preventivePrevious: 0 }}
         outOfService={{ points: [{ key: "2026-11", days: 0, partial: true }], total: 0, totalPrevious: 0 }}
         ranking={[]}
@@ -205,7 +206,7 @@ describe("PautasSection", () => {
   })
 
   it("sin equipos con pauta el porcentaje no se inventa: la cifra dice qué falta", () => {
-    render(<PautasSection {...common} {...base} pautas={{ counts: counts({ sin_pauta: 4 }), total: 4 }} showRanking />)
+    render(<PautasSection {...common} {...base} pautas={{ counts: counts({ sin_pauta: 4 }), total: 4, inWorkshop: 0 }} showRanking />)
     expect(screen.getByText("Aún no hay equipos con pauta")).toBeTruthy()
   })
 })

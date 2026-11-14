@@ -351,6 +351,18 @@ async function workOrderSummaries(workOrderIds: string[]): Promise<Map<string, {
   return new Map(rows.map((row) => [row.id, { description: row.description ?? "", reason: row.reason, waitingParts: row.waitingParts }]))
 }
 
+/**
+ * Registros vigentes que esperan revisión de la jefatura, sin período: es trabajo pendiente
+ * hoy, no una cifra del período. Misma regla que la pestaña «Por revisar» de Registros.
+ */
+export async function countPendingReview(viewer: MantViewer, worksiteId: string | undefined): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(mantRecords)
+    .where(and(recordsBase(viewer, worksiteId), eq(mantRecords.review, "pendiente")))
+  return row?.n ?? 0
+}
+
 /** Faenas del selector del panel: las de su alcance de equipos (nunca las de otros). */
 export async function loadPanelWorksites(viewer: MantViewer): Promise<Array<{ id: string; name: string }>> {
   const scope = equipmentScope(viewer)

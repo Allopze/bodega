@@ -121,8 +121,6 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
     destinos: [
       // «Panel de mantención» y «Panel de combustible» ya no repiten rótulo; igual se distinguen por href y por grupo.
       { href: "/mantencion/panel", nombre: "Panel de mantención" },
-      // «Indicadores» se repite en Mantención y Combustible: se distinguen por href y por grupo.
-      { href: "/mantencion/indicadores", nombre: "Indicadores" },
       { href: "/mantencion/ot", nombre: "Órdenes de trabajo" },
       { href: "/mantencion/registros", nombre: "Registros firmados" },
       { href: "/mantencion/equipos", nombre: "Equipos" },
@@ -148,7 +146,6 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
       { href: "/combustibles/revisar", nombre: empiezaCon("Por revisar") },
       { href: "/combustibles/cuadratura", nombre: "Cuadratura" },
       { href: "/combustibles/consumo", nombre: "Consumo" },
-      { href: "/combustibles/indicadores", nombre: "Indicadores" },
       { href: "/combustibles/pagos", nombre: "Facturas y pagos" },
       {
         href: "/combustibles/fuentes",
@@ -702,7 +699,6 @@ const RUTAS_DEL_AREA = [
   "/flota/monitoreo",
   "/flota/indicadores",
   "/mantencion/panel",
-  "/mantencion/indicadores",
   "/combustibles",
   "/combustibles/cargas",
   "/combustibles/cargas/registrar",
@@ -712,7 +708,6 @@ const RUTAS_DEL_AREA = [
   "/combustibles/cuadratura/estanques",
   "/combustibles/consumo",
   "/combustibles/consumo/litros",
-  "/combustibles/indicadores",
   "/combustibles/pagos",
   "/combustibles/pagos/estados",
   "/combustibles/fuentes",

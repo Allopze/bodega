@@ -89,7 +89,7 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
   const canExport = can(session, "combustibles:export")
   const sourcesHref = fuelSourcesHref(session)
 
-  const { track, degraded, total } = createSourceTracker("combustibles/indicadores/consumo")
+  const { track, degraded, total } = createSourceTracker("combustibles/panel/consumo")
   const [figuresRaw, ledger, monthly, byWorksite, byType, coverage, anyLoads] = await Promise.all([
     track(getIndicatorFigures(session, period, { worksiteId }), null, "cifras del período"),
     // Sin `view_costs` el libro no se dibuja en ninguna parte: no se consulta ni entra al aviso de degradados.
@@ -131,7 +131,6 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
   const excelWithCosts = excel && (!canViewCosts || can(session, "combustibles:export_sensitive")) ? excel : undefined
 
   const links = [
-    { label: "Panel de combustible", href: withPeriod(FUEL_PATHS.panel) },
     { label: "Consumo", href: withPeriod(FUEL_PATHS.consumoLitros) },
     { label: "Cargas", href: withPeriod(FUEL_PATHS.cargas) },
   ]

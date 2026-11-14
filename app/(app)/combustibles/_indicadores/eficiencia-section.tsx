@@ -69,7 +69,7 @@ export async function EficienciaSection({ session, period, worksiteId }: { sessi
   const sourcesHref = fuelSourcesHref(session)
   const withPeriod = (href: string) => hrefInContext(href, period, worksiteId)
 
-  const { track, degraded, total } = createSourceTracker("combustibles/indicadores/eficiencia")
+  const { track, degraded, total } = createSourceTracker("combustibles/panel/eficiencia")
   const [rates, idle, coverage] = await Promise.all([
     track(getMeterRateSeries(session, filters, { from: windows.chart.from, to: windows.chart.to, monthKeys: windows.chart.monthKeys }), null, "rendimiento por mes"),
     track(getIdleFleetMonths(session, historyFilters), null, "motor en vacío por mes"),
