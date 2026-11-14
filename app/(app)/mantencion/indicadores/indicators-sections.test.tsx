@@ -4,8 +4,22 @@ import { render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import type { MantEquipmentState } from "@/lib/mantencion/types"
 
-// Los gráficos de recharts se sustituyen: aquí se mira la estructura de las secciones (tiles, enlaces,
-// vacíos y qué gráficos se piden), no el dibujo.
+// Los gráficos de recharts se sustituyen: aquí se mira la estructura de las secciones (tira de cifras,
+// enlaces, vacíos y qué gráficos se piden), no el dibujo. El gráfico de barras queda como un
+// `[role="img"]` con su nombre y una lista de sus ítems (rótulo, cifra, color y enlace).
+vi.mock("@/components/charts/bar-ranking-chart-lazy", () => ({
+  BarRankingChartLazy: (props: { ariaLabel: string; order?: string; items: Array<{ key: string; label: string; value: number; href?: string; color?: string }> }) => (
+    <div role="img" aria-label={`${props.ariaLabel}; «Ver datos» trae las cifras exactas`} data-order={props.order}>
+      <ul>
+        {props.items.map((item) => (
+          <li key={item.key} data-color={item.color ?? ""}>
+            {item.href ? <a href={item.href}>{item.label}</a> : item.label}: {item.value}
+          </li>
+        ))}
+      </ul>
+    </div>
+  ),
+}))
 vi.mock("./indicators-charts-lazy", () => ({
   WorkOrderFlowChart: () => <div data-testid="chart-flow" />,
   WorkOrderMixChart: () => <div data-testid="chart-mix" />,
@@ -35,7 +49,7 @@ const counts = (over: Partial<Record<MantEquipmentState, number>> = {}): Record<
 describe("WorkOrdersSection", () => {
   const stats = { closed: 4, closedPrevious: 2, mttrHours: 27, repairClosed: 3, cost: 150_000 }
 
-  it("a lo más cuatro tiles, todos enlaces a /mantencion/ot, con variación y sin enums crudos", () => {
+  it("una tira de cuatro cifras con enlace a /mantencion/ot, variación en texto y sin tiles ni enums crudos", () => {
     const { container } = render(
       <WorkOrdersSection
         {...common}
@@ -45,49 +59,59 @@ describe("WorkOrdersSection", () => {
       />,
     )
     const region = screen.getByRole("region", { name: "Órdenes de trabajo" })
-    const tiles = container.querySelectorAll("[data-kpi-card]")
-    expect(tiles).toHaveLength(4)
-    for (const link of container.querySelectorAll("a:has([data-kpi-card])")) expect(link.getAttribute("href")).toMatch(/^\/mantencion\/ot\?/)
-    expect(within(region).getByRole("link", { name: /OT abiertas/ }).getAttribute("href")).toBe("/mantencion/ot?estado=abiertas")
-    // 4 vs 2 cerradas: +100 %.
-    expect(within(region).getByRole("link", { name: /^OT cerradas en el período/ }).textContent).toContain("100")
+    expect(container.querySelectorAll("[data-kpi-card]")).toHaveLength(0)
+    const strip = within(region).getAllByRole("link").filter((link) => (link.getAttribute("href") ?? "").startsWith("/mantencion/ot?") && /OT abiertas|OT cerradas|Tiempo medio|Mano de obra/.test(link.textContent ?? ""))
+    expect(strip).toHaveLength(4)
+    const abiertas = within(region).getByRole("link", { name: /^OT abiertas/ })
+    expect(abiertas.getAttribute("href")).toBe("/mantencion/ot?estado=abiertas")
+    expect(abiertas.textContent).toContain("2 por asignar")
+    // 4 vs 2 cerradas: +100 %, como texto junto a la cifra.
+    expect(within(region).getByRole("link", { name: /^OT cerradas en el período/ }).textContent).toContain("+100 % vs. período anterior")
     expect(within(region).getByText("27 h")).toBeTruthy()
-    // Estados en español, no el enum.
-    expect(region.textContent).toContain("Por asignar")
-    expect(region.textContent).toContain("En taller")
+    // Los estados son un gráfico de barras en el orden del flujo, con su color y su enlace; en español, no el enum.
+    const chart = within(region).getByRole("img", { name: /^OT abiertas hoy por estado/ })
+    expect(chart.getAttribute("data-order")).toBe("input")
+    expect(within(chart).getByRole("link", { name: "Por asignar" }).getAttribute("href")).toBe("/mantencion/ot?estado=solicitada")
+    expect(within(chart).getByText(/En taller/)).toBeTruthy()
+    expect(chart.querySelector("li")?.getAttribute("data-color")).toBeTruthy()
     expect(region.textContent).not.toMatch(/solicitada|en_ejecucion/)
     expect(screen.getByTestId("chart-flow")).toBeTruthy()
     expect(screen.getByTestId("chart-mix")).toBeTruthy()
   })
 
   it("el filtro de faena viaja a los enlaces", () => {
-    const { container } = render(
+    render(
       <WorkOrdersSection {...common} worksiteId="ws-1" series={[point("2026-11", { created: 1 })]} stats={stats} byStatus={[{ status: "solicitada", count: 1 }]} />,
     )
-    for (const link of container.querySelectorAll("a:has([data-kpi-card])")) expect(link.getAttribute("href")).toContain("faena=ws-1")
+    const region = screen.getByRole("region", { name: "Órdenes de trabajo" })
+    for (const name of [/^OT abiertas/, /^OT cerradas en el período/, /^Tiempo medio/, /^Mano de obra/]) {
+      expect(within(region).getByRole("link", { name }).getAttribute("href")).toContain("faena=ws-1")
+    }
+    expect(within(region).getByRole("link", { name: "Por asignar" }).getAttribute("href")).toContain("faena=ws-1")
   })
 
-  it("sin ninguna OT muestra un solo vacío con su enlace, sin tiles ni gráficos", () => {
+  it("sin ninguna OT muestra un solo vacío con su enlace, sin cifras ni gráficos", () => {
     const { container } = render(
       <WorkOrdersSection {...common} series={[point("2026-11")]} stats={{ closed: 0, closedPrevious: 0, mttrHours: null, repairClosed: 0, cost: null }} byStatus={[]} />,
     )
     expect(container.querySelectorAll("[data-kpi-card]")).toHaveLength(0)
+    expect(screen.queryByRole("link", { name: /^OT abiertas/ })).toBeNull()
     expect(screen.getByRole("heading", { name: "Todavía no hay órdenes de trabajo en este período" })).toBeTruthy()
     expect(screen.getByRole("link", { name: /Ver órdenes de trabajo/ }).getAttribute("href")).toBe("/mantencion/ot")
     expect(screen.queryByTestId("chart-flow")).toBeNull()
   })
 
-  it("una consulta caída (null) da «Sin dato» en su tile y no pinta su gráfico, sin tumbar al resto", () => {
-    const { container } = render(
+  it("una consulta caída (null) da «Sin dato» en su cifra y no pinta su gráfico, sin tumbar al resto", () => {
+    render(
       <WorkOrdersSection {...common} series={null} stats={null} byStatus={[{ status: "asignada", count: 2 }]} />,
     )
-    expect(container.querySelectorAll("[data-kpi-card]")).toHaveLength(4)
-    expect(screen.getAllByText("Sin dato").length).toBeGreaterThanOrEqual(3)
+    expect(screen.getAllByText("Sin dato")).toHaveLength(3)
+    expect(screen.getByRole("link", { name: /^OT abiertas/ }).textContent).toContain("2")
     expect(screen.queryByTestId("chart-flow")).toBeNull()
-    expect(screen.getAllByText("Asignada").length).toBeGreaterThan(0)
+    expect(within(screen.getByRole("img", { name: /^OT abiertas hoy por estado/ })).getByText(/Asignada/)).toBeTruthy()
   })
 
-  it("sin cierres en el período un tile dice qué falta en vez de un cero", () => {
+  it("sin cierres en el período la cifra dice qué falta en vez de un cero", () => {
     render(
       <WorkOrdersSection {...common} series={[point("2026-11", { created: 1, backlog: 1 })] } stats={{ closed: 0, closedPrevious: 0, mttrHours: null, repairClosed: 0, cost: null }} byStatus={[{ status: "solicitada", count: 1 }]} />,
     )
@@ -104,18 +128,29 @@ describe("PautasSection", () => {
     ranking: [{ vehicleId: "v1", code: "KA-1", plate: "AAAA-01", count: 3 }],
   }
 
-  it("tres tiles con enlace; el % de pautas al día sale de al día sobre los equipos con pauta", () => {
+  it("tres cifras con enlace en la tira; el % de pautas al día sale de al día sobre los equipos con pauta", () => {
     const { container } = render(<PautasSection {...common} {...base} showRanking />)
     const region = screen.getByRole("region", { name: "Pautas y disponibilidad" })
-    expect(container.querySelectorAll("[data-kpi-card]")).toHaveLength(3)
-    const tile = within(region).getByRole("link", { name: /Equipos con la pauta al día/ })
-    // 5 / (2 + 1 + 5 + 2) = 50 %; con vencidas el tile lleva a la lista de vencidas.
-    expect(tile.textContent).toContain("50%")
-    expect(tile.getAttribute("href")).toBe("/mantencion/equipos?estado=vencida")
-    expect(within(region).getByRole("link", { name: /Registros preventivos/ }).getAttribute("href")).toContain("tipo=P")
-    expect(within(region).getByRole("link", { name: /Días fuera de servicio/ }).getAttribute("href")).toBe("/mantencion/equipos?taller=1")
+    expect(container.querySelectorAll("[data-kpi-card]")).toHaveLength(0)
+    const stat = within(region).getByRole("link", { name: /Equipos con la pauta al día/ })
+    // 5 / (2 + 1 + 5 + 2) = 50 %; con vencidas la cifra lleva a la lista de vencidas.
+    expect(stat.textContent).toContain("50%")
+    expect(stat.getAttribute("href")).toBe("/mantencion/equipos?estado=vencida")
+    const preventivos = within(region).getByRole("link", { name: /Registros preventivos/ })
+    expect(preventivos.getAttribute("href")).toContain("tipo=P")
+    // 3 vs 2: +50 %.
+    expect(preventivos.textContent).toContain("+50 % vs. período anterior")
+    const dias = within(region).getByRole("link", { name: /Días fuera de servicio/ })
+    expect(dias.getAttribute("href")).toBe("/mantencion/equipos?taller=1")
+    expect(dias.textContent).toContain("+50 % vs. período anterior")
     for (const id of ["chart-records", "chart-days"]) expect(screen.getByTestId(id)).toBeTruthy()
-    expect(within(region).getByRole("link", { name: /KA-1 · AAAA-01/ }).getAttribute("href")).toBe("/mantencion/equipos/v1")
+    // Las pautas de hoy y el ranking son gráficos de barras, no franjas ni listas.
+    const pautas = within(region).getByRole("img", { name: /^Equipos por estado de pauta hoy/ })
+    expect(pautas.getAttribute("data-order")).toBe("input")
+    expect(within(pautas).getByRole("link", { name: "Vencida" }).getAttribute("href")).toBe("/mantencion/equipos?estado=vencida")
+    const ranking = within(region).getByRole("img", { name: /^Equipos con más órdenes de trabajo de reparación/ })
+    expect(ranking.getAttribute("data-order")).toBe("desc")
+    expect(within(ranking).getByRole("link", { name: "KA-1 · AAAA-01" }).getAttribute("href")).toBe("/mantencion/equipos/v1")
     expect(region.textContent).toContain("Sin pauta")
     expect(region.textContent).not.toMatch(/sin_pauta|sin_lecturas/)
   })
@@ -136,10 +171,14 @@ describe("PautasSection", () => {
   it("sin equipos repetidos (ranking vacío) no se pinta la celda del ranking", () => {
     render(<PautasSection {...common} {...base} ranking={[]} showRanking />)
     expect(screen.queryByText("Equipos con más OT de reparación")).toBeNull()
-    const cell = screen.getByRole("heading", { name: "Estado de las pautas hoy" }).closest("div.min-w-0.border-l")
-    // Sin pareja, se estira a la fila completa a 2 columnas y vuelve a una a 3 (donde la fila la cierra la serie de días).
-    expect(cell?.className).toContain("xl:col-span-2")
-    expect(cell?.className).toContain("2xl:col-span-1")
+    // Con tres gráficos «one» la fila a 2 columnas quedaría coja: `layoutChartSlots` ensancha uno para cerrarla.
+    const cells = [
+      screen.getByTestId("chart-records"),
+      screen.getByRole("heading", { name: "Estado de las pautas hoy" }),
+      screen.getByTestId("chart-days"),
+    ].map((node) => node.closest("div.min-w-0.border-l"))
+    expect(cells.every((cell) => cell !== null)).toBe(true)
+    expect(cells.filter((cell) => cell?.className.includes("xl:col-span-2")).length).toBe(1)
   })
 
   it("quien no ve OT no recibe el ranking, que sale de las órdenes", () => {
@@ -160,11 +199,12 @@ describe("PautasSection", () => {
       />,
     )
     expect(container.querySelectorAll("[data-kpi-card]")).toHaveLength(0)
+    expect(screen.queryByRole("link", { name: /Equipos con la pauta al día/ })).toBeNull()
     expect(screen.getByRole("heading", { name: "Aún no hay equipos con pauta en el módulo" })).toBeTruthy()
     expect(within(screen.getByRole("region", { name: "Pautas y disponibilidad" })).getByRole("link", { name: /Ir a Equipos →/ }).getAttribute("href")).toBe("/mantencion/equipos")
   })
 
-  it("sin equipos con pauta el porcentaje no se inventa: el tile dice qué hacer", () => {
+  it("sin equipos con pauta el porcentaje no se inventa: la cifra dice qué falta", () => {
     render(<PautasSection {...common} {...base} pautas={{ counts: counts({ sin_pauta: 4 }), total: 4 }} showRanking />)
     expect(screen.getByText("Aún no hay equipos con pauta")).toBeTruthy()
   })

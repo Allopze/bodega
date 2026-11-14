@@ -2,8 +2,9 @@ import type { ReactNode } from "react"
 import { ChartDataTable, type ChartDataExcel } from "@/components/charts/chart-data-table"
 import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "@/components/charts/chart-frame"
 import { ChartSlot } from "@/components/ui/dashboard-panel"
-import { RankedList, type RankedListItem } from "@/components/ui/ranked-list"
-import type { SlotSpan } from "@/lib/combustibles/indicators/view"
+import { BarRankingChartLazy } from "@/components/charts/bar-ranking-chart-lazy"
+import type { BarRankingItem } from "@/components/charts/bar-ranking-chart"
+import { layoutChartSlots, type SlotKind, type SlotSpan } from "@/lib/indicators/chart-layout"
 import { SectionError } from "../consumo/_components/charts/overview-section"
 
 /**
@@ -12,6 +13,17 @@ import { SectionError } from "../consumo/_components/charts/overview-section"
  * del tablero —titular con la cifra, ventana y fuente en la descripción, «Ver datos» abajo— para
  * que las tres pantallas de Indicadores se lean igual. Son componentes de servidor.
  */
+
+/**
+ * Ancho de cada gráfico según cuáles se dibujan (`present[i]`: con datos o con su aviso de error).
+ * Todos son del tipo «uno»: dos por fila en `xl`, tres en `2xl`, y `layoutChartSlots` sólo ensancha
+ * una celda para cerrar la fila. Un gráfico ausente devuelve `null` y no cuenta para el reparto.
+ */
+export function chartSpans(present: readonly boolean[]): (SlotSpan | null)[] {
+  const spans = layoutChartSlots(present.filter(Boolean).map((): SlotKind => "one"))
+  let next = 0
+  return present.map((isPresent) => (isPresent ? (spans[next++] ?? "one") : null))
+}
 
 export interface BlockHeadline {
   value: string
@@ -60,7 +72,11 @@ export function ChartBlock({
   )
 }
 
-/** Ranking de un solo tono con su titular. No dibuja nada sin filas: la celda se oculta (`empty:hidden`). */
+/**
+ * Ranking de un solo tono como barras horizontales, con su titular y su «Ver datos» (el gráfico
+ * reemplaza a la lista legible: la tabla trae todas las filas, el gráfico las `limit` primeras).
+ * No dibuja nada sin filas: la celda se oculta (`empty:hidden`).
+ */
 export function RankingBlock({
   span = "one",
   title,
@@ -68,6 +84,7 @@ export function RankingBlock({
   headline,
   items,
   ariaLabel,
+  table,
   unit = " L",
   limit = 8,
 }: {
@@ -75,8 +92,9 @@ export function RankingBlock({
   title: string
   description: string
   headline?: BlockHeadline
-  items: RankedListItem[]
+  items: BarRankingItem[]
   ariaLabel: string
+  table?: BlockTable
   unit?: string
   limit?: number
 }) {
@@ -93,7 +111,8 @@ export function RankingBlock({
           </>
         ) : undefined}
       >
-        <RankedList items={items} format="count" unit={unit} limit={limit} ariaLabel={ariaLabel} />
+        <BarRankingChartLazy items={items} ariaLabel={ariaLabel} unit={unit} order="desc" limit={limit} />
+        {table ? <ChartDataTable caption={table.caption} headers={table.headers} rows={table.rows} excel={table.excel} /> : null}
       </ChartFrame>
     </ChartSlot>
   )

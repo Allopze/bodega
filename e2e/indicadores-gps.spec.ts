@@ -51,17 +51,31 @@ test.describe("Indicadores GPS", () => {
     expect(vacias, "celdas visibles sin contenido").toEqual([])
   })
 
-  test("a lo más ocho tiles en la página y cada uno lleva a su subconjunto", async ({ page }) => {
+  test("la página son gráficos: sin tiles y con cada cifra del período como enlace de la tira", async ({ page }) => {
     await page.goto(RUTA)
     await expectPageTitle(page, "Indicadores GPS")
     await esperarGraficos(page)
 
-    const tiles = await page.locator("[data-kpi-card]").count()
-    expect(tiles, `${tiles} tiles`).toBeLessThanOrEqual(8)
-    // Cada tile es un enlace que contiene el `data-kpi-card`: mismos conteos.
-    expect(await page.locator("a:has([data-kpi-card])").count(), "hay tiles que no son enlaces").toBe(tiles)
-    for (const href of await page.locator("a:has([data-kpi-card])").evaluateAll((links) => links.map((link) => link.getAttribute("href")))) {
-      expect(href, "tile sin destino").toMatch(/^\//)
+    await expect(page.locator("[data-kpi-card]"), "los tiles de KPI ya no existen en esta pantalla").toHaveCount(0)
+    // Los enlaces de la tira (Km recorridos, Viajes…) llevan a un subconjunto de la app; las secciones sin datos no pintan tira.
+    const destinos = await page
+      .getByRole("region", { name: /^(Uso de la flota|Ralentí y conducción)$/ })
+      .locator("a[data-pressable]")
+      .evaluateAll((links) => links.map((link) => link.getAttribute("href")))
+    for (const href of destinos) expect(href, "cifra de la tira sin destino").toMatch(/^\//)
+    expect(destinos.length, "una sección no puede tener más de 4 cifras en su tira").toBeLessThanOrEqual(8)
+  })
+
+  test("los rankings se dibujan como gráficos de barras, no como listas", async ({ page }) => {
+    await page.goto(RUTA)
+    await expectPageTitle(page, "Indicadores GPS")
+    await esperarGraficos(page)
+
+    // Sin lecturas en la base E2E no hay rankings: entonces sólo se comprueba que ninguno quedó como lista.
+    await expect(page.locator("[data-rank-fill]"), "un ranking quedó como lista de barras HTML").toHaveCount(0)
+    const rankings = page.getByRole("img", { name: /^(Km recorridos por faena|Equipos con más km recorridos|Equipos con más horas de motor|Equipos con más excesos de velocidad)/ })
+    for (const ranking of await rankings.all()) {
+      await expect(ranking.locator("svg.recharts-surface")).toBeVisible()
     }
   })
 
