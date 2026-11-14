@@ -70,11 +70,15 @@ function describePartial(points: BucketPoint[], granularity: IndicatorGranularit
 
 /**
  * El balde con el valor más alto de `pick`. Con empate no hay un «mayor» que nombrar: devuelve cuántos
- * baldes empatan (y ningún balde), para que el titular no corone a uno solo.
+ * baldes empatan (y ningún balde), para que el titular no corone a uno solo. El balde en curso
+ * (`partial`) no compite: un mes a medias no es «el mes con más» (igual que en Indicadores GPS),
+ * salvo que sea el único balde del rango.
  */
 export function peakOf<T extends BucketPoint>(points: readonly T[], pick: (point: T) => number): { value: number; tied: number; point: T | null } {
-  const value = Math.max(0, ...points.map(pick))
-  const leaders = points.filter((point) => pick(point) === value)
+  const closed = points.filter((point) => !point.partial)
+  const candidates = closed.length > 0 ? closed : points
+  const value = Math.max(0, ...candidates.map(pick))
+  const leaders = candidates.filter((point) => pick(point) === value)
   return { value, tied: leaders.length, point: leaders.length === 1 ? leaders[0]! : null }
 }
 

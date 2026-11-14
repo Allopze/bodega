@@ -81,6 +81,12 @@ describe("gráficos de los Indicadores de mantención", () => {
     expect(peakOf(points.slice(0, 2), (point) => point.n)).toMatchObject({ value: 3, tied: 1, point: { key: "b" } })
   })
 
+  it("peakOf: el balde en curso no compite, salvo que sea el único", () => {
+    const points = [{ key: "oct", partial: false, n: 20 }, { key: "nov", partial: true, n: 50 }]
+    expect(peakOf(points, (point) => point.n)).toMatchObject({ value: 20, tied: 1, point: { key: "oct" } })
+    expect(peakOf(points.slice(1), (point) => point.n)).toMatchObject({ value: 50, tied: 1, point: { key: "nov" } })
+  })
+
   it("rótulos de balde: el día lleva el año y el mes no repite nada", () => {
     expect(bucketFullLabel("2026-11-03", "day")).toBe("3 nov 2026")
     expect(bucketFullLabel("2026-11", "month")).toBe("nov 2026")
