@@ -37,7 +37,7 @@ const PLAIN_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 function isPlainDate(value: unknown): value is string {
   if (typeof value !== "string" || !PLAIN_DATE.test(value)) return false
-  const [y, m, d] = value.split("-").map(Number)
+  const [y = 0, m = 0, d = 0] = value.split("-").map(Number)
   const date = new Date(Date.UTC(y, m - 1, d))
   return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d
 }
@@ -51,7 +51,7 @@ export function rangeLengthDays(from: string, to: string): number {
 
 /** Primer día del mes `months` meses antes del de `today`, hasta `today`. */
 export function defaultIndicatorRange(today: string = todayInChile(), months = 6): DateRange {
-  const [y, m] = today.split("-").map(Number)
+  const [y = 0, m = 1] = today.split("-").map(Number)
   const start = new Date(Date.UTC(y, m - 1 - (months - 1), 1))
   return { from: start.toISOString().slice(0, 10), to: today }
 }
@@ -100,7 +100,7 @@ export function listBuckets(from: string, to: string, granularity: IndicatorGran
     for (let day = from; day <= to; day = addDaysToPlainDate(day, 1)) keys.push(day)
     return keys
   }
-  let [y, m] = from.split("-").map(Number)
+  let [y = 0, m = 1] = from.split("-").map(Number)
   const end = to.slice(0, 7)
   for (;;) {
     const key = `${y}-${String(m).padStart(2, "0")}`
@@ -116,7 +116,7 @@ const MONTHS_SHORT = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "s
 
 /** Rótulo corto del balde para un eje: «3 nov» o «nov 2026». */
 export function bucketLabel(key: string, granularity: IndicatorGranularity): string {
-  const [y, m, d] = key.split("-").map(Number)
+  const [y = 0, m = 1, d = 1] = key.split("-").map(Number)
   const month = MONTHS_SHORT[m - 1] ?? ""
   return granularity === "day" ? `${d} ${month}` : `${month} ${y}`
 }

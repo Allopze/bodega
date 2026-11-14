@@ -69,6 +69,15 @@ export const mantencionEquiposModule = {
           group: "Mantención",
         },
         {
+          // Mismo gate que el Panel: contesta «cómo nos fue» con gráficos. La sección de OT
+          // sólo se muestra a quien además tiene `mant:ot:view_*`.
+          label: "Indicadores",
+          href: "/mantencion/indicadores",
+          iconName: "ChartBar",
+          permissions: ["mant:records:view_worksite", "mant:records:view_all"],
+          group: "Mantención",
+        },
+        {
           // Las OT las ve también la administración de contrato, que no tiene los
           // permisos de registros: por eso el ítem lleva sus propios permisos. El
           // mecánico (`execute`) las trabaja también desde el PC.

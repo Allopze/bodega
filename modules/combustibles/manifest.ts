@@ -84,6 +84,9 @@ export const combustiblesModule = {
         { label: "Por revisar", href: "/combustibles/revisar", iconName: "Tray", permissions: ["combustibles:view"], group: "Combustible", badge: "count" as const },
         { label: "Cuadratura", href: "/combustibles/cuadratura", iconName: "Scales", permissions: ["combustibles:view"], group: "Combustible" },
         { label: "Consumo", href: "/combustibles/consumo", iconName: "ChartLineUp", permissions: ["combustibles:view"], group: "Combustible" },
+        // Indicadores: cómo fue el consumo del período y hacia dónde va (gráficos); la bandeja de
+        // trabajo sigue siendo el Panel. Mismo permiso que Consumo.
+        { label: "Indicadores", href: "/combustibles/indicadores", iconName: "ChartBar", permissions: ["combustibles:view"], group: "Combustible" },
         { label: "Facturas y pagos", href: "/combustibles/pagos", iconName: "Receipt", permissions: ["combustibles:view_costs"], group: "Combustible" },
         {
           // Padre sin permisos propios: sólo un contenedor, visible si la persona ve al

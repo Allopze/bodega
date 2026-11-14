@@ -581,12 +581,15 @@ export default function MyNewPage() {
 
 - **Sidebar:** relleno `--color-chrome` al ras (parte izquierda de la "L"), rótulos de sección en `text-eyebrow` (caja de oración: «Plataforma», no `PLATAFORMA`), ítems con pills redondeados suaves y perfil de usuario fijado al fondo del panel. **Un solo estado activo para todo el menú** (decisión 2026-11-07): `bg-nav-active-bg text-nav-active-ink font-semibold` con el ícono en `--color-primary`, desde los helpers de `components/layout/nav-rows.tsx`. Nada de `slate-*` ni colores literales en el menú (ver DESIGN.md § Navegación).
 - **TopBar integrado en Desktop:** En escritorio el `TopBar` se mantiene transparente (`bg-transparent border-b-0`), proyectando el título de página y la barra de controles directamente sobre el lienzo sin franjas ni bordes rígidos.
-- **Mainzone / Tarjetas flotantes:** Las vistas (tablas, gráficos, listas) flotan sobre el lienzo tenue (`bg-[#f8fafc]`) como contenedores blancos redondeados (`bg-white border border-slate-200/70 rounded-2xl p-6 shadow-xs`). La única pantalla exceptuada es el tablero (`/dashboard`): ver la excepción declarada a continuación. Todo lo demás conserva las tarjetas flotantes.
+- **Mainzone / Tarjetas flotantes:** Las vistas (tablas, gráficos, listas) flotan sobre el lienzo tenue (`bg-[#f8fafc]`) como contenedores blancos redondeados (`bg-white border border-slate-200/70 rounded-2xl p-6 shadow-xs`). Las únicas pantallas exceptuadas son los tableros: Inicio (`/dashboard`) y los Indicadores de Control operacional (`/flota/indicadores`, `/mantencion/indicadores`, `/combustibles/indicadores`); ver la excepción declarada a continuación. Todo lo demás conserva las tarjetas flotantes.
 
-### Excepción declarada: el tablero (`/dashboard`), superficie y cifras
+### Excepción declarada: los tableros (`/dashboard` y los Indicadores), superficie y cifras
 
 El tablero se aparta de las tarjetas flotantes **sólo en `/dashboard`** (todas sus
-vistas) y por una razón observada: al compararlo con tableros de referencia, una
+vistas) **y en las tres pantallas de Indicadores de Control operacional**
+(`/flota/indicadores`, `/mantencion/indicadores`, `/combustibles/indicadores`,
+decisión del usuario 2026-11-13: son tableros de análisis del período sin una
+lista principal, con 6–8 gráficos cada una), y por una razón observada: al compararlo con tableros de referencia, una
 tarjeta flotante por bloque —cada KPI, cada gráfico, cada lista con su propio
 borde, radio y sombra— producía ruido visual (decenas de rectángulos del mismo
 peso compitiendo) y el ojo no distinguía qué era un grupo y qué un bloque suelto. Un
@@ -603,13 +606,15 @@ panel por grupo se lee como un solo sistema.
 - **Los paneles son `div`, nunca regiones.** `e2e/densidad-kpi-filtros.spec.ts`
   cuenta los tiles por región (A1); un panel con `role="region"` o nombre
   accesible juntaría todos los tiles de la vista y rompería ese conteo. La región
-  sigue siendo la sección del dominio (`DomainSection`).
+  sigue siendo la sección (`DashboardSection` de
+  `components/dashboard/dashboard-section.tsx`; en Inicio, su envoltorio
+  `DomainSection`).
 - **Cifras en sans, no en mono.** Los números de KPI del tablero van en la fuente
   del cuerpo (Myriad), `font-semibold` y `tabular-nums`: `KpiCard numerals="sans"`,
   que las secciones pasan con `{...DASHBOARD_KPI}` (exportado de
-  `app/(app)/dashboard/dashboard-domain-shell.tsx`; `KpiCard` es server component y
+  `components/ui/dashboard-panel.tsx`; `KpiCard` es server component y
   no puede leer contexto, por eso es explícito). El resto de la plataforma sigue con
-  `font-mono` en sus cifras (ver DESIGN.md); no lo cambies fuera del tablero.
+  `font-mono` en sus cifras (ver DESIGN.md); no lo cambies fuera de los tableros.
 - **Una variación se muestra con `Delta`** (`components/ui/delta.tsx`) y **un
   ranking con `RankedList`** (`components/ui/ranked-list.tsx`, un solo tono):
   nada de píldoras o textos sueltos ("-5 vs. mes anterior") ni de barras
@@ -657,7 +662,7 @@ Examples:
 - inconsistent fields → inspect `Field`;
 - inconsistent empty states → inspect `EmptyState`;
 - inconsistent export behavior → inspect `ExportButton` / `ExportDialog`;
-- dashboard (`/dashboard`) surface or spacing → inspect `DashboardPanel` / `PanelBlock` / `ChartSlot`;
+- dashboard (`/dashboard`) or Indicadores (`/*/indicadores`) surface or spacing → inspect `DashboardPanel` / `PanelBlock` / `ChartSlot` / `DashboardSection`; a recharts chart loaded statically → use `lazyChart` (`components/charts/lazy-chart.tsx`);
 - a variation (↑/↓ vs. previous period) rendered differently → inspect `Delta`;
 - a ranking drawn with one color per bar → inspect `RankedList`;
 - a modal that changes size when switching tabs, segments or wizard steps → pass `stableHeight`
@@ -789,6 +794,13 @@ Lo que **no** se relaja:
   dos veces en la misma. Por eso el gasto en OC se fue de Adquisiciones cuando
   nació Finanzas, y el cumplimiento PDTP salió de la fila de tiles al ganar su
   medidor radial.
+- Las tres pantallas de Indicadores de Control operacional
+  (`/flota/indicadores`, `/mantencion/indicadores`, `/combustibles/indicadores`)
+  siguen la misma regla que una vista de Inicio: son el análisis del período de
+  un dominio, sin lista principal. Tope de **8 tiles por pantalla**, nunca más de
+  4 por sección, y cada sección (`DashboardSection`) contesta una sola pregunta
+  con sus tiles y sus gráficos. Los Paneles de cada dominio siguen con el tope
+  de 4: son la bandeja de trabajo, no el análisis.
 - El resto de las pantallas conserva el tope de 4, con una sola excepción más,
   declarada abajo: la tira de pasos del Panel de combustible.
 - La superficie del tablero (un panel por grupo en vez de una tarjeta por
