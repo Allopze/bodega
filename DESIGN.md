@@ -94,9 +94,10 @@ Cada color semántico tiene 4 variantes: base, `-tint` (superficie), `-line`
 - El naranja signal **solo** para pendientes y sus badges/alertas.
 - Los colores de estado comparten la estructura tint/line/ink.
 - Los bordes y la elevación llevan la jerarquía; las sombras son suaves y se
-  reservan a superficies flotantes (cards, popovers, modales). **Excepción: el
-  tablero (`/dashboard`)** no lleva sombra por bloque; ver «Excepción del
-  tablero» más abajo y la regla 7 de `AGENTS.md`.
+  reservan a superficies flotantes (cards, popovers, modales). **Excepción: los
+  tableros (`/dashboard` y los Indicadores de Control operacional)** no llevan
+  sombra por bloque; ver «Excepción de los tableros» más abajo y la regla 7 de
+  `AGENTS.md`.
 
 ---
 
@@ -108,7 +109,7 @@ Cada color semántico tiene 4 variantes: base, `-tint` (superficie), `-line`
 |---|---|---|
 | `--font-display` | **Exo** | Marca Chome, títulos (`text-h1/h2/h3`, `text-display`) |
 | `--font-sans` | **Myriad Pro** | UI, body, formularios, tablas, navegación |
-| `--font-mono` | **Geist Mono** | Datos tabulares, códigos, valores numéricos (salvo las cifras de KPI del tablero, que van en sans). Nunca rótulos ni insignias |
+| `--font-mono` | **Geist Mono** | Datos tabulares, códigos, valores numéricos (salvo las cifras de KPI de los tableros, que van en sans). Nunca rótulos ni insignias |
 
 `--font-serif` existe solo por compatibilidad y apunta a Exo. Los títulos y el
 cuerpo comparten un sistema tipográfico coherente: Exo para display, Myriad Pro
@@ -134,7 +135,7 @@ para lectura.
 ### Reglas
 
 - Datos numéricos (cantidades, precios, totales) siempre en `font-mono tabular-nums`.
-  **Excepción: el tablero (`/dashboard`)**, donde las cifras de KPI y los
+  **Excepción: los tableros (`/dashboard` y `/*/indicadores`)**, donde las cifras de KPI y los
   titulares de gráfico van en `font-sans font-semibold tabular-nums`
   (`KpiCard numerals="sans"`, vía `DASHBOARD_KPI`).
 - **Caja de oración en toda la interfaz** (auditoría UX-05, 2026-11-07). No hay
@@ -497,16 +498,21 @@ al borde lateral y esquina superior del pozo principal — no es una superficie
 flotante, es el propio contenedor de scroll del pozo (`[data-shell-scroll]`,
 hermano mayor de `<main>`).
 
-### Excepción del tablero (`/dashboard`)
+### Excepción de los tableros (`/dashboard` y los Indicadores)
 
-Sólo en `/dashboard` (todas sus vistas) la superficie no es una tarjeta flotante
+Sólo en `/dashboard` (todas sus vistas) y en los Indicadores de Control
+operacional (`/flota/indicadores`, `/mantencion/indicadores`,
+`/combustibles/indicadores`) la superficie no es una tarjeta flotante
 por bloque sino **un panel por grupo**: `DashboardPanel`
 (`components/ui/dashboard-panel.tsx`) pone el borde, `rounded-2xl` y el fondo, y
 sus celdas (`PanelBlock`, `ChartSlot`, tiles `KpiCard surface="flat"`) se separan
 con líneas de 1px, sin sombra ni tarjeta anidada. Las cifras de KPI van en sans
 semibold con `tabular-nums`, no en mono. El resto de la app mantiene tarjetas
 flotantes y numerales mono. Motivo y límites (los paneles son `div`, nunca
-regiones; Finanzas abre con gráficos) en la regla 7 de `AGENTS.md`.
+regiones; Finanzas abre con gráficos) en la regla 7 de `AGENTS.md`. Las piezas
+son compartidas: `DashboardSection` (`components/dashboard/dashboard-section.tsx`),
+`DASHBOARD_KPI` (`components/ui/dashboard-panel.tsx`) y `lazyChart`
+(`components/charts/lazy-chart.tsx`) para todo gráfico de Recharts.
 
 ---
 

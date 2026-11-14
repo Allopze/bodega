@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, sql, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import { mantRecordCorrectives, mantRecordItems, mantRecords, mantWorkOrders, mantWorksiteSettings, worksites } from "@/db/schema"
 import { MANT_EQUIPMENT_STATES, type MantEquipmentState, type MantUnit } from "@/lib/mantencion/types"
@@ -86,25 +86,70 @@ export interface PanelData {
 }
 
 /** El filtro de faena sólo puede achicar el alcance de equipos, nunca agrandarlo. */
-function fleetScopeFor(viewer: MantViewer, worksiteId: string | undefined): MantWorksiteScope {
+export function fleetScopeFor(viewer: MantViewer, worksiteId: string | undefined): MantWorksiteScope {
   const scope = equipmentScope(viewer)
   if (!worksiteId) return scope
   if (scope === "all") return [worksiteId]
   return scope.includes(worksiteId) ? [worksiteId] : []
 }
 
+/**
+ * Base de todo lo que cuenta REGISTROS: vigentes, dentro del alcance del usuario y de la faena
+ * elegida (sin período). La comparten el panel y los Indicadores.
+ */
+function recordsBase(viewer: MantViewer, worksiteId: string | undefined): SQL {
+  return and(
+    recordVisibilitySql(recordVisibility(viewer)),
+    eq(mantRecords.status, "vigente"),
+    worksiteId ? eq(mantRecords.worksiteId, worksiteId) : undefined,
+  )!
+}
+
+export type RecordSeriesGranularity = "day" | "week" | "month"
+
+export interface RecordSeriesRow {
+  /** Primer día del balde, `YYYY-MM-DD` (el lunes en la semana; el día 1 en el mes). */
+  bucket: string
+  kind: "P" | "C"
+  n: number
+}
+
+/**
+ * Registros vigentes por balde y tipo (preventiva «P» / correctiva «C»). Es la consulta del
+ * gráfico semanal del panel, extraída para que los Indicadores la usen con otra ventana y
+ * granularidad. Sólo devuelve baldes con registros: quien dibuja rellena los vacíos.
+ *
+ * `to` es opcional: el panel no pone tope superior (las 8 semanas llegan hasta hoy).
+ * La granularidad entra como literal SQL de una lista cerrada, no como parámetro: con un
+ * parámetro `date_trunc($1, …)` en el SELECT y en el GROUP BY serían expresiones distintas
+ * para Postgres.
+ */
+export async function loadRecordSeries(
+  viewer: MantViewer,
+  input: { from: string; to?: string; granularity: RecordSeriesGranularity; worksiteId?: string },
+): Promise<RecordSeriesRow[]> {
+  const bucketExpr = {
+    day: sql<string>`to_char(date_trunc('day', ${mantRecords.workDate}::date), 'YYYY-MM-DD')`,
+    week: sql<string>`to_char(date_trunc('week', ${mantRecords.workDate}::date), 'YYYY-MM-DD')`,
+    month: sql<string>`to_char(date_trunc('month', ${mantRecords.workDate}::date), 'YYYY-MM-DD')`,
+  }[input.granularity]
+  const rows = await db.select({ bucket: bucketExpr, kind: mantRecords.kind, n: sql<number>`count(*)::int` })
+    .from(mantRecords)
+    .where(and(
+      recordsBase(viewer, input.worksiteId),
+      gte(mantRecords.workDate, input.from),
+      input.to ? lte(mantRecords.workDate, input.to) : undefined,
+    ))
+    .groupBy(bucketExpr, mantRecords.kind)
+  return rows.map((row) => ({ bucket: row.bucket, kind: row.kind === "P" ? "P" : "C", n: row.n }))
+}
+
 export async function loadPanel(viewer: MantViewer, filters: PanelFilters, today: string = todayInChile()): Promise<PanelData> {
   const from = periodStart(filters.period, today)
-  const visible = recordVisibilitySql(recordVisibility(viewer))
   // Base: vigentes, dentro del alcance y de la faena elegida (sin período).
-  const base: SQL = and(
-    visible,
-    eq(mantRecords.status, "vigente"),
-    filters.worksiteId ? eq(mantRecords.worksiteId, filters.worksiteId) : undefined,
-  )!
+  const base: SQL = recordsBase(viewer, filters.worksiteId)
   const inPeriod: SQL = and(base, from ? gte(mantRecords.workDate, from) : undefined)!
   const weeks = lastWeeks(today, WEEKS_SHOWN)
-  const weekExpr = sql<string>`to_char(date_trunc('week', ${mantRecords.workDate}::date), 'YYYY-MM-DD')`
 
   const [fleet, [totals], weekRows, hoursRows, notDoneRows, cases] = await Promise.all([
     loadFleet({ scope: fleetScopeFor(viewer, filters.worksiteId), today }),
@@ -117,10 +162,7 @@ export async function loadPanel(viewer: MantViewer, filters: PanelFilters, today
     }).from(mantRecords)
       .leftJoin(mantRecordCorrectives, eq(mantRecordCorrectives.recordId, mantRecords.id))
       .where(inPeriod),
-    db.select({ week: weekExpr, kind: mantRecords.kind, n: sql<number>`count(*)::int` })
-      .from(mantRecords)
-      .where(and(base, gte(mantRecords.workDate, weeks[0]!)))
-      .groupBy(weekExpr, mantRecords.kind),
+    loadRecordSeries(viewer, { from: weeks[0]!, granularity: "week", worksiteId: filters.worksiteId }),
     db.select({
       worksiteId: worksites.id,
       worksiteName: worksites.name,
@@ -203,7 +245,7 @@ export async function loadPanel(viewer: MantViewer, filters: PanelFilters, today
 
   const weekMap = new Map(weeks.map((start) => [start, { start, preventive: 0, corrective: 0 }]))
   for (const row of weekRows) {
-    const bucket = weekMap.get(row.week)
+    const bucket = weekMap.get(row.bucket)
     if (bucket) bucket[row.kind === "P" ? "preventive" : "corrective"] += row.n
   }
 

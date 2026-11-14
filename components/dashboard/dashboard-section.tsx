@@ -1,0 +1,122 @@
+import type { ReactNode } from "react"
+import Link from "next/link"
+import { ArrowRight } from "@phosphor-icons/react/dist/ssr"
+import { DashboardPanel } from "@/components/ui/dashboard-panel"
+import { Skeleton } from "@/components/ui/skeleton"
+
+/**
+ * Una sección de tablero: KPIs arriba, gráficos abajo, enlaces al módulo. La usan
+ * las vistas de Inicio (`DomainSection`) y los Indicadores de Control operacional.
+ *
+ * Los enlaces cierran G-03: los ocho gráficos anteriores no llevaban a ninguna
+ * parte y `/analitica` —la pantalla con el detalle filtrable— no estaba
+ * enlazada desde ningún punto del dashboard.
+ *
+ * **La sección no declara un período propio.** Lo hizo en una primera versión y
+ * fue el hallazgo L-07/G-04.4 otra vez: "Adquisiciones · Mes en curso"
+ * encabezaba una tendencia de 6 meses, un backlog de hoy y una inversión
+ * acumulada histórica; "Prevención · Año en curso" encabezaba tres KPIs de
+ * estado actual. Ninguna de estas secciones es homogénea en el tiempo, así que
+ * **cada KPI y cada gráfico declara su propia ventana** y la cabecera no promete
+ * una que no puede cumplir.
+ */
+export interface DashboardKpiGroup {
+  key: string
+  /** Rótulo de la fila. `null` la deja sin encabezado (grupo único). */
+  label: string | null
+  content: ReactNode
+}
+
+export function DashboardSection({ id, title, kpis, kpiGroups, summary, charts, links, note, coverage, chartsFirst = false }: {
+  /** Ancla y prefijo del `id` del título (`${id}-titulo`). */
+  id: string
+  title: string
+  /** Una sola fila sin rótulo. Excluyente con `kpiGroups`. */
+  kpis?: ReactNode
+  /**
+   * Varias filas rotuladas. Finanzas las necesita: ocho cifras seguidas sin
+   * separar ingresos de egresos se leen como una sola lista indistinguible, que
+   * es el defecto que §A1 previene. Ver la excepción declarada en AGENTS.md.
+   */
+  kpiGroups?: DashboardKpiGroup[]
+  /** Métricas secundarias en tira editorial, fuera del conteo de tiles. */
+  summary?: ReactNode
+  charts: ReactNode
+  links: Array<{ label: string; href: string }>
+  /** Advertencia de alcance cuando alguna cifra no puede respetar el filtro. */
+  note?: string
+  /**
+   * Aviso de cobertura de datos (`CoverageNotice`): qué meses no tienen datos del proveedor.
+   * Va bajo el encabezado, sobre las cifras que advierte, y es el único lugar de la sección que
+   * lo dice: ni el detalle de un tile ni el subtítulo de un gráfico lo repiten (A5).
+   */
+  coverage?: ReactNode
+  /**
+   * Gráficos antes que los KPIs. Sólo Finanzas: su pregunta es cómo evolucionan
+   * la facturación y la deuda, y eso lo responden los gráficos; en las vistas
+   * operativas (Prevención, Adquisiciones) lo accionable son los tiles.
+   */
+  chartsFirst?: boolean
+}) {
+  const groups: DashboardKpiGroup[] = kpiGroups ?? (kpis ? [{ key: "default", label: null, content: kpis }] : [])
+  // Bento del panel: 3 columnas en 2xl, 2 en xl, 1 abajo. Cada gráfico va en un
+  // `ChartSlot` (con `span="wide"` las series temporales); el slot se oculta si
+  // el gráfico no tiene datos, así que no quedan huecos.
+  const chartsPanel = <DashboardPanel cols="charts">{charts}</DashboardPanel>
+  // Ya no hay capas sticky sobre el pozo: sólo aire para que el ancla no quede
+  // pegada al borde superior.
+  return (
+    <section id={id} aria-labelledby={`${id}-titulo`} className="scroll-mt-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[var(--color-border)] pb-2">
+        {/* Un escalón sobre los títulos de tarjeta (eyebrow): los
+            dominios son el nivel de navegación de la mitad inferior y a la
+            misma escala competían con sus propias tarjetas (§6.2). */}
+        <h2 id={`${id}-titulo`} className="text-h2 text-[var(--color-text)]">{title}</h2>
+        <div className="flex flex-wrap items-center gap-x-1">
+          {links.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="inline-flex min-h-8 items-center gap-1 rounded-md px-1.5 text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+            >
+              {link.label}
+              <ArrowRight size={12} weight="bold" aria-hidden />
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {note && <p className="mb-3 text-xs text-[var(--color-text-muted)]">{note}</p>}
+      {/* `empty:hidden`: un aviso sin meses no pinta nada y el contenedor no deja aire de más. */}
+      {coverage && <div data-domain-coverage="" className="mb-3 empty:hidden">{coverage}</div>}
+
+      {/* Espaciado con `gap` y no con márgenes: un panel que se oculta (todos
+          sus gráficos sin datos) queda `display: none` y en un flex no deja
+          hueco; con `mt-4` sobre el bloque siguiente quedaba aire de más. */}
+      <div className="flex flex-col gap-4">
+        {chartsFirst && chartsPanel}
+        {groups.map((group) => (
+          <div key={group.key}>
+            {group.label && (
+              <h3 data-kpi-group-label="" className="text-eyebrow mb-2 text-[var(--color-text-faint)]">{group.label}</h3>
+            )}
+            <DashboardPanel cols="kpis">{group.content}</DashboardPanel>
+          </div>
+        ))}
+        {summary && <div>{summary}</div>}
+        {!chartsFirst && chartsPanel}
+      </div>
+    </section>
+  )
+}
+
+/** Reserva el alto de una sección para que el índice no salte al resolver. */
+export function DashboardSectionFallback() {
+  return (
+    <div aria-hidden>
+      <Skeleton className="mb-3 h-6 w-48" />
+      <Skeleton className="h-24 rounded-[var(--radius-2xl)]" />
+      <Skeleton className="mt-4 h-72 rounded-[var(--radius-2xl)]" />
+    </div>
+  )
+}

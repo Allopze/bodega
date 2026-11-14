@@ -300,7 +300,10 @@ describe("sidebar navigation", () => {
       ["Flota", "Vehículos"],
       ["Flota", "Conductores"],
       ["Flota", "Monitoreo GPS"],
+      // Cada dominio tiene su pantalla de Indicadores (gráficos del período) junto a su Panel.
+      ["Flota", "Indicadores GPS"],
       ["Mantención", "Panel de mantención"],
+      ["Mantención", "Indicadores"],
       ["Mantención", "Órdenes de trabajo"],
       ["Mantención", "Registros firmados"],
       ["Mantención", "Equipos"],
@@ -315,6 +318,7 @@ describe("sidebar navigation", () => {
       ["Combustible", "Por revisar"],
       ["Combustible", "Cuadratura"],
       ["Combustible", "Consumo"],
+      ["Combustible", "Indicadores"],
       ["Combustible", "Facturas y pagos"],
       ["Combustible", "Configuración"],
     ])

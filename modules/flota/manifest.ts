@@ -58,6 +58,13 @@ export const flotaModule = {
           permissions: ["flota:view"],
           group:    "Flota",
         },
+        {
+          label:    "Indicadores GPS",
+          href:     "/flota/indicadores",
+          iconName: "ChartBar",
+          permissions: ["flota:view"],
+          group:    "Flota",
+        },
       ],
     },
   ],

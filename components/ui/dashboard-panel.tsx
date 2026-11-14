@@ -2,8 +2,9 @@ import type { ReactNode } from "react"
 import { cn } from "@/lib/utils"
 
 /**
- * Superficie del tablero: un panel único dividido por líneas finas, en vez de
- * una tarjeta flotante por bloque (excepción del tablero a la regla 7 de
+ * Superficie de los tableros (Inicio y los Indicadores de Control
+ * operacional): un panel único dividido por líneas finas, en vez de una
+ * tarjeta flotante por bloque (excepción de los tableros a la regla 7 de
  * AGENTS.md).
  *
  * Las divisiones salen del borde superior e izquierdo de cada bloque, con la
@@ -14,6 +15,14 @@ import { cn } from "@/lib/utils"
  * Es un `div` a propósito, nunca una región: `e2e/densidad-kpi-filtros.spec.ts`
  * cuenta los tiles por región y un panel con nombre los juntaría todos.
  */
+/**
+ * Variante de tile de los tableros (Inicio y los Indicadores de Control
+ * operacional): celda plana del panel y cifras sans. Se esparce en cada
+ * `KpiCard` (`<KpiCard {...DASHBOARD_KPI} …/>`); es explícita porque `KpiCard`
+ * es server component y no puede leer contexto.
+ */
+export const DASHBOARD_KPI = { numerals: "sans", surface: "flat" } as const
+
 const PANEL_COLS = {
   // auto-fit y no 4 fijas: un grupo de 2 o 3 tiles (Ingresos en Finanzas) se
   // reparte el ancho en vez de dejar media fila vacía.
