@@ -198,6 +198,11 @@ export interface GpsUsageIndicators {
   vehiclesWithUse: number
   km: { current: number; previous: number }
   hours: { current: number; previous: number }
+  /**
+   * Cobertura de lecturas de cada período: pares equipo-día con alguna lectura GPS. Los dos
+   * períodos miden lo mismo (igual largo), así que sirve para saber si el anterior es comparable.
+   */
+  readingDays: { current: number; previous: number }
   buckets: GpsUsageBucket[]
   byWorksite: GpsWorksiteUsage[]
   /** Con más km primero; sólo los que recorrieron algo. */
@@ -241,6 +246,8 @@ export function buildGpsUsage(input: {
   // Series por equipo, fuente y medidor (ya llegan ordenadas por día).
   const series = new Map<string, MeterSeriesPoint[]>()
   const readingVehicles = new Set<string>()
+  const readingDaysCurrent = new Set<string>()
+  const readingDaysPrevious = new Set<string>()
   const anyReadingVehicles = new Set<string>()
   for (const row of meterRows) {
     if (!row.vehicleId || !vehicleById.has(row.vehicleId)) continue
@@ -250,7 +257,12 @@ export function buildGpsUsage(input: {
     list.push({ value: Number(row.value), occurredAt: row.occurredAt })
     series.set(key, list)
     const day = todayInChile(row.occurredAt)
-    if (day >= period.from && day <= period.to) readingVehicles.add(row.vehicleId)
+    if (day >= period.from && day <= period.to) {
+      readingVehicles.add(row.vehicleId)
+      readingDaysCurrent.add(`${row.vehicleId}|${day}`)
+    } else if (day >= period.previous.from && day <= period.previous.to) {
+      readingDaysPrevious.add(`${row.vehicleId}|${day}`)
+    }
   }
 
   const bucketKeys = listBuckets(period.from, period.to, period.granularity)
@@ -319,6 +331,7 @@ export function buildGpsUsage(input: {
     vehiclesWithUse: usageRows.length,
     km,
     hours,
+    readingDays: { current: readingDaysCurrent.size, previous: readingDaysPrevious.size },
     buckets: bucketKeys.map((key) => buckets.get(key)!),
     byWorksite: [...byWorksiteMap.values()].sort((a, b) => b.km - a.km || b.hours - a.hours || a.name.localeCompare(b.name, "es")),
     topByKm: usageRows.filter((row) => row.km > 0).sort((a, b) => b.km - a.km || byCode(a, b)).slice(0, TOP_VEHICLES),
@@ -418,6 +431,8 @@ export interface GpsIdleIndicators {
   previousIdlePct: number | null
   workingHours: number
   idleHours: number
+  /** Horas de funcionamiento (trabajo + ralentí) de cada período: la cobertura para comparar. */
+  operatingHours: { current: number; previous: number }
 }
 
 function controlFilters(range: DateRange, worksiteId?: string): ControlFilters {
@@ -446,16 +461,16 @@ export async function getGpsIdleIndicators(session: Session, input: GpsIndicator
   const months = monthRows.map((row) => ({ key: row.month, workingHours: row.workingHours, idleHours: row.idleHours }))
   const workingHours = months.reduce((sum, row) => sum + row.workingHours, 0)
   const idleHours = months.reduce((sum, row) => sum + row.idleHours, 0)
+  const previousIdle = previousRows.reduce((sum, row) => sum + row.idleHours, 0)
+  const previousWorking = previousRows.reduce((sum, row) => sum + row.workingHours, 0)
   return {
     months,
     vehicles: vehicles.length,
     idlePct: pctOf(idleHours, workingHours),
-    previousIdlePct: pctOf(
-      previousRows.reduce((sum, row) => sum + row.idleHours, 0),
-      previousRows.reduce((sum, row) => sum + row.workingHours, 0),
-    ),
+    previousIdlePct: pctOf(previousIdle, previousWorking),
     workingHours,
     idleHours,
+    operatingHours: { current: workingHours + idleHours, previous: previousWorking + previousIdle },
   }
 }
 
@@ -481,6 +496,8 @@ export interface GpsSpeedingVehicle {
 }
 
 export interface GpsDrivingIndicators {
+  /** Días con algún viaje o alerta de OnWay en cada período: la cobertura para comparar. */
+  coverageDays: { current: number; previous: number }
   trips: { current: number; previous: number; km: number }
   tripBuckets: GpsTripBucket[]
   alertGranularity: AlertGranularity
@@ -584,8 +601,12 @@ export async function getGpsDrivingIndicators(session: Session, input: GpsIndica
     }
   }
 
+  const daysIn = (range: DateRange) => new Set(
+    [...tripRows.map((row) => row.day), ...alertRows.map((row) => row.day)].filter((day) => day >= range.from && day <= range.to),
+  ).size
   const vehicles = new Map(alertRows.flatMap((row) => row.vehicleId ? [[row.vehicleId, { code: row.code, plate: row.plate, typeName: row.typeName }] as const] : []))
   return {
+    coverageDays: { current: daysIn({ from: input.from, to: input.to }), previous: daysIn(input.previous) },
     trips,
     tripBuckets: tripKeys.map((key) => tripBuckets.get(key)!),
     ...buildGpsAlertAggregates({ rows: alertRows, vehicles, period: input }),

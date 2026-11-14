@@ -5,12 +5,12 @@ import { describe, expect, it, vi } from "vitest"
 
 vi.mock("@/components/charts/chart-data-export", () => ({ ChartDataExport: () => null }))
 
-import { bucketFullLabel, OutOfServiceChart, RecordsKindChart, WorkOrderFlowChart, WorkOrderMixChart } from "./indicators-charts"
+import { bucketFullLabel, OutOfServiceChart, peakOf, RecordsKindChart, WorkOrderFlowChart, WorkOrderMixChart } from "./indicators-charts"
 
 const common = { granularity: "month" as const, scopeNote: "01-09-2026 al 13-11-2026 · todas las faenas" }
 
 describe("gráficos de los Indicadores de mantención", () => {
-  it("el flujo de OT dice cuántas hay en cola, cuántas se crearon y cerraron, y trae su tabla «Ver datos»", () => {
+  it("el flujo de OT dice en qué período se pidió más trabajo (no repite los tiles) y trae su tabla «Ver datos»", () => {
     render(
       <WorkOrderFlowChart
         {...common}
@@ -22,8 +22,9 @@ describe("gráficos de los Indicadores de mantención", () => {
       />,
     )
     expect(screen.getByRole("heading", { name: "Órdenes de trabajo: creadas, cerradas y en cola" })).toBeTruthy()
-    // En cola hoy (el último período es parcial), con la suma del rango.
-    expect(screen.getByText(/OT en cola hoy · 7 creadas y 4 cerradas/)).toBeTruthy()
+    // El titular es el pico de OT creadas (septiembre, 4), no el total en cola ni el de cerradas, que son tiles.
+    expect(screen.getByText(/OT creadas en sept 2026, el período con más/)).toBeTruthy()
+    expect(screen.queryByText(/en cola hoy/)).toBeNull()
     expect(screen.getByText(/el último mes es parcial/)).toBeTruthy()
     expect(screen.getByText("Ver datos")).toBeTruthy()
     expect(screen.getByRole("table", { hidden: true, name: "Órdenes de trabajo: creadas, cerradas y en cola" })).toBeTruthy()
@@ -49,16 +50,35 @@ describe("gráficos de los Indicadores de mantención", () => {
     expect(screen.getByText(/de las OT creadas son reparaciones \(4 de 6\)/)).toBeTruthy()
   })
 
-  it("registros y días fuera de servicio dan su cifra en el titular", () => {
+  it("registros: el titular es la parte correctiva; días fuera de servicio: el período con más, no el total del tile", () => {
     render(
       <>
-        <RecordsKindChart {...common} data={[{ key: "2026-10", partial: false, preventive: 5, corrective: 2 }]} />
-        <OutOfServiceChart {...common} data={[{ key: "2026-10", partial: false, days: 12.5 }]} />
+        <RecordsKindChart {...common} data={[{ key: "2026-10", partial: false, preventive: 6, corrective: 2 }]} />
+        <OutOfServiceChart
+          {...common}
+          data={[{ key: "2026-09", partial: false, days: 3.4 }, { key: "2026-10", partial: false, days: 12.5 }, { key: "2026-11", partial: true, days: 1 }]}
+        />
       </>,
     )
-    expect(screen.getByText(/registros preventivos · 2 correctivos/)).toBeTruthy()
+    expect(screen.getByText("25%")).toBeTruthy()
+    expect(screen.getByText(/de los registros fueron correctivos \(2 de 8\)/)).toBeTruthy()
     expect(screen.getAllByText("12,5").length).toBeGreaterThan(0)
-    expect(screen.getByText(/días-equipo fuera de servicio en el período/)).toBeTruthy()
+    expect(screen.getByText(/días-equipo fuera de servicio en oct 2026, el período con más/)).toBeTruthy()
+    // La suma (16,9) es la del tile; el gráfico no la repite.
+    expect(screen.queryByText("16,9")).toBeNull()
+  })
+
+  it("con empate en el pico no se corona a un período", () => {
+    render(
+      <OutOfServiceChart {...common} data={[{ key: "2026-09", partial: false, days: 5 }, { key: "2026-10", partial: false, days: 5 }, { key: "2026-11", partial: true, days: 1 }]} />,
+    )
+    expect(screen.getByText(/en cada uno de 2 períodos, el máximo del rango/)).toBeTruthy()
+  })
+
+  it("peakOf: devuelve el balde único o cuántos empatan", () => {
+    const points = [{ key: "a", partial: false, n: 1 }, { key: "b", partial: false, n: 3 }, { key: "c", partial: false, n: 3 }]
+    expect(peakOf(points, (point) => point.n)).toMatchObject({ value: 3, tied: 2, point: null })
+    expect(peakOf(points.slice(0, 2), (point) => point.n)).toMatchObject({ value: 3, tied: 1, point: { key: "b" } })
   })
 
   it("rótulos de balde: el día lleva el año y el mes no repite nada", () => {

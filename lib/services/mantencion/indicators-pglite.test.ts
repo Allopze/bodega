@@ -205,10 +205,16 @@ describe("órdenes de trabajo", () => {
     expect(stats.cost).toBeNull()
   })
 
-  it("ranking de equipos con más OT de reparación: sin anuladas y desempate por patente", async () => {
+  it("ranking de equipos con más OT de reparación: sólo con 2 o más, sin anuladas y desempate por patente", async () => {
+    // AAAA-02 y BBBB-01 tienen una sola OT: no son un ranking.
     const ranking = await loadTopRepairEquipment(GLOBAL, QUERY)
-    expect(ranking.map((row) => [row.plate, row.count])).toEqual([["AAAA-01", 2], ["AAAA-02", 1], ["BBBB-01", 1]])
-    expect((await loadTopRepairEquipment(GLOBAL, QUERY, 1))).toHaveLength(1)
+    expect(ranking.map((row) => [row.plate, row.count])).toEqual([["AAAA-01", 2]])
+    // Con el piso en 1 sí aparecen todos, y el empate se ordena por patente.
+    const all = await loadTopRepairEquipment(GLOBAL, QUERY, 50, 1)
+    expect(all.map((row) => [row.plate, row.count])).toEqual([["AAAA-01", 2], ["AAAA-02", 1], ["BBBB-01", 1]])
+    expect(await loadTopRepairEquipment(GLOBAL, QUERY, 1, 1)).toHaveLength(1)
+    // Sin repeticiones en el alcance, no hay ranking.
+    expect(await loadTopRepairEquipment(SCOPED_A, { ...QUERY, from: "2026-11-01" })).toEqual([])
   })
 })
 

@@ -9,7 +9,7 @@ import { lazyChart } from "@/components/charts/lazy-chart"
  * tal cual: la pantalla los reutiliza, no los duplica.
  */
 
-export const LitersCostChart = lazyChart(() => import("./indicators-charts").then((m) => m.LitersCostChart), "los litros y el costo por mes", "h-96")
+export const CostPriceChart = lazyChart(() => import("./indicators-charts").then((m) => m.CostPriceChart), "el costo y el precio por litro por mes", "h-96")
 
 export const LitersByMediumChart = lazyChart(
   () => import("../consumo/_components/charts/overview-monthly-chart").then((m) => m.OverviewMonthlyChart),

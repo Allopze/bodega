@@ -26,6 +26,8 @@ import {
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { formatCompactQty, formatPercent, formatQty } from "@/lib/utils"
 import { GPS_ALERT_CLASS_LABELS, type CountedGpsAlertClass } from "@/lib/services/fleet-gps-alert-class"
+import type { IndicatorGranularity } from "@/lib/indicators/period"
+import { peakBucket, peakPhrase } from "./gps-format"
 
 /*
  * Gráficos de los Indicadores GPS. Se cargan siempre por `lazyChart`
@@ -37,6 +39,12 @@ import { GPS_ALERT_CLASS_LABELS, type CountedGpsAlertClass } from "@/lib/service
  */
 
 const num = (value: number, digits = 0) => formatQty(value, undefined, { maximumFractionDigits: digits })
+const NOUN = { day: "día", month: "mes" } as const
+
+/*
+ * Las cabeceras no repiten los tiles de la sección (A5): en reposo dicen el balde pico
+ * (`peakBucket`, sin el parcial) y al apuntar un balde dicen sus cifras.
+ */
 const DOT = { r: 3, fill: SURFACE, strokeWidth: 2 } as const
 
 // ── Km y horas de motor ──────────────────────────────────────────────────────
@@ -57,7 +65,7 @@ const usageConfig = {
   hours: { label: "Horas de motor", color: CHART_COLORS.blue },
 } satisfies ChartConfig
 
-export function GpsUsageChart({ data, description }: { data: GpsUsagePoint[]; description: string }) {
+export function GpsUsageChart({ data, description, granularity }: { data: GpsUsagePoint[]; description: string; granularity: IndicatorGranularity }) {
   const motion = useChartMotion()
   const tooltip = useTooltipProps()
   const active = useActiveIndex()
@@ -71,8 +79,7 @@ export function GpsUsageChart({ data, description }: { data: GpsUsagePoint[]; de
 
   const at = active.activeIndex === null ? undefined : data[Math.min(active.activeIndex, data.length - 1)]
   const partialFrom = data.findIndex((point) => point.partial === true)
-  const headlineKm = at ? at.km : totalKm
-  const headlineHours = at ? at.hours : totalHours
+  const peak = peakBucket(data, (point) => (hasKm ? point.km : point.hours))
   const legend: LegendEntry[] = [
     ...(hasKm ? [{ key: "km", label: "Km", color: CHART_COLORS.brand, swatch: "box" as const, value: at ? num(at.km, 1) : undefined }] : []),
     ...(hasHours ? [{ key: "hours", label: "Horas de motor", color: CHART_COLORS.blue, value: at ? num(at.hours, 1) : undefined }] : []),
@@ -82,22 +89,29 @@ export function GpsUsageChart({ data, description }: { data: GpsUsagePoint[]; de
     <ChartFrame
       title="Km recorridos y horas de motor"
       description={`${description}${partialFrom >= 0 ? " · el último tramo es parcial" : ""}`}
-      headline={
+      headline={at ? (
         <>
           {hasKm && (
             <>
-              <ChartHeadlineValue>{num(headlineKm)}</ChartHeadlineValue>
-              <ChartHeadlineCaption>{at ? `km · ${at.label}` : "km en el período"}</ChartHeadlineCaption>
+              <ChartHeadlineValue>{num(at.km)}</ChartHeadlineValue>
+              <ChartHeadlineCaption>{`km · ${at.label}`}</ChartHeadlineCaption>
             </>
           )}
           {hasHours && (
             <>
-              <span className={`${hasKm ? "ml-3 " : ""}text-[28px] font-semibold leading-none tabular-nums tracking-tight text-[var(--color-text)]`}>{num(headlineHours)}</span>
-              <ChartHeadlineCaption>{at ? "horas de motor" : "horas de motor en el período"}</ChartHeadlineCaption>
+              <span className={`${hasKm ? "ml-3 " : ""}text-[28px] font-semibold leading-none tabular-nums tracking-tight text-[var(--color-text)]`}>{num(at.hours)}</span>
+              <ChartHeadlineCaption>horas de motor</ChartHeadlineCaption>
             </>
           )}
         </>
-      }
+      ) : peak ? (
+        <>
+          <ChartHeadlineValue>{num(peak.value)}</ChartHeadlineValue>
+          <ChartHeadlineCaption>
+            {`${hasKm ? "km" : "horas de motor"} ${peakPhrase(peak.point.label, granularity)}, el ${NOUN[granularity]} de más ${hasKm ? "recorrido" : "uso"}`}
+          </ChartHeadlineCaption>
+        </>
+      ) : undefined}
     >
       <ChartContainer config={usageConfig} className={`h-60 w-full ${SERIES_FADE_CLASS}`} data-chart-kind="bars">
         <ComposedChart accessibilityLayer aria-label="Km recorridos y horas de motor por período" data={data} margin={{ top: 12, right: 0, left: 0, bottom: 0 }}>
@@ -159,6 +173,14 @@ export interface GpsIdlePoint {
   /** `null`: el mes no tiene telemetría (un hueco, no un cero). */
   workingHours: number | null
   idleHours: number | null
+  /** El mes en curso: no compite por «el mes de más ralentí». */
+  partial?: boolean
+}
+
+function idlePctOf(point: GpsIdlePoint): number | null {
+  if (point.workingHours === null || point.idleHours === null) return null
+  const operating = point.workingHours + point.idleHours
+  return operating > 0 ? (point.idleHours / operating) * 100 : null
 }
 
 const idleConfig = {
@@ -166,7 +188,7 @@ const idleConfig = {
   idleHours: { label: "Ralentí", color: CHART_COLORS.amber },
 } satisfies ChartConfig
 
-export function GpsIdleChart({ data, description, idlePct }: { data: GpsIdlePoint[]; description: string; idlePct: number | null }) {
+export function GpsIdleChart({ data, description }: { data: GpsIdlePoint[]; description: string }) {
   const motion = useChartMotion()
   const tooltip = useTooltipProps()
   const active = useActiveIndex()
@@ -175,10 +197,8 @@ export function GpsIdleChart({ data, description, idlePct }: { data: GpsIdlePoin
   if (!data.some((point) => (point.workingHours ?? 0) + (point.idleHours ?? 0) > 0)) return null
 
   const at = active.activeIndex === null ? undefined : data[Math.min(active.activeIndex, data.length - 1)]
-  const atPct = at && at.workingHours !== null && at.idleHours !== null && at.workingHours + at.idleHours > 0
-    ? (at.idleHours / (at.workingHours + at.idleHours)) * 100
-    : null
-  const shown = at ? atPct : idlePct
+  const atPct = at ? idlePctOf(at) : null
+  const peak = peakBucket(data, idlePctOf)
   const legend: LegendEntry[] = [
     { key: "workingHours", label: "Trabajo", color: CHART_COLORS.brand, swatch: "box", value: at ? (at.workingHours == null ? "—" : `${num(at.workingHours, 0)} h`) : undefined },
     { key: "idleHours", label: "Ralentí", color: CHART_COLORS.amber, swatch: "box", value: at ? (at.idleHours == null ? "—" : `${num(at.idleHours, 0)} h`) : undefined },
@@ -188,12 +208,17 @@ export function GpsIdleChart({ data, description, idlePct }: { data: GpsIdlePoin
     <ChartFrame
       title="Horas de trabajo y ralentí"
       description={description}
-      headline={
+      headline={at ? (
         <>
-          <ChartHeadlineValue>{shown == null ? "—" : formatPercent(shown, 1)}</ChartHeadlineValue>
-          <ChartHeadlineCaption>{at ? `del motor en ralentí · ${at.label}` : "del motor en ralentí en el período"}</ChartHeadlineCaption>
+          <ChartHeadlineValue>{atPct == null ? "—" : formatPercent(atPct, 1)}</ChartHeadlineValue>
+          <ChartHeadlineCaption>{`del motor en ralentí · ${at.label}`}</ChartHeadlineCaption>
         </>
-      }
+      ) : peak ? (
+        <>
+          <ChartHeadlineValue>{formatPercent(peak.value, 1)}</ChartHeadlineValue>
+          <ChartHeadlineCaption>{`del motor en ralentí ${peakPhrase(peak.point.label, "month")}, el mes de más ralentí`}</ChartHeadlineCaption>
+        </>
+      ) : undefined}
     >
       <ChartContainer config={idleConfig} className="h-60 w-full" data-chart-kind="bars">
         <BarChart accessibilityLayer aria-label="Horas de trabajo y de ralentí por mes" data={data} margin={{ top: 12, right: 0, left: 0, bottom: 0 }}>
@@ -262,7 +287,7 @@ const tripConfig = {
   avgKm: { label: "Km por viaje", color: CHART_COLORS.slate },
 } satisfies ChartConfig
 
-export function GpsTripsChart({ data, description, totalTrips, avgKm }: { data: GpsTripPoint[]; description: string; totalTrips: number; avgKm: number | null }) {
+export function GpsTripsChart({ data, description, totalTrips, granularity }: { data: GpsTripPoint[]; description: string; totalTrips: number; granularity: IndicatorGranularity }) {
   const motion = useChartMotion()
   const tooltip = useTooltipProps()
   const active = useActiveIndex()
@@ -272,6 +297,7 @@ export function GpsTripsChart({ data, description, totalTrips, avgKm }: { data: 
 
   const at = active.activeIndex === null ? undefined : data[Math.min(active.activeIndex, data.length - 1)]
   const partialFrom = data.findIndex((point) => point.partial === true)
+  const peak = peakBucket(data, (point) => point.trips)
   const legend: LegendEntry[] = [
     { key: "trips", label: "Viajes", color: CHART_COLORS.teal, swatch: "box", value: at ? num(at.trips) : undefined },
     { key: "avgKm", label: "Km por viaje", color: CHART_COLORS.slate, value: at ? (at.avgKm == null ? "—" : num(at.avgKm, 1)) : undefined },
@@ -281,14 +307,17 @@ export function GpsTripsChart({ data, description, totalTrips, avgKm }: { data: 
     <ChartFrame
       title="Viajes"
       description={`${description}${partialFrom >= 0 ? " · el último tramo es parcial" : ""}`}
-      headline={
+      headline={at ? (
         <>
-          <ChartHeadlineValue>{num(at ? at.trips : totalTrips)}</ChartHeadlineValue>
-          <ChartHeadlineCaption>
-            {at ? `viajes · ${at.label}` : `viajes en el período${avgKm != null ? ` · ${num(avgKm, 1)} km en promedio` : ""}`}
-          </ChartHeadlineCaption>
+          <ChartHeadlineValue>{num(at.trips)}</ChartHeadlineValue>
+          <ChartHeadlineCaption>{`viajes · ${at.label}`}</ChartHeadlineCaption>
         </>
-      }
+      ) : peak ? (
+        <>
+          <ChartHeadlineValue>{num(peak.value)}</ChartHeadlineValue>
+          <ChartHeadlineCaption>{`viajes ${peakPhrase(peak.point.label, granularity)}, el ${NOUN[granularity]} con más viajes`}</ChartHeadlineCaption>
+        </>
+      ) : undefined}
     >
       <ChartContainer config={tripConfig} className={`h-60 w-full ${SERIES_FADE_CLASS}`} data-chart-kind="bars">
         <ComposedChart accessibilityLayer aria-label="Viajes y km por viaje por período" data={data} margin={{ top: 12, right: 0, left: 0, bottom: 0 }}>

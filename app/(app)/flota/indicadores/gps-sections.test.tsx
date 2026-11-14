@@ -30,6 +30,7 @@ const usage: GpsUsageIndicators = {
   vehiclesWithUse: 5,
   km: { current: 1_200, previous: 1_000 },
   hours: { current: 90, previous: 100 },
+  readingDays: { current: 40, previous: 38 },
   buckets: [{ key: "2026-11-01", km: 1_200, hours: 90 }],
   byWorksite: [
     { worksiteId: "w1", name: "Faena 1", km: 800, hours: 50, vehicles: 3 },
@@ -39,8 +40,9 @@ const usage: GpsUsageIndicators = {
   topByHours: [{ vehicleId: "v2", code: "KA-2", plate: "BB-0002", typeName: "Cargadora", worksiteId: "w2", worksiteName: "Faena 2", km: 0, hours: 40 }],
 }
 
-const idle: GpsIdleIndicators = { months: [{ key: "2026-11", workingHours: 80, idleHours: 20 }], vehicles: 4, idlePct: 20, previousIdlePct: 25, workingHours: 80, idleHours: 20 }
+const idle: GpsIdleIndicators = { months: [{ key: "2026-11", workingHours: 80, idleHours: 20 }], vehicles: 4, idlePct: 20, previousIdlePct: 25, workingHours: 80, idleHours: 20, operatingHours: { current: 100, previous: 90 } }
 const driving: GpsDrivingIndicators = {
+  coverageDays: { current: 10, previous: 9 },
   trips: { current: 12, previous: 10, km: 240 },
   tripBuckets: [{ key: "2026-11-01", trips: 12, km: 240 }],
   alertGranularity: "week",
@@ -77,6 +79,20 @@ describe("UsageSection", () => {
     expect(empty).toContain("Vincular dispositivos")
   })
 
+  it("compara con el período anterior sólo si éste tiene cobertura comparable", () => {
+    expect(html).toContain("data-delta")
+    const sparse = renderToStaticMarkup(<UsageSection usage={{ ...usage, readingDays: { current: 40, previous: 6 } }} period={period} />)
+    expect(sparse).not.toContain("data-delta")
+    expect(count(sparse, "Sin base comparable en el período anterior")).toBe(2) // km y horas
+  })
+
+  it("las celdas de gráficos no dejan una fila a medias en xl ni en 2xl", () => {
+    // Con el ranking de faenas oculto, las celdas restantes se reparten solas.
+    const two = renderToStaticMarkup(<UsageSection usage={{ ...usage, byWorksite: [usage.byWorksite[0]!] }} period={period} />)
+    expect(two).not.toContain("Uso por faena")
+    expect(two).toContain("xl:col-span-2 2xl:col-span-3") // el último ranking toma la fila entera, no queda solo al lado de un hueco
+  })
+
   it("con una sola faena no dibuja el ranking de faenas", () => {
     const one = renderToStaticMarkup(<UsageSection usage={{ ...usage, byWorksite: [usage.byWorksite[0]!] }} period={period} />)
     expect(one).not.toContain("Uso por faena")
@@ -90,6 +106,12 @@ describe("DrivingSection", () => {
     expect(html).toContain("/combustibles/consumo/motor-en-vacio")
     expect(html).toContain("data-chart=\"ralenti\"")
     expect(html).toContain("data-chart=\"alertas\"")
+  })
+
+  it("sin base comparable en OnWay o VisionLink no muestra variaciones", () => {
+    const html = renderToStaticMarkup(<DrivingSection idle={{ ...idle, operatingHours: { current: 100, previous: 10 } }} driving={{ ...driving, coverageDays: { current: 10, previous: 2 } }} period={period} canViewIdle />)
+    expect(html).not.toContain("data-delta")
+    expect(count(html, "Sin base comparable en el período anterior")).toBe(3)
   })
 
   it("sin permiso de combustibles no muestra el ralentí", () => {

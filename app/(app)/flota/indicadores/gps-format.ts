@@ -39,3 +39,43 @@ export function kmText(km: number): string {
 export function hoursText(hours: number): string {
   return `${formatQty(hours, undefined, { maximumFractionDigits: hours >= 100 ? 0 : 1 })} h`
 }
+
+/**
+ * El balde con el mayor valor, sin contar los parciales (el último balde, aún en
+ * curso, siempre pierde contra uno cerrado y se leería como un récord falso).
+ * `null` si no queda ningún balde cerrado con valor mayor que cero. En un empate
+ * gana el primero.
+ */
+export function peakBucket<T extends { partial?: boolean }>(
+  points: readonly T[],
+  valueOf: (point: T) => number | null,
+): { point: T; value: number } | null {
+  let best: { point: T; value: number } | null = null
+  for (const point of points) {
+    if (point.partial === true) continue
+    const value = valueOf(point)
+    if (value === null || !Number.isFinite(value) || value <= 0) continue
+    if (best === null || value > best.value) best = { point, value }
+  }
+  return best
+}
+
+/** «en oct 2026» (mes) o «el 3 nov» (día): el complemento de «km …, el mes de más recorrido». */
+export function peakPhrase(label: string, granularity: IndicatorGranularity): string {
+  return granularity === "month" ? `en ${label}` : `el ${label}`
+}
+
+/**
+ * ¿La cobertura del período anterior alcanza para comparar? Una variación como
+ * «↑ 482 %» sólo dice que el período anterior casi no tenía datos (la integración
+ * recién se conectó, una fuente estuvo caída), no que el uso se disparó. Se compara
+ * cuando el anterior tiene al menos `minRatio` de la cobertura del actual.
+ * `coverage` es cualquier cuenta de presencia de datos en la misma unidad en
+ * ambos períodos (días con lecturas, horas de funcionamiento…).
+ */
+export function hasComparableBase(current: number, previous: number, minRatio = 0.5): boolean {
+  if (!(previous > 0)) return false
+  return previous >= current * minRatio
+}
+
+export const NO_COMPARABLE_BASE = "Sin base comparable en el período anterior"

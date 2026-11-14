@@ -68,6 +68,16 @@ function describePartial(points: BucketPoint[], granularity: IndicatorGranularit
   return partial ? ` · el ${granularity === "day" ? "último día" : "último mes"} es parcial` : ""
 }
 
+/**
+ * El balde con el valor más alto de `pick`. Con empate no hay un «mayor» que nombrar: devuelve cuántos
+ * baldes empatan (y ningún balde), para que el titular no corone a uno solo.
+ */
+export function peakOf<T extends BucketPoint>(points: readonly T[], pick: (point: T) => number): { value: number; tied: number; point: T | null } {
+  const value = Math.max(0, ...points.map(pick))
+  const leaders = points.filter((point) => pick(point) === value)
+  return { value, tied: leaders.length, point: leaders.length === 1 ? leaders[0]! : null }
+}
+
 const formatDays = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 1 })
 
 // ── Barras por balde (apiladas o una sola serie) ───────────────────────────
@@ -263,9 +273,11 @@ export function RecordsKindChart(props: ChartCommon & { data: RecordsPoint[] }) 
         const rows = at ? [at] : all
         const preventive = rows.reduce((sum, point) => sum + point.preventive, 0)
         const corrective = rows.reduce((sum, point) => sum + point.corrective, 0)
+        const total = preventive + corrective
+        // El titular no repite el tile «Registros preventivos»: dice qué parte del trabajo firmado fue correctivo.
         return {
-          value: formatQty(preventive),
-          caption: `registros preventivos · ${formatQty(corrective)} correctivos${at ? ` en ${bucketFullLabel(at.key, props.granularity)}` : ""}`,
+          value: total > 0 ? formatPercent((corrective / total) * 100, 0) : "—",
+          caption: `de los registros fueron correctivos (${formatQty(corrective)} de ${formatQty(total)}${at ? `, ${bucketFullLabel(at.key, props.granularity)}` : ""})`,
         }
       }}
     />
@@ -291,10 +303,15 @@ export function OutOfServiceChart(props: ChartCommon & { data: OutOfServicePoint
       stacked={false}
       allowDecimals
       headline={(at, all) => {
-        const total = (at ? [at] : all).reduce((sum, point) => sum + point.days, 0)
+        // El total del período es el del tile (se calcula y redondea una sola vez, en el servicio): aquí se
+        // dice cuándo se concentró, que es lo que el tile no dice.
+        if (at) return { value: formatDays(at.days), caption: `días-equipo fuera de servicio en ${bucketFullLabel(at.key, props.granularity)}` }
+        const peak = peakOf(all, (point) => point.days)
         return {
-          value: formatDays(total),
-          caption: `días-equipo fuera de servicio${at ? ` en ${bucketFullLabel(at.key, props.granularity)}` : " en el período"}`,
+          value: formatDays(peak.value),
+          caption: peak.point
+            ? `días-equipo fuera de servicio en ${bucketFullLabel(peak.point.key, props.granularity)}, el período con más`
+            : `días-equipo fuera de servicio en cada uno de ${peak.tied} períodos, el máximo del rango`,
         }
       }}
     />
@@ -330,15 +347,15 @@ export function WorkOrderFlowChart({ data, granularity, scopeNote, excel }: Char
   const rowsWithLabel = withLabels(data, granularity)
   const at = active.activeIndex === null ? undefined : data[Math.min(active.activeIndex, data.length - 1)]
   const atLabel = active.activeIndex === null ? undefined : rowsWithLabel[Math.min(active.activeIndex, rowsWithLabel.length - 1)]?.label
-  const last = data[data.length - 1]!
   const partialFrom = data.findIndex((point) => point.partial)
-  const rows = at ? [at] : data
-  const created = rows.reduce((sum, point) => sum + point.created, 0)
-  const closed = rows.reduce((sum, point) => sum + point.closed, 0)
-  const backlog = (at ?? last).backlog
-  const first = data[0]!
-  const trend = at ? "" : last.backlog === first.backlog ? " · igual que al cierre del primer período" : last.backlog > first.backlog ? ` · sube desde ${formatQty(first.backlog)} al cierre del primer período` : ` · baja desde ${formatQty(first.backlog)} al cierre del primer período`
-  const when = at ? `al cierre de ${bucketFullLabel(at.key, granularity)}` : last.partial ? "hoy" : "al cierre del último período"
+  // El titular no repite los tiles de la sección (OT abiertas, OT cerradas): dice cuándo se pidió más trabajo.
+  const peak = peakOf(data, (point) => point.created)
+  const headlineValue = at ? at.created : peak.value
+  const headlineCaption = at
+    ? `OT creadas en ${bucketFullLabel(at.key, granularity)} · ${formatQty(at.closed)} cerradas y ${formatQty(at.backlog)} en cola al cierre`
+    : peak.point
+      ? `OT creadas en ${bucketFullLabel(peak.point.key, granularity)}, el período con más`
+      : `OT creadas en cada uno de ${peak.tied} períodos, el máximo del rango`
   const legend: LegendEntry[] = [
     { key: "created", label: "Creadas", color: CHART_COLORS.blue, swatch: "box", value: at ? formatQty(at.created) : undefined },
     { key: "closed", label: "Cerradas", color: CHART_COLORS.brand, swatch: "box", value: at ? formatQty(at.closed) : undefined },
@@ -351,10 +368,8 @@ export function WorkOrderFlowChart({ data, granularity, scopeNote, excel }: Char
       description={`${scopeNote} · Fuente: órdenes de trabajo${describePartial(data, granularity)}`}
       headline={
         <>
-          <ChartHeadlineValue>{formatQty(backlog)}</ChartHeadlineValue>
-          <ChartHeadlineCaption>
-            OT en cola {when} · {formatQty(created)} creadas y {formatQty(closed)} cerradas{at ? " en el período" : ""}{trend}
-          </ChartHeadlineCaption>
+          <ChartHeadlineValue>{formatQty(headlineValue)}</ChartHeadlineValue>
+          <ChartHeadlineCaption>{headlineCaption}</ChartHeadlineCaption>
         </>
       }
     >

@@ -24,9 +24,12 @@ import {
   indicatorWindows,
   ledgerChartPoints,
   ledgerCost,
-  ledgerHasData,
-  litersCostTable,
+  assignSpans,
+  costPriceTable,
+  ledgerHasCost,
   mediumTable,
+  priceHeadline,
+  priceSummary,
   topShare,
   windowCaption,
 } from "@/lib/combustibles/indicators/view"
@@ -37,7 +40,7 @@ import { formatCLP, formatQty } from "@/lib/utils"
 import { hrefInContext } from "../consumo/_components/page-links"
 import { createSourceTracker } from "../consumo/_components/track-sources"
 import { BlockError, ChartBlock, RankingBlock } from "./indicator-blocks"
-import { LitersByMediumChart, LitersCostChart } from "./indicators-charts-lazy"
+import { CostPriceChart, LitersByMediumChart } from "./indicators-charts-lazy"
 
 const CONSUMO_LITROS_TARJETAS = `${FUEL_PATHS.consumoLitros}?seccion=tarjetas`
 
@@ -111,7 +114,7 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
   // Sin nada que mostrar y sin consultas caídas, un solo estado vacío con la acción para llenarlo (A4).
   const nothing = !degraded.length
     && (figures?.empty ?? true)
-    && !ledgerHasData(ledgerPoints, canViewCosts)
+    && !(canViewCosts && ledgerHasCost(ledgerPoints))
     && (mediumData?.points.length ?? 0) === 0
     && worksiteRows.length === 0
 
@@ -159,8 +162,20 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
 
   const litersTop = topShare(worksiteRows.map((row) => ({ label: row.name, value: row.liters })))
   const typeTop = topShare(typeRows.map((row) => ({ label: row.name, value: row.liters })))
+  const mediumTop = mediumData
+    ? topShare(mediumData.series.map((item) => ({ label: item.label, value: mediumData.points.reduce((sum, point) => sum + Number(point[item.key] ?? 0), 0) })))
+    : null
   const showWorksiteRanking = worksiteRows.length > 1
-  const mediumTotal = mediumData?.points.reduce((sum, point) => sum + point.total, 0) ?? 0
+  const priceHead = priceHeadline(priceSummary(ledger.data ?? [], windows.chart.monthKeys))
+
+  // Qué gráficos ocupan celda (con datos o con su aviso de error) y, según cuántos sean, el ancho de cada uno:
+  // así no quedan filas a medias en `xl` (2 columnas) ni en `2xl` (3). El costo sólo con `view_costs`.
+  const [costSpan, mediumSpan, worksiteSpan, typeSpan] = assignSpans([
+    canViewCosts && (ledger.failed || ledgerHasCost(ledgerPoints)),
+    monthly.failed || (mediumData?.points.length ?? 0) > 0,
+    byWorksite.failed || showWorksiteRanking,
+    byType.failed || typeRows.length > 0,
+  ])
 
   return (
     <>
@@ -192,7 +207,7 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
                   icon={<Receipt size={16} />}
                   label="Costo del libro de Copec"
                   value={formatCLP(cost.amount)}
-                  detail={cost.liters !== null && cost.liters > 0 ? `${formatQty(cost.liters, undefined, { maximumFractionDigits: 0 })} L · ${period.label}` : period.label}
+                  detail={period.label}
                   trend={cost.pct}
                   trendPolarity="up-bad"
                   trendLabel={windows.previous ? `vs. ${windows.previous.inLabel}` : undefined}
@@ -220,34 +235,36 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
         }
         charts={
           <>
-            {ledger.failed ? <BlockError what="los litros y el costo por mes" span="wide" /> : (
-              <ChartSlot span="wide">
-                <LitersCostChart
+            {costSpan === null ? null : ledger.failed ? <BlockError what="el costo por mes" span={costSpan} /> : (
+              <ChartSlot span={costSpan}>
+                <CostPriceChart
                   data={ledgerPoints}
-                  showCosts={canViewCosts}
                   windowLabel={caption}
-                  footer={ledgerHasData(ledgerPoints, canViewCosts) ? (
+                  headline={priceHead}
+                  footer={(
                     <ChartDataTable
-                      caption="Litros y costo por mes, libro de Copec"
-                      {...litersCostTable(ledgerPoints, canViewCosts)}
+                      caption="Costo y precio por litro por mes, libro de Copec"
+                      {...costPriceTable(ledgerPoints)}
                       excel={excelWithCosts}
                     />
-                  ) : undefined}
+                  )}
                 />
               </ChartSlot>
             )}
-            {monthly.failed ? <BlockError what="los litros por medio de suministro" /> : mediumData && mediumData.points.length > 0 ? (
+            {mediumSpan === null ? null : monthly.failed || !mediumData ? <BlockError what="los litros por medio de suministro" span={mediumSpan} /> : (
               <ChartBlock
+                span={mediumSpan}
                 title="Litros por medio de suministro"
                 description={`${caption} · cargas de equipos, terreno y planilla`}
-                headline={{ value: formatQty(mediumTotal, undefined, { maximumFractionDigits: 0 }), caption: `litros cargados · ${caption.toLowerCase()}` }}
+                headline={mediumTop ? { value: `${formatQty(mediumTop.sharePct, undefined, { maximumFractionDigits: 0 })} %`, caption: `de los litros llegó por ${mediumTop.label}` } : undefined}
                 table={{ caption: "Litros por mes y medio de suministro", ...mediumTable(mediumData), excel }}
               >
                 <LitersByMediumChart data={mediumData} />
               </ChartBlock>
-            ) : null}
-            {byWorksite.failed ? <BlockError what="los litros por faena" /> : showWorksiteRanking ? (
+            )}
+            {worksiteSpan === null ? null : byWorksite.failed ? <BlockError what="los litros por faena" span={worksiteSpan} /> : (
               <RankingBlock
+                span={worksiteSpan}
                 title="Litros por faena"
                 description={`${period.label} · cargas de equipos · un clic abre Consumo de esa faena`}
                 headline={litersTop ? { value: `${formatQty(litersTop.sharePct, undefined, { maximumFractionDigits: 0 })} %`, caption: `de los litros salió de ${litersTop.label}` } : undefined}
@@ -260,10 +277,10 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
                   href: withPeriod(FUEL_PATHS.consumoLitros, row.worksiteId),
                 }))}
               />
-            ) : null}
-            {byType.failed ? <BlockError what="los litros por tipo de equipo" span={showWorksiteRanking ? "wide" : "full"} /> : (
+            )}
+            {typeSpan === null ? null : byType.failed ? <BlockError what="los litros por tipo de equipo" span={typeSpan} /> : (
               <RankingBlock
-                span={showWorksiteRanking ? "wide" : "full"}
+                span={typeSpan}
                 title="Litros por tipo de equipo"
                 description={`${period.label} · cargas de equipos`}
                 headline={typeTop ? { value: `${formatQty(typeTop.sharePct, undefined, { maximumFractionDigits: 0 })} %`, caption: `de los litros lo cargaron ${typeTop.label.toLowerCase()}` } : undefined}

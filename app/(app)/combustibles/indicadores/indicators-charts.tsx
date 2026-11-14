@@ -7,7 +7,6 @@ import {
   ChartActiveSync,
   ChartTooltipCard,
   ColumnHoverCursor,
-  formatChartValue,
   seriesOpacity,
   useActiveIndex,
   useChartMotion,
@@ -28,84 +27,90 @@ import {
   type LegendEntry,
 } from "@/components/charts/chart-parts"
 import { CHART_COLORS } from "@/lib/chart-palette"
-import type { LitersCostPoint } from "@/lib/combustibles/indicators/view"
-import { countOf, formatCompactCLP, formatCompactQty, formatQty } from "@/lib/utils"
+import type { CostPricePoint } from "@/lib/combustibles/indicators/view"
+import { formatCLP, formatCompactCLP } from "@/lib/utils"
 
 const config = {
-  liters: { label: "Litros", color: CHART_COLORS.signal },
   amount: { label: "Costo", color: CHART_COLORS.brand },
+  price: { label: "Precio por litro", color: CHART_COLORS.teal },
 } satisfies ChartConfig
 
-/** El punto del costo: relleno de superficie para que se lea sobre las columnas. */
-const COST_DOT = { r: 3, fill: SURFACE, strokeWidth: 2 } as const
+/** El punto del precio: relleno de superficie para que se lea sobre las columnas. */
+const PRICE_DOT = { r: 3, fill: SURFACE, strokeWidth: 2 } as const
 
 /** Índice del primer mes parcial —los parciales son los últimos de la serie— o `-1` si no hay. */
-const firstPartialIndex = (data: readonly LitersCostPoint[]) => data.findIndex((point) => point.partial)
+const firstPartialIndex = (data: readonly CostPricePoint[]) => data.findIndex((point) => point.partial)
 
-function tooltipTitle(label: unknown, data: readonly LitersCostPoint[]): string {
+function tooltipTitle(label: unknown, data: readonly CostPricePoint[]): string {
   const month = String(label)
   const title = monthTitle(month)
   return data.find((point) => point.month === month)?.partial ? `${title} (parcial)` : title
 }
 
-function headlineCaption(at: LitersCostPoint | undefined, windowLabel: string): string {
-  if (!at) return `litros en la ventana · ${windowLabel.toLowerCase()}`
-  const name = monthFullName(at.month)
-  if (at.providerGap) return `sin datos del proveedor en ${name}`
-  return at.partial ? `litros cargados en ${name} (parcial)` : `litros cargados en ${name}`
-}
+const priceText = (price: number | null) => (price === null ? "—" : `${formatCLP(Math.round(price))}/L`)
 
 /**
- * Litros (columna, eje izquierdo) y costo (línea, eje derecho) por mes, del libro del
- * proveedor. Litros y pesos tienen escalas distintas, así que no comparten eje (A5b); sin
- * `combustibles:view_costs` no hay línea ni eje de costo. Las cargas no tienen serie: van de
- * pie en el tooltip. La cifra grande es el total de litros de la ventana o el del mes
- * apuntado: una sola unidad por cabecera.
+ * Costo del libro de Copec por mes (columna, eje izquierdo, CLP) y precio por litro (línea,
+ * eje derecho, CLP/L). Los dos son pesos pero de escala muy distinta (millones contra
+ * miles), así que no comparten eje (A5b). No muestra litros: los litros de la pantalla son
+ * los de las cargas de equipos, y el libro del proveedor es otra fuente que, junto a ellos,
+ * se leería como un segundo total del mismo mes; aquí sólo sirven para dividir el costo.
  *
- * Es la serie del tablero de Inicio (`FuelConsumptionChart`) con otra ventana; vive aquí
- * porque las pantallas no importan de `app/(app)/dashboard/**`.
+ * La cifra grande es el precio medio por litro de la ventana (con cómo cambió el último
+ * mes, ya redactado por `priceHeadline`) o el del mes apuntado. Sin `combustibles:view_costs`
+ * la pantalla no lo dibuja.
  */
-export function LitersCostChart({ data, showCosts, windowLabel, footer }: { data: LitersCostPoint[]; showCosts: boolean; windowLabel: string; footer?: ReactNode }) {
+export function CostPriceChart({ data, windowLabel, headline, footer }: {
+  data: CostPricePoint[]
+  windowLabel: string
+  /** Titular de la ventana: precio medio y su cambio. `null` si ningún mes tiene precio. */
+  headline: { value: string; caption: string } | null
+  footer?: ReactNode
+}) {
   const motion = useChartMotion()
   const tooltip = useTooltipProps()
   const active = useActiveIndex()
   const focus = useSeriesFocus()
 
-  if (!data.some((point) => (point.liters ?? 0) > 0 || (showCosts && (point.amount ?? 0) > 0))) return null
+  if (!data.some((point) => (point.amount ?? 0) > 0)) return null
 
   const at = active.activeIndex === null ? undefined : data[Math.min(active.activeIndex, data.length - 1)]
-  const liters = at ? at.liters : data.reduce((sum, point) => sum + (point.liters ?? 0), 0)
   const partialFrom = firstPartialIndex(data)
   const legend: LegendEntry[] = [
-    { key: "liters", label: "Litros", color: CHART_COLORS.signal, swatch: "box", value: at ? (at.liters == null ? "—" : formatChartValue(at.liters, "liters")) : undefined },
-    ...(showCosts
-      ? [{ key: "amount", label: "Costo", color: CHART_COLORS.brand, value: at ? (at.amount == null ? "—" : formatCompactCLP(at.amount)) : undefined } satisfies LegendEntry]
-      : []),
+    { key: "amount", label: "Costo", color: CHART_COLORS.brand, swatch: "box", value: at ? (at.amount == null ? "—" : formatCompactCLP(at.amount)) : undefined },
+    { key: "price", label: "Precio por litro", color: CHART_COLORS.teal, value: at ? priceText(at.price) : undefined },
   ]
 
   return (
     <ChartFrame
-      title={showCosts ? "Litros y costo por mes" : "Litros por mes"}
-      description={`${windowLabel} · libro de Copec (tarjetas y estanques)${partialFrom >= 0 ? " · el último mes es parcial" : ""}`}
+      title="Costo del libro de Copec por mes"
+      description={`${windowLabel} · costo y precio por litro del libro de Copec (tarjetas y estanques)${partialFrom >= 0 ? " · el último mes es parcial" : ""}`}
       headline={
-        <>
-          <ChartHeadlineValue>{liters == null ? "—" : formatQty(liters, undefined, { maximumFractionDigits: 0 })}</ChartHeadlineValue>
-          <ChartHeadlineCaption>{headlineCaption(at, windowLabel)}</ChartHeadlineCaption>
-        </>
+        at ? (
+          <>
+            <ChartHeadlineValue>{priceText(at.price)}</ChartHeadlineValue>
+            <ChartHeadlineCaption>{at.providerGap ? `sin datos del proveedor en ${monthFullName(at.month)}` : `precio por litro en ${monthFullName(at.month)}${at.partial ? " (parcial)" : ""}`}</ChartHeadlineCaption>
+          </>
+        ) : headline ? (
+          <>
+            <ChartHeadlineValue>{headline.value}</ChartHeadlineValue>
+            <ChartHeadlineCaption>{headline.caption}</ChartHeadlineCaption>
+          </>
+        ) : undefined
       }
     >
       <ChartContainer config={config} className={`h-56 w-full ${SERIES_FADE_CLASS}`} data-chart-kind="bars">
         <ComposedChart
           accessibilityLayer
-          aria-label={showCosts ? "Litros y costo de combustible por mes" : "Litros de combustible por mes"}
+          aria-label="Costo de combustible por mes y precio por litro"
           data={data}
           margin={{ top: 12, right: 0, left: 0, bottom: 0 }}
         >
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} tick={emphasizedTick(at?.month)} />
           <ChartActiveSync labels={data.map((row) => row.month)} onIndex={active.setActiveIndex} />
-          <YAxis yAxisId="liters" tickLine={false} axisLine={false} tickMargin={8} width={40} fontSize={11} tickFormatter={formatCompactQty} />
-          {showCosts && <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} width={52} fontSize={11} tickFormatter={formatCompactCLP} />}
+          <YAxis yAxisId="amount" tickLine={false} axisLine={false} tickMargin={8} width={52} fontSize={11} tickFormatter={formatCompactCLP} />
+          <YAxis yAxisId="price" orientation="right" tickLine={false} axisLine={false} tickMargin={4} width={56} fontSize={11} tickFormatter={(value: number) => formatCLP(Math.round(value))} />
           {/* `filterNull={false}`: recharts omite las series nulas, y un mes sin datos del proveedor se quedaría sin tooltip. */}
           <ChartTooltip
             {...tooltip}
@@ -113,45 +118,39 @@ export function LitersCostChart({ data, showCosts, windowLabel, footer }: { data
             cursor={<ColumnHoverCursor />}
             content={
               <ChartTooltipCard
-                formats={{ liters: "liters", amount: "clp" }}
+                formats={{ amount: "clp", price: "clp" }}
                 labelFormatter={(label) => tooltipTitle(label, data)}
-                footer={(payload) => {
-                  if (payload[0]?.payload?.providerGap === true) return "Sin datos del proveedor este mes"
-                  const loads = payload[0]?.payload?.loads
-                  return typeof loads === "number" ? countOf(loads, "carga") : null
-                }}
+                footer={(payload) => (payload[0]?.payload?.providerGap === true ? "Sin datos del proveedor este mes" : null)}
               />
             }
           />
           <Bar
-            yAxisId="liters"
-            dataKey="liters"
-            name="Litros"
-            fill={CHART_COLORS.signal}
+            yAxisId="amount"
+            dataKey="amount"
+            name="Costo"
+            fill={CHART_COLORS.brand}
             radius={[4, 4, 0, 0]}
             maxBarSize={44}
-            shape={dimmedBarShape("liters", active.activeIndex, focus.focusedKey, partialFrom)}
+            shape={dimmedBarShape("amount", active.activeIndex, focus.focusedKey, partialFrom)}
             {...motion}
           />
-          {showCosts && (
-            <Line
-              yAxisId="amount"
-              type="monotone"
-              dataKey="amount"
-              name="Costo"
-              stroke={CHART_COLORS.brand}
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeOpacity={seriesOpacity("amount", focus.focusedKey)}
-              shape={partialTailLineShape(partialFrom)}
-              dot={COST_DOT}
-              activeDot={activeDotFor(CHART_COLORS.brand)}
-              {...motion}
-            />
-          )}
+          <Line
+            yAxisId="price"
+            type="monotone"
+            dataKey="price"
+            name="Precio por litro"
+            stroke={CHART_COLORS.teal}
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeOpacity={seriesOpacity("price", focus.focusedKey)}
+            shape={partialTailLineShape(partialFrom)}
+            dot={PRICE_DOT}
+            activeDot={activeDotFor(CHART_COLORS.teal)}
+            {...motion}
+          />
         </ComposedChart>
       </ChartContainer>
-      <InteractiveLegend entries={legend} focus={focus} label="Series de litros y costo de combustible" />
+      <InteractiveLegend entries={legend} focus={focus} label="Series de costo y precio por litro" />
       {footer}
     </ChartFrame>
   )

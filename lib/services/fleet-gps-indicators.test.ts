@@ -132,6 +132,11 @@ describe("buildGpsUsage", () => {
     expect(data.hours.previous).toBe(0)
   })
 
+  it("mide la cobertura de lecturas en pares equipo-día de cada período", () => {
+    // v1: 30 y 31/10 (anterior) y 1-3/11 (actual; el OnWay del 2 es el mismo par equipo-día); v2: 1-3/11; zz queda fuera.
+    expect(data.readingDays).toEqual({ current: 6, previous: 2 })
+  })
+
   it("reparte por día, incluidos los días sin datos", () => {
     expect(data.buckets).toHaveLength(10)
     const byKey = Object.fromEntries(data.buckets.map((bucket) => [bucket.key, bucket]))

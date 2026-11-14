@@ -114,6 +114,8 @@ describe("getGpsUsageIndicators", () => {
     const data = await getGpsUsageIndicators(session("global"), period)
     expect(data.km).toEqual({ current: 130, previous: 30 })
     expect(data.hours).toEqual({ current: 8, previous: 0 })
+    // Pares equipo-día con lectura GPS (Copec no cuenta): vA 3 días y vB 2 en el período; vA 2 en el anterior.
+    expect(data.readingDays).toEqual({ current: 5, previous: 2 })
     expect(data.fleetVehicles).toBe(3)
     expect(data.linkedVehicles).toBe(3) // vA y vB por lecturas, vC por vínculo
     expect(data.vehiclesWithReadings).toBe(2)
@@ -157,6 +159,8 @@ describe("getGpsDrivingIndicators", () => {
   it("cuenta viajes en hora de Chile y promedia con la distancia", async () => {
     const data = await getGpsDrivingIndicators(session("global"), period)
     expect(data.trips).toEqual({ current: 4, previous: 1, km: 41 })
+    // Días con algún viaje o alerta de un equipo: 3, 4, 5 y 6 de noviembre; 25 y 28 de octubre.
+    expect(data.coverageDays).toEqual({ current: 4, previous: 2 })
     const byKey = Object.fromEntries(data.tripBuckets.map((bucket) => [bucket.key, bucket]))
     expect(byKey["2026-11-03"]).toMatchObject({ trips: 3, km: 36 })
     expect(byKey["2026-11-04"]).toMatchObject({ trips: 1, km: 5 })
@@ -187,6 +191,7 @@ describe("getGpsIdleIndicators", () => {
     const data = await getGpsIdleIndicators(session("global"), period)
     expect(data.months).toEqual([{ key: "2026-11", workingHours: 15, idleHours: 3 }])
     expect(data.vehicles).toBe(2)
+    expect(data.operatingHours).toEqual({ current: 18, previous: 10 })
     expect(data.idlePct).toBeCloseTo((3 / 18) * 100, 6)
     expect(data.previousIdlePct).toBeCloseTo((4 / 10) * 100, 6)
   })

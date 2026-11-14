@@ -14,12 +14,12 @@ import { getMeterRateSeries } from "@/lib/combustibles/control/queries/meter-rat
 import { controlFiltersFromPeriod } from "@/lib/combustibles/control/queries/period-filters"
 import { coverageNoticeText, fuelSourcesHref } from "@/lib/combustibles/coverage-notice"
 import { getFuelProviderCoverageGaps } from "@/lib/combustibles/coverage-notice-data"
-import { idleTable, idleWindowTotals, indicatorWindows, windowCaption } from "@/lib/combustibles/indicators/view"
+import { assignSpans, idleTable, idleWindowTotals, indicatorWindows, windowCaption } from "@/lib/combustibles/indicators/view"
 import { describeMeterRate, type MeterRateSeries } from "@/lib/combustibles/meter-rate-series"
 import { meterRateNotes, meterRateTable } from "@/lib/combustibles/meter-rate-view"
 import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
-import { formatQty } from "@/lib/utils"
+import { MONTH_NAMES, formatQty } from "@/lib/utils"
 import { monthText } from "../consumo/_components/format"
 import { hrefInContext } from "../consumo/_components/page-links"
 import { createSourceTracker } from "../consumo/_components/track-sources"
@@ -31,12 +31,26 @@ const RATE_BLOCKS: Record<PerformanceUnit, { title: string; source: string }> = 
   liters_per_hour: { title: "Equipos con horómetro · L/h por mes", source: "lecturas de horómetro de las cargas con tarjeta Copec" },
 }
 
+/**
+ * Titular de un gráfico de rendimiento: cómo está el último mes con rendimiento frente al
+ * promedio de la ventana. Es una conclusión (sube o baja y cuánto), no la cifra del tile de
+ * «Consumo», que es otra fuente (cargas de equipos) y otro período. Sin mes comparable, el
+ * rendimiento en conjunto de la ventana.
+ */
 function rateHeadline(series: MeterRateSeries): BlockHeadline {
   const unit = PERFORMANCE_UNIT_LABELS[series.unit]
   if (series.rate === null) return { value: "—", caption: "datos insuficientes para calcular el rendimiento de la ventana" }
+  const last = [...series.months].reverse().find((month) => month.status === "ok" && month.rate !== null)
+  if (!last || last.rate === null) {
+    return { value: `${formatQty(series.rate, undefined, { maximumFractionDigits: 2 })} ${unit}`, caption: "rendimiento en conjunto de la ventana" }
+  }
+  const delta = Math.round(((last.rate - series.rate) / series.rate) * 100)
+  const name = MONTH_NAMES[Number(last.month.slice(5, 7)) - 1] ?? last.month
+  const better = series.unit === "km_per_liter" ? delta > 0 : delta < 0
+  const sign = delta > 0 ? "+" : delta < 0 ? "−" : ""
   return {
-    value: `${formatQty(series.rate, undefined, { maximumFractionDigits: 2 })} ${unit}`,
-    caption: `rendimiento en conjunto de la ventana (${series.unit === "km_per_liter" ? "más es mejor" : "menos es mejor"})`,
+    value: `${sign}${Math.abs(delta)} %`,
+    caption: `${name}${last.partial ? " (en curso)" : ""} frente al promedio de la ventana${delta === 0 ? "" : better ? ": rinde mejor" : ": rinde peor"}`,
   }
 }
 
@@ -84,6 +98,14 @@ export async function EficienciaSection({ session, period, worksiteId }: { sessi
     { label: "Motor en vacío", href: withPeriod(FUEL_PATHS.consumoMotorVacio) },
   ]
 
+  // Una celda por gráfico que se dibuja (o por su aviso de error); el ancho reparte la fila sin dejar huecos.
+  const [kmSpan, hourSpan, idleSpan] = assignSpans([
+    rates.failed || rateUnits.includes("km_per_liter"),
+    rates.failed ? false : rateUnits.includes("liters_per_hour"),
+    idle.failed || idleRows.length > 0,
+  ])
+  const rateSpans: Record<PerformanceUnit, typeof kmSpan> = { km_per_liter: kmSpan, liters_per_hour: hourSpan }
+
   const nothing = !degraded.length && rateUnits.length === 0 && idleRows.length === 0
   if (nothing) {
     return (
@@ -126,13 +148,14 @@ export async function EficienciaSection({ session, period, worksiteId }: { sessi
         ) : undefined}
         charts={
           <>
-            {rates.failed ? <BlockError what="el rendimiento por mes" span="wide" /> : rates.data ? rateUnits.map((unit) => {
+            {rates.failed ? <BlockError what="el rendimiento por mes" span={kmSpan ?? "one"} /> : rates.data ? rateUnits.map((unit) => {
               const series = rates.data![unit]
               const block = RATE_BLOCKS[unit]
               const table = meterRateTable(series)
               return (
                 <ChartBlock
                   key={unit}
+                  span={rateSpans[unit] ?? "one"}
                   title={block.title}
                   description={`${caption} · ${block.source}`}
                   headline={rateHeadline(series)}
@@ -144,9 +167,9 @@ export async function EficienciaSection({ session, period, worksiteId }: { sessi
                 </ChartBlock>
               )
             }) : null}
-            {idle.failed ? <BlockError what="los litros en vacío" span="fillXl" /> : idleRows.length > 0 ? (
+            {idle.failed ? <BlockError what="los litros en vacío" span={idleSpan ?? "one"} /> : idleRows.length > 0 ? (
               <ChartBlock
-                span="fillXl"
+                span={idleSpan ?? "one"}
                 title="Litros consumidos en vacío por mes"
                 description={`${caption} · telemetría VisionLink, sólo equipos que la informan`}
                 headline={idleTotals ? {

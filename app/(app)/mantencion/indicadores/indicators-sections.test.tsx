@@ -120,6 +120,28 @@ describe("PautasSection", () => {
     expect(region.textContent).not.toMatch(/sin_pauta|sin_lecturas/)
   })
 
+  it("con empate en la cima no hay un «equipo con más»: se dice cuántos empatan", () => {
+    render(
+      <PautasSection
+        {...common}
+        {...base}
+        ranking={[{ vehicleId: "v1", code: "KA-1", plate: "AAAA-01", count: 2 }, { vehicleId: "v2", code: "KA-2", plate: "AAAA-02", count: 2 }, { vehicleId: "v3", code: "KA-3", plate: "AAAA-03", count: 2 }]}
+        showRanking
+      />,
+    )
+    expect(screen.getByText("3 equipos empatan con 2 OT de reparación en el período")).toBeTruthy()
+    expect(screen.queryByText(/el equipo con más/)).toBeNull()
+  })
+
+  it("sin equipos repetidos (ranking vacío) no se pinta la celda del ranking", () => {
+    render(<PautasSection {...common} {...base} ranking={[]} showRanking />)
+    expect(screen.queryByText("Equipos con más OT de reparación")).toBeNull()
+    const cell = screen.getByRole("heading", { name: "Estado de las pautas hoy" }).closest("div.min-w-0.border-l")
+    // Sin pareja, se estira a la fila completa a 2 columnas y vuelve a una a 3 (donde la fila la cierra la serie de días).
+    expect(cell?.className).toContain("xl:col-span-2")
+    expect(cell?.className).toContain("2xl:col-span-1")
+  })
+
   it("quien no ve OT no recibe el ranking, que sale de las órdenes", () => {
     render(<PautasSection {...common} {...base} ranking={null} showRanking={false} />)
     expect(screen.queryByText("Equipos con más OT de reparación")).toBeNull()

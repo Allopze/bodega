@@ -112,40 +112,81 @@ export function monthAxisLabels(monthKeys: readonly string[]): string[] {
   return monthKeys.map((key, index) => (repeated ? `${short[index]} ${key.slice(2, 4)}` : (short[index] ?? key)))
 }
 
-export interface LitersCostPoint {
+export interface CostPricePoint {
   /** Rótulo del eje («Sep»). */
   month: string
   monthKey: string
-  /** `null` en un mes sin datos del proveedor: un hueco, no un cero. */
-  liters: number | null
+  /** Costo del mes en el libro del proveedor; `null` en un mes sin datos (hueco, no cero) o sin permiso de costos. */
   amount: number | null
-  loads: number | null
+  /** Costo ÷ litros del libro (CLP/L); `null` si falta cualquiera de los dos. Los litros del libro no se muestran: sólo sirven para este precio. */
+  price: number | null
   providerGap: boolean
   partial: boolean
 }
 
-/** Los puntos del libro que caen en la ventana del gráfico, en orden, con su rótulo. */
-export function ledgerChartPoints(points: readonly FuelMonthlyPoint[], monthKeys: readonly string[]): LitersCostPoint[] {
+/** Los puntos del libro que caen en la ventana del gráfico, en orden, con su rótulo y su precio por litro. */
+export function ledgerChartPoints(points: readonly FuelMonthlyPoint[], monthKeys: readonly string[]): CostPricePoint[] {
   const byKey = new Map(points.map((point) => [point.monthKey, point]))
   const labels = monthAxisLabels(monthKeys)
   return monthKeys.flatMap((monthKey, index) => {
     const point = byKey.get(monthKey)
     if (!point) return []
+    const price = !point.providerGap && point.amount !== null && point.liters !== null && point.liters > 0 ? point.amount / point.liters : null
     return [{
       month: labels[index] ?? monthKey,
       monthKey,
-      liters: point.liters,
       amount: point.amount,
-      loads: point.loads,
+      price,
       providerGap: point.providerGap,
       partial: point.partial,
     }]
   })
 }
 
-/** ¿Algún mes de la serie trae litros o costo? Sin eso el gráfico no se dibuja. */
-export function ledgerHasData(points: readonly LitersCostPoint[], withCosts: boolean): boolean {
-  return points.some((point) => (point.liters ?? 0) > 0 || (withCosts && (point.amount ?? 0) > 0))
+/** ¿Algún mes trae costo? Sin eso el gráfico de costo no se dibuja. */
+export function ledgerHasCost(points: readonly CostPricePoint[]): boolean {
+  return points.some((point) => (point.amount ?? 0) > 0)
+}
+
+export interface PriceSummary {
+  /** Precio medio por litro de la ventana (Σcosto ÷ Σlitros de los meses con ambos); `null` sin ninguno. */
+  average: number | null
+  last: { monthKey: string; price: number } | null
+  previous: { monthKey: string; price: number } | null
+  /** Variación del último mes completo contra el anterior, en %; `null` si no se pueden comparar. */
+  pct: number | null
+}
+
+/**
+ * Resumen del precio por litro. El promedio usa la razón de sumas (no el promedio de los
+ * precios mensuales: un mes chico pesaría como uno grande). La variación compara el último
+ * mes completo con el anterior que tenga precio; el mes en curso no entra: sus pocos días
+ * no son un precio del mes.
+ */
+export function priceSummary(points: readonly FuelMonthlyPoint[], windowKeys: readonly string[]): PriceSummary {
+  const wanted = new Set(windowKeys)
+  const inWindow = points.filter((point) => wanted.has(point.monthKey))
+  const priced = inWindow.filter((point) => !point.providerGap && point.amount !== null && point.liters !== null && point.liters > 0)
+  const amount = priced.reduce((sum, point) => sum + (point.amount ?? 0), 0)
+  const liters = priced.reduce((sum, point) => sum + (point.liters ?? 0), 0)
+  const complete = priced.filter((point) => !point.partial).map((point) => ({ monthKey: point.monthKey, price: (point.amount ?? 0) / (point.liters ?? 1) }))
+  const last = complete[complete.length - 1] ?? null
+  const previous = complete[complete.length - 2] ?? null
+  const pct = last && previous ? deltaPct(last.price, previous.price) : null
+  return { average: liters > 0 ? amount / liters : null, last, previous, pct: pct === null ? null : Math.round(pct) }
+}
+
+const monthName = (monthKey: string) => MONTH_NAMES[Number(monthKey.slice(5, 7)) - 1] ?? monthKey
+
+/** Titular del gráfico de costo: el precio medio por litro y, si se puede, cómo cambió el último mes. `null` sin precio. */
+export function priceHeadline(summary: PriceSummary): { value: string; caption: string } | null {
+  if (summary.average === null) return null
+  const base = "precio medio por litro en la ventana"
+  if (!summary.last || !summary.previous || summary.pct === null) return { value: `${formatCLP(Math.round(summary.average))}/L`, caption: base }
+  const change = summary.pct === 0
+    ? `igual que en ${monthName(summary.previous.monthKey)}`
+    : `${formatQty(Math.abs(summary.pct))} % ${summary.pct > 0 ? "más" : "menos"} que en ${monthName(summary.previous.monthKey)}`
+  return { value: `${formatCLP(Math.round(summary.average))}/L`, caption: `${base} · en ${monthName(summary.last.monthKey)}, ${change}` }
 }
 
 /* ── «Ver datos» ──────────────────────────────────────────────────────────── */
@@ -153,14 +194,13 @@ export function ledgerHasData(points: readonly LitersCostPoint[], withCosts: boo
 const MISSING = "—"
 const liters = (value: number | null) => (value === null ? MISSING : formatQty(value, undefined, { maximumFractionDigits: 0 }))
 
-export function litersCostTable(points: readonly LitersCostPoint[], withCosts: boolean): { headers: string[]; rows: string[][] } {
+export function costPriceTable(points: readonly CostPricePoint[]): { headers: string[]; rows: string[][] } {
   return {
-    headers: ["Mes", "Litros", ...(withCosts ? ["Costo"] : []), "Cargas", "Observación"],
+    headers: ["Mes", "Costo", "Precio por litro", "Observación"],
     rows: points.map((point) => [
       `${MONTH_NAMES[Number(point.monthKey.slice(5, 7)) - 1] ?? point.monthKey} ${point.monthKey.slice(0, 4)}`.replace(/^./, (c) => c.toUpperCase()),
-      liters(point.liters),
-      ...(withCosts ? [point.amount === null ? MISSING : formatCLP(point.amount)] : []),
-      point.loads === null ? MISSING : formatQty(point.loads),
+      point.amount === null ? MISSING : formatCLP(point.amount),
+      point.price === null ? MISSING : formatCLP(Math.round(point.price)),
       point.providerGap ? "Sin datos del proveedor" : point.partial ? "Mes en curso" : MISSING,
     ]),
   }
@@ -216,3 +256,31 @@ export function topShare(items: readonly { label: string; value: number }[]): { 
 }
 
 export const equipmentCount = (count: number) => countOf(count, "equipo", "equipos")
+
+/* ── Reparto de las celdas del panel ──────────────────────────────────────── */
+
+export type SlotSpan = "one" | "wide" | "full" | "fillXl"
+
+/**
+ * Ancho de cada gráfico según cuántos se dibujan, para que ninguna fila quede a medias en `xl`
+ * (2 columnas) ni en `2xl` (3 columnas). `present[i]` dice si el gráfico i ocupa una celda
+ * (con datos, o con su aviso de error); el resultado trae su ancho o `null` si no se dibuja.
+ *
+ * - 1: fila completa.
+ * - 2: uno doble y el otro que completa (`fillXl` ocupa la fila en `xl` y una columna en `2xl`).
+ * - 3: dos simples y el último que completa.
+ * - 4: doble + dos simples + doble (3+3 en `2xl`, 2+2+2 en `xl`).
+ * Con más de 4 se vuelve a empezar: cada 3 gráficos son una fila de `2xl`.
+ */
+export function assignSpans(present: readonly boolean[]): (SlotSpan | null)[] {
+  const count = present.filter(Boolean).length
+  const layouts: Record<number, SlotSpan[]> = {
+    1: ["full"],
+    2: ["wide", "fillXl"],
+    3: ["one", "one", "fillXl"],
+    4: ["wide", "one", "one", "wide"],
+  }
+  const layout = layouts[count] ?? Array.from({ length: count }, (): SlotSpan => "one")
+  let next = 0
+  return present.map((isPresent) => (isPresent ? (layout[next++] ?? "one") : null))
+}

@@ -3,14 +3,17 @@ import { describeFuelPeriod } from "@/lib/combustibles/period/parse"
 import type { FuelPeriod } from "@/lib/combustibles/period/types"
 import type { FuelMonthlyPoint } from "@/lib/services/dashboard-fuel"
 import {
+  assignSpans,
+  costPriceTable,
   idleWindowTotals,
   indicatorWindows,
   ledgerChartPoints,
   ledgerCost,
-  ledgerHasData,
-  litersCostTable,
+  ledgerHasCost,
   mediumTable,
   monthAxisLabels,
+  priceHeadline,
+  priceSummary,
   topShare,
   windowCaption,
 } from "./view"
@@ -115,20 +118,25 @@ describe("rótulos y puntos de los gráficos", () => {
     expect(points.map((item) => [item.monthKey, item.month])).toEqual([["2026-09", "Sep"], ["2026-10", "Oct"]])
   })
 
-  it("el gráfico se dibuja con litros, o con costo sólo si la persona lo ve", () => {
-    const onlyCost = ledgerChartPoints([point("2026-10", { liters: 0, amount: 50 })], ["2026-10"])
-    expect(ledgerHasData(onlyCost, true)).toBe(true)
-    expect(ledgerHasData(onlyCost, false)).toBe(false)
-    expect(ledgerHasData(ledgerChartPoints([point("2026-10", { liters: null, amount: null, providerGap: true })], ["2026-10"]), true)).toBe(false)
+  it("el gráfico de costo se dibuja sólo si algún mes trae costo; el precio sale de costo ÷ litros del libro", () => {
+    const points = ledgerChartPoints([
+      point("2026-09", { amount: 1_200_000, liters: 1000 }),
+      point("2026-10", { amount: 0, liters: 0 }),
+      point("2026-08", { liters: null, amount: null, loads: null, providerGap: true }),
+    ], ["2026-08", "2026-09", "2026-10"])
+    expect(ledgerHasCost(points)).toBe(true)
+    expect(points.map((item) => item.price)).toEqual([null, 1200, null])
+    expect(ledgerHasCost(ledgerChartPoints([point("2026-10", { amount: null })], ["2026-10"]))).toBe(false)
+    expect(ledgerHasCost(ledgerChartPoints([point("2026-10", { liters: null, amount: null, loads: null, providerGap: true })], ["2026-10"]))).toBe(false)
   })
 
-  it("«Ver datos» deja un hueco con «—» y lo dice, y omite el costo sin permiso", () => {
-    const points = ledgerChartPoints([point("2026-09", { liters: null, amount: null, loads: null, providerGap: true }), point("2026-10", { partial: true })], ["2026-09", "2026-10"])
-    const withCosts = litersCostTable(points, true)
-    expect(withCosts.headers).toEqual(["Mes", "Litros", "Costo", "Cargas", "Observación"])
-    expect(withCosts.rows[0]).toEqual(["Septiembre 2026", "—", "—", "—", "Sin datos del proveedor"])
-    expect(withCosts.rows[1]?.[4]).toBe("Mes en curso")
-    expect(litersCostTable(points, false).headers).toEqual(["Mes", "Litros", "Cargas", "Observación"])
+  it("«Ver datos» deja un hueco con «—» y lo dice; no trae litros del libro", () => {
+    const points = ledgerChartPoints([point("2026-09", { liters: null, amount: null, loads: null, providerGap: true }), point("2026-10", { partial: true, amount: 1_500_000, liters: 1000 })], ["2026-09", "2026-10"])
+    const table = costPriceTable(points)
+    expect(table.headers).toEqual(["Mes", "Costo", "Precio por litro", "Observación"])
+    expect(table.rows[0]).toEqual(["Septiembre 2026", "—", "—", "Sin datos del proveedor"])
+    expect(table.rows[1]?.[3]).toBe("Mes en curso")
+    expect(table.rows[1]?.[2]).toBe("$1.500")
   })
 
   it("la tabla por medio trae una columna por medio y el total del mes", () => {
@@ -160,5 +168,81 @@ describe("ralentí y rankings", () => {
     expect(topShare([{ label: "A", value: 30 }, { label: "B", value: 70 }])).toEqual({ label: "B", value: 70, sharePct: 70 })
     expect(topShare([])).toBeNull()
     expect(topShare([{ label: "A", value: 0 }])).toBeNull()
+  })
+})
+
+describe("precio por litro", () => {
+  const keys = ["2026-07", "2026-08", "2026-09", "2026-10"]
+
+  it("el promedio es la razón de sumas y la variación compara los dos últimos meses completos", () => {
+    const summary = priceSummary([
+      point("2026-07", { amount: 1000, liters: 1000 }),
+      point("2026-08", { amount: 1000, liters: 500 }),
+      point("2026-09", { amount: 1500, liters: 1000 }),
+      point("2026-10", { amount: 1800, liters: 1000 }),
+    ], keys)
+    // (1000 + 1000 + 1500 + 1800) ÷ (1000 + 500 + 1000 + 1000)
+    expect(summary.average).toBeCloseTo(5300 / 3500, 5)
+    expect(summary.last).toEqual({ monthKey: "2026-10", price: 1.8 })
+    expect(summary.previous).toEqual({ monthKey: "2026-09", price: 1.5 })
+    expect(summary.pct).toBe(20)
+  })
+
+  it("el mes en curso y los huecos no entran a la variación", () => {
+    const summary = priceSummary([
+      point("2026-08", { amount: 1000, liters: 1000 }),
+      point("2026-09", { liters: null, amount: null, loads: null, providerGap: true }),
+      point("2026-10", { amount: 900, liters: 1000, partial: true }),
+    ], keys)
+    expect(summary.last?.monthKey).toBe("2026-08")
+    expect(summary.pct).toBeNull()
+    // El promedio sí cuenta el mes en curso (son litros y pesos reales): (1000 + 900) ÷ 2000.
+    expect(summary.average).toBeCloseTo(0.95, 5)
+  })
+
+  it("sin costo no hay precio ni titular", () => {
+    const summary = priceSummary([point("2026-10", { amount: null })], keys)
+    expect(summary.average).toBeNull()
+    expect(priceHeadline(summary)).toBeNull()
+  })
+
+  it("el titular dice el precio medio y cómo cambió el último mes", () => {
+    const up = priceHeadline(priceSummary([point("2026-09", { amount: 1_000_000, liters: 1000 }), point("2026-10", { amount: 1_100_000, liters: 1000 })], keys))
+    expect(up?.value).toBe("$1.050/L")
+    expect(up?.caption).toBe("precio medio por litro en la ventana · en octubre, 10 % más que en septiembre")
+    const flat = priceHeadline(priceSummary([point("2026-09"), point("2026-10")], keys))
+    expect(flat?.caption).toContain("igual que en septiembre")
+    const single = priceHeadline(priceSummary([point("2026-10")], keys))
+    expect(single?.caption).toBe("precio medio por litro en la ventana")
+  })
+})
+
+describe("assignSpans", () => {
+  it("reparte las celdas para que ninguna fila quede a medias en 2 y en 3 columnas", () => {
+    expect(assignSpans([true])).toEqual(["full"])
+    expect(assignSpans([true, true])).toEqual(["wide", "fillXl"])
+    expect(assignSpans([true, true, true])).toEqual(["one", "one", "fillXl"])
+    expect(assignSpans([true, true, true, true])).toEqual(["wide", "one", "one", "wide"])
+  })
+
+  it("los gráficos ausentes no ocupan celda ni cuentan para el reparto", () => {
+    expect(assignSpans([false, true, false, true])).toEqual([null, "wide", null, "fillXl"])
+    expect(assignSpans([false, false])).toEqual([null, null])
+  })
+
+  // Cada reparto llena filas completas: 3 columnas (2xl) y 2 columnas (xl).
+  it("las sumas de columnas cierran en 2xl y en xl", () => {
+    const cols = { one: [1, 1], wide: [2, 2], full: [3, 2], fillXl: [1, 2] } as const
+    for (const count of [1, 2, 3, 4]) {
+      const spans = assignSpans(Array.from({ length: count }, () => true)).filter((span): span is NonNullable<typeof span> => span !== null)
+      for (const [index, columns] of [3, 2].entries()) {
+        let used = 0
+        for (const span of spans) {
+          const width = cols[span][index]!
+          used = used + width > columns ? width : used + width
+        }
+        expect(used % columns, `${count} gráficos en ${columns} columnas`).toBe(0)
+      }
+    }
   })
 })

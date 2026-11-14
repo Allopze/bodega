@@ -302,11 +302,16 @@ export interface RepairRankingRow {
   count: number
 }
 
-/** Equipos con más OT de reparación creadas en el rango. */
+/**
+ * Equipos con más OT de reparación creadas en el rango. Sólo entran los que tienen al menos
+ * `minCount` (2 por defecto): con una sola OT cada equipo, el «ranking» es una lista de empates
+ * que no distingue a nadie y coronar a uno es inventar un líder.
+ */
 export async function loadTopRepairEquipment(
   viewer: MantViewer,
   query: Pick<MantIndicatorQuery, "from" | "to" | "worksiteId">,
-  limit = 8,
+  limit = 50,
+  minCount = 2,
 ): Promise<RepairRankingRow[]> {
   const count = sql<number>`count(*)::int`
   const rows = await db.select({
@@ -325,6 +330,7 @@ export async function loadTopRepairEquipment(
       workOrderScope(viewer, query.worksiteId),
     ))
     .groupBy(mantWorkOrders.vehicleId, fuelVehicles.code, fuelVehicles.plate)
+    .having(sql`count(*) >= ${minCount}`)
     .orderBy(desc(count), fuelVehicles.plate)
     .limit(limit)
   return rows.map((row) => ({ vehicleId: row.vehicleId, code: row.code ?? row.plate, plate: row.plate, count: Number(row.count) }))

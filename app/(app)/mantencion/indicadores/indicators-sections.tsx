@@ -24,6 +24,7 @@ import {
   type WorkOrderSeriesPoint,
 } from "@/lib/services/mantencion/indicators"
 import { formatCLP, formatPercent, formatQty } from "@/lib/utils"
+import { chooseSpans, type ChartCellKind, type ChartSpan } from "./chart-layout"
 import {
   OutOfServiceChart,
   RecordsKindChart,
@@ -61,6 +62,16 @@ function withParams(base: string, params: Record<string, string | null | undefin
 function formatDuration(hours: number): string {
   if (hours < 48) return formatHours(hours)
   return `${formatQty(hours / 24, undefined, { maximumFractionDigits: 1 })} días`
+}
+
+/** Anchos de los gráficos que de verdad se pintan, en su orden (ver `chart-layout.ts`); los que no, no ocupan lugar. */
+function spansFor<T extends string>(cells: Array<{ id: T; kind: ChartCellKind; visible: boolean }>): Record<T, ChartSpan> {
+  const shown = cells.filter((cell) => cell.visible)
+  const spans = chooseSpans(shown.map((cell) => cell.kind))
+  const result = {} as Record<T, ChartSpan>
+  for (const cell of cells) result[cell.id] = "one"
+  shown.forEach((cell, index) => { result[cell.id] = spans[index]! })
+  return result
 }
 
 function excelFor(common: Common): ChartDataExcel | undefined {
@@ -195,6 +206,11 @@ export function WorkOrdersSection({
     href: otHref({ estado: item.status }),
   }))
   const top = [...segments].sort((a, b) => b.count - a.count)[0]
+  const spans = spansFor([
+    { id: "state", kind: "compact", visible: !!top && open !== null },
+    { id: "flow", kind: "series", visible: !!series && series.some((point) => point.created + point.closed + point.backlog > 0) },
+    { id: "mix", kind: "compact", visible: !!series && series.some((point) => point.created > 0) },
+  ])
 
   return (
     <DashboardSection
@@ -204,10 +220,10 @@ export function WorkOrdersSection({
       kpis={kpis}
       charts={
         <>
-          {/* La foto de hoy va primero y a lo ancho: así, con la serie y la mezcla debajo, la grilla
-              de 2 y de 3 columnas cierra sin celdas huérfanas (ver `DashboardPanel`). */}
+          {/* Los anchos salen de `spansFor`: con los gráficos que de verdad se pintan, la grilla de 2 y de 3
+              columnas cierra sin celdas huérfanas (ver `chart-layout.ts`). */}
           {top && open !== null && (
-            <ChartSlot span="full">
+            <ChartSlot span={spans.state}>
               <ChartFrame
                 title="OT abiertas hoy, por estado"
                 description="Hoy · Fuente: órdenes de trabajo"
@@ -229,7 +245,7 @@ export function WorkOrdersSection({
             </ChartSlot>
           )}
           {series && (
-            <ChartSlot span="wide">
+            <ChartSlot span={spans.flow}>
               <WorkOrderFlowChart
                 data={series.map((point) => ({ key: point.key, partial: point.partial, created: point.created, closed: point.closed, backlog: point.backlog }))}
                 granularity={common.granularity}
@@ -239,7 +255,7 @@ export function WorkOrdersSection({
             </ChartSlot>
           )}
           {series && (
-            <ChartSlot span="fillXl">
+            <ChartSlot span={spans.mix}>
               <WorkOrderMixChart
                 data={series.map((point) => ({ key: point.key, partial: point.partial, repairOnly: point.repairOnly, maintenanceOnly: point.maintenanceOnly, both: point.both }))}
                 granularity={common.granularity}
@@ -395,6 +411,14 @@ export function PautasSection({
   const needAttention = pautas ? pautas.counts.vencida + pautas.counts.proxima : 0
   const rankingRows = showRanking && ranking ? ranking : []
   const rankingTop = rankingRows[0]
+  // Con empate en la cima no hay un «equipo con más»: se dice cuántos empatan.
+  const rankingLeaders = rankingTop ? rankingRows.filter((row) => row.count === rankingTop.count) : []
+  const spans = spansFor([
+    { id: "records", kind: "series", visible: !!records && records.points.some((point) => point.preventive + point.corrective > 0) },
+    { id: "pautas", kind: "compact", visible: !!pautas && barTotal > 0 },
+    { id: "ranking", kind: "compact", visible: !!rankingTop },
+    { id: "days", kind: "series", visible: !!outOfService && outOfService.points.some((point) => point.days > 0) },
+  ])
 
   return (
     <DashboardSection
@@ -405,7 +429,7 @@ export function PautasSection({
       charts={
         <>
           {records && (
-            <ChartSlot span="wide">
+            <ChartSlot span={spans.records}>
               <RecordsKindChart
                 data={records.points}
                 granularity={common.granularity}
@@ -415,7 +439,7 @@ export function PautasSection({
             </ChartSlot>
           )}
           {pautas && barTotal > 0 && (
-            <ChartSlot span={rankingTop ? "one" : "fillXl"}>
+            <ChartSlot span={spans.pautas}>
               <ChartFrame
                 title="Estado de las pautas hoy"
                 description="Hoy · Fuente: pautas y lecturas de los equipos activos"
@@ -439,14 +463,18 @@ export function PautasSection({
             </ChartSlot>
           )}
           {rankingTop && (
-            <ChartSlot span="one">
+            <ChartSlot span={spans.ranking}>
               <ChartFrame
                 title="Equipos con más OT de reparación"
-                description={`${common.scopeNote} · Fuente: órdenes de trabajo de reparación (sin anuladas)`}
+                description={`${common.scopeNote} · Fuente: órdenes de trabajo de reparación (sin anuladas); sólo equipos con 2 o más`}
                 headline={
                   <>
                     <ChartHeadlineValue>{formatQty(rankingTop.count)}</ChartHeadlineValue>
-                    <ChartHeadlineCaption>OT de reparación en {rankingTop.code}, el equipo con más en el período</ChartHeadlineCaption>
+                    <ChartHeadlineCaption>
+                      {rankingLeaders.length === 1
+                        ? `OT de reparación en ${rankingTop.code}, el equipo con más en el período`
+                        : `${rankingLeaders.length} equipos empatan con ${formatQty(rankingTop.count)} OT de reparación en el período`}
+                    </ChartHeadlineCaption>
                   </>
                 }
               >
@@ -473,7 +501,7 @@ export function PautasSection({
             </ChartSlot>
           )}
           {outOfService && (
-            <ChartSlot span="wide">
+            <ChartSlot span={spans.days}>
               <OutOfServiceChart
                 data={outOfService.points}
                 granularity={common.granularity}

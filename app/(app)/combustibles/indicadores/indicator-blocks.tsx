@@ -3,6 +3,7 @@ import { ChartDataTable, type ChartDataExcel } from "@/components/charts/chart-d
 import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "@/components/charts/chart-frame"
 import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { RankedList, type RankedListItem } from "@/components/ui/ranked-list"
+import type { SlotSpan } from "@/lib/combustibles/indicators/view"
 import { SectionError } from "../consumo/_components/charts/overview-section"
 
 /**
@@ -33,7 +34,7 @@ export function ChartBlock({
   table,
   children,
 }: {
-  span?: "one" | "wide" | "full" | "fillXl"
+  span?: SlotSpan
   title: string
   description: string
   headline?: BlockHeadline
@@ -70,7 +71,7 @@ export function RankingBlock({
   unit = " L",
   limit = 8,
 }: {
-  span?: "one" | "wide" | "full" | "fillXl"
+  span?: SlotSpan
   title: string
   description: string
   headline?: BlockHeadline
@@ -99,7 +100,7 @@ export function RankingBlock({
 }
 
 /** La consulta de un bloque falló: se dice en su lugar, no se deja un hueco que parezca «sin datos». */
-export function BlockError({ what, span = "one" }: { what: string; span?: "one" | "wide" | "full" | "fillXl" }) {
+export function BlockError({ what, span = "one" }: { what: string; span?: SlotSpan }) {
   return (
     <ChartSlot span={span}>
       <div className="p-5"><SectionError what={what} /></div>
