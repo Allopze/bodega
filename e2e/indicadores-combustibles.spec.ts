@@ -4,13 +4,13 @@ import { expectPageTitle, login } from "./helpers"
 /**
  * E2E Spec: «Indicadores de combustible» (`/combustibles/indicadores`).
  *
- * Dos secciones —Consumo y Eficiencia— con tiles, gráficos y enlaces al módulo, sobre el período
- * compartido de Combustible. Fija lo que una regresión rompería sin que ninguna prueba de
- * componente lo notara: que la página cargue, que ningún gráfico se quede en su esqueleto, que no
- * queden celdas vacías en el panel, el tope de tiles (≤ 8, cada uno un enlace) y que el control de
- * período cambie la URL.
+ * Dos secciones —Consumo y Eficiencia— de gráficos, con una tira de cifras en Consumo y enlaces al
+ * módulo, sobre el período compartido de Combustible. Fija lo que una regresión rompería sin que
+ * ninguna prueba de componente lo notara: que la página cargue, que ningún gráfico se quede en su
+ * esqueleto, que no queden celdas vacías en el panel, que no haya tiles (la pantalla es de gráficos;
+ * las cifras van en una tira de ≤ 4 enlaces) y que el control de período cambie la URL.
  *
- * No exige un número concreto de tiles ni de gráficos: la base E2E puede no traer lecturas de
+ * No exige un número concreto de cifras ni de gráficos: la base E2E puede no traer lecturas de
  * medidor ni telemetría, y entonces la sección dice su estado vacío en vez de un gráfico (A4). Lo
  * que se afirma es siempre «lo que se dibuja está completo», no «se dibuja todo».
  *
@@ -82,19 +82,32 @@ test.describe("Indicadores de combustible", () => {
     expect(marcosVacios).toBe(0)
   })
 
-  test("hasta ocho tiles, y cada uno lleva a su subconjunto", async ({ page }) => {
+  test("sin tiles: las cifras van en una tira de hasta cuatro enlaces", async ({ page }) => {
     await page.goto(RUTA)
     await esperarGraficos(page)
 
-    const tiles = page.locator("[data-kpi-card]")
-    const total = await tiles.count()
-    expect(total).toBeLessThanOrEqual(8)
+    // La pantalla es de gráficos: ningún `KpiCard`.
+    await expect(page.locator("[data-kpi-card]")).toHaveCount(0)
 
-    // Cada tile es un enlace (el `Link` rodea la tarjeta) a una pantalla de Consumo o a donde se cargan los datos.
-    const enlazados = page.locator("a[href]").filter({ has: page.locator("[data-kpi-card]") })
-    await expect(enlazados).toHaveCount(total)
-    for (const href of await enlazados.evaluateAll((nodos) => nodos.map((nodo) => nodo.getAttribute("href") ?? ""))) {
-      expect(href, "destino del tile").toMatch(/^\/combustibles\/(consumo|cargas)(\/|\?|$)/)
+    // La tira de Consumo: cada cifra es un enlace a su detalle (litros, costo, camiones, maquinaria).
+    const consumo = page.getByRole("region", { name: "Consumo", exact: true })
+    const cifras = consumo.getByRole("link", { name: /Litros cargados|Costo del libro de Copec|Camiones · km\/L|Maquinaria · L\/h/ })
+    expect(await cifras.count()).toBeLessThanOrEqual(4)
+    for (const href of await cifras.evaluateAll((nodos) => nodos.map((nodo) => nodo.getAttribute("href") ?? ""))) {
+      expect(href, "destino de la cifra").toMatch(/^\/combustibles\/(consumo|cargas)(\/|\?|$)/)
+    }
+  })
+
+  test("los rankings de Consumo son gráficos de barras, no listas", async ({ page }) => {
+    await page.goto(RUTA)
+    await esperarGraficos(page)
+
+    // El gráfico de barras se pinta dentro de un `role="img"` cuyo nombre trae el del ranking; con una
+    // sola faena (o sin cargas) la celda no existe, así que se afirma por ranking presente.
+    for (const nombre of ["Litros por faena en el período", "Litros por tipo de equipo en el período"]) {
+      const grafico = page.getByRole("img", { name: new RegExp(nombre) })
+      expect(await grafico.count(), `gráficos «${nombre}»`).toBeLessThanOrEqual(1)
+      if ((await grafico.count()) === 1) await expect(page.getByRole("list", { name: nombre })).toHaveCount(0)
     }
   })
 

@@ -49,3 +49,17 @@ No recorrido: roles acotados en navegador (lo cubren las pruebas PGlite de alcan
 - Prod tiene pocas lecturas de medidor GPS (en dev había 3 antes de sembrar): el tablero GPS en prod mostrará sobre todo lo que informen OnWay/Wialon/VisionLink desde que se sincronizan; verificar tras el deploy.
 - Los gráficos GPS no ofrecen Excel: `flota` no tiene permiso `*:export` en `CHART_EXPORT_PERMISSIONS`.
 - Los datos `QA_ind_*` quedan en `bodega_dev` para mirar el tablero GPS; se borran con `DELETE … WHERE id LIKE 'QA_ind_%'` en `fuel_meter_readings`, `fleet_gps_trips` y `fleet_gps_alerts`.
+
+## Segunda pasada: «en su mayoría gráficos» (2026-11-14)
+
+Pedido del usuario: «los paneles o dashboards deben contener en su mayoría GRÁFICOS». La primera versión abría cada sección con 3–4 tiles grandes y la mitad de las celdas eran listas (`RankedList`) o barras de reparto (`ShareBar`).
+
+- Sin tiles: las cifras del período van en una tira compacta (`SummaryBar numerals="sans"`), cada una con su enlace.
+- Rankings y repartos por estado como barras horizontales (`components/charts/bar-ranking-chart.tsx`, nuevo y compartido): GPS 4, Mantención 3, Combustible 2.
+- Gráficos de a dos por fila en `xl`: reparto único en `lib/indicators/chart-layout.ts` (reemplaza los tres helpers por dominio), que prioriza no dejar huecos en `xl`.
+- Combustible › Eficiencia sin párrafos bajo los gráficos (la advertencia pasa a la descripción y al Excel).
+- Arreglos en piezas compartidas vistos en el recorrido: la variación de la tira usa la fuente de la cifra (iba en mono junto a cifras sans) y la cifra no se corta («1.684 / L»); la etiqueta de la barra no se parte.
+
+Verificación: recorrido en `next dev` :3002 contra `bodega_dev`, escritorio 1440 y móvil 390, en las tres rutas: 0 errores de consola, 0 peticiones fallidas, sin desborde; 8 / 6 / 12 gráficos dibujados. `typecheck`, `lint`, `test:fast` (1.354 archivos), `test:pglite` (383) y E2E `indicadores-gps` (7), `indicadores-mantencion` (7), `indicadores-combustibles` (6 + 1 omitido por datos), `control-operacional-navegacion` (29), `densidad-kpi-filtros` (13), `densidad-kpi` (19), `dashboard-rediseno` (5 + 1 omitido por datos): todo en verde.
+
+Pendiente observado (no nuevo): «Días fuera de servicio» muestra +1.008 % porque el período anterior casi no tiene intervalos registrados; GPS ya oculta variaciones sin base comparable, Mantención no.

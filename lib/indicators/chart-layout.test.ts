@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { layoutChartSlots, unusedColumns, type SlotKind } from "./gps-layout"
+import { layoutChartSlots, unusedColumns, type SlotKind } from "./chart-layout"
 
 const WIDTHS = { one: [1, 1], wide: [2, 2], fillXl: [2, 1], full: [2, 3] } as const
 
@@ -28,25 +28,25 @@ describe("layoutChartSlots", () => {
     expect(layoutChartSlots([])).toEqual([])
   })
 
-  it("nunca deja huecos para las combinaciones de las dos secciones", () => {
+  it("en xl (el escritorio habitual) nunca deja huecos", () => {
     const sections: SlotKind[][] = [
-      ["wide", "one", "one", "one"], // uso, faenas, km, horas
-      ["wide", "one", "one"], // sin un ranking
-      ["wide", "one"],
-      ["wide"],
-      ["one"],
-      ["wide", "one", "one", "one", "one"],
-      ["one", "wide", "wide", "one"], // ralentí, viajes, alertas, excesos
-      ["wide", "wide", "one"], // sin ralentí
-      ["one", "wide", "wide"], // sin ranking de excesos
-      ["wide", "wide"],
-      ["one", "wide"],
+      ["one"], ["one", "one"], ["one", "one", "one"], ["one", "one", "one", "one"], ["one", "one", "one", "one", "one"],
+      ["wide", "one", "one", "one"], ["wide", "one"], ["wide"], ["one", "wide", "wide", "one"], ["one", "wide"],
     ]
-    for (const kinds of sections) {
-      const result = gaps(kinds)
-      expect(result.xl, kinds.join(",")).toBe(0)
-      expect(result.wide, kinds.join(",")).toBe(0)
-    }
+    for (const kinds of sections) expect(gaps(kinds).xl, kinds.join(",")).toBe(0)
+  })
+
+  it("cuatro gráficos van de a dos en xl: no se ensanchan a fila completa por cuadrar 2xl", () => {
+    expect(layoutChartSlots(["one", "one", "one", "one"])).toEqual(["one", "one", "one", "one"])
+  })
+
+  it("con tres, el último cierra la fila en xl sin romper la de 2xl", () => {
+    expect(layoutChartSlots(["one", "one", "one"])).toEqual(["one", "one", "fillXl"])
+    expect(gaps(["one", "one", "one"]).wide).toBe(0)
+  })
+
+  it("uno solo ocupa todo el ancho", () => {
+    expect(layoutChartSlots(["one"])).toEqual(["full"])
   })
 
   it("una celda ancha seguida de una simple abre la simple a la fila en xl", () => {

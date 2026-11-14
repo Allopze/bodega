@@ -1,13 +1,11 @@
 import Link from "next/link"
-import { ClipboardText, ClockCountdown, Gauge, Money, Timer, Wrench, CheckCircle } from "@phosphor-icons/react/dist/ssr"
 import { ChartDataTable, type ChartDataExcel } from "@/components/charts/chart-data-table"
 import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "@/components/charts/chart-frame"
-import { ShareBar, type ShareSegment } from "@/components/charts/share-bar"
+import { BarRankingChartLazy } from "@/components/charts/bar-ranking-chart-lazy"
 import { DashboardSection } from "@/components/dashboard/dashboard-section"
 import { EmptyState } from "@/components/ui/empty-state"
-import { ChartSlot, DASHBOARD_KPI } from "@/components/ui/dashboard-panel"
-import { KpiCard } from "@/components/ui/kpi-card"
-import { RankedList } from "@/components/ui/ranked-list"
+import { ChartSlot } from "@/components/ui/dashboard-panel"
+import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import type { IndicatorGranularity } from "@/lib/indicators/period"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { EQUIPMENT_STATE_LABEL, formatHours, plural } from "@/lib/mantencion/format"
@@ -24,7 +22,7 @@ import {
   type WorkOrderSeriesPoint,
 } from "@/lib/services/mantencion/indicators"
 import { formatCLP, formatPercent, formatQty } from "@/lib/utils"
-import { chooseSpans, type ChartCellKind, type ChartSpan } from "./chart-layout"
+import { layoutChartSlots, type SlotSpan } from "@/lib/indicators/chart-layout"
 import {
   OutOfServiceChart,
   RecordsKindChart,
@@ -64,14 +62,25 @@ function formatDuration(hours: number): string {
   return `${formatQty(hours / 24, undefined, { maximumFractionDigits: 1 })} días`
 }
 
-/** Anchos de los gráficos que de verdad se pintan, en su orden (ver `chart-layout.ts`); los que no, no ocupan lugar. */
-function spansFor<T extends string>(cells: Array<{ id: T; kind: ChartCellKind; visible: boolean }>): Record<T, ChartSpan> {
+/**
+ * Anchos de los gráficos que de verdad se pintan, en su orden (`layoutChartSlots`): todos son
+ * de tipo «one» (dos por fila en `xl`, tres en `2xl`) y el reparto sólo ensancha uno para cerrar
+ * una fila; los que no se pintan no ocupan lugar.
+ */
+function spansFor<T extends string>(cells: Array<{ id: T; visible: boolean }>): Record<T, SlotSpan> {
   const shown = cells.filter((cell) => cell.visible)
-  const spans = chooseSpans(shown.map((cell) => cell.kind))
-  const result = {} as Record<T, ChartSpan>
+  const spans = layoutChartSlots(shown.map(() => "one" as const))
+  const result = {} as Record<T, SlotSpan>
   for (const cell of cells) result[cell.id] = "one"
   shown.forEach((cell, index) => { result[cell.id] = spans[index]! })
   return result
+}
+
+/** «+50 % vs. período anterior»: la variación va como texto en la tira, junto a la cifra. */
+function trendHint(change: number | null): string | undefined {
+  if (change === null) return undefined
+  const rounded = Math.round(change)
+  return `${rounded > 0 ? "+" : ""}${formatQty(rounded)} % ${PERIOD_VS}`
 }
 
 function excelFor(common: Common): ChartDataExcel | undefined {
@@ -138,78 +147,67 @@ export function WorkOrdersSection({
   const closedTrend = stats ? percentChange(stats.closed, stats.closedPrevious) : null
   const closedList = otHref({ estado: "cerrada" })
 
-  const kpis = (
-    <>
-      <KpiCard
-        {...DASHBOARD_KPI}
-        icon={<Wrench size={16} />}
-        label="OT abiertas"
-        value={open === null ? "Sin dato" : open === 0 ? "Ninguna" : open}
-        valueKind={open === null || open === 0 ? "text" : "number"}
-        detail={open === null ? "No se pudo calcular" : open === 0 ? "Sin órdenes abiertas · hoy" : unassigned > 0 ? `${unassigned} por asignar · hoy` : "Todas con mecánico · hoy"}
-        tone={unassigned > 0 ? "signal" : "neutral"}
-        href={otHref({ estado: "abiertas" })}
-      />
-      {stats ? (
-        <KpiCard
-          {...DASHBOARD_KPI}
-          icon={<CheckCircle size={16} />}
-          label="OT cerradas en el período"
-          value={stats.closed}
-          detail={stats.closedPrevious > 0 ? `Período anterior: ${formatQty(stats.closedPrevious)}` : "Sin cierres en el período anterior"}
-          trend={closedTrend}
-          trendLabel={PERIOD_VS}
-          trendPolarity="up-good"
-          href={closedList}
-          empty={stats.closed === 0 ? { message: "Ninguna OT se cerró en el período", actionLabel: "Ver órdenes cerradas" } : undefined}
-        />
-      ) : (
-        <KpiCard {...DASHBOARD_KPI} icon={<CheckCircle size={16} />} label="OT cerradas en el período" value="Sin dato" valueKind="text" detail="No se pudo calcular" href={closedList} />
-      )}
-      {stats ? (
-        <KpiCard
-          {...DASHBOARD_KPI}
-          icon={<Timer size={16} />}
-          label="Tiempo medio de reparación"
-          value={stats.mttrHours === null ? "Sin dato" : formatDuration(stats.mttrHours)}
-          valueKind={stats.mttrHours === null ? "text" : "number"}
-          detail={`Promedio de ${plural(stats.repairClosed, "reparación cerrada", "reparaciones cerradas")}, del ingreso a la salida del taller`}
-          href={closedList}
-          empty={stats.mttrHours === null ? { message: "Aún no hay reparaciones cerradas con su paso por taller", actionLabel: "Ver órdenes cerradas" } : undefined}
-        />
-      ) : (
-        <KpiCard {...DASHBOARD_KPI} icon={<Timer size={16} />} label="Tiempo medio de reparación" value="Sin dato" valueKind="text" detail="No se pudo calcular" href={closedList} />
-      )}
-      {stats ? (
-        <KpiCard
-          {...DASHBOARD_KPI}
-          icon={<Money size={16} />}
-          label="Mano de obra y taller (OT)"
-          value={stats.cost === null ? "Sin dato" : formatCLP(stats.cost)}
-          valueKind={stats.cost === null ? "text" : "number"}
-          detail="Costo cargado en las OT cerradas del período, sin repuestos comprados por OC"
-          href={closedList}
-          empty={stats.cost === null ? { message: "Las OT cerradas no traen costo cargado", actionLabel: "Ver órdenes cerradas" } : undefined}
-        />
-      ) : (
-        <KpiCard {...DASHBOARD_KPI} icon={<Money size={16} />} label="Mano de obra y taller (OT)" value="Sin dato" valueKind="text" detail="No se pudo calcular" href={closedList} />
-      )}
-    </>
+  const summary = (
+    <SummaryBar
+      numerals="sans"
+      stats={[
+        {
+          key: "ot-abiertas",
+          label: "OT abiertas",
+          value: open === null ? "Sin dato" : open === 0 ? "Ninguna" : open,
+          valueKind: open === null || open === 0 ? "text" : "number",
+          hint: open !== null && unassigned > 0 ? `${unassigned} por asignar` : undefined,
+          secondary: open === null ? "No se pudo calcular" : open === 0 ? "Sin órdenes abiertas · hoy" : unassigned > 0 ? "Hoy" : "Todas con mecánico · hoy",
+          tone: unassigned > 0 ? "signal" : undefined,
+          href: otHref({ estado: "abiertas" }),
+        },
+        stats
+          ? {
+              key: "ot-cerradas",
+              label: "OT cerradas en el período",
+              value: stats.closed,
+              hint: trendHint(closedTrend),
+              secondary: stats.closed === 0 ? "Ninguna OT se cerró en el período" : stats.closedPrevious > 0 ? `Período anterior: ${formatQty(stats.closedPrevious)}` : "Sin cierres en el período anterior",
+              href: closedList,
+            }
+          : { key: "ot-cerradas", label: "OT cerradas en el período", value: "Sin dato", valueKind: "text", secondary: "No se pudo calcular", href: closedList },
+        stats
+          ? {
+              key: "mttr",
+              label: "Tiempo medio de reparación",
+              value: stats.mttrHours === null ? "Sin dato" : formatDuration(stats.mttrHours),
+              valueKind: stats.mttrHours === null ? "text" : "number",
+              secondary: stats.mttrHours === null ? "Aún no hay reparaciones cerradas con su paso por taller" : `Promedio de ${plural(stats.repairClosed, "reparación cerrada", "reparaciones cerradas")}`,
+              href: closedList,
+            }
+          : { key: "mttr", label: "Tiempo medio de reparación", value: "Sin dato", valueKind: "text", secondary: "No se pudo calcular", href: closedList },
+        stats
+          ? {
+              key: "ot-costo",
+              label: "Mano de obra y taller (OT)",
+              value: stats.cost === null ? "Sin dato" : formatCLP(stats.cost),
+              valueKind: stats.cost === null ? "text" : "number",
+              secondary: stats.cost === null ? "Las OT cerradas no traen costo cargado" : "OT cerradas del período, sin repuestos por OC",
+              href: closedList,
+            }
+          : { key: "ot-costo", label: "Mano de obra y taller (OT)", value: "Sin dato", valueKind: "text", secondary: "No se pudo calcular", href: closedList },
+      ] satisfies SummaryStat[]}
+    />
   )
 
   const excel = excelFor(common)
-  const segments: ShareSegment[] = (byStatus ?? []).map((item) => ({
+  const segments = (byStatus ?? []).map((item) => ({
     key: item.status,
     label: OT_STATUS_LABELS[item.status],
-    count: item.count,
+    value: item.count,
     color: OT_STATUS_COLOR[item.status],
     href: otHref({ estado: item.status }),
   }))
-  const top = [...segments].sort((a, b) => b.count - a.count)[0]
+  const top = [...segments].sort((a, b) => b.value - a.value)[0]
   const spans = spansFor([
-    { id: "state", kind: "compact", visible: !!top && open !== null },
-    { id: "flow", kind: "series", visible: !!series && series.some((point) => point.created + point.closed + point.backlog > 0) },
-    { id: "mix", kind: "compact", visible: !!series && series.some((point) => point.created > 0) },
+    { id: "state", visible: !!top && open !== null },
+    { id: "flow", visible: !!series && series.some((point) => point.created + point.closed + point.backlog > 0) },
+    { id: "mix", visible: !!series && series.some((point) => point.created > 0) },
   ])
 
   return (
@@ -217,11 +215,11 @@ export function WorkOrdersSection({
       id="ordenes-trabajo"
       title="Órdenes de trabajo"
       links={links}
-      kpis={kpis}
+      summary={summary}
       charts={
         <>
           {/* Los anchos salen de `spansFor`: con los gráficos que de verdad se pintan, la grilla de 2 y de 3
-              columnas cierra sin celdas huérfanas (ver `chart-layout.ts`). */}
+              columnas cierra sin celdas huérfanas (ver `lib/indicators/chart-layout.ts`). */}
           {top && open !== null && (
             <ChartSlot span={spans.state}>
               <ChartFrame
@@ -229,16 +227,16 @@ export function WorkOrdersSection({
                 description="Hoy · Fuente: órdenes de trabajo"
                 headline={
                   <>
-                    <ChartHeadlineValue>{formatQty(top.count)}</ChartHeadlineValue>
-                    <ChartHeadlineCaption>OT en «{top.label}», la etapa con más órdenes de las {formatQty(open)} abiertas</ChartHeadlineCaption>
+                    <ChartHeadlineValue>{formatQty(top.value)}</ChartHeadlineValue>
+                    <ChartHeadlineCaption>OT en «{top.label}», la etapa con más órdenes abiertas</ChartHeadlineCaption>
                   </>
                 }
               >
-                <ShareBar label="OT abiertas hoy por estado" segments={segments} />
+                <BarRankingChartLazy items={segments} ariaLabel="OT abiertas hoy por estado" unit=" OT" order="input" limit={8} />
                 <ChartDataTable
                   caption="OT abiertas hoy, por estado"
                   headers={["Estado", "OT"]}
-                  rows={segments.map((segment) => [segment.label, segment.count])}
+                  rows={segments.map((segment) => [segment.label, segment.value])}
                   excel={excel}
                 />
               </ChartFrame>
@@ -346,65 +344,54 @@ export function PautasSection({
   const daysTrend = outOfService ? percentChange(outOfService.total, outOfService.totalPrevious) : null
   const formatDays = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 1 })
 
-  const kpis = (
-    <>
-      {pautas && compliance ? (
-        <KpiCard
-          {...DASHBOARD_KPI}
-          icon={<Gauge size={16} />}
-          label="Equipos con la pauta al día"
-          value={compliance.percent === null ? "Sin dato" : formatPercent(compliance.percent, 0)}
-          valueKind={compliance.percent === null ? "text" : "number"}
-          detail={`${formatQty(compliance.onTime)} de ${plural(compliance.withSchedule, "equipo con pauta", "equipos con pauta")}${pautas.counts.sin_lecturas > 0 ? ` · ${pautas.counts.sin_lecturas} sin lecturas` : ""} · hoy`}
-          tone={pautas.counts.vencida > 0 ? "signal" : "neutral"}
-          href={pautas.counts.vencida > 0 ? equiposHref({ estado: "vencida" }) : equiposHref({})}
-          empty={compliance.percent === null ? { message: "Aún no hay equipos con pauta", actionLabel: "Ir a Equipos" } : undefined}
-        />
-      ) : (
-        <KpiCard {...DASHBOARD_KPI} icon={<Gauge size={16} />} label="Equipos con la pauta al día" value="Sin dato" valueKind="text" detail="No se pudo calcular" href={equiposHref({})} />
-      )}
-      {records ? (
-        <KpiCard
-          {...DASHBOARD_KPI}
-          icon={<ClipboardText size={16} />}
-          label="Registros preventivos del período"
-          value={records.preventive}
-          detail={records.preventivePrevious > 0 ? `Período anterior: ${formatQty(records.preventivePrevious)}` : "Sin registros preventivos en el período anterior"}
-          trend={preventiveTrend}
-          trendLabel={PERIOD_VS}
-          trendPolarity="up-good"
-          href={recordsHref}
-          empty={records.preventive === 0 ? { message: "Ninguna mantención preventiva firmada en el período", actionLabel: "Ver registros" } : undefined}
-        />
-      ) : (
-        <KpiCard {...DASHBOARD_KPI} icon={<ClipboardText size={16} />} label="Registros preventivos del período" value="Sin dato" valueKind="text" detail="No se pudo calcular" href={recordsHref} />
-      )}
-      {outOfService ? (
-        <KpiCard
-          {...DASHBOARD_KPI}
-          icon={<ClockCountdown size={16} />}
-          label="Días fuera de servicio"
-          value={formatDays(outOfService.total)}
-          detail="Días-equipo en mantención o fuera de servicio, en el período"
-          trend={daysTrend}
-          trendLabel={PERIOD_VS}
-          trendPolarity="up-bad"
-          href={equiposHref({ taller: "1" })}
-          empty={outOfService.total === 0 ? { message: "Ningún equipo estuvo detenido en el período" } : undefined}
-        />
-      ) : (
-        <KpiCard {...DASHBOARD_KPI} icon={<ClockCountdown size={16} />} label="Días fuera de servicio" value="Sin dato" valueKind="text" detail="No se pudo calcular" href={equiposHref({ taller: "1" })} />
-      )}
-    </>
+  const summary = (
+    <SummaryBar
+      numerals="sans"
+      stats={[
+        pautas && compliance
+          ? {
+              key: "pauta-al-dia",
+              label: "Equipos con la pauta al día",
+              value: compliance.percent === null ? "Sin dato" : formatPercent(compliance.percent, 0),
+              valueKind: compliance.percent === null ? "text" : "number",
+              secondary: compliance.percent === null
+                ? "Aún no hay equipos con pauta"
+                : `${formatQty(compliance.onTime)} de ${plural(compliance.withSchedule, "equipo con pauta", "equipos con pauta")}${pautas.counts.sin_lecturas > 0 ? ` · ${pautas.counts.sin_lecturas} sin lecturas` : ""} · hoy`,
+              tone: pautas.counts.vencida > 0 ? "signal" : undefined,
+              href: pautas.counts.vencida > 0 ? equiposHref({ estado: "vencida" }) : equiposHref({}),
+            }
+          : { key: "pauta-al-dia", label: "Equipos con la pauta al día", value: "Sin dato", valueKind: "text", secondary: "No se pudo calcular", href: equiposHref({}) },
+        records
+          ? {
+              key: "registros-preventivos",
+              label: "Registros preventivos del período",
+              value: records.preventive,
+              hint: trendHint(preventiveTrend),
+              secondary: records.preventive === 0 ? "Ninguna mantención preventiva firmada en el período" : records.preventivePrevious > 0 ? `Período anterior: ${formatQty(records.preventivePrevious)}` : "Sin registros preventivos en el período anterior",
+              href: recordsHref,
+            }
+          : { key: "registros-preventivos", label: "Registros preventivos del período", value: "Sin dato", valueKind: "text", secondary: "No se pudo calcular", href: recordsHref },
+        outOfService
+          ? {
+              key: "dias-fuera-servicio",
+              label: "Días fuera de servicio",
+              value: formatDays(outOfService.total),
+              hint: trendHint(daysTrend),
+              secondary: outOfService.total === 0 ? "Ningún equipo estuvo detenido en el período" : "Días-equipo en mantención o fuera de servicio",
+              href: equiposHref({ taller: "1" }),
+            }
+          : { key: "dias-fuera-servicio", label: "Días fuera de servicio", value: "Sin dato", valueKind: "text", secondary: "No se pudo calcular", href: equiposHref({ taller: "1" }) },
+      ] satisfies SummaryStat[]}
+    />
   )
 
   const excel = excelFor(common)
   const barCounts = pautas ? PAUTA_BAR_STATES.map((state) => ({ state, count: pautas.counts[state] })) : []
   const barTotal = barCounts.reduce((sum, item) => sum + item.count, 0)
-  const pautaSegments: ShareSegment[] = barCounts.map((item) => ({
+  const pautaSegments = barCounts.map((item) => ({
     key: item.state,
     label: EQUIPMENT_STATE_LABEL[item.state],
-    count: item.count,
+    value: item.count,
     color: PAUTA_COLOR[item.state],
     href: equiposHref({ estado: item.state }),
   }))
@@ -414,10 +401,10 @@ export function PautasSection({
   // Con empate en la cima no hay un «equipo con más»: se dice cuántos empatan.
   const rankingLeaders = rankingTop ? rankingRows.filter((row) => row.count === rankingTop.count) : []
   const spans = spansFor([
-    { id: "records", kind: "series", visible: !!records && records.points.some((point) => point.preventive + point.corrective > 0) },
-    { id: "pautas", kind: "compact", visible: !!pautas && barTotal > 0 },
-    { id: "ranking", kind: "compact", visible: !!rankingTop },
-    { id: "days", kind: "series", visible: !!outOfService && outOfService.points.some((point) => point.days > 0) },
+    { id: "records", visible: !!records && records.points.some((point) => point.preventive + point.corrective > 0) },
+    { id: "pautas", visible: !!pautas && barTotal > 0 },
+    { id: "ranking", visible: !!rankingTop },
+    { id: "days", visible: !!outOfService && outOfService.points.some((point) => point.days > 0) },
   ])
 
   return (
@@ -425,7 +412,7 @@ export function PautasSection({
       id="pautas-disponibilidad"
       title="Pautas y disponibilidad"
       links={links}
-      kpis={kpis}
+      summary={summary}
       charts={
         <>
           {records && (
@@ -452,11 +439,11 @@ export function PautasSection({
                   </>
                 }
               >
-                <ShareBar label="Equipos por estado de pauta hoy" segments={pautaSegments} />
+                <BarRankingChartLazy items={pautaSegments} ariaLabel="Equipos por estado de pauta hoy" unit=" equipos" order="input" limit={8} />
                 <ChartDataTable
                   caption="Estado de las pautas hoy"
                   headers={["Estado", "Equipos"]}
-                  rows={pautaSegments.map((segment) => [segment.label, segment.count])}
+                  rows={pautaSegments.map((segment) => [segment.label, segment.value])}
                   excel={excel}
                 />
               </ChartFrame>
@@ -478,11 +465,10 @@ export function PautasSection({
                   </>
                 }
               >
-                <RankedList
+                <BarRankingChartLazy
                   ariaLabel="Equipos con más órdenes de trabajo de reparación"
-                  format="count"
                   unit=" OT"
-                  showShare={false}
+                  order="desc"
                   limit={8}
                   items={rankingRows.map((row) => ({
                     key: row.vehicleId,

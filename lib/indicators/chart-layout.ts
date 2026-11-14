@@ -37,11 +37,15 @@ export function unusedColumns(widths: readonly number[], columns: number): numbe
 export function layoutChartSlots(kinds: readonly SlotKind[]): SlotSpan[] {
   const count = kinds.length
   if (count === 0) return []
-  let best: { spans: SlotSpan[]; gaps: number; cost: number } | null = null
+  let best: { spans: SlotSpan[]; score: number } | null = null
   const walk = (index: number, spans: SlotSpan[], cost: number) => {
     if (index === count) {
-      const gaps = COLUMNS.reduce((sum, columns, at) => sum + unusedColumns(spans.map((span) => WIDTHS[span][at]!), columns), 0)
-      if (best === null || gaps < best.gaps || (gaps === best.gaps && cost < best.cost)) best = { spans: [...spans], gaps, cost }
+      const [xlGaps, xxlGaps] = COLUMNS.map((columns, at) => unusedColumns(spans.map((span) => WIDTHS[span][at]!), columns))
+      // `xl` (1280–1535 px, el escritorio habitual) manda: un hueco ahí pesa más que todo lo demás.
+      // En `2xl` un hueco se tolera antes que ensanchar gráficos a fila completa: con cuatro
+      // gráficos, cerrar las filas de 3 columnas obligaba a poner dos a todo el ancho en `xl`.
+      const score = xlGaps! * 100 + xxlGaps! + cost
+      if (best === null || score < best.score) best = { spans: [...spans], score }
       return
     }
     OPTIONS[kinds[index]!].forEach((span, position) => {

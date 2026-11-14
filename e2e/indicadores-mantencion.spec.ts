@@ -9,7 +9,7 @@ import { expectPageTitle, login } from "./helpers"
  *
  * Siembra SUS PROPIAS órdenes de trabajo (folios `OT-QA-IND-…`, solicitante `QA_Indicadores`)
  * directo en la base —una abierta y una cerrada de reparación con su paso por taller— para que
- * los tiles y los gráficos de OT tengan algo que dibujar, y las borra al terminar. Todo lo demás
+ * la tira de cifras y los gráficos de OT tengan algo que dibujar, y las borra al terminar. Todo lo demás
  * (pautas, registros, intervalos) es lo que traiga la carga inicial: las comprobaciones de
  * estructura valen con datos o sin ellos.
  *
@@ -108,7 +108,7 @@ test.describe("Indicadores de mantención", () => {
     expect(errores, "errores de consola y de JavaScript en la página").toEqual([])
   })
 
-  test("las OT sembradas se ven en sus tiles y en el gráfico de creadas, cerradas y en cola", async ({ page }) => {
+  test("las OT sembradas se ven en la tira de cifras y en los gráficos de estados y de creadas, cerradas y en cola", async ({ page }) => {
     await page.goto(RUTA)
     await expectPageTitle(page, "Indicadores de mantención")
     await esperarGraficos(page)
@@ -118,6 +118,9 @@ test.describe("Indicadores de mantención", () => {
     await expect(ordenes.getByRole("link", { name: /OT cerradas en el período/ })).toBeVisible()
     await expect(ordenes.getByRole("link", { name: /Tiempo medio de reparación/ })).toBeVisible()
     await expect(ordenes.getByRole("link", { name: /Mano de obra y taller/ })).toBeVisible()
+    // Las OT abiertas por estado son un gráfico de barras (la sembrada «Por asignar» cuenta una).
+    const porEstado = ordenes.getByRole("img", { name: /^OT abiertas hoy por estado/ })
+    await expect(porEstado).toBeVisible()
     await expect(ordenes.locator('[data-chart-kind="bars"]').first()).toBeVisible()
     // El titular del gráfico dice la cifra, y «Ver datos» trae la misma tabla en texto.
     await expect(ordenes.getByRole("heading", { name: "Órdenes de trabajo: creadas, cerradas y en cola", exact: true })).toBeVisible()
@@ -138,21 +141,19 @@ test.describe("Indicadores de mantención", () => {
     expect(vacias, "celdas visibles sin contenido").toEqual([])
   })
 
-  test("a lo más ocho tiles en la página y cada uno lleva a su subconjunto", async ({ page }) => {
+  test("la tira de cifras sustituye a los tiles: a lo más cuatro por sección y cada una lleva a su subconjunto", async ({ page }) => {
     await page.goto(RUTA)
     await expectPageTitle(page, "Indicadores de mantención")
     await esperarGraficos(page)
 
-    const tiles = await page.locator("[data-kpi-card]").count()
-    expect(tiles, `${tiles} tiles`).toBeLessThanOrEqual(8)
-    for (const region of ["Órdenes de trabajo", "Pautas y disponibilidad"]) {
-      const enSeccion = await page.getByRole("region", { name: region, exact: true }).locator("[data-kpi-card]").count()
-      expect(enSeccion, `${enSeccion} tiles en «${region}»`).toBeLessThanOrEqual(4)
-    }
-    // Cada tile es un enlace que contiene el `data-kpi-card`: mismos conteos.
-    expect(await page.locator("a:has([data-kpi-card])").count(), "hay tiles que no son enlaces").toBe(tiles)
-    for (const href of await page.locator("a:has([data-kpi-card])").evaluateAll((links) => links.map((link) => link.getAttribute("href")))) {
-      expect(href, "tile sin destino").toMatch(/^\/mantencion\//)
+    // Los Indicadores son gráficos: no hay tarjetas de KPI, sólo la tira compacta de cada sección.
+    await expect(page.locator("[data-kpi-card]")).toHaveCount(0)
+    const cifras = { "Órdenes de trabajo": 4, "Pautas y disponibilidad": 3 } as const
+    for (const [region, esperadas] of Object.entries(cifras)) {
+      const seccion = page.getByRole("region", { name: region, exact: true })
+      const destinos = await seccion.locator("a[data-pressable]").evaluateAll((links) => links.map((link) => link.getAttribute("href")))
+      expect(destinos, `cifras de «${region}»`).toHaveLength(esperadas)
+      for (const href of destinos) expect(href, "cifra sin destino").toMatch(/^\/mantencion\//)
     }
   })
 

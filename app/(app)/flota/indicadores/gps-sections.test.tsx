@@ -12,6 +12,15 @@ vi.mock("./gps-charts-lazy", () => ({
   GpsAlertsChart: () => <div data-chart="alertas" />,
 }))
 
+// Los rankings son gráficos de barras (recharts, diferido): aquí un stub con sus filas y enlaces.
+vi.mock("@/components/charts/bar-ranking-chart-lazy", () => ({
+  BarRankingChartLazy: ({ items, ariaLabel }: { items: Array<{ key: string; label: string; href?: string }>; ariaLabel: string }) => (
+    <div data-chart="ranking" role="img" aria-label={ariaLabel}>
+      {items.map((item) => (item.href ? <a key={item.key} href={item.href}>{item.label}</a> : <span key={item.key}>{item.label}</span>))}
+    </div>
+  ),
+}))
+
 const { UsageSection, DrivingSection } = await import("./gps-sections")
 
 const period: IndicatorPeriod = {
@@ -57,10 +66,20 @@ const count = (html: string, needle: string) => html.split(needle).length - 1
 describe("UsageSection", () => {
   const html = renderToStaticMarkup(<UsageSection usage={usage} period={period} />)
 
-  it("pinta cuatro tiles, todos con enlace", () => {
-    expect(count(html, "data-kpi-card")).toBe(4)
+  it("resume el período en una tira de cuatro cifras con enlace, sin tiles", () => {
+    expect(count(html, "data-kpi-card")).toBe(0)
+    expect(html).toContain("Km recorridos")
+    expect(html).toContain("Horas de motor")
+    expect(html).toContain("Equipos con uso")
+    expect(html).toContain("Equipos sin lecturas")
     expect(count(html, 'href="/flota/monitoreo"')).toBeGreaterThanOrEqual(2)
+    expect(count(html, 'href="/flota"')).toBeGreaterThanOrEqual(2)
     expect(html).toContain("de 8 vinculados")
+  })
+
+  it("los rankings son gráficos, no listas", () => {
+    expect(count(html, 'data-chart="ranking"')).toBe(3) // faenas, equipos con más km, equipos con más horas
+    expect(html).not.toContain("data-ranked-list")
   })
 
   it("avisa la cobertura cuando no toda la flota informa", () => {
@@ -80,17 +99,17 @@ describe("UsageSection", () => {
   })
 
   it("compara con el período anterior sólo si éste tiene cobertura comparable", () => {
-    expect(html).toContain("data-delta")
+    expect(html).toContain("+20 % vs. período anterior") // km: 1.200 contra 1.000
+    expect(html).toContain("-10 % vs. período anterior") // horas: 90 contra 100
     const sparse = renderToStaticMarkup(<UsageSection usage={{ ...usage, readingDays: { current: 40, previous: 6 } }} period={period} />)
-    expect(sparse).not.toContain("data-delta")
-    expect(count(sparse, "Sin base comparable en el período anterior")).toBe(2) // km y horas
+    expect(sparse).not.toContain("vs. período anterior")
   })
 
   it("las celdas de gráficos no dejan una fila a medias en xl ni en 2xl", () => {
     // Con el ranking de faenas oculto, las celdas restantes se reparten solas.
     const two = renderToStaticMarkup(<UsageSection usage={{ ...usage, byWorksite: [usage.byWorksite[0]!] }} period={period} />)
     expect(two).not.toContain("Uso por faena")
-    expect(two).toContain("xl:col-span-2 2xl:col-span-3") // el último ranking toma la fila entera, no queda solo al lado de un hueco
+    expect(two).toContain("xl:col-span-2 2xl:col-span-1") // el último gráfico cierra la fila de xl, no queda solo al lado de un hueco
   })
 
   it("con una sola faena no dibuja el ranking de faenas", () => {
@@ -100,23 +119,29 @@ describe("UsageSection", () => {
 })
 
 describe("DrivingSection", () => {
-  it("con todos los permisos pinta tres tiles y el vínculo a Motor en vacío", () => {
+  it("con todos los permisos resume tres cifras en la tira, con el vínculo a Motor en vacío", () => {
     const html = renderToStaticMarkup(<DrivingSection idle={idle} driving={driving} period={period} canViewIdle />)
-    expect(count(html, "data-kpi-card")).toBe(3)
-    expect(html).toContain("/combustibles/consumo/motor-en-vacio")
+    expect(count(html, "data-kpi-card")).toBe(0)
+    expect(html).toContain("% del motor en ralentí")
+    expect(html).toContain("Viajes")
+    expect(html).toContain("Excesos de velocidad")
+    expect(html).toContain('href="/combustibles/consumo/motor-en-vacio"')
     expect(html).toContain("data-chart=\"ralenti\"")
+    expect(html).toContain("data-chart=\"viajes\"")
     expect(html).toContain("data-chart=\"alertas\"")
+    expect(html).toContain("data-chart=\"ranking\"") // equipos con más excesos
+    expect(html).toContain('href="/flota/v1"')
   })
 
   it("sin base comparable en OnWay o VisionLink no muestra variaciones", () => {
     const html = renderToStaticMarkup(<DrivingSection idle={{ ...idle, operatingHours: { current: 100, previous: 10 } }} driving={{ ...driving, coverageDays: { current: 10, previous: 2 } }} period={period} canViewIdle />)
-    expect(html).not.toContain("data-delta")
-    expect(count(html, "Sin base comparable en el período anterior")).toBe(3)
+    expect(html).not.toContain("vs. período anterior")
   })
 
   it("sin permiso de combustibles no muestra el ralentí", () => {
     const html = renderToStaticMarkup(<DrivingSection idle={null} driving={driving} period={period} canViewIdle={false} />)
-    expect(count(html, "data-kpi-card")).toBe(2)
+    expect(html).not.toContain("% del motor en ralentí")
+    expect(html).toContain("Excesos de velocidad")
     expect(html).not.toContain("data-chart=\"ralenti\"")
     expect(html).not.toContain("motor-en-vacio")
   })

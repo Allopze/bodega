@@ -24,7 +24,7 @@ export function SummaryBarStatCell({ stat, renderLink, numerals = "mono" }: { st
         )}>{stat.icon}</span>}
         <span className={cn("text-eyebrow line-clamp-2 break-words transition-colors duration-[var(--duration-fast)]", stat.href && "group-hover:text-[var(--color-primary)]")}>{stat.label}</span>
       </div>
-      <div className="mt-2 flex items-end gap-2">
+      <div className="mt-2 flex flex-wrap items-end gap-x-2 gap-y-1">
         <span className={cn(
           // Una palabra («Ninguno», «Sin datos») con el mismo tratamiento que
           // `KpiCard valueKind="text"`: sans, 500, muted. Con estilo de cifra se
@@ -33,12 +33,16 @@ export function SummaryBarStatCell({ stat, renderLink, numerals = "mono" }: { st
             ? "text-base font-medium leading-snug text-[var(--color-text-muted)]"
             : cn(
                 numerals === "sans" ? "font-sans" : "font-mono",
-                "text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight",
+                // Sin cortar «1.684 L» en dos líneas: si la variación no cabe al lado, baja ella.
+                "whitespace-nowrap text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight",
                 toneClass ?? (isZero ? "text-[var(--color-text-faint)]" : "text-[var(--color-text)]"),
               ),
         )}>{displayValue}</span>
         {stat.hint && <span className={cn(
-          "mb-0.5 font-mono text-2xs font-semibold tabular-nums",
+          // La variación va en la misma familia que la cifra: en el tablero (sans) un «+12 %» en mono
+          // junto a «86.352 km» en sans se leía como de otra pantalla.
+          "mb-0.5 text-2xs font-semibold tabular-nums",
+          numerals === "sans" ? "font-sans" : "font-mono",
           toneClass ?? "text-[var(--color-text-subtle)]",
         )}>{stat.hint}</span>}
         {typeof stat.progress === "number" && (

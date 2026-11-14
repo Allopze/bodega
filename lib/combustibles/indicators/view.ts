@@ -258,31 +258,3 @@ export function topShare(items: readonly { label: string; value: number }[]): { 
 }
 
 export const equipmentCount = (count: number) => countOf(count, "equipo", "equipos")
-
-/* ── Reparto de las celdas del panel ──────────────────────────────────────── */
-
-export type SlotSpan = "one" | "wide" | "full" | "fillXl"
-
-/**
- * Ancho de cada gráfico según cuántos se dibujan, para que ninguna fila quede a medias en `xl`
- * (2 columnas) ni en `2xl` (3 columnas). `present[i]` dice si el gráfico i ocupa una celda
- * (con datos, o con su aviso de error); el resultado trae su ancho o `null` si no se dibuja.
- *
- * - 1: fila completa.
- * - 2: uno doble y el otro que completa (`fillXl` ocupa la fila en `xl` y una columna en `2xl`).
- * - 3: dos simples y el último que completa.
- * - 4: doble + dos simples + doble (3+3 en `2xl`, 2+2+2 en `xl`).
- * Con más de 4 se vuelve a empezar: cada 3 gráficos son una fila de `2xl`.
- */
-export function assignSpans(present: readonly boolean[]): (SlotSpan | null)[] {
-  const count = present.filter(Boolean).length
-  const layouts: Record<number, SlotSpan[]> = {
-    1: ["full"],
-    2: ["wide", "fillXl"],
-    3: ["one", "one", "fillXl"],
-    4: ["wide", "one", "one", "wide"],
-  }
-  const layout = layouts[count] ?? Array.from({ length: count }, (): SlotSpan => "one")
-  let next = 0
-  return present.map((isPresent) => (isPresent ? (layout[next++] ?? "one") : null))
-}

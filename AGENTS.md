@@ -589,7 +589,7 @@ El tablero se aparta de las tarjetas flotantes **sólo en `/dashboard`** (todas 
 vistas) **y en las tres pantallas de Indicadores de Control operacional**
 (`/flota/indicadores`, `/mantencion/indicadores`, `/combustibles/indicadores`,
 decisión del usuario 2026-11-13: son tableros de análisis del período sin una
-lista principal, con 6–8 gráficos cada una), y por una razón observada: al compararlo con tableros de referencia, una
+lista principal, con 6–8 gráficos cada una y en su mayoría gráficos: ver A1), y por una razón observada: al compararlo con tableros de referencia, una
 tarjeta flotante por bloque —cada KPI, cada gráfico, cada lista con su propio
 borde, radio y sombra— producía ruido visual (decenas de rectángulos del mismo
 peso compitiendo) y el ojo no distinguía qué era un grupo y qué un bloque suelto. Un
@@ -796,11 +796,18 @@ Lo que **no** se relaja:
   medidor radial.
 - Las tres pantallas de Indicadores de Control operacional
   (`/flota/indicadores`, `/mantencion/indicadores`, `/combustibles/indicadores`)
-  siguen la misma regla que una vista de Inicio: son el análisis del período de
-  un dominio, sin lista principal. Tope de **8 tiles por pantalla**, nunca más de
-  4 por sección, y cada sección (`DashboardSection`) contesta una sola pregunta
-  con sus tiles y sus gráficos. Los Paneles de cada dominio siguen con el tope
-  de 4: son la bandeja de trabajo, no el análisis.
+  son el análisis del período de un dominio, sin lista principal, y **son en su
+  mayoría gráficos** (decisión del usuario 2026-11-14, que lo tuvo que repetir:
+  la primera versión abría cada sección con una banda de tiles y la mitad de las
+  celdas eran listas). Por eso **no llevan tiles**: las cifras del período van en
+  una tira compacta (`SummaryBar numerals="sans"` en el `summary` de
+  `DashboardSection`, máximo 4 por sección, cada una accionable), un ranking o un
+  reparto por categoría se dibuja con `BarRankingChart`
+  (`components/charts/bar-ranking-chart.tsx`) y no con `RankedList`/`ShareBar`, y
+  los gráficos van de a dos por fila en `xl` (`layoutChartSlots`,
+  `lib/indicators/chart-layout.ts`). Cada sección contesta una sola pregunta. Los
+  Paneles de cada dominio siguen con el tope de 4 tiles: son la bandeja de
+  trabajo, no el análisis.
 - El resto de las pantallas conserva el tope de 4, con una sola excepción más,
   declarada abajo: la tira de pasos del Panel de combustible.
 - La superficie del tablero (un panel por grupo en vez de una tarjeta por

@@ -514,6 +514,15 @@ son compartidas: `DashboardSection` (`components/dashboard/dashboard-section.tsx
 `DASHBOARD_KPI` (`components/ui/dashboard-panel.tsx`) y `lazyChart`
 (`components/charts/lazy-chart.tsx`) para todo gráfico de Recharts.
 
+Los Indicadores son **en su mayoría gráficos** (decisión del usuario 2026-11-14):
+sin tiles —las cifras del período en una tira `SummaryBar numerals="sans"`—, los
+rankings y repartos por categoría como barras horizontales (`BarRankingChart`,
+`components/charts/bar-ranking-chart.tsx`: un tono salvo que el color codifique un
+estado, la cifra escrita al final de cada barra, el rótulo como enlace), gráficos
+de a dos por fila en `xl` (`layoutChartSlots`, `lib/indicators/chart-layout.ts`) y
+ningún párrafo bajo un gráfico: lo que hay que advertir va a «Ver datos» o a la
+descripción.
+
 ---
 
 

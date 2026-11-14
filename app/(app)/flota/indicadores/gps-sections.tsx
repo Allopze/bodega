@@ -1,11 +1,12 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { Engine, Info, MapPin, Path, Speedometer, Timer, Truck, WifiSlash } from "@phosphor-icons/react/dist/ssr"
+import { Info, WifiSlash } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
-import { ChartSlot, DASHBOARD_KPI } from "@/components/ui/dashboard-panel"
+import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { EmptyState } from "@/components/ui/empty-state"
-import { KpiCard } from "@/components/ui/kpi-card"
-import { RankedList, type RankedListItem } from "@/components/ui/ranked-list"
+import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
+import { BarRankingChartLazy } from "@/components/charts/bar-ranking-chart-lazy"
+import type { BarRankingItem } from "@/components/charts/bar-ranking-chart"
 import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "@/components/charts/chart-frame"
 import { ChartDataTable } from "@/components/charts/chart-data-table"
 import { DashboardSection } from "@/components/dashboard/dashboard-section"
@@ -19,16 +20,24 @@ import type {
 } from "@/lib/services/fleet-gps-indicators"
 import { formatPercent, formatQty, todayInChile } from "@/lib/utils"
 import { GpsAlertsChart, GpsIdleChart, GpsTripsChart, GpsUsageChart } from "./gps-charts-lazy"
-import { alertBucketLabel, alertBucketTitle, hasComparableBase, hoursText, kmText, NO_COMPARABLE_BASE, percentChange, rangeText } from "./gps-format"
-import { layoutChartSlots, type SlotKind } from "./gps-layout"
+import { alertBucketLabel, alertBucketTitle, hasComparableBase, hoursText, kmText, percentChange, rangeText } from "./gps-format"
+import { layoutChartSlots, type SlotKind } from "@/lib/indicators/chart-layout"
 
 const MONITORING = "/flota/monitoreo"
 const IDLE_PAGE = "/combustibles/consumo/motor-en-vacio"
 const COMPARED_TO = "vs. período anterior"
 
+/** «+12 % vs. período anterior»; sin variación (sin base comparable) no hay pista. */
+function trendHint(change: number | null, unit: "%" | "pp"): string | undefined {
+  if (change === null || !Number.isFinite(change)) return undefined
+  const rounded = Math.round(change * 10) / 10
+  const sign = rounded > 0 ? "+" : rounded < 0 ? "-" : ""
+  return `${sign}${formatQty(Math.abs(rounded), undefined, { maximumFractionDigits: unit === "%" ? 0 : 1 })} ${unit} ${COMPARED_TO}`
+}
+
 const GRANULARITY_NOUN = { day: "día", month: "mes" } as const
 
-function vehicleItem(row: GpsVehicleUsage, kind: "km" | "hours"): RankedListItem {
+function vehicleItem(row: GpsVehicleUsage, kind: "km" | "hours"): BarRankingItem {
   const { primary, secondary } = vehicleIdentityParts({ code: row.code, plate: row.plate, type: row.typeName })
   const other = kind === "km" ? (row.hours > 0 ? hoursText(row.hours) : null) : (row.km > 0 ? kmText(row.km) : null)
   return {
@@ -79,7 +88,7 @@ function Ranking({ title, description, headline, caption, items, unit, ariaLabel
   description: string
   headline: string
   caption: string
-  items: RankedListItem[]
+  items: BarRankingItem[]
   unit: string
   ariaLabel: string
   dataHeaders: string[]
@@ -92,7 +101,7 @@ function Ranking({ title, description, headline, caption, items, unit, ariaLabel
       description={description}
       headline={<><ChartHeadlineValue>{headline}</ChartHeadlineValue><ChartHeadlineCaption>{caption}</ChartHeadlineCaption></>}
     >
-      <RankedList items={items} format="count" unit={unit} ariaLabel={ariaLabel} limit={8} showShare={false} />
+      <BarRankingChartLazy items={items} unit={unit} ariaLabel={ariaLabel} limit={8} order="desc" />
       <ChartDataTable caption={title} headers={dataHeaders} rows={dataRows} />
     </ChartFrame>
   )
@@ -151,26 +160,41 @@ export function UsageSection({ usage, period }: { usage: GpsUsageIndicators; per
       coverage={usage.vehiclesWithReadings < usage.fleetVehicles
         ? <CoverageLine>{`Lecturas GPS de ${usage.vehiclesWithReadings} de ${usage.fleetVehicles} vehículos de la flota: los demás no tienen medidor que informe en el período.`}</CoverageLine>
         : undefined}
-      kpis={
-        <>
-          <KpiCard {...DASHBOARD_KPI} icon={<Path size={16} />} label="Km recorridos" value={`${formatQty(Math.round(usage.km.current))} km`}
-            detail={comparable ? "Suma de los odómetros GPS" : NO_COMPARABLE_BASE} trend={kmTrend} trendPolarity="neutral" trendLabel={COMPARED_TO} href="/flota"
-            empty={usage.km.current === 0 ? { message: "Ningún equipo registró recorrido en el período", actionLabel: "Ver Monitoreo GPS" } : undefined} />
-          <KpiCard {...DASHBOARD_KPI} icon={<Timer size={16} />} label="Horas de motor" value={`${formatQty(usage.hours.current, undefined, { maximumFractionDigits: usage.hours.current >= 100 ? 0 : 1 })} h`}
-            detail={comparable ? "Suma de los horómetros" : NO_COMPARABLE_BASE} trend={hoursTrend} trendPolarity="neutral" trendLabel={COMPARED_TO} href="/flota"
-            empty={usage.hours.current === 0 ? { message: "Ningún equipo registró horas de motor en el período", actionLabel: "Ver Monitoreo GPS" } : undefined} />
-          <KpiCard {...DASHBOARD_KPI} icon={<Truck size={16} />} label="Equipos con uso" value={usage.vehiclesWithUse}
-            detail={`de ${usage.linkedVehicles} vinculados`} href={MONITORING}
-            empty={usage.linkedVehicles === 0 ? { message: "Aún no hay equipos vinculados a un GPS", actionLabel: "Vincular dispositivos" } : undefined} />
-          <KpiCard {...DASHBOARD_KPI} icon={<WifiSlash size={16} />} label="Equipos sin lecturas" value={withoutReadings}
-            detail={withoutReadings > 0 ? "Vinculados sin medidor en el período" : "Todos los vinculados informaron"}
-            tone={withoutReadings > 0 ? "signal" : "neutral"} href={MONITORING} />
-        </>
-      }
+      summary={<SummaryBar numerals="sans" stats={[
+        {
+          key: "km",
+          label: "Km recorridos",
+          value: `${formatQty(Math.round(usage.km.current))} km`,
+          hint: trendHint(kmTrend, "%"),
+          href: "/flota",
+        },
+        {
+          key: "horas",
+          label: "Horas de motor",
+          value: `${formatQty(usage.hours.current, undefined, { maximumFractionDigits: usage.hours.current >= 100 ? 0 : 1 })} h`,
+          hint: trendHint(hoursTrend, "%"),
+          href: "/flota",
+        },
+        {
+          key: "equipos-con-uso",
+          label: "Equipos con uso",
+          value: usage.vehiclesWithUse,
+          secondary: `de ${usage.linkedVehicles} vinculados`,
+          href: MONITORING,
+        },
+        {
+          key: "sin-lecturas",
+          label: "Equipos sin lecturas",
+          value: withoutReadings,
+          secondary: withoutReadings > 0 ? "Vinculados sin medidor en el período" : "Todos los vinculados informaron",
+          tone: "signal",
+          href: MONITORING,
+        },
+      ]} />}
       charts={<ChartSlots slots={[
         ...(chartData.some((point) => point.km > 0 || point.hours > 0) ? [{
           key: "uso",
-          kind: "wide" as const,
+          kind: "one" as const,
           node: <GpsUsageChart data={chartData} granularity={period.granularity} description={`Por ${noun} · ${window}`} />,
         }] : []),
         ...(usage.byWorksite.length > 1 && leadingWorksite ? [{
@@ -308,6 +332,37 @@ export function DrivingSection({ idle, driving, period, canViewIdle }: {
   const speedingTop = driving?.topSpeeding ?? []
   const speedingTotal = driving?.speeding.current ?? 0
 
+  const drivingStats: SummaryStat[] = [
+    ...(canViewIdle && idle ? [{
+      key: "ralenti",
+      label: "% del motor en ralentí",
+      value: idle.idlePct === null ? "Sin dato" : formatPercent(idle.idlePct, 1),
+      valueKind: idle.idlePct === null ? ("text" as const) : ("number" as const),
+      hint: trendHint(idleDelta, "pp"),
+      secondary: idle.idlePct === null ? "Sin telemetría VisionLink en el período" : `${idle.vehicles} ${idle.vehicles === 1 ? "equipo" : "equipos"} con VisionLink`,
+      href: IDLE_PAGE,
+    }] : []),
+    ...(driving ? [
+      {
+        key: "viajes",
+        label: "Viajes",
+        value: driving.trips.current,
+        hint: trendHint(drivingComparable ? percentChange(driving.trips.current, driving.trips.previous) : null, "%"),
+        secondary: "Registrados por Entel OnWay",
+        href: MONITORING,
+      },
+      {
+        key: "excesos",
+        label: "Excesos de velocidad",
+        value: speedingTotal,
+        hint: trendHint(drivingComparable ? percentChange(speedingTotal, driving.speeding.previous) : null, "%"),
+        secondary: "Alertas de Entel OnWay",
+        tone: "signal" as const,
+        href: MONITORING,
+      },
+    ] : []),
+  ]
+
   return (
     <DashboardSection
       id="ralenti-conduccion"
@@ -318,29 +373,7 @@ export function DrivingSection({ idle, driving, period, canViewIdle }: {
           {`${idle ? `El ralentí sólo incluye equipos con telemetría VisionLink (${idle.vehicles}). ` : ""}Los viajes y las alertas, sólo equipos con Entel OnWay.`}
         </CoverageLine>
       }
-      kpis={
-        <>
-          {canViewIdle && idle && (
-            <KpiCard {...DASHBOARD_KPI} icon={<Engine size={16} />} label="% del motor en ralentí"
-              value={idle.idlePct === null ? "Sin dato" : formatPercent(idle.idlePct, 1)} valueKind={idle.idlePct === null ? "text" : "number"}
-              detail={idleComparable ? `${idle.vehicles} ${idle.vehicles === 1 ? "equipo" : "equipos"} con VisionLink` : NO_COMPARABLE_BASE}
-              trend={idleDelta} trendFormat="number" trendPolarity="up-bad" trendLabel={`pp ${COMPARED_TO}`}
-              href={IDLE_PAGE}
-              empty={idle.idlePct === null ? { message: "Sin telemetría VisionLink en el período", actionLabel: "Ver Motor en vacío" } : undefined} />
-          )}
-          {driving && (
-            <>
-              <KpiCard {...DASHBOARD_KPI} icon={<MapPin size={16} />} label="Viajes" value={driving.trips.current}
-                detail={drivingComparable ? "Registrados por Entel OnWay" : NO_COMPARABLE_BASE} trend={drivingComparable ? percentChange(driving.trips.current, driving.trips.previous) : null} trendPolarity="neutral" trendLabel={COMPARED_TO}
-                href={MONITORING}
-                empty={driving.trips.current === 0 ? { message: "Sin viajes registrados en el período", actionLabel: "Ver Monitoreo GPS" } : undefined} />
-              <KpiCard {...DASHBOARD_KPI} icon={<Speedometer size={16} />} label="Excesos de velocidad" value={speedingTotal}
-                detail={drivingComparable ? "Alertas de Entel OnWay" : NO_COMPARABLE_BASE} trend={drivingComparable ? percentChange(speedingTotal, driving.speeding.previous) : null} trendPolarity="up-bad" trendLabel={COMPARED_TO}
-                tone={speedingTotal > 0 ? "signal" : "neutral"} href={MONITORING} />
-            </>
-          )}
-        </>
-      }
+      summary={drivingStats.length > 0 ? <SummaryBar numerals="sans" stats={drivingStats} /> : undefined}
       charts={<ChartSlots slots={[
         ...(canViewIdle && idle && idleData.some((point) => (point.workingHours ?? 0) + (point.idleHours ?? 0) > 0) ? [{
           key: "ralenti",
@@ -349,12 +382,12 @@ export function DrivingSection({ idle, driving, period, canViewIdle }: {
         }] : []),
         ...(driving && driving.trips.current > 0 ? [{
           key: "viajes",
-          kind: "wide" as const,
+          kind: "one" as const,
           node: <GpsTripsChart data={tripData} totalTrips={driving.trips.current} granularity={period.granularity} description={`Por ${GRANULARITY_NOUN[period.granularity]} · ${rangeText(period)} · Entel OnWay`} />,
         }] : []),
         ...(driving && Object.values(driving.alertTotals).some((count) => count > 0) ? [{
           key: "alertas",
-          kind: "wide" as const,
+          kind: "one" as const,
           node: (
             <GpsAlertsChart
               data={alertData}

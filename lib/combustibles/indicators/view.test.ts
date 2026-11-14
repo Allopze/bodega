@@ -3,7 +3,6 @@ import { describeFuelPeriod } from "@/lib/combustibles/period/parse"
 import type { FuelPeriod } from "@/lib/combustibles/period/types"
 import type { FuelMonthlyPoint } from "@/lib/services/dashboard-fuel"
 import {
-  assignSpans,
   costPriceTable,
   idleWindowTotals,
   indicatorWindows,
@@ -220,35 +219,5 @@ describe("precio por litro", () => {
     expect(flat?.caption).toContain("igual que en septiembre")
     const single = priceHeadline(priceSummary([point("2026-10")], keys))
     expect(single?.caption).toBe("precio medio por litro en la ventana")
-  })
-})
-
-describe("assignSpans", () => {
-  it("reparte las celdas para que ninguna fila quede a medias en 2 y en 3 columnas", () => {
-    expect(assignSpans([true])).toEqual(["full"])
-    expect(assignSpans([true, true])).toEqual(["wide", "fillXl"])
-    expect(assignSpans([true, true, true])).toEqual(["one", "one", "fillXl"])
-    expect(assignSpans([true, true, true, true])).toEqual(["wide", "one", "one", "wide"])
-  })
-
-  it("los gráficos ausentes no ocupan celda ni cuentan para el reparto", () => {
-    expect(assignSpans([false, true, false, true])).toEqual([null, "wide", null, "fillXl"])
-    expect(assignSpans([false, false])).toEqual([null, null])
-  })
-
-  // Cada reparto llena filas completas: 3 columnas (2xl) y 2 columnas (xl).
-  it("las sumas de columnas cierran en 2xl y en xl", () => {
-    const cols = { one: [1, 1], wide: [2, 2], full: [3, 2], fillXl: [1, 2] } as const
-    for (const count of [1, 2, 3, 4]) {
-      const spans = assignSpans(Array.from({ length: count }, () => true)).filter((span): span is NonNullable<typeof span> => span !== null)
-      for (const [index, columns] of [3, 2].entries()) {
-        let used = 0
-        for (const span of spans) {
-          const width = cols[span][index]!
-          used = used + width > columns ? width : used + width
-        }
-        expect(used % columns, `${count} gráficos en ${columns} columnas`).toBe(0)
-      }
-    }
   })
 })

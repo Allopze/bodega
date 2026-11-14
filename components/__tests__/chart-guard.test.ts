@@ -120,6 +120,7 @@ const DENSAS: Record<string, string> = {
   "app/(app)/combustibles/consumo/_components/charts/overview-monthly-chart.tsx": "columnas apiladas por medio de suministro: más de 6 segmentos",
   "app/(app)/analitica/analytics-charts.tsx": "Pareto de proveedores: una barra por proveedor",
   "app/(app)/combustibles/cuadratura/estanques/tank-level-chart.tsx": "dos paneles por estanque (nivel y entradas/salidas): small multiples",
+  "components/charts/bar-ranking-chart.tsx": "ranking de los tableros: una barra por equipo, faena o estado",
 }
 
 // ─── Análisis del árbol ───────────────────────────────────────────────────

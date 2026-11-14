@@ -5,10 +5,10 @@ import { GasPump, Gauge, Receipt, Truck } from "@phosphor-icons/react/dist/ssr"
 import { CoverageNotice } from "@/components/charts/coverage-notice"
 import { Button } from "@/components/ui/button"
 import { DashboardSection } from "@/components/dashboard/dashboard-section"
-import { ChartSlot, DASHBOARD_KPI } from "@/components/ui/dashboard-panel"
+import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { EmptyState } from "@/components/ui/empty-state"
-import { KpiCard } from "@/components/ui/kpi-card"
+import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { ChartDataTable } from "@/components/charts/chart-data-table"
 import { can } from "@/lib/auth/can"
 import { PERFORMANCE_FAMILY_SLUGS } from "@/lib/combustibles/control/contracts"
@@ -24,7 +24,6 @@ import {
   indicatorWindows,
   ledgerChartPoints,
   ledgerCost,
-  assignSpans,
   costPriceTable,
   ledgerHasCost,
   mediumTable,
@@ -39,36 +38,36 @@ import { FUEL_PATHS, fuelPerformanceHref } from "@/lib/combustibles/routes"
 import { formatCLP, formatQty } from "@/lib/utils"
 import { hrefInContext } from "../consumo/_components/page-links"
 import { createSourceTracker } from "../consumo/_components/track-sources"
-import { BlockError, ChartBlock, RankingBlock } from "./indicator-blocks"
+import { BlockError, ChartBlock, RankingBlock, chartSpans } from "./indicator-blocks"
 import { CostPriceChart, LitersByMediumChart } from "./indicators-charts-lazy"
 
 const CONSUMO_LITROS_TARJETAS = `${FUEL_PATHS.consumoLitros}?seccion=tarjetas`
 
-/** Un tile de litros o de rendimiento desde las cifras del Panel: sin dato dice qué falta, nunca un cero. */
-function figureTile({ figure, label, detail, icon, href, trendPolarity }: {
+/** «+5 %» / «−3 %» y contra qué se compara, como texto de la tira. */
+function variationHint(pct: number, versus: string): string {
+  const sign = pct > 0 ? "+" : pct < 0 ? "−" : ""
+  return `${sign}${formatQty(Math.abs(pct), undefined, { maximumFractionDigits: 0 })} % ${versus}`
+}
+
+/** Una cifra de litros o de rendimiento desde las cifras del Panel: sin dato dice qué falta, nunca un cero ni «—». */
+function figureStat({ figure, key, label, detail, icon, href }: {
   figure: PanelFigure
+  key: string
   label: string
   detail: string
   icon: ReactNode
   href: string
-  trendPolarity: "up-good" | "up-bad" | "neutral"
-}) {
-  if (figure.value === null) {
-    return <KpiCard {...DASHBOARD_KPI} icon={icon} label={label} value="—" detail="" href={href} empty={{ message: figure.emptyHint, actionLabel: "Ver el detalle" }} />
+}): SummaryStat {
+  if (figure.value === null) return { key, label, icon, href, value: figure.emptyHint, valueKind: "text" }
+  return {
+    key,
+    label,
+    icon,
+    href,
+    value: `${figure.value} ${figure.unit}`,
+    hint: figure.variation ? variationHint(figure.variation.pct, variationLabel(figure.variation)) : undefined,
+    secondary: detail,
   }
-  return (
-    <KpiCard
-      {...DASHBOARD_KPI}
-      icon={icon}
-      label={label}
-      value={`${figure.value} ${figure.unit}`}
-      detail={detail}
-      trend={figure.variation?.pct ?? null}
-      trendPolarity={trendPolarity}
-      trendLabel={figure.variation ? variationLabel(figure.variation) : undefined}
-      href={href}
-    />
-  )
 }
 
 /**
@@ -76,14 +75,14 @@ function figureTile({ figure, label, detail, icon, href, trendPolarity }: {
  * viene lo cargado. Cada consulta cae por separado: si una falla, sólo su bloque lo dice.
  *
  * Fuentes (el mismo origen que la pantalla de Consumo que cada cifra enlaza):
- * - Tiles de litros y rendimiento: cargas de equipos, las del Panel (`getIndicatorFigures`).
+ * - Tira de litros y rendimiento: cargas de equipos, las del Panel (`getIndicatorFigures`).
  * - Costo y gráfico «Litros y costo»: libro del proveedor (`getLedgerTrend`), mensual.
- * - «Por medio», «por faena» y «por tipo de equipo»: cargas de equipos, como los tiles.
+ * - «Por medio», «por faena» y «por tipo de equipo»: cargas de equipos, como la tira.
  */
 export async function ConsumoSection({ session, period, worksiteId }: { session: Session; period: ResolvedFuelPeriod; worksiteId?: string }) {
   const windows = indicatorWindows(period)
   const filters = controlFiltersFromPeriod(period, worksiteId ? { faena: worksiteId } : {})
-  // Rankings por día civil de Chile, igual que los tiles (que cortan por día): así suman lo mismo que el tile de litros.
+  // Rankings por día civil de Chile, igual que la tira (que corta por día): así suman lo mismo que la cifra de litros.
   const dayFilters = { ...filters, months: [] as number[], from: period.from, to: period.to }
   const historyFilters = { ...filters, year: Number(windows.chart.from.slice(0, 4)), months: [] as number[], from: windows.chart.from, to: windows.chart.to }
   const canViewCosts = can(session, "combustibles:view") && can(session, "combustibles:view_costs")
@@ -173,12 +172,57 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
 
   // Qué gráficos ocupan celda (con datos o con su aviso de error) y, según cuántos sean, el ancho de cada uno:
   // así no quedan filas a medias en `xl` (2 columnas) ni en `2xl` (3). El costo sólo con `view_costs`.
-  const [costSpan, mediumSpan, worksiteSpan, typeSpan] = assignSpans([
+  const [costSpan, mediumSpan, worksiteSpan, typeSpan] = chartSpans([
     canViewCosts && (ledger.failed || ledgerHasCost(ledgerPoints)),
     monthly.failed || (mediumData?.points.length ?? 0) > 0,
     byWorksite.failed || showWorksiteRanking,
     byType.failed || typeRows.length > 0,
   ])
+
+  // La tira del período (máx. 4): litros, costo del libro, camiones y maquinaria. Cada una enlaza a su detalle.
+  const stats: SummaryStat[] = []
+  if (figures) {
+    stats.push(figureStat({
+      figure: figures.liters,
+      key: "litros",
+      label: "Litros cargados",
+      detail: `${equipmentCount(figures.equipmentCount)} · ${figures.liters.hint ?? period.label}`,
+      icon: <GasPump size={16} />,
+      // Sin cargas la cifra lleva a donde se cargan; con cargas, al detalle de litros.
+      href: withPeriod(figures.liters.value === null ? FUEL_PATHS.cargas : FUEL_PATHS.consumoLitros),
+    }))
+  }
+  if (canViewCosts && ledger.data && cost) {
+    stats.push(cost.amount === null
+      ? { key: "costo", label: "Costo del libro de Copec", icon: <Receipt size={16} />, href: withPeriod(CONSUMO_LITROS_TARJETAS), value: "Sin datos del proveedor en este período", valueKind: "text" }
+      : {
+        key: "costo",
+        label: "Costo del libro de Copec",
+        icon: <Receipt size={16} />,
+        href: withPeriod(CONSUMO_LITROS_TARJETAS),
+        value: formatCLP(cost.amount),
+        hint: cost.pct !== null && windows.previous ? variationHint(cost.pct, `vs. ${windows.previous.inLabel}`) : undefined,
+        secondary: period.label,
+      })
+  }
+  if (figures) {
+    stats.push(figureStat({
+      figure: figures.trucks,
+      key: "camiones",
+      label: "Camiones · km/L",
+      detail: figures.trucks.hint ?? period.label,
+      icon: <Truck size={16} />,
+      href: withPeriod(fuelPerformanceHref(PERFORMANCE_FAMILY_SLUGS.camiones)),
+    }))
+    stats.push(figureStat({
+      figure: figures.machinery,
+      key: "maquinaria",
+      label: "Maquinaria · L/h",
+      detail: figures.machinery.hint ?? period.label,
+      icon: <Gauge size={16} />,
+      href: withPeriod(fuelPerformanceHref(PERFORMANCE_FAMILY_SLUGS.maquinaria)),
+    }))
+  }
 
   return (
     <>
@@ -189,53 +233,7 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
         links={links}
         note={canViewCosts && !period.isWholeMonths ? "El costo viene del libro de Copec, que es mensual: se toman los meses completos que toca el período." : undefined}
         coverage={<CoverageNotice {...coverageInput} sourcesHref={sourcesHref ? withPeriod(sourcesHref) : undefined} />}
-        kpis={
-          <>
-            {figures ? figureTile({
-              figure: figures.liters,
-              label: "Litros cargados",
-              detail: `${equipmentCount(figures.equipmentCount)} · ${figures.liters.hint ?? period.label}`,
-              icon: <GasPump size={16} />,
-              // Sin cargas el tile lleva a donde se cargan; con cargas, al detalle de litros.
-              href: withPeriod(figures.liters.value === null ? FUEL_PATHS.cargas : FUEL_PATHS.consumoLitros),
-              trendPolarity: "neutral",
-            }) : null}
-            {canViewCosts && ledger.data && cost ? (
-              cost.amount === null ? (
-                <KpiCard {...DASHBOARD_KPI} icon={<Receipt size={16} />} label="Costo del libro de Copec" value="—" detail="" href={withPeriod(CONSUMO_LITROS_TARJETAS)}
-                  empty={{ message: "Sin datos del proveedor en este período", actionLabel: "Ver el detalle" }} />
-              ) : (
-                <KpiCard
-                  {...DASHBOARD_KPI}
-                  icon={<Receipt size={16} />}
-                  label="Costo del libro de Copec"
-                  value={formatCLP(cost.amount)}
-                  detail={period.label}
-                  trend={cost.pct}
-                  trendPolarity="up-bad"
-                  trendLabel={windows.previous ? `vs. ${windows.previous.inLabel}` : undefined}
-                  href={withPeriod(CONSUMO_LITROS_TARJETAS)}
-                />
-              )
-            ) : null}
-            {figures ? figureTile({
-              figure: figures.trucks,
-              label: "Camiones · km/L",
-              detail: figures.trucks.hint ?? period.label,
-              icon: <Truck size={16} />,
-              href: withPeriod(fuelPerformanceHref(PERFORMANCE_FAMILY_SLUGS.camiones)),
-              trendPolarity: "up-good",
-            }) : null}
-            {figures ? figureTile({
-              figure: figures.machinery,
-              label: "Maquinaria · L/h",
-              detail: figures.machinery.hint ?? period.label,
-              icon: <Gauge size={16} />,
-              href: withPeriod(fuelPerformanceHref(PERFORMANCE_FAMILY_SLUGS.maquinaria)),
-              trendPolarity: "up-bad",
-            }) : null}
-          </>
-        }
+        summary={stats.length > 0 ? <SummaryBar numerals="sans" stats={stats} /> : undefined}
         charts={
           <>
             {costSpan === null ? null : ledger.failed ? <BlockError what="el costo por mes" span={costSpan} /> : (
@@ -279,6 +277,12 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
                   detail: equipmentCount(row.equipment),
                   href: withPeriod(FUEL_PATHS.consumoLitros, row.worksiteId),
                 }))}
+                table={{
+                  caption: "Litros por faena en el período",
+                  headers: ["Faena", "Litros", "Equipos"],
+                  rows: worksiteRows.map((row) => [row.name, formatQty(row.liters), equipmentCount(row.equipment)]),
+                  excel,
+                }}
               />
             )}
             {typeSpan === null ? null : byType.failed ? <BlockError what="los litros por tipo de equipo" span={typeSpan} /> : (
@@ -289,6 +293,12 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
                 headline={typeTop ? { value: `${formatQty(typeTop.sharePct, undefined, { maximumFractionDigits: 0 })} %`, caption: `de los litros lo cargaron ${typeTop.label.toLowerCase()}` } : undefined}
                 ariaLabel="Litros por tipo de equipo en el período"
                 items={typeRows.map((row) => ({ key: row.typeId ?? "_none", label: row.name, value: row.liters, detail: equipmentCount(row.equipment) }))}
+                table={{
+                  caption: "Litros por tipo de equipo en el período",
+                  headers: ["Tipo de equipo", "Litros", "Equipos"],
+                  rows: typeRows.map((row) => [row.name, formatQty(row.liters), equipmentCount(row.equipment)]),
+                  excel,
+                }}
               />
             )}
           </>

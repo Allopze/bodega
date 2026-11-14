@@ -14,8 +14,8 @@ import { getMeterRateSeries } from "@/lib/combustibles/control/queries/meter-rat
 import { controlFiltersFromPeriod } from "@/lib/combustibles/control/queries/period-filters"
 import { coverageNoticeText, fuelSourcesHref } from "@/lib/combustibles/coverage-notice"
 import { getFuelProviderCoverageGaps } from "@/lib/combustibles/coverage-notice-data"
-import { assignSpans, idleTable, idleWindowTotals, indicatorWindows, windowCaption } from "@/lib/combustibles/indicators/view"
-import { describeMeterRate, type MeterRateSeries } from "@/lib/combustibles/meter-rate-series"
+import { idleTable, idleWindowTotals, indicatorWindows, windowCaption } from "@/lib/combustibles/indicators/view"
+import { MIN_RATE_SEGMENTS, type MeterRateSeries } from "@/lib/combustibles/meter-rate-series"
 import { meterRateNotes, meterRateTable } from "@/lib/combustibles/meter-rate-view"
 import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
@@ -23,7 +23,7 @@ import { MONTH_NAMES, formatQty } from "@/lib/utils"
 import { monthText } from "../consumo/_components/format"
 import { hrefInContext } from "../consumo/_components/page-links"
 import { createSourceTracker } from "../consumo/_components/track-sources"
-import { BlockError, ChartBlock, type BlockHeadline } from "./indicator-blocks"
+import { BlockError, ChartBlock, chartSpans, type BlockHeadline } from "./indicator-blocks"
 import { IdleLitersChart, MeterRateChart } from "./indicators-charts-lazy"
 
 const RATE_BLOCKS: Record<PerformanceUnit, { title: string; source: string }> = {
@@ -99,7 +99,7 @@ export async function EficienciaSection({ session, period, worksiteId }: { sessi
   ]
 
   // Una celda por gráfico que se dibuja (o por su aviso de error); el ancho reparte la fila sin dejar huecos.
-  const [kmSpan, hourSpan, idleSpan] = assignSpans([
+  const [kmSpan, hourSpan, idleSpan] = chartSpans([
     rates.failed || rateUnits.includes("km_per_liter"),
     rates.failed ? false : rateUnits.includes("liters_per_hour"),
     idle.failed || idleRows.length > 0,
@@ -157,13 +157,16 @@ export async function EficienciaSection({ session, period, worksiteId }: { sessi
                   key={unit}
                   span={rateSpans[unit] ?? "one"}
                   title={block.title}
-                  description={`${caption} · ${block.source}`}
+                  // `n` es el rótulo bajo cada mes del eje: se explica aquí; las demás salvedades viajan en el Excel.
+                  description={`${caption} · ${block.source} · n = tramos con lectura de medidor, un mes necesita ${MIN_RATE_SEGMENTS}`}
                   headline={rateHeadline(series)}
-                  table={{ caption: `Rendimiento mensual en ${PERFORMANCE_UNIT_LABELS[unit]}`, ...table, excel }}
+                  table={{
+                    caption: `Rendimiento mensual en ${PERFORMANCE_UNIT_LABELS[unit]}`,
+                    ...table,
+                    excel: excel ? { ...excel, notes: [...excel.notes, ...meterRateNotes(series)] } : undefined,
+                  }}
                 >
                   <MeterRateChart series={series} />
-                  <p className="mt-2 text-xs text-[var(--color-text-muted)]">{describeMeterRate(series)}</p>
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">{meterRateNotes(series)[0]}</p>
                 </ChartBlock>
               )
             }) : null}
