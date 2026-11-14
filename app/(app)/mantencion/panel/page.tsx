@@ -1,22 +1,55 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
+import { IndicatorFilters } from "@/components/dashboard/indicator-filters"
+import { Callout } from "@/components/ui/callout"
+import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { PageContainer } from "@/components/ui/page-container"
-import { PageHeader } from "@/components/ui/page-header"
-import { PanelFiltersBar } from "@/components/mantencion/jefatura/panel/panel-filters-bar"
-import { FleetCard, HoursCard, NotDoneCard, UpcomingCard, WeeklyCard, WorkshopCard } from "@/components/mantencion/jefatura/panel/panel-cards"
-import { hasNoEquipmentInScope, PanelEmptyState } from "@/components/mantencion/jefatura/panel/panel-empty"
-import { PanelKpis, PanelStrip } from "@/components/mantencion/jefatura/panel/panel-kpis"
+import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { can, requireAnyPermission } from "@/lib/auth/can"
+import { DEFAULT_RANGE_LABEL, defaultIndicatorRange, resolveIndicatorPeriod } from "@/lib/indicators/period"
+import { logger } from "@/lib/logger"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
-import { loadPanel, loadPanelWorksites } from "@/lib/services/mantencion/panel"
+import {
+  loadOpenWorkOrdersByStatus,
+  loadOutOfService,
+  loadPautaState,
+  loadRecordIndicators,
+  loadTopRepairEquipment,
+  loadWorkOrderPeriodStats,
+  loadWorkOrderSeries,
+  type MantIndicatorQuery,
+} from "@/lib/services/mantencion/indicators"
+import { countPendingReview, loadPanelWorksites } from "@/lib/services/mantencion/panel"
+import { formatDate, todayInChile } from "@/lib/utils"
+import { hasNoEquipmentInScope, PanelEmptyState } from "@/components/mantencion/jefatura/panel/panel-empty"
+import { PanelToday } from "@/components/mantencion/jefatura/panel/panel-today"
 import { countUnassignedWorkOrders } from "@/lib/services/mantencion/work-orders/query"
-import { parsePanelFilters } from "@/lib/services/mantencion/panel-filters"
+import { PautasSection, WorkOrdersSection } from "./indicators-sections"
 import { PanelExportButton } from "./panel-export-button"
 
 export const metadata: Metadata = { title: "Panel de mantención" }
 export const dynamic = "force-dynamic"
 
-export default async function MantencionPanelPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+type SearchParams = Record<string, string | string[] | undefined>
+
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value
+}
+
+/**
+ * Panel de mantención: abre con la franja «Hoy» (lo pendiente ahora: órdenes sin mecánico,
+ * equipos en taller, registros por revisar) y debajo los gráficos del período, que contestan
+ * dos preguntas: ¿cómo avanza el trabajo de taller? (órdenes de trabajo) y ¿cómo están las
+ * pautas y la disponibilidad de los equipos? Los Indicadores eran una página aparte hasta el
+ * 2026-11-14; el usuario pidió que fueran el Panel (`/mantencion/indicadores` redirige acá).
+ *
+ * Gate: `mant:records:view_*`. «Órdenes de trabajo» sólo se consulta y se
+ * pinta con `mant:ot:view_*`: el costo de las OT va con esa misma capacidad (es la que el Panel
+ * operacional usa para su columna «Mano de obra / taller (OT)»). Cada consulta degrada sola: si
+ * una falla, su bloque no se pinta y el aviso de arriba lo dice, en vez de tumbar la página o
+ * mostrar ceros que parecen datos.
+ */
+export default async function MantencionPanelPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   let session
   try {
     session = await requireAnyPermission(["mant:records:view_worksite", "mant:records:view_all"])
@@ -24,66 +57,115 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
     redirect("/forbidden")
   }
   const viewer = viewerFromSession(session)
-  const raw = await searchParams
-  const filters = parsePanelFilters(raw)
+  const params = await searchParams
+  const today = todayInChile()
+  const period = resolveIndicatorPeriod({ desde: params.desde, hasta: params.hasta }, today)
+  const worksites = await loadPanelWorksites(viewer)
+  // Una faena fuera del alcance (o inventada en la URL) se ignora: se mira todo lo visible.
+  const requested = first(params.faena)
+  const worksite = requested ? worksites.find((item) => item.id === requested) : undefined
+  const worksiteId = worksite?.id ?? null
 
-  // Las órdenes tienen su propio permiso: sin él, el indicador «Órdenes por asignar» no se ofrece.
   const canViewOrders = can(session, "mant:ot:view_worksite") || can(session, "mant:ot:view_all")
-  const [worksites, data, unassignedOrders] = await Promise.all([
-    loadPanelWorksites(viewer),
-    loadPanel(viewer, filters),
-    canViewOrders ? countUnassignedWorkOrders(viewer, filters.worksiteId) : Promise.resolve(null),
-  ])
-  // Una faena de la URL que no está en el alcance del usuario no se ofrece ni se muestra elegida.
-  const worksiteId = worksites.some((item) => item.id === filters.worksiteId) ? (filters.worksiteId ?? "") : ""
-  const exportParams: Record<string, string> = { periodo: filters.period, ...(worksiteId ? { faena: worksiteId } : {}) }
   const canExport = can(session, "mant:export")
-  // Un libro sin la pantalla no dice qué faena ni qué ventana miraba: viaja en «Metadatos».
-  const weeklyExcel = canExport
-    ? {
-        permission: "mant:export" as const,
-        notes: [`Últimas ${data.weeks.length} semanas · ${worksiteId ? (worksites.find((item) => item.id === worksiteId)?.name ?? "faena elegida") : "todas las faenas del alcance"}.`],
-      }
-    : undefined
+
+  const query: MantIndicatorQuery = {
+    from: period.from,
+    to: period.to,
+    granularity: period.granularity,
+    previous: period.previous,
+    today,
+    ...(worksiteId ? { worksiteId } : {}),
+  }
+
+  const degraded: string[] = []
+  let tracked = 0
+  function track<T>(promise: Promise<T>, label: string): Promise<T | null> {
+    tracked++
+    return promise.catch((error: unknown) => {
+      logger.error(`[indicadores-mantencion] ${label} falló`, error)
+      degraded.push(label)
+      return null
+    })
+  }
+  const none = <T,>(): Promise<T | null> => Promise.resolve(null)
+
+  const [series, stats, byStatus, ranking, pautas, records, outOfService, unassignedOrders, pendingReview] = await Promise.all([
+    canViewOrders ? track(loadWorkOrderSeries(viewer, query), "órdenes por período") : none<Awaited<ReturnType<typeof loadWorkOrderSeries>>>(),
+    canViewOrders ? track(loadWorkOrderPeriodStats(viewer, query), "cifras de órdenes") : none<Awaited<ReturnType<typeof loadWorkOrderPeriodStats>>>(),
+    canViewOrders ? track(loadOpenWorkOrdersByStatus(viewer, query.worksiteId), "órdenes abiertas por estado") : none<Awaited<ReturnType<typeof loadOpenWorkOrdersByStatus>>>(),
+    canViewOrders ? track(loadTopRepairEquipment(viewer, query), "equipos con más reparaciones") : none<Awaited<ReturnType<typeof loadTopRepairEquipment>>>(),
+    track(loadPautaState(viewer, query.worksiteId, today), "estado de las pautas"),
+    track(loadRecordIndicators(viewer, query), "registros preventivos y correctivos"),
+    track(loadOutOfService(viewer, query), "días fuera de servicio"),
+    canViewOrders ? track(countUnassignedWorkOrders(viewer, query.worksiteId), "órdenes por asignar") : none<number>(),
+    track(countPendingReview(viewer, query.worksiteId), "registros por revisar"),
+  ])
+
+  // Sin equipos, sin registros y sin órdenes en el alcance: el Panel entero estaría vacío por una sola causa.
+  const noEquipment = hasNoEquipmentInScope({
+    equipment: pautas?.total ?? null,
+    inWorkshop: pautas?.inWorkshop ?? null,
+    records: records ? records.points.reduce((sum, point) => sum + point.preventive + point.corrective, 0) : null,
+    workOrders: series ? series.reduce((sum, point) => sum + point.created + point.closed + point.backlog, 0) : null,
+  })
+
+  const scopeName = worksite?.name ?? (worksites.length === 1 ? worksites[0]!.name : "todas las faenas")
+  const scopeNote = `${formatDate(period.from)} al ${formatDate(period.to)} · ${scopeName}`
+  const common = {
+    from: period.from,
+    to: period.to,
+    granularity: period.granularity,
+    worksiteId,
+    scopeNote,
+    canExport,
+  }
 
   return (
     <PageContainer>
       <PageHeader
         title="Panel de mantención"
-        description="Qué equipos necesitan mantención, qué está en taller y cuánto se ha registrado."
-        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Panel" }]}
-        actions={canExport ? <PanelExportButton params={exportParams} /> : undefined}
+        description="Lo pendiente hoy y cómo avanzan las órdenes de trabajo, las pautas y la disponibilidad de los equipos."
+        breadcrumb={<Breadcrumbs items={[
+          { label: "Control operacional", href: "/control-operacional" },
+          { label: "Mantención" },
+          { label: "Panel" },
+        ]} />}
+        // El libro trae las listas de detalle (próximas mantenciones, en taller, horas por faena, ítems sin
+        // hacer) de los últimos 30 días y la faena elegida; su hoja de metadatos lo dice.
+        actions={canExport ? <PanelExportButton params={worksiteId ? { faena: worksiteId } : {}} /> : undefined}
       />
 
-      <PanelFiltersBar period={filters.period} worksiteId={worksiteId} worksites={worksites} />
+      <div className="mb-4">
+        <IndicatorFilters
+          from={period.from}
+          to={period.to}
+          defaultRange={{ ...defaultIndicatorRange(today), label: DEFAULT_RANGE_LABEL }}
+          worksites={worksites}
+          worksiteId={worksiteId}
+        />
+      </div>
 
-      {hasNoEquipmentInScope(data) ? (
-        // Una sola causa (no hay equipos) y un solo aviso con su salida, en vez de tiles, tira y tarjetas vacías.
+      {period.invalid && (
+        <Callout tone="warning" className="mb-4">El rango de fechas de la dirección no es válido: se muestran {DEFAULT_RANGE_LABEL}.</Callout>
+      )}
+      <DegradedDataBanner degraded={degraded} total={tracked} />
+
+      {noEquipment ? (
+        // Sin equipos ni registros en el alcance hay una sola causa y un solo aviso con su salida,
+        // en vez de una franja en cero y secciones vacías. Otra faena del selector puede tener equipos.
         <PanelEmptyState canManage={can(session, "mant:equipment:manage")} />
       ) : (
         <>
-          <PanelKpis data={data} unassignedOrders={unassignedOrders} />
-          <PanelStrip data={data} />
-
-          {/*
-            Lo accionable primero. Columna izquierda: el estado de los EQUIPOS (qué
-            está detenido, qué toca y cómo está la flota); derecha: el contexto de
-            los REGISTROS (cuánto se registra por semana, dónde se gastan las horas
-            y qué ítems quedan sin hacer). El orden del DOM es el de lectura en
-            teléfono (una sola columna) y en escritorio (izquierda y luego derecha).
-            Las columnas no se estiran: cada una apila sus tarjetas con su altura.
-          */}
-          <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-            <div className="flex min-w-0 flex-col gap-4">
-              <WorkshopCard data={data} />
-              <UpcomingCard data={data} />
-              <FleetCard data={data} />
-            </div>
-            <div className="flex min-w-0 flex-col gap-4">
-              <WeeklyCard data={data} excel={weeklyExcel} />
-              <HoursCard data={data} />
-              <NotDoneCard data={data} />
-            </div>
+          <PanelToday
+            unassignedOrders={unassignedOrders}
+            inWorkshop={pautas?.inWorkshop ?? null}
+            pendingReview={pendingReview}
+            worksiteId={worksiteId}
+          />
+          <div className="space-y-8">
+            {canViewOrders && <WorkOrdersSection {...common} series={series} stats={stats} byStatus={byStatus} />}
+            <PautasSection {...common} pautas={pautas} records={records} outOfService={outOfService} ranking={ranking} showRanking={canViewOrders} />
           </div>
         </>
       )}

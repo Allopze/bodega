@@ -1,326 +1,58 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
-import type { PanelData } from "@/lib/services/mantencion/panel"
+import { afterEach, describe, expect, it } from "vitest"
+import { hasNoEquipmentInScope, PanelEmptyState } from "./panel-empty"
+import { PanelToday } from "./panel-today"
 
-// Recharts sólo corre en el navegador: el gráfico se prueba aparte y aquí basta saber que se monta.
-vi.mock("./weekly-chart", () => ({ WeeklyChart: () => <div data-testid="weekly-chart" /> }))
+afterEach(cleanup)
 
-const { FleetCard, HoursCard, NotDoneCard, UpcomingCard, WeeklyCard, WorkshopCard } = await import("./panel-cards")
-const { PanelKpis, PanelStrip } = await import("./panel-kpis")
-const { PanelEmptyState, hasNoEquipmentInScope } = await import("./panel-empty")
+describe("franja «Hoy» del Panel de mantención", () => {
+  const hrefOf = (name: RegExp) => screen.getByRole("link", { name }).getAttribute("href")
 
-const NO_COUNTS = { vencida: 0, proxima: 0, al_dia: 0, sin_lecturas: 0, sin_pauta: 0, baja: 0 }
-
-function panelData(overrides: Partial<PanelData> = {}): PanelData {
-  return {
-    filters: { period: "30" },
-    today: "2026-10-28",
-    from: "2026-09-29",
-    records: { total: 12, preventive: 8, corrective: 4, hours: 17.5, pendingReview: 5 },
-    fleet: { active: 10, counts: { vencida: 3, proxima: 2, al_dia: 4, sin_lecturas: 1, sin_pauta: 0, baja: 0 } },
-    workshop: {
-      equipment: 2, stale: 1,
-      rows: [{ recordId: "rec-1", folio: "MC-BIO-0001", code: "KA-135", plate: "RBYD-98", worksiteName: "Biodiversa", summary: "Cambio de bomba", reason: "Espera repuesto de Santiago", daysStopped: 5, stale: true, waitingParts: false }],
-    },
-    stoppedDays: { total: 9, equipment: 2 },
-    weeks: [{ start: "2026-10-19", preventive: 3, corrective: 1 }, { start: "2026-10-26", preventive: 2, corrective: 0 }],
-    upcoming: [{ vehicleId: "veh-1", code: "KA-135", plate: "RBYD-98", worksiteName: "Biodiversa", scheduleName: "Camiones y tractos", unit: "km", reading: 40_312, nextReading: 40_000, remaining: -312, nextIntervalValue: 40_000, state: "vencida", workshopDays: null }],
-    hoursByWorksite: [{ worksiteId: "ws-1", worksiteName: "Biodiversa", hours: 12 }, { worksiteId: "ws-2", worksiteName: "Cholguán", hours: 5.5 }],
-    notDone: [{ item: "Pastillas de freno", group: "Frenos", count: 4, lastReason: "Falta repuesto" }],
-    ...overrides,
-  }
-}
-
-describe("indicadores del panel (A1)", () => {
-  afterEach(cleanup)
-
-  it("son tres tarjetas y cada una lleva a su subconjunto", () => {
-    const { container } = render(<PanelKpis data={panelData({ filters: { period: "30", worksiteId: "ws-1" } })} unassignedOrders={4} />)
-    expect(container.querySelectorAll("[data-kpi-card]")).toHaveLength(3)
-    const hrefOf = (name: RegExp) => screen.getByRole("link", { name }).getAttribute("href")
-    expect(hrefOf(/^Órdenes por asignar/)).toBe("/mantencion/ot?estado=solicitada&faena=ws-1")
-    expect(hrefOf(/^Mantenciones vencidas/)).toBe("/mantencion/equipos?estado=vencida&faena=ws-1")
-    expect(hrefOf(/^Registros · /)).toBe("/mantencion/registros?revision=todos&estado=vigente&desde=2026-09-29&faena=ws-1")
-    // A5: el taller es la lista «En taller ahora» y los días van en la tira; ya no son tarjetas.
-    expect(screen.queryByRole("link", { name: /^Equipos en taller/ })).toBeNull()
-    expect(screen.queryByRole("link", { name: /^Días fuera de servicio/ })).toBeNull()
+  it("cada cifra lleva a su subconjunto con la faena elegida", () => {
+    render(<PanelToday unassignedOrders={2} inWorkshop={3} pendingReview={5} worksiteId="ws-1" />)
+    const today = screen.getByRole("region", { name: "Hoy" })
+    expect(within(today).getAllByRole("link")).toHaveLength(3)
+    expect(hrefOf(/Órdenes por asignar/)).toBe("/mantencion/ot?estado=solicitada&faena=ws-1")
+    expect(hrefOf(/Equipos en taller/)).toBe("/mantencion/equipos?taller=1&faena=ws-1")
+    expect(hrefOf(/Registros por revisar/)).toBe("/mantencion/registros?revision=pendiente&estado=vigente&faena=ws-1")
   })
 
-  it("sin permiso de órdenes de trabajo no se ofrece «Órdenes por asignar»", () => {
-    const { container } = render(<PanelKpis data={panelData()} />)
-    expect(container.querySelectorAll("[data-kpi-card]")).toHaveLength(2)
-    expect(screen.queryByRole("link", { name: /^Órdenes por asignar/ })).toBeNull()
+  it("sin nada pendiente lo dice con palabras, no con ceros pelados", () => {
+    render(<PanelToday unassignedOrders={0} inWorkshop={0} pendingReview={0} worksiteId={null} />)
+    expect(screen.getByRole("link", { name: /Órdenes por asignar/ }).textContent).toContain("Ninguna")
+    expect(screen.getByRole("link", { name: /Equipos en taller/ }).textContent).toContain("Ninguno")
+    expect(hrefOf(/Equipos en taller/)).toBe("/mantencion/equipos?taller=1")
   })
 
-  it("las órdenes por asignar muestran su cifra, y sin ninguna lo dicen con palabras", () => {
-    const { unmount } = render(<PanelKpis data={panelData()} unassignedOrders={4} />)
-    const tile = screen.getByRole("link", { name: /^Órdenes por asignar/ })
-    expect(within(tile).getByText("4")).toBeTruthy()
-    unmount()
-    render(<PanelKpis data={panelData()} unassignedOrders={0} />)
-    const empty = screen.getByRole("link", { name: /^Órdenes por asignar/ })
-    expect(empty.textContent).toContain("Ninguna")
-    expect(empty.textContent).toContain("Todas las órdenes tienen mecánico")
+  it("sin permiso de órdenes (o si la consulta falló) la cifra no se ofrece", () => {
+    render(<PanelToday unassignedOrders={null} inWorkshop={1} pendingReview={null} worksiteId={null} />)
+    expect(screen.queryByRole("link", { name: /Órdenes por asignar/ })).toBeNull()
+    expect(screen.queryByRole("link", { name: /Registros por revisar/ })).toBeNull()
+    expect(screen.getByRole("link", { name: /Equipos en taller/ })).toBeTruthy()
   })
 
-  it("las vencidas se marcan en rojo con su cifra", () => {
-    render(<PanelKpis data={panelData()} />)
-    const overdue = screen.getByRole("link", { name: /^Mantenciones vencidas/ })
-    expect(within(overdue).getByText("3")).toBeTruthy()
-    expect(overdue.textContent).toContain("2 próximas a vencer")
-  })
-
-  it("sin vencidas lo dice con palabras, no con ceros pelados", () => {
-    render(<PanelKpis data={panelData({
-      fleet: { active: 5, counts: { ...NO_COUNTS, al_dia: 5 } },
-    })} />)
-    expect(screen.getByRole("link", { name: /^Mantenciones vencidas/ }).textContent).toContain("Todas las pautas al día")
-  })
-
-  it("cero vencidas no promete «todo al día» si casi nadie tiene lectura", () => {
-    // 112 de 119 sin lecturas, 7 evaluados y ninguno vencido: la verdad es «ninguna entre los 7».
-    render(<PanelKpis data={panelData({ fleet: { active: 119, counts: { ...NO_COUNTS, al_dia: 7, sin_lecturas: 112 } } })} />)
-    const tile = screen.getByRole("link", { name: /^Mantenciones vencidas/ })
-    expect(within(tile).getByText("0")).toBeTruthy()
-    expect(tile.textContent).toContain("Ninguna entre los 7 con pauta y lectura")
-    expect(tile.textContent).not.toContain("Todas las pautas al día")
-  })
-
-  it("si ningún equipo tiene pauta y lectura, el tile no muestra un 0 que se lea como «todo al día»: dice por qué y qué hacer (A1)", () => {
-    render(<PanelKpis data={panelData({ fleet: { active: 4, counts: { ...NO_COUNTS, sin_lecturas: 3, sin_pauta: 1 } } })} />)
-    const tile = screen.getByRole("link", { name: /^Mantenciones vencidas/ })
-    expect(within(tile).queryByText("0")).toBeNull()
-    expect(tile.textContent).toContain("Aún no hay equipos con pauta y lectura")
-    expect(tile.textContent).toContain("Asignar pautas")
-    expect(tile.textContent).not.toContain("al día")
-    // La acción lleva a los equipos que hay que dejar evaluables, no a «vencidas» (vacío por construcción).
-    expect(tile.getAttribute("href")).toBe("/mantencion/equipos?estado=sin_pauta")
-  })
-
-  it("el tile vacío apunta a donde se resuelve: sin pauta, sin lecturas o sin equipos", () => {
-    const { unmount } = render(<PanelKpis data={panelData({ fleet: { active: 3, counts: { ...NO_COUNTS, sin_lecturas: 3 } }, filters: { period: "30", worksiteId: "ws-1" } })} />)
-    let tile = screen.getByRole("link", { name: /^Mantenciones vencidas/ })
-    expect(tile.textContent).toContain("Ver equipos sin lecturas")
-    expect(tile.getAttribute("href")).toBe("/mantencion/equipos?estado=sin_lecturas&faena=ws-1")
-    unmount()
-
-    render(<PanelKpis data={panelData({ fleet: { active: 0, counts: NO_COUNTS } })} />)
-    tile = screen.getByRole("link", { name: /^Mantenciones vencidas/ })
-    expect(tile.textContent).toContain("Ir a Equipos")
-    expect(tile.getAttribute("href")).toBe("/mantencion/equipos")
-  })
-
-  it("con algún equipo evaluable el tile conserva la cifra, aunque sea 0", () => {
-    render(<PanelKpis data={panelData({ fleet: { active: 119, counts: { ...NO_COUNTS, al_dia: 7, sin_lecturas: 112 } } })} />)
-    const tile = screen.getByRole("link", { name: /^Mantenciones vencidas/ })
-    expect(within(tile).getByText("0")).toBeTruthy()
-    expect(tile.textContent).not.toContain("Asignar pautas")
-    expect(tile.getAttribute("href")).toBe("/mantencion/equipos?estado=vencida")
-  })
-
-  it("sin registros en el período el tile ofrece ampliar el período", () => {
-    render(<PanelKpis data={panelData({ records: { total: 0, preventive: 0, corrective: 0, hours: 0, pendingReview: 0 } })} />)
-    const tile = screen.getByRole("link", { name: /^Registros · / })
-    expect(tile.textContent).toContain("Aún no hay registros en este período")
-    expect(tile.getAttribute("href")).toBe("/mantencion/panel?periodo=todo")
-  })
-
-  it("las horas hombre y los días fuera de servicio van en la tira de texto, no en tarjetas", () => {
-    render(<PanelStrip data={panelData()} />)
-    expect(screen.getByText(/Horas hombre/).textContent).toContain("17,5 h")
-    expect(screen.getByText(/Días fuera de servicio/).textContent).toContain("9 en 2 equipos")
-  })
-
-  it("la tira lleva a los registros por revisar del mismo período y faena, y calla si no hay ninguno", () => {
-    const { unmount } = render(<PanelStrip data={panelData({ filters: { period: "30", worksiteId: "ws-1" } })} />)
-    const link = screen.getByRole("link", { name: /5 registros por revisar/ })
-    expect(link.getAttribute("href")).toBe("/mantencion/registros?revision=pendiente&estado=vigente&desde=2026-09-29&faena=ws-1")
-    expect(link.textContent).toContain("últimos 30 días")
-    unmount()
-
-    render(<PanelStrip data={panelData({ records: { total: 12, preventive: 8, corrective: 4, hours: 17.5, pendingReview: 0 } })} />)
-    expect(screen.queryByRole("link", { name: /por revisar/ })).toBeNull()
-  })
-})
-
-describe("tarjetas del panel", () => {
-  afterEach(cleanup)
-
-  it("la flota dibuja una barra por estado calculable y cada una lleva a Equipos filtrado", () => {
-    render(<FleetCard data={panelData()} />)
-    const bar = screen.getByRole("link", { name: "Próxima: 2 equipos. Ver esos equipos" })
-    expect(bar.getAttribute("href")).toBe("/mantencion/equipos?estado=proxima")
-    expect(screen.getByRole("link", { name: "Al día: 4 equipos. Ver esos equipos" })).toBeTruthy()
-    // A5: las vencidas son el tile de arriba; aquí sólo se remite a él.
-    expect(screen.queryByRole("link", { name: /^Vencida: / })).toBeNull()
-    // «Sin pauta» y «Sin lecturas» no son un estado de mantención: no se dibujan como barra.
-    expect(screen.queryByRole("link", { name: /^Sin pauta: / })).toBeNull()
-    expect(screen.queryByRole("link", { name: /^Sin lecturas: / })).toBeNull()
-  })
-
-  it("los equipos sin lecturas son un aviso con enlace a Equipos filtrado, no una barra gris", () => {
-    render(<FleetCard data={panelData({
-      filters: { period: "30", worksiteId: "ws-1" },
-      fleet: { active: 119, counts: { ...NO_COUNTS, al_dia: 7, sin_lecturas: 112 } },
-    })} />)
-    const notices = screen.getByRole("list", { name: "Equipos con el estado por conocer" })
-    expect(notices.textContent).toContain("112 equipos aún no tienen lecturas; su estado se conocerá con el primer registro de mantención de cada uno.")
-    const link = within(notices).getByRole("link", { name: "Ver los 112 equipos sin lecturas →" })
-    expect(link.getAttribute("href")).toBe("/mantencion/equipos?estado=sin_lecturas&faena=ws-1")
-    // La barra de «Al día» ya no se escala contra los 112.
-    expect(screen.getByRole("link", { name: "Al día: 7 equipos. Ver esos equipos" })).toBeTruthy()
-    expect(screen.getByText("7 de 119 equipos activos tienen pauta y lectura para calcular su estado")).toBeTruthy()
-  })
-
-  it("el aviso de la flota concuerda en singular y también cubre los equipos sin pauta", () => {
-    render(<FleetCard data={panelData({ fleet: { active: 3, counts: { ...NO_COUNTS, al_dia: 1, sin_lecturas: 1, sin_pauta: 1 } } })} />)
-    expect(screen.getByText("1 equipo aún no tiene lecturas; su estado se conocerá con su primer registro de mantención.")).toBeTruthy()
-    expect(screen.getByText("1 equipo no tiene pauta asignada, así que no se puede calcular cuándo le toca.")).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Ver el equipo sin pauta →" }).getAttribute("href")).toBe("/mantencion/equipos?estado=sin_pauta")
-  })
-
-  it("si ningún equipo es calculable las barras quedan en cero y el aviso explica por qué y cómo resolverlo", () => {
-    render(<FleetCard data={panelData({ fleet: { active: 4, counts: { ...NO_COUNTS, sin_lecturas: 4 } } })} />)
-    expect(screen.getByRole("link", { name: "Próxima: 0 equipos. Ver esos equipos" })).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Ver los 4 equipos sin lecturas →" })).toBeTruthy()
-    expect(screen.getByText("4 equipos activos, según su pauta y su última lectura")).toBeTruthy()
-  })
-
-  it("una flota vacía lleva a Equipos en vez de mostrar barras en cero", () => {
-    render(<FleetCard data={panelData({ fleet: { active: 0, counts: NO_COUNTS } })} />)
-    expect(screen.getByText("Aún no hay equipos en el módulo")).toBeTruthy()
-    expect(screen.getByRole("link", { name: /Ir a Equipos/ })).toBeTruthy()
-  })
-
-  it("el gráfico semanal trae su tabla «Ver datos» con las semanas completas", () => {
-    render(<WeeklyCard data={panelData()} />)
-    expect(screen.getByTestId("weekly-chart")).toBeTruthy()
-    const table = screen.getByRole("table", { name: "Registros por semana", hidden: true })
-    expect(within(table).getByText("19-10 al 25-10")).toBeTruthy()
-    expect(within(table).getByText("26-10 al 01-11")).toBeTruthy()
-  })
-
-  it("el gráfico semanal sólo ofrece Excel con el permiso de exportar de mantención", () => {
-    const { unmount } = render(<WeeklyCard data={panelData()} />)
-    expect(screen.queryByText("Exportar Excel", { exact: false })).toBeNull()
-    unmount()
-
-    render(<WeeklyCard data={panelData()} excel={{ permission: "mant:export", notes: ["Últimas 2 semanas · todas las faenas del alcance."] }} />)
-    expect(screen.getByText("Exportar Excel", { exact: false }).closest("button")!.getAttribute("aria-label")).toBe("Exportar Excel: Registros por semana")
-  })
-
-  it("próximas mantenciones: equipo, lectura, falta o pasada y estado con texto", () => {
-    render(<UpcomingCard data={panelData()} />)
-    const table = screen.getByRole("table", { name: undefined })
-    expect(within(table).getByRole("link", { name: /^KA-135/ }).getAttribute("href")).toBe("/mantencion/equipos/veh-1")
-    expect(within(table).getByText("pasada por 312 km")).toBeTruthy()
-    expect(within(table).getByText("Vencida")).toBeTruthy()
-  })
-
-  it("un equipo en taller lo dice antes que su estado de pauta, en la tabla y en la lista del teléfono", () => {
-    const base = panelData()
-    const upcoming = [{ ...base.upcoming[0]!, code: "KA-110", plate: "DKPG-54", state: "al_dia" as const, remaining: 8_000, workshopDays: 15 }]
-    const { container } = render(<UpcomingCard data={panelData({ upcoming })} />)
-    const table = screen.getByRole("table")
-    expect(within(table).getByText("En taller · 15 días").closest("td")!.textContent).toBe("En taller · 15 díasAl día")
-    // En teléfono es una lista de filas: un solo enlace por equipo, con el estado dentro.
-    const list = screen.getByRole("list", { name: "Próximas mantenciones" })
-    const link = within(list).getByRole("link", { name: /^KA-110/ })
-    expect(link.getAttribute("href")).toBe("/mantencion/equipos/veh-1")
-    expect(link.textContent).toContain("En taller · 15 días")
-    expect(link.textContent).toContain("faltan 8.000 km")
-    // C5: la tabla de una tarjeta no repite el borde de la tarjeta.
-    expect(container.querySelector('[role="region"][aria-label="Próximas mantenciones"]')!.className).not.toMatch(/\bborder\b/)
-  })
-
-  it("sin taller de por medio la fila sólo muestra su estado de pauta", () => {
-    render(<UpcomingCard data={panelData()} />)
-    expect(screen.queryByText(/^En taller/)).toBeNull()
-  })
-
-  it("en taller ahora enlaza al registro y marca el que no se actualiza", () => {
-    render(<WorkshopCard data={panelData()} />)
-    const row = screen.getByRole("link", { name: /KA-135/ })
-    expect(row.getAttribute("href")).toBe("/mantencion/registros/rec-1")
-    expect(row.textContent).toContain("5 días")
-    expect(row.textContent).toContain("Sin actualizar")
-    expect(row.textContent).toContain("Sigue en taller: Espera repuesto de Santiago")
-  })
-
-  it("«En taller ahora» escribe «Esperando repuesto» sólo en la OT que lo espera, en tono señal", () => {
-    const base = panelData().workshop.rows[0]!
-    const data = panelData({
-      workshop: {
-        equipment: 2, stale: 0,
-        rows: [
-          { ...base, recordId: "ot-9", workOrderId: "ot-9", folio: "OT-BIO-0009", stale: false, waitingParts: true },
-          { ...base, recordId: "rec-2", workOrderId: null, folio: "MC-BIO-0002", code: "KA-200", plate: "BCDF-12", stale: false, waitingParts: false },
-        ],
-      },
-    })
-    render(<WorkshopCard data={data} />)
-    const waiting = screen.getAllByText("Esperando repuesto")
-    expect(waiting).toHaveLength(1)
-    expect(waiting[0]!.className).toContain("--color-signal-ink")
-    expect(waiting[0]!.closest("a")?.textContent).toContain("KA-135")
-    expect(screen.getByRole("link", { name: /KA-200/ }).textContent).not.toContain("Esperando repuesto")
-  })
-
-  it("una fila de OT enlaza a la orden, no a un registro que no existe", () => {
-    const base = panelData().workshop.rows[0]!
-    render(<WorkshopCard data={panelData({ workshop: { equipment: 1, stale: 0, rows: [{ ...base, recordId: "ot-9", workOrderId: "ot-9", folio: "OT-BIO-0009" }] } })} />)
-    expect(screen.getByRole("link", { name: /KA-135/ }).getAttribute("href")).toBe("/mantencion/ot/ot-9")
-  })
-
-  it("«Sin actualizar» va en tono señal (no rojo) y el texto largo se recorta a dos líneas sin perderse", () => {
-    const base = panelData()
-    const long = "Soldadura de soporte de estanque y revisión completa del sistema de escape con cambio de abrazaderas"
-    const data = panelData({ workshop: { equipment: 1, stale: 1, rows: [{ ...base.workshop.rows[0]!, summary: long }] } })
-    render(<WorkshopCard data={data} />)
-    const flag = screen.getByText("Sin actualizar")
-    expect(flag.className).toContain("--color-signal-ink")
-    expect(flag.className).not.toContain("danger")
-    // Texto completo en el DOM (lector de pantalla) y recorte visual a dos líneas.
-    const summary = screen.getByText((content) => content.includes(long))
-    expect(summary.className).toContain("line-clamp-2")
-    expect(summary.className).not.toContain("truncate")
-  })
-
-  it("horas por faena y los ítems sin hacer con su último motivo", () => {
-    render(<><HoursCard data={panelData()} /><NotDoneCard data={panelData()} /></>)
-    expect(screen.getByRole("list", { name: "Horas de taller por faena" })).toBeTruthy()
-    expect(screen.getByText("Pastillas de freno")).toBeTruthy()
-    expect(screen.getByText(/último motivo: Falta repuesto/)).toBeTruthy()
-  })
-
-  it("sin datos cada tarjeta lo dice en vez de quedar vacía", () => {
-    const empty = panelData({ upcoming: [], hoursByWorksite: [], notDone: [], workshop: { equipment: 0, stale: 0, rows: [] } })
-    render(<><UpcomingCard data={empty} /><WorkshopCard data={empty} /><HoursCard data={empty} /><NotDoneCard data={empty} /></>)
-    expect(screen.getByText("Todavía no hay mantenciones que calcular")).toBeTruthy()
-    expect(screen.getByText("Ningún equipo en taller.")).toBeTruthy()
-    expect(screen.getByText("Sin correctivas en el período.")).toBeTruthy()
-    expect(screen.getByText("Todos los ítems se realizaron en el período.")).toBeTruthy()
+  it("sin ninguna cifra que mostrar no deja una franja vacía", () => {
+    const { container } = render(<PanelToday unassignedOrders={null} inWorkshop={null} pendingReview={null} worksiteId={null} />)
+    expect(container).toBeEmptyDOMElement()
   })
 })
 
 describe("panel sin equipos (UX-13)", () => {
-  afterEach(cleanup)
+  const empty = { equipment: 0, inWorkshop: 0, records: 0, workOrders: 0 }
 
-  const empty = (): PanelData => panelData({
-    records: { total: 0, preventive: 0, corrective: 0, hours: 0, pendingReview: 0 },
-    fleet: { active: 0, counts: NO_COUNTS },
-    workshop: { equipment: 0, stale: 0, rows: [] },
-    stoppedDays: { total: 0, equipment: 0 },
-    upcoming: [], hoursByWorksite: [], notDone: [],
+  it("la causa raíz es: ningún equipo, ninguno en taller, ningún registro y ninguna orden", () => {
+    expect(hasNoEquipmentInScope(empty)).toBe(true)
+    expect(hasNoEquipmentInScope({ ...empty, workOrders: null })).toBe(true)
+    expect(hasNoEquipmentInScope({ ...empty, equipment: 1 })).toBe(false)
+    expect(hasNoEquipmentInScope({ ...empty, inWorkshop: 1 })).toBe(false)
+    expect(hasNoEquipmentInScope({ ...empty, records: 1 })).toBe(false)
+    expect(hasNoEquipmentInScope({ ...empty, workOrders: 2 })).toBe(false)
   })
 
-  it("la causa raíz es: ningún equipo activo, ningún registro y ninguno en taller", () => {
-    expect(hasNoEquipmentInScope(empty())).toBe(true)
-    expect(hasNoEquipmentInScope(panelData())).toBe(false)
-    expect(hasNoEquipmentInScope({ ...empty(), fleet: { active: 1, counts: { ...NO_COUNTS, sin_pauta: 1 } } })).toBe(false)
-    expect(hasNoEquipmentInScope({ ...empty(), records: { ...empty().records, total: 1 } })).toBe(false)
-    expect(hasNoEquipmentInScope({ ...empty(), workshop: { ...panelData().workshop } })).toBe(false)
+  it("una consulta que falló no se lee como alcance vacío", () => {
+    expect(hasNoEquipmentInScope({ ...empty, equipment: null })).toBe(false)
+    expect(hasNoEquipmentInScope({ ...empty, records: null })).toBe(false)
   })
 
   it("dice qué significa y lleva a Equipos con un enlace real", () => {

@@ -2,7 +2,9 @@ import { test, expect, type Page } from "@playwright/test"
 import { expectPageTitle, login } from "./helpers"
 
 /**
- * E2E Spec: «Indicadores de combustible» (`/combustibles/indicadores`).
+ * E2E Spec: los gráficos del Panel de combustible (`/combustibles`). Eran la página «Indicadores»
+ * hasta el 2026-11-14; ahora son el Panel, debajo de la tira de pasos de jefatura.
+ * `/combustibles/indicadores` redirige al Panel.
  *
  * Dos secciones —Consumo y Eficiencia— de gráficos, con una tira de cifras en Consumo y enlaces al
  * módulo, sobre el período compartido de Combustible. Fija lo que una regresión rompería sin que
@@ -18,7 +20,7 @@ import { expectPageTitle, login } from "./helpers"
  * (celdas del panel, esqueletos de carga) miden el DOM pintado con `evaluate`/`locator`.
  */
 
-const RUTA = "/combustibles/indicadores"
+const RUTA = "/combustibles"
 
 /** Espera a que ningún gráfico diferido siga en su esqueleto: un esqueleto aún no sabe si su gráfico tiene datos. */
 async function esperarGraficos(page: Page) {
@@ -27,7 +29,7 @@ async function esperarGraficos(page: Page) {
   await expect(page.locator("[data-chart-loading]")).toHaveCount(0, { timeout: 30_000 })
 }
 
-test.describe("Indicadores de combustible", () => {
+test.describe("Panel de combustible: gráficos", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
   })
@@ -40,12 +42,11 @@ test.describe("Indicadores de combustible", () => {
     })
 
     await page.goto(RUTA)
-    await expectPageTitle(page, "Indicadores de combustible")
+    await expectPageTitle(page, "Panel de combustible")
     await esperarGraficos(page)
 
     // Cada sección termina en enlaces al lugar donde se trabaja; llevan el período en el `href`.
     const consumo = page.getByRole("region", { name: "Consumo", exact: true })
-    await expect(consumo.getByRole("link", { name: "Panel de combustible", exact: true })).toHaveAttribute("href", /^\/combustibles(\?|$)/)
     await expect(consumo.getByRole("link", { name: "Consumo", exact: true })).toHaveAttribute("href", /^\/combustibles\/consumo\/litros(\?|$)/)
     await expect(consumo.getByRole("link", { name: "Cargas", exact: true })).toHaveAttribute("href", /^\/combustibles\/cargas(\?|$)/)
     const eficiencia = page.getByRole("region", { name: "Eficiencia", exact: true })
@@ -86,8 +87,8 @@ test.describe("Indicadores de combustible", () => {
     await page.goto(RUTA)
     await esperarGraficos(page)
 
-    // La pantalla es de gráficos: ningún `KpiCard`.
-    await expect(page.locator("[data-kpi-card]")).toHaveCount(0)
+    // Los gráficos no llevan `KpiCard` (la tira de pasos de arriba es aparte y no es de esta sección).
+    await expect(page.getByRole("region", { name: "Consumo", exact: true }).locator("[data-kpi-card]")).toHaveCount(0)
 
     // La tira de Consumo: cada cifra es un enlace a su detalle (litros, costo, camiones, maquinaria).
     const consumo = page.getByRole("region", { name: "Consumo", exact: true })
@@ -139,13 +140,21 @@ test.describe("Indicadores de combustible", () => {
       .toHaveAttribute("href", new RegExp(`periodo=${elegido}`))
   })
 
-  test("el menú de Combustible trae «Indicadores» y lleva a la pantalla", async ({ page }) => {
-    await page.goto("/combustibles")
-    await page
-      .getByRole("navigation", { name: "Navegación", exact: true })
-      .locator(`a[href="${RUTA}"]`)
-      .click()
-    await expect(page).toHaveURL((url) => url.pathname === RUTA)
-    await expectPageTitle(page, "Indicadores de combustible")
+  test("la dirección vieja de Indicadores lleva al Panel con su período", async ({ page }) => {
+    await page.goto("/combustibles/indicadores?periodo=2026-09")
+    await expect(page).toHaveURL((url) => url.pathname === RUTA && url.searchParams.get("periodo") === "2026-09")
+    await expectPageTitle(page, "Panel de combustible")
+    // Ya no hay ítem «Indicadores» en el menú de Combustible.
+    await expect(page.getByRole("navigation", { name: "Navegación", exact: true }).locator('a[href="/combustibles/indicadores"]')).toHaveCount(0)
+  })
+
+  test("jefatura ve la tira de pasos arriba de los gráficos", async ({ page }) => {
+    await page.goto(RUTA)
+    await esperarGraficos(page)
+    const pasos = page.getByRole("heading", { level: 2, name: "Pasos para cerrar el período" })
+    await expect(pasos).toBeVisible()
+    const arriba = await pasos.evaluate((node) => node.getBoundingClientRect().top)
+    const consumo = await page.getByRole("heading", { level: 2, name: "Consumo", exact: true }).evaluate((node) => node.getBoundingClientRect().top)
+    expect(arriba).toBeLessThan(consumo)
   })
 })

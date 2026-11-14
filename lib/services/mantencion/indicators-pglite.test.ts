@@ -1,5 +1,6 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { eq } from "drizzle-orm"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
@@ -28,7 +29,7 @@ const {
   loadOpenWorkOrdersByStatus, loadOutOfService, loadPautaState, loadRecordIndicators,
   loadTopRepairEquipment, loadWorkOrderPeriodStats, loadWorkOrderSeries,
 } = await import("@/lib/services/mantencion/indicators")
-const { loadPanel } = await import("@/lib/services/mantencion/panel")
+const { countPendingReview, loadPanel } = await import("@/lib/services/mantencion/panel")
 
 const TODAY = "2026-11-13"
 const NOW = new Date("2026-11-13T15:00:00Z")
@@ -160,6 +161,22 @@ describe("alcance", () => {
     expect((await loadPautaState(GLOBAL, undefined, TODAY)).total).toBe(3)
     expect((await loadPautaState(SCOPED_A, undefined, TODAY)).total).toBe(2)
     expect((await loadPautaState(SCOPED_A, WS.b, TODAY)).total).toBe(0)
+  })
+
+  it("la franja «Hoy»: registros por revisar sin período, sin anulados ni revisados, dentro del alcance", async () => {
+    // Vigentes y pendientes: p0, p1, p2 y c1 en la faena A, pb en la B (p3 está anulado). Se marca p1 como revisado.
+    await testDb.update(schema.mantRecords).set({ review: "revisado" }).where(eq(schema.mantRecords.id, "p1"))
+    expect(await countPendingReview(GLOBAL, undefined)).toBe(4)
+    expect(await countPendingReview(SCOPED_A, undefined)).toBe(3)
+    expect(await countPendingReview(SCOPED_A, WS.b)).toBe(0)
+    expect(await countPendingReview(GLOBAL, WS.b)).toBe(1)
+    await testDb.update(schema.mantRecords).set({ review: "pendiente" }).where(eq(schema.mantRecords.id, "p1"))
+  })
+
+  it("la franja «Hoy»: equipos en taller (la OT a4 en ejecución retiene a2), dentro del alcance", async () => {
+    expect((await loadPautaState(GLOBAL, undefined, TODAY)).inWorkshop).toBe(1)
+    expect((await loadPautaState(SCOPED_A, undefined, TODAY)).inWorkshop).toBe(1)
+    expect((await loadPautaState(GLOBAL, WS.b, TODAY)).inWorkshop).toBe(0)
   })
 
   it("los días fuera de servicio sólo suman los equipos del alcance", async () => {

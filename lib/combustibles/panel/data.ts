@@ -3,7 +3,7 @@ import type { Session } from "next-auth"
 import { can, canAny, isGlobalRole } from "@/lib/auth/can"
 import { settle } from "@/lib/async-settle"
 import { getMandantesReconciliationSummary } from "@/lib/combustibles/control/queries/reconciliation-summary"
-import { countEquipmentWorseThanModel, type WorseThanModelSummary } from "@/lib/combustibles/control/queries/worse-than-model"
+import { countEquipmentWorseThanModel } from "@/lib/combustibles/control/queries/worse-than-model"
 import { getFuelInbox, summarizeFuelInbox } from "@/lib/combustibles/inbox/queries"
 import type { FuelInboxSummary } from "@/lib/combustibles/inbox/types"
 import { getPayablesSummary } from "@/lib/combustibles/payables-summary"
@@ -13,7 +13,6 @@ import { withFuelContext } from "@/lib/combustibles/routes"
 import { getFuelSourceStatuses, summarizeFuelSources } from "@/lib/combustibles/sources-status"
 import { todayInChile } from "@/lib/utils"
 import { pickRowsToFix, toPanelDueRow, type PanelDueRow } from "./due"
-import { buildPanelFigures, type PanelFigures } from "./figures"
 import {
   getMyEquipmentRanking,
   getMyFlaggedLoadKeys,
@@ -21,7 +20,6 @@ import {
   getMyLoadCounts,
   getMyRecentLoads,
   getPaymentActivity,
-  getPanelFigures,
   hasMeasuredPerformance,
   type MyEquipmentLiters,
   type MyLastPlanillaBatch,
@@ -29,6 +27,9 @@ import {
   type MyRecentLoad,
 } from "./queries"
 import type { PanelVariant } from "./role-variant"
+
+/** Variantes que cargan datos propios del Panel; «consulta» sólo ve los gráficos. */
+export type LoadedPanelVariant = Exclude<PanelVariant, "consulta">
 import { buildPanelSteps, type PanelReconciliationInput, type PanelSteps } from "./steps"
 
 /**
@@ -38,7 +39,7 @@ import { buildPanelSteps, type PanelReconciliationInput, type PanelSteps } from 
  * lugar de un cero que nadie midió.
  */
 
-/** Filas de «Lo que vence primero» y de «Lo que te toca». */
+/** Filas de «Lo que te toca». */
 export const PANEL_DUE_LIMIT = 5
 /** Con una página más grande se reconocen las cargas propias entre las pendientes de la bandeja. */
 const FIELD_INBOX_SCAN = 100
@@ -62,23 +63,19 @@ function createTracker() {
   return { track, failed, total: () => total }
 }
 
-export type PanelDueState =
-  | { kind: "rows"; rows: PanelDueRow[]; total: number }
-  /** La bandeja respondió y no hay nada pendiente. */
-  | { kind: "empty" }
-  /** No se pudo confirmar: ni una lista ni un total que permitan decir «nada». */
-  | { kind: "unknown" }
-
 interface PanelDataBase {
   degraded: string[]
   total: number
 }
 
+/**
+ * Jefatura: la tira de cinco pasos (la franja de lo pendiente). Las cifras del período y lo
+ * que vence primero salieron del Panel el 2026-11-14, cuando los Indicadores pasaron a ser
+ * el Panel: las cifras las dan los gráficos y cada paso lleva a su trabajo pendiente.
+ */
 export interface JefaturaPanelData extends PanelDataBase {
   variant: "jefatura"
   steps: PanelSteps
-  due: PanelDueState
-  figures: PanelFigures | null
 }
 
 export interface FieldPanelData extends PanelDataBase {
@@ -92,17 +89,7 @@ export interface FieldPanelData extends PanelDataBase {
   planilla: MyLastPlanillaBatch | null | undefined
 }
 
-export interface ConsultaPanelData extends PanelDataBase {
-  variant: "consulta"
-  figures: PanelFigures | null
-  worse: WorseThanModelSummary | null
-  /** ¿Hubo cargas con rendimiento calculado? Sin ellas «ningún equipo rinde peor» no se afirma. */
-  measured: boolean | null
-  /** Patentes de tarjeta sin vincular; `null` si no se pudo contar. */
-  unlinkedPlates: number | null
-}
-
-export type PanelData = JefaturaPanelData | FieldPanelData | ConsultaPanelData
+export type PanelData = JefaturaPanelData | FieldPanelData
 
 /** Agrega el período a los enlaces a las listas del módulo (no la faena: el Panel mira todo su alcance). */
 export function panelLinker(period: ResolvedFuelPeriod): (href: string) => string {
@@ -126,16 +113,14 @@ async function loadJefatura(session: Session, period: ResolvedFuelPeriod): Promi
   const visible = visibleSteps(session)
   const link = panelLinker(period)
 
-  const [sources, inboxSummary, inboxPage, reconciliation, worse, measured, payables, activity, figuresRaw] = await Promise.all([
+  const [sources, inboxSummary, reconciliation, worse, measured, payables, activity] = await Promise.all([
     visible.fuentes ? track("fuentes", getFuelSourceStatuses(session, period)) : Promise.resolve(null),
     track("bandeja-resumen", summarizeFuelInbox(session, period)),
-    track("bandeja", getFuelInbox(session, period, { view: "pendientes", page: 1, pageSize: PANEL_DUE_LIMIT })),
     visible.cuadratura ? track("cuadratura", getMandantesReconciliationSummary(session, period)) : Promise.resolve(null),
     track("equipos-que-rinden-peor", countEquipmentWorseThanModel(session, period)),
     track("rendimiento-medido", hasMeasuredPerformance(session, period)),
     visible.pagos ? track("pagos", getPayablesSummary(session, period)) : Promise.resolve(null),
     visible.pagos ? track("pagos-actividad", getPaymentActivity(period)) : Promise.resolve(null),
-    track("cifras", getPanelFigures(session, period, today)),
   ])
 
   const summary: FuelInboxSummary | null = orNull(inboxSummary)
@@ -160,24 +145,11 @@ async function loadJefatura(session: Session, period: ResolvedFuelPeriod): Promi
     link,
   })
 
-  const page = orNull(inboxPage)
-  let due: PanelDueState
-  if (page && page.rows.length > 0) {
-    due = { kind: "rows", rows: page.rows.slice(0, PANEL_DUE_LIMIT).map((row) => toPanelDueRow(row, link, today)), total: summary?.total ?? page.total }
-  } else if (page && summary?.total === 0) {
-    due = { kind: "empty" }
-  } else {
-    due = { kind: "unknown" }
-  }
-
-  const raw = orNull(figuresRaw)
   return {
     variant: "jefatura",
     degraded: failed,
     total: total(),
     steps,
-    due,
-    figures: raw ? buildPanelFigures(raw, period, today) : null,
   }
 }
 
@@ -214,30 +186,7 @@ async function loadField(session: Session, period: ResolvedFuelPeriod, variant: 
   }
 }
 
-async function loadConsulta(session: Session, period: ResolvedFuelPeriod): Promise<ConsultaPanelData> {
-  const { track, failed, total } = createTracker()
-  const today = todayInChile()
-
-  const [figuresRaw, worse, measured, inboxSummary] = await Promise.all([
-    track("cifras", getPanelFigures(session, period, today)),
-    track("equipos-que-rinden-peor", countEquipmentWorseThanModel(session, period)),
-    track("rendimiento-medido", hasMeasuredPerformance(session, period)),
-    track("bandeja-resumen", summarizeFuelInbox(session, period)),
-  ])
-  const raw = orNull(figuresRaw)
-  return {
-    variant: "consulta",
-    degraded: failed,
-    total: total(),
-    figures: raw ? buildPanelFigures(raw, period, today) : null,
-    worse: orNull(worse),
-    measured: orNull(measured),
-    unlinkedPlates: orNull(inboxSummary)?.byKind.patente ?? null,
-  }
-}
-
-export async function loadPanelData(session: Session, period: ResolvedFuelPeriod, variant: PanelVariant): Promise<PanelData> {
+export async function loadPanelData(session: Session, period: ResolvedFuelPeriod, variant: LoadedPanelVariant): Promise<PanelData> {
   if (variant === "jefatura") return loadJefatura(session, period)
-  if (variant === "consulta") return loadConsulta(session, period)
   return loadField(session, period, variant)
 }

@@ -79,9 +79,12 @@ async function download(page: Page, button: string, menu?: { trigger: string; it
   return { workbook, filename: file.suggestedFilename() }
 }
 
-async function kpiNumber(page: Page, label: RegExp): Promise<number> {
-  const text = await page.getByRole("link", { name: label }).locator("p").nth(1).innerText()
-  return Number(text.replace(/\D/g, ""))
+/** Registros vigentes que cuentan los indicadores de Registros firmados (el titular «Indicadores · N registros vigentes…»). */
+async function vigentesCount(page: Page): Promise<number> {
+  await page.goto("/mantencion/registros?revision=todos")
+  const heading = page.getByRole("heading", { level: 2, name: /^Indicadores · \d+ registros? vigentes?/ })
+  const match = /Indicadores · (\d+)/.exec(await heading.innerText())
+  return Number(match?.[1])
 }
 
 test("siembra de registros propios con fotos reales", async () => {
@@ -183,75 +186,40 @@ test("siembra de registros propios con fotos reales", async () => {
   }
 })
 
-test("el panel muestra sus indicadores, el gráfico con sus datos y cada uno lleva a su subconjunto", async ({ page }) => {
+test("el panel abre con la franja «Hoy» y cada cifra lleva a su subconjunto", async ({ page }) => {
   const consoleErrors = trackConsole(page)
   await login(page, JEFE)
   await page.goto("/mantencion/panel")
   await expectPageTitle(page, "Panel de mantención")
 
-  // A1: como máximo cuatro tarjetas de indicador (hoy tres: órdenes por asignar, vencidas y registros).
-  expect(await page.locator("[data-kpi-card]").count()).toBeLessThanOrEqual(4)
-  await expect(page.getByRole("link", { name: /^Órdenes por asignar/ })).toBeVisible()
-  // La correctiva sembrada lleva 3 días sin novedad: «En taller ahora» avisa «Sin actualizar».
-  await expect(page.getByText("Sin actualizar", { exact: true }).first()).toBeVisible()
+  // Los Indicadores son el Panel (2026-11-14): lo pendiente va en una franja, no en tarjetas.
+  expect(await page.locator("[data-kpi-card]").count()).toBe(0)
+  const today = page.getByRole("region", { name: "Hoy" })
+  await expect(today.getByRole("link", { name: /^Órdenes por asignar/ })).toBeVisible()
+  await expect(today.getByRole("link", { name: /^Equipos en taller/ })).toBeVisible()
+  await expect(today.getByRole("link", { name: /^Registros por revisar/ })).toBeVisible()
 
-  // Gráfico apilado: se dibuja, tiene nombre accesible y su tabla «Ver datos» repite las cifras.
-  await expect(page.getByRole("img", { name: /^Registros por semana/ })).toBeVisible()
-  await expect(page.locator(".recharts-bar-rectangle").first()).toBeVisible()
-  await page.getByText("Ver datos", { exact: true }).click()
-  await expect(page.getByRole("table", { name: "Registros por semana" })).toBeVisible()
-
-  // La leyenda lleva el color de la serie sólo en su muestra: el texto va en color de texto y pasa AA (la correctiva sigue en naranja).
-  const legendLabel = page.getByRole("img", { name: /^Registros por semana/ }).getByText("Correctivas", { exact: true })
-  const legendContrast = await legendLabel.evaluate((node) => {
-    const context = document.createElement("canvas").getContext("2d")!
-    context.fillStyle = getComputedStyle(node).color
-    context.fillRect(0, 0, 1, 1)
-    const [r = 0, g = 0, b = 0] = context.getImageData(0, 0, 1, 1).data
-    const linear = (value: number) => { const c = value / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }
-    return 1.05 / (0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b) + 0.05)
-  })
-  expect(legendContrast).toBeGreaterThanOrEqual(4.5)
-
-  // Lo accionable primero: el taller y las próximas mantenciones van antes del gráfico de contexto.
-  const headings = await page.locator("main h2").allTextContents()
-  expect(headings.indexOf("En taller ahora")).toBeGreaterThanOrEqual(0)
-  expect(headings.indexOf("En taller ahora")).toBeLessThan(headings.indexOf("Registros por semana"))
-  expect(headings.indexOf("Próximas mantenciones")).toBeLessThan(headings.indexOf("Registros por semana"))
-
-  // La correctiva abierta aparece en «En taller ahora» y lleva a su detalle.
-  await expect(page.locator(`a[href="/mantencion/registros/${rec.B.id}"]`)).toBeVisible()
-
-  // Los indicadores llevan a su subconjunto, no al total.
-  await page.getByRole("link", { name: /^Mantenciones vencidas/ }).click()
-  await expect(page).toHaveURL(/\/mantencion\/equipos\?estado=vencida/)
-  await page.goto("/mantencion/panel")
-  await page.getByRole("link", { name: /^Órdenes por asignar/ }).click()
+  // Cada cifra lleva a su subconjunto, no al total.
+  await today.getByRole("link", { name: /^Órdenes por asignar/ }).click()
   await expect(page).toHaveURL(/\/mantencion\/ot\?estado=solicitada/)
-  // La lista de EQUIPOS en taller (también los retenidos por una OT) sigue siendo un filtro de Equipos.
-  await page.goto("/mantencion/equipos?taller=1")
+  await page.goto("/mantencion/panel")
+  await page.getByRole("region", { name: "Hoy" }).getByRole("link", { name: /^Equipos en taller/ }).click()
+  await expect(page).toHaveURL(/\/mantencion\/equipos\?taller=1/)
+  // La correctiva abierta sembrada deja su equipo en la lista de Equipos en taller.
   await expect(textoVisible(page, rec.B.code).first()).toBeVisible()
-
   await page.goto("/mantencion/panel")
-  await page.getByRole("link", { name: /^Registros · / }).click()
-  await expect(page).toHaveURL(/\/mantencion\/registros\?.*estado=vigente/)
+  await page.getByRole("region", { name: "Hoy" }).getByRole("link", { name: /^Registros por revisar/ }).click()
+  await expect(page).toHaveURL(/\/mantencion\/registros\?revision=pendiente&estado=vigente/)
 
-  // Una barra de la flota lleva a Equipos ya filtrado.
+  // Debajo de la franja van los gráficos del período.
   await page.goto("/mantencion/panel")
-  await page.getByRole("link", { name: /^Próxima: \d+ equipos?\. Ver esos equipos/ }).click()
-  await expect(page).toHaveURL(/\/mantencion\/equipos\?estado=proxima/)
-
-  // El período cambia la URL sin recargar y deja el botón marcado.
-  await page.goto("/mantencion/panel")
-  await page.getByRole("button", { name: "7 días", exact: true }).click()
-  await expect(page).toHaveURL(/periodo=7/)
-  await expect(page.getByRole("button", { name: "7 días", exact: true })).toHaveAttribute("aria-pressed", "true")
+  await expect(page.getByRole("img", { name: /Equipos por estado de pauta hoy/ })).toBeVisible()
   expect(consoleErrors, `errores de consola: ${consoleErrors.join(" | ")}`).toEqual([])
 })
 
 test("el panel exporta un Excel con los indicadores y las semanas como fecha", async ({ page }) => {
   await login(page, JEFE)
-  await page.goto("/mantencion/panel?periodo=todo")
+  await page.goto("/mantencion/panel")
   const { workbook, filename } = await download(page, "Exportar Excel")
   expect(filename).toMatch(/^panel-mantencion-\d{4}-\d{2}-\d{2}\.xlsx$/)
   expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(expect.arrayContaining(["Indicadores", "Registros por semana", "Estado de la flota", "Metadatos"]))
@@ -529,8 +497,7 @@ test("observar un registro y marcarlo revisado", async ({ page }) => {
 test("anular exige motivo, ofrece el registro corregido y desaparece de los cálculos", async ({ page }) => {
   const consoleErrors = trackConsole(page)
   await login(page, JEFE)
-  await page.goto("/mantencion/panel?periodo=todo")
-  const before = await kpiNumber(page, /^Registros · /)
+  const before = await vigentesCount(page)
   expect(before).toBeGreaterThanOrEqual(4)
 
   await page.goto(`/mantencion/registros/${rec.A.id}`)
@@ -555,9 +522,8 @@ test("anular exige motivo, ofrece el registro corregido y desaparece de los cál
   await expect(page.getByRole("button", { name: "Anular", exact: true })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Observar", exact: true })).toHaveCount(0)
 
-  // Fuera de los cálculos: el indicador del panel baja en uno…
-  await page.goto("/mantencion/panel?periodo=todo")
-  expect(await kpiNumber(page, /^Registros · /)).toBe(before - 1)
+  // Fuera de los cálculos: los indicadores de Registros bajan en uno…
+  expect(await vigentesCount(page)).toBe(before - 1)
   // …la lista lo conserva marcado, pero «vigentes» ya no lo trae.
   await page.goto("/mantencion/registros?revision=todos")
   await expect(page.getByRole("link", { name: `Ver el registro ${rec.A.folio}` })).toBeVisible()

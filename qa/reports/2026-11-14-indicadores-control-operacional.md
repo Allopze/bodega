@@ -63,3 +63,47 @@ Pedido del usuario: «los paneles o dashboards deben contener en su mayoría GR�
 Verificación: recorrido en `next dev` :3002 contra `bodega_dev`, escritorio 1440 y móvil 390, en las tres rutas: 0 errores de consola, 0 peticiones fallidas, sin desborde; 8 / 6 / 12 gráficos dibujados. `typecheck`, `lint`, `test:fast` (1.354 archivos), `test:pglite` (383) y E2E `indicadores-gps` (7), `indicadores-mantencion` (7), `indicadores-combustibles` (6 + 1 omitido por datos), `control-operacional-navegacion` (29), `densidad-kpi-filtros` (13), `densidad-kpi` (19), `dashboard-rediseno` (5 + 1 omitido por datos): todo en verde.
 
 Pendiente observado (no nuevo): «Días fuera de servicio» muestra +1.008 % porque el período anterior casi no tiene intervalos registrados; GPS ya oculta variaciones sin base comparable, Mantención no.
+
+## Tercera pasada: los Indicadores son el Panel (Mantención y Combustible)
+
+Pedido del usuario: «Indicadores debe ser el panel de mantención y de combustibles». Eligió
+«franja arriba + gráficos».
+
+### Qué cambió
+
+- **`/mantencion/panel`** abre con la franja «Hoy» (`PanelToday`: órdenes por asignar, equipos en
+  taller y registros por revisar, sin período, acotada por faena) y debajo los gráficos de Órdenes
+  de trabajo y Pautas y disponibilidad. Salieron los tiles y las tarjetas-lista (En taller ahora,
+  Próximas mantenciones, Estado de la flota, Registros por semana, Horas por faena, Ítems sin
+  hacer). El Excel del Panel (`exportPanel`, últimos 30 días, con esas listas) sigue en el header.
+- **`/combustibles`**: jefatura ve el avance y la tira de cinco pasos y debajo Consumo y Eficiencia;
+  consulta ve sólo los gráficos; terreno y contrato conservan su estación de trabajo sin gráficos.
+  Salieron «Lo que vence primero», «El período en tres cifras» y el panel de consulta en tres frases.
+- `/mantencion/indicadores` y `/combustibles/indicadores` redirigen (308) al Panel con sus
+  parámetros; sus ítems de menú se borraron. Los enlaces «Panel de …» dentro de las secciones (que
+  ahora apuntaban a la misma página) salieron, y «OT abiertas» ya no repite «N por asignar» (A5).
+
+### Verificación
+
+| Puerta | Resultado |
+|---|---|
+| `npm run typecheck` / `npm run lint` | 0 / 0 (sin advertencias) |
+| `npm run test:fast` | 1353 archivos OK, 32 omitidos |
+| `npm run test:pglite` | 383 archivos OK (incluye `countPendingReview` e `inWorkshop` por alcance) |
+| E2E | indicadores-mantencion 7, indicadores-combustibles 7 + 1 omitido por datos, mantencion-2-jefatura 13, combustibles 14, control-operacional-navegacion 29, densidad-kpi-filtros 13, densidad-kpi 19, mantencion-4-permisos 5, control-operacional-combustible 2, keyboard-navigation 19 |
+
+`mantencion-2-jefatura` falló una vez («anular… desaparece de los cálculos») porque leía el tile
+«Registros ·» que ya no existe; ahora mide el titular de Registros firmados y pasa.
+
+Recorrido en navegador (`next dev` :3002 contra `bodega_dev`, 1440 y 390 px): `/mantencion/panel`
+(franja «Hoy» + 6 gráficos), `/combustibles` como jefatura (tira de pasos + 12 gráficos) y las dos
+direcciones viejas, que llegan al Panel. 0 errores de consola, 0 peticiones fallidas, sin desborde
+horizontal.
+
+### Pendientes y riesgos
+
+- Las variantes consulta, terreno y contrato de Combustible no se recorrieron en el navegador (el
+  usuario QA es jefatura); las cubren las pruebas de la página.
+- Terreno y contrato ya no tienen camino a los gráficos (antes: el ítem «Indicadores»).
+- El Excel del Panel de mantención mira los últimos 30 días, no el rango de la pantalla; su hoja
+  de metadatos lo dice.

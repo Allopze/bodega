@@ -584,11 +584,11 @@ export const pgliteTestFiles = [
   // Indicadores GPS (/flota/indicadores): avance de medidor por día sin encadenar
   // proveedores, viajes por día chileno, alertas clasificadas y alcance por faena.
   "lib/services/fleet-gps-indicators-pglite.test.ts",
-  // Indicadores de combustible (/combustibles/indicadores): cifras del Panel con
+  // Gráficos del Panel de combustible (/combustibles): cifras del Panel con
   // filtro de faena (paridad con `getPanelFigures`), litros por faena y por tipo
   // de equipo.
   "lib/combustibles/indicators/queries.test.ts",
-  // Indicadores de mantención (/mantencion/indicadores): OT creadas, cerradas y en
+  // Gráficos del Panel de mantención (/mantencion/panel): OT creadas, cerradas y en
   // cola por balde, pautas, días fuera de servicio y alcance por faena.
   "lib/services/mantencion/indicators-pglite.test.ts",
 ]

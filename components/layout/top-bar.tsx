@@ -41,15 +41,13 @@ interface TopBarProps {
 // la shell no muestra el suyo en ninguna pantalla del módulo.
 // Mantención de equipos: `/mantencion/registros` (lista y detalle) filtra en SQL con
 // `recordVisibilitySql` y sus filtros viven en la URL, así que el input de la shell
-// sólo filtraría las 25 filas de la página. `/mantencion/panel` es una portada de
-// indicadores sin colección que filtrar (mismo criterio que `/dashboard`).
-// `/flota/indicadores` y `/mantencion/indicadores` (y `/combustibles/indicadores`,
-// ya cubierta por `/combustibles`): tableros de gráficos sin lista que filtrar.
+// sólo filtraría las 25 filas de la página. `/mantencion/panel` y `/flota/indicadores`
+// son tableros de gráficos sin colección que filtrar (mismo criterio que `/dashboard`).
 // `/prevencion/capacitacion`: la lista de actividades combina mes, estado y texto, y
 // el input de la shell no dice cuál de esos filtros alimenta; la lista trae su propio
 // buscador rotulado (pulido UI/UX 2026-11-07). Quien quite el input propio de esa
 // lista tiene que devolver esta ruta a la shell, o la pantalla queda sin búsqueda.
-const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/entregas", "/bodega", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/seguimiento", "/ti/accesos", "/ti/tickets", "/ti/activos", "/admin/taxonomia-sst", "/combustibles", "/mantencion/registros", "/mantencion/panel", "/mantencion/indicadores", "/mantencion/ot", "/flota/indicadores", "/prevencion/capacitacion"]
+const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/entregas", "/bodega", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/seguimiento", "/ti/accesos", "/ti/tickets", "/ti/activos", "/admin/taxonomia-sst", "/combustibles", "/mantencion/registros", "/mantencion/panel", "/mantencion/ot", "/flota/indicadores", "/prevencion/capacitacion"]
 
 /** Formularios de alta/edición: no hay lista que filtrar, así que el input de
  *  la shell prometería un filtrado inexistente. Ninguna ruta bajo estos

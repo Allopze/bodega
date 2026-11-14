@@ -41,6 +41,15 @@ vi.mock("@/components/combustibles/add-fuel-data-button", () => ({
   AddFuelDataButton: () => <button type="button">Agregar datos</button>,
 }))
 
+// Los gráficos son server components con sus propias consultas: acá basta saber si el Panel los monta y con qué faena.
+vi.mock("./_indicadores/consumo-section", () => ({
+  ConsumoSection: ({ worksiteId }: { worksiteId?: string }) => <section aria-label="Consumo" data-faena={worksiteId ?? ""} />,
+}))
+vi.mock("./_indicadores/eficiencia-section", () => ({ EficienciaSection: () => <section aria-label="Eficiencia" /> }))
+vi.mock("./_shared/control-filters", () => ({ ControlFilters: () => <div data-testid="filtro-faena" /> }))
+const worksites = vi.hoisted(() => ({ list: [{ id: "ws-1", name: "Biodiversa" }, { id: "ws-2", name: "Cholguán" }] }))
+vi.mock("./consumo/_components/control-context", () => ({ loadControlContext: async () => ({ worksites: worksites.list }) }))
+
 import PanelPage from "./page"
 import { PanelContent } from "./panel-content"
 
@@ -61,8 +70,6 @@ const jefatura: PanelData = {
     sources: null, inbox: { total: 2, byKind: { carga: 2, caso: 0, patente: 0, pedido: 0 }, oldestWaitingSince: null },
     reconciliation: null, worse: { count: 0, examples: [] }, hasPerformanceData: true, payables: null,
   }),
-  due: { kind: "empty" },
-  figures: null,
 }
 
 async function renderPage(sp: Record<string, string | string[] | undefined> = {}) {
@@ -96,15 +103,18 @@ describe("página del Panel de combustible", () => {
     expect(resolveFuelPeriodForPage).not.toHaveBeenCalled()
   })
 
-  it("jefatura: abre con el avance, la tira de pasos y los dos bloques", async () => {
+  it("jefatura: abre con el avance y la tira de pasos, y debajo los gráficos de Consumo y Eficiencia", async () => {
     await renderPage()
     expect(screen.getByRole("heading", { level: 1, name: "Panel de combustible" })).toBeInTheDocument()
-    expect(screen.getByText("Cómo va el período y qué falta para cerrarlo")).toBeInTheDocument()
+    expect(screen.getByText("Qué falta para cerrar el período y cómo fue el consumo")).toBeInTheDocument()
     expect(screen.getByText(/pasos listos/)).toBeInTheDocument()
     expect(screen.queryByRole("progressbar")).toBeNull()
     expect(screen.getByRole("heading", { level: 2, name: "Pasos para cerrar el período" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { level: 2, name: "Lo que vence primero" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { level: 2, name: "El período en tres cifras" })).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "Consumo" })).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "Eficiencia" })).toBeInTheDocument()
+    // Las tarjetas de antes salieron: las cifras las dan los gráficos y cada paso lleva a lo pendiente.
+    expect(screen.queryByRole("heading", { name: "Lo que vence primero" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "El período en tres cifras" })).not.toBeInTheDocument()
     // Hay exactamente un h1 en la página: el título vive en PageHeader.
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1)
   })
@@ -159,14 +169,36 @@ describe("página del Panel de combustible", () => {
     expect(within(screen.getByTestId("actions")).getByRole("button", { name: "Agregar datos" })).toBeInTheDocument()
   })
 
-  it("consulta: tres frases y nada de pasos", async () => {
-    requirePermission.mockResolvedValue(session(["combustibles:view"]))
-    loadPanelData.mockResolvedValue({ variant: "consulta", degraded: [], total: 4, figures: null, worse: null, measured: null, unlinkedPlates: null })
+  it("terreno y contrato conservan su estación de trabajo, sin gráficos", async () => {
+    requirePermission.mockResolvedValue(session(["combustibles:view", "combustibles:register_load"]))
+    loadPanelData.mockResolvedValue({
+      variant: "terreno", degraded: [], total: 5, counts: { all: 0, toValidate: 0, withObservation: 0 }, recent: [], toFix: [], ranking: [], planilla: undefined,
+    })
     await renderPage()
-    expect(screen.getByText("El combustible de tus faenas, en tres frases")).toBeInTheDocument()
-    expect(screen.getByText(/No se pudieron calcular los litros de octubre/)).toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "Consumo" })).not.toBeInTheDocument()
+  })
+
+  it("consulta: sólo los gráficos, sin pasos ni datos propios del Panel", async () => {
+    requirePermission.mockResolvedValue(session(["combustibles:view"]))
+    await renderPage()
+    expect(screen.getByText("Cómo fue el consumo de tus faenas en el período")).toBeInTheDocument()
+    expect(loadPanelData).not.toHaveBeenCalled()
+    expect(screen.getByRole("region", { name: "Consumo" })).toBeInTheDocument()
     expect(screen.queryByRole("heading", { name: "Pasos para cerrar el período" })).not.toBeInTheDocument()
     expect(within(screen.getByTestId("actions")).queryByRole("link", { name: "Registrar carga" })).not.toBeInTheDocument()
+  })
+
+  it("la faena de la URL acota los gráficos; el filtro sólo se ofrece con más de una faena", async () => {
+    await renderPage({ faena: "ws-2" })
+    expect(screen.getByRole("region", { name: "Consumo" })).toHaveAttribute("data-faena", "ws-2")
+    expect(screen.getByTestId("filtro-faena")).toBeInTheDocument()
+  })
+
+  it("con una sola faena no se ofrece el filtro", async () => {
+    worksites.list = [{ id: "ws-1", name: "Biodiversa" }]
+    await renderPage()
+    expect(screen.queryByTestId("filtro-faena")).not.toBeInTheDocument()
+    worksites.list = [{ id: "ws-1", name: "Biodiversa" }, { id: "ws-2", name: "Cholguán" }]
   })
 
   it("elige la variante por el permiso de la sesión y se la pasa a la carga de datos", async () => {
