@@ -31,6 +31,12 @@ export interface IndicatorPeriod extends DateRange {
 }
 
 export const DAY_GRANULARITY_MAX_DAYS = 62
+/**
+ * Rango máximo: cinco años. Un `desde=1001-01-01` arma un balde por mes de diez siglos y las
+ * series (la cola de OT se reconstruye balde por balde) bloquearían el servidor; Combustible
+ * tiene su propio tope (`MAX_RANGE_DAYS`).
+ */
+export const MAX_RANGE_DAYS = 5 * 366
 export const DEFAULT_RANGE_LABEL = "los últimos 6 meses"
 
 const PLAIN_DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -78,13 +84,15 @@ export function resolveIndicatorPeriod(
   const from = isPlainDate(rawFrom) ? rawFrom : fallback.from
   const to = isPlainDate(rawTo) ? rawTo : fallback.to
   const badInput = asked && ((rawFrom !== undefined && !isPlainDate(rawFrom)) || (rawTo !== undefined && !isPlainDate(rawTo)))
-  const range = from > to || badInput ? fallback : { from, to }
+  const tooLong = from <= to && rangeLengthDays(from, to) > MAX_RANGE_DAYS
+  const invalid = from > to || badInput || tooLong
+  const range = invalid ? fallback : { from, to }
   return {
     ...range,
     granularity: indicatorGranularity(range.from, range.to),
     previous: previousRange(range.from, range.to),
     isDefault: range.from === fallback.from && range.to === fallback.to,
-    invalid: from > to || badInput,
+    invalid,
   }
 }
 

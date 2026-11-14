@@ -35,6 +35,11 @@ describe("período de Indicadores", () => {
     expect(resolveIndicatorPeriod({ desde: "2026-02-30", hasta: "2026-03-01" }, TODAY)).toMatchObject({ from: "2026-06-01", invalid: true })
   })
 
+  it("un rango de más de cinco años cae al por defecto (no arma siglos de baldes)", () => {
+    expect(resolveIndicatorPeriod({ desde: "1001-01-01", hasta: "9999-12-31" }, TODAY)).toMatchObject({ from: "2026-06-01", invalid: true })
+    expect(resolveIndicatorPeriod({ desde: "2022-01-01", hasta: "2026-11-13" }, TODAY)).toMatchObject({ from: "2022-01-01", invalid: false })
+  })
+
   it("el período anterior tiene el mismo largo y termina el día antes", () => {
     expect(previousRange("2026-11-01", "2026-11-30")).toEqual({ from: "2026-10-02", to: "2026-10-31" })
     expect(rangeLengthDays("2026-10-02", "2026-10-31")).toBe(30)

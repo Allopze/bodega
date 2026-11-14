@@ -93,7 +93,10 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
   const { track, degraded, total } = createSourceTracker("combustibles/indicadores/consumo")
   const [figuresRaw, ledger, monthly, byWorksite, byType, coverage, anyLoads] = await Promise.all([
     track(getIndicatorFigures(session, period, { worksiteId }), null, "cifras del período"),
-    track(getLedgerTrend(session, { lastMonth: windows.ledgerLastMonth, months: windows.ledgerMonths, worksiteId }), null, "libro del proveedor"),
+    // Sin `view_costs` el libro no se dibuja en ninguna parte: no se consulta ni entra al aviso de degradados.
+    canViewCosts
+      ? track(getLedgerTrend(session, { lastMonth: windows.ledgerLastMonth, months: windows.ledgerMonths, worksiteId }), null, "libro del proveedor")
+      : Promise.resolve({ data: null, failed: false }),
     track(getLitersByMonthAndMedium(session, historyFilters), null, "litros por mes y medio"),
     track(getLitersByWorksite(session, dayFilters), null, "litros por faena"),
     track(getLitersByEquipmentType(session, dayFilters), null, "litros por tipo de equipo"),

@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, desc, eq, gte, inArray, isNotNull, lt, ne, sql, type AnyColumn, type SQL } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, isNotNull, lt, sql, type AnyColumn, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fleetGpsAlerts,
@@ -152,11 +152,16 @@ function instantRange(from: string, to: string): { start: string; end: string } 
 const chileDay = (column: SQL | AnyColumn) =>
   sql<string>`to_char((${column} at time zone 'America/Santiago'), 'YYYY-MM-DD')`
 
-/** Equipos del alcance que cuentan como flota: los que no están dados de baja (igual que `gpsCross.totalVehicles` del Panel). */
+/**
+ * Equipos del alcance que cuentan como flota: los que no están dados de baja (igual que
+ * `gpsCross.totalVehicles` del Panel). «Inactivo» no es un valor de `operational_status`
+ * (operativo, mantencion, fuera_servicio): el Panel lo deriva de `is_active = false`, así que
+ * el filtro va sobre `is_active`.
+ */
 function vehicleScope(session: Session, worksiteId?: string): SQL | undefined {
   return and(
     worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId),
-    ne(fuelVehicles.operationalStatus, "inactivo"),
+    eq(fuelVehicles.isActive, true),
   )
 }
 

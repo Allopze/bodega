@@ -1,5 +1,6 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
+import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import type { Session } from "next-auth"
 import { beforeAll, describe, expect, it, vi } from "vitest"
@@ -126,6 +127,17 @@ describe("getGpsUsageIndicators", () => {
     expect(data.topByKm.map((row) => row.vehicleId)).toEqual([IDS.vA])
     expect(data.topByHours.map((row) => row.vehicleId)).toEqual([IDS.vB])
     expect(data.byWorksite.map((row) => [row.worksiteId, row.km, row.hours])).toEqual([[IDS.wsA, 130, 0], [IDS.wsB, 0, 8]])
+  })
+
+  it("un equipo dado de baja (is_active = false) no cuenta como flota ni como vinculado", async () => {
+    await testDb.update(schema.fuelVehicles).set({ isActive: false }).where(eq(schema.fuelVehicles.id, IDS.vC))
+    try {
+      const data = await getGpsUsageIndicators(session("global"), period)
+      expect(data.fleetVehicles).toBe(2)
+      expect(data.linkedVehicles).toBe(2)
+    } finally {
+      await testDb.update(schema.fuelVehicles).set({ isActive: true }).where(eq(schema.fuelVehicles.id, IDS.vC))
+    }
   })
 
   it("un rol acotado a una faena sólo ve sus equipos", async () => {

@@ -89,7 +89,9 @@ function sumMonths(points: readonly FuelMonthlyPoint[], monthKeys: readonly stri
 export function ledgerCost(points: readonly FuelMonthlyPoint[], period: ResolvedFuelPeriod, previous: ResolvedFuelPeriod | null): LedgerCost {
   const now = sumMonths(points, period.monthKeys)
   let pct: number | null = null
-  if (period.status !== "en_curso" && previous && now.amount !== null) {
+  // El libro es mensual: una semana o un rango toman los meses que tocan, y dos semanas del mismo
+  // mes comparan ese mes consigo mismo. Sólo se compara entre períodos de meses completos.
+  if (period.status !== "en_curso" && period.isWholeMonths && previous?.isWholeMonths && now.amount !== null) {
     const before = sumMonths(points, previous.monthKeys)
     const comparable = before.gapMonths.length === 0 && before.covered === previous.monthKeys.length && now.gapMonths.length === 0
     if (comparable) {

@@ -105,6 +105,12 @@ describe("ledgerCost", () => {
     expect(cost.amount).toBe(450)
     expect(cost.pct).toBe(50)
   })
+
+  it("una semana no se compara: el libro es mensual y dos semanas de octubre compararían octubre consigo mismo", () => {
+    const week = resolve({ kind: "week", year: 2026, week: 43 }, "2026-11-13")
+    const cost = ledgerCost([point("2026-10", { amount: 1_000_000 })], week, indicatorWindows(week).previous)
+    expect(cost.pct).toBeNull()
+  })
 })
 
 describe("rótulos y puntos de los gráficos", () => {

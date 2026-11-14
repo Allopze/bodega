@@ -39,7 +39,7 @@ const RATE_BLOCKS: Record<PerformanceUnit, { title: string; source: string }> = 
  */
 function rateHeadline(series: MeterRateSeries): BlockHeadline {
   const unit = PERFORMANCE_UNIT_LABELS[series.unit]
-  if (series.rate === null) return { value: "—", caption: "datos insuficientes para calcular el rendimiento de la ventana" }
+  if (series.rate === null || !(series.rate > 0)) return { value: "—", caption: "datos insuficientes para calcular el rendimiento de la ventana" }
   const last = [...series.months].reverse().find((month) => month.status === "ok" && month.rate !== null)
   if (!last || last.rate === null) {
     return { value: `${formatQty(series.rate, undefined, { maximumFractionDigits: 2 })} ${unit}`, caption: "rendimiento en conjunto de la ventana" }
