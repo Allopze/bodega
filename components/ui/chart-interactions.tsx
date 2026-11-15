@@ -2,10 +2,13 @@
 
 import * as React from "react"
 import {
+  DefaultZIndexes,
   Rectangle,
+  ZIndexLayer,
   useActiveTooltipCoordinate,
   useActiveTooltipLabel,
   useIsTooltipActive,
+  useXAxisDomain,
 } from "recharts"
 import { cn, formatCLP, formatPercent, formatQty } from "@/lib/utils"
 import { CHART_ENTRY_MS } from "@/lib/chart-motion"
@@ -69,7 +72,38 @@ export const DASHED_CURSOR = {
 
 /** Fondo redondeado de la columna apuntada en los gráficos de barras. */
 export function ColumnHoverCursor(props: React.ComponentProps<typeof Rectangle>) {
-  return <Rectangle {...props} fill="var(--color-surface-2)" radius={10} stroke="none" />
+  // Recharts 3 sólo calcula la columna en un `BarChart`. En un `ComposedChart` (columnas + línea)
+  // le pasa al cursor el área de trazado completa (`top`/`width`/`height`) y la guía (`points`),
+  // sin `x`/`y`, y lo dibuja en la capa de la guía, encima de las series: el `Rectangle` quedaba
+  // en (0, 0) con el tamaño del gráfico y tapaba columnas y línea al pasar el cursor. Aquí se
+  // arma la columna a partir de la guía y se baja a la capa del rectángulo, bajo las barras.
+  const { points, ...rest } = props as React.ComponentProps<typeof Rectangle> & {
+    points?: ReadonlyArray<{ x: number; y: number }>
+    top?: number
+  }
+  const domain = useXAxisDomain()
+  if (!points) return <Rectangle {...rest} fill="var(--color-surface-2)" radius={10} stroke="none" />
+
+  const { top, width, height } = props as { top?: number; width?: number; height?: number }
+  const columns = domain?.length ?? 0
+  const guideX = points[0]?.x
+  if (!columns || guideX === undefined || top === undefined || !width || !height) return null
+  const band = width / columns
+  return (
+    <ZIndexLayer zIndex={DefaultZIndexes.cursorRectangle}>
+      <Rectangle
+        className={rest.className}
+        pointerEvents="none"
+        x={guideX - band / 2}
+        y={top + 0.5}
+        width={band}
+        height={height - 1}
+        fill="var(--color-surface-2)"
+        radius={10}
+        stroke="none"
+      />
+    </ZIndexLayer>
+  )
 }
 
 /**
