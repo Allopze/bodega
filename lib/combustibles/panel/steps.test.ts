@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import type { MandanteReconciliationSummary } from "@/lib/combustibles/control/queries/reconciliation-summary"
-import type { FuelInboxSummary } from "@/lib/combustibles/inbox/types"
+import { FUEL_INBOX_KINDS, type FuelInboxSummary } from "@/lib/combustibles/inbox/types"
 import type { PayablesSummary } from "@/lib/combustibles/payables-summary"
 import type { FuelSourceStatus } from "@/lib/combustibles/sources-status"
 import { buildPanelSteps, type PanelStep, type PanelStepsInput } from "./steps"
@@ -32,8 +32,20 @@ function source(partial: Partial<FuelSourceStatus> = {}): FuelSourceStatus {
 
 const sourcesOf = (...statuses: FuelSourceStatus[]) => ({ statuses, summary: summarizeFuelSources(statuses) })
 
-function inbox(total: number | null, byKind: Partial<FuelInboxSummary["byKind"]> = {}, oldestWaitingSince: string | null = null): FuelInboxSummary {
-  return { total, byKind: { carga: null, caso: null, patente: null, pedido: null, ...byKind }, oldestWaitingSince }
+/**
+ * Un resumen como el que devuelve `summarizeFuelInbox`: los tipos no nombrados
+ * cuentan 0 (un `null` real deja `total` en `null`) y lo más antiguo de cada tipo
+ * con algo es `oldestWaitingSince`, salvo que `oldestByKind` diga otra cosa.
+ */
+function inbox(
+  total: number | null,
+  byKind: Partial<FuelInboxSummary["byKind"]> = {},
+  oldestWaitingSince: string | null = null,
+  oldestByKind: Partial<FuelInboxSummary["oldestByKind"]> = {},
+): FuelInboxSummary {
+  const counts = { carga: 0, caso: 0, patente: 0, pedido: 0, ...byKind }
+  const oldest = Object.fromEntries(FUEL_INBOX_KINDS.map((kind) => [kind, (counts[kind] ?? 0) > 0 ? oldestWaitingSince : null])) as FuelInboxSummary["oldestByKind"]
+  return { total, byKind: counts, oldestWaitingSince, oldestByKind: { ...oldest, ...oldestByKind } }
 }
 
 function mandante(partial: Partial<MandanteReconciliationSummary> = {}): MandanteReconciliationSummary {
@@ -227,13 +239,22 @@ describe("tira de cinco pasos del Panel", () => {
       expect(stepOf(allGood({ period: closed }), "revisar").phrase).toBe("En septiembre todo quedó decidido.")
     })
 
-    it("pendiente: compone la frase con lo que hay de cada tipo y dice cuánto lleva esperando lo más antiguo", () => {
+    it("pendiente: la cifra es lo que se decide ahora y los casos se nombran aparte, en seguimiento", () => {
       const step = stepOf(allGood({ inbox: inbox(7, { carga: 3, patente: 2, caso: 1, pedido: 1 }, "2026-10-25T14:00:00.000Z") }), "revisar")
-      expect(step).toMatchObject({ status: "pendiente", figure: "7", figureNote: "por decidir", cta: "Revisar", href: "/combustibles/revisar" })
-      expect(step.phrase).toBe("3 cargas por decidir, 2 patentes sin vincular, 1 caso y 1 pedido de revisión. Lo más antiguo espera hace 6 días.")
+      expect(step).toMatchObject({ status: "pendiente", figure: "6", figureNote: "por decidir", cta: "Revisar", href: "/combustibles/revisar" })
+      expect(step.phrase).toBe("3 cargas por decidir, 2 patentes sin vincular y 1 pedido de revisión. Lo más antiguo espera hace 6 días. 1 caso en seguimiento.")
     })
 
-    it("una sola frase con lo más antiguo: el desglose por regla vive en la bandeja, no en el Panel", () => {
+    it("cuenta lo mismo que el Panel operacional: 88 por decidir, no 418, y lo más antiguo no es un caso viejo", () => {
+      // El caso que reportó la crítica 2026-11-15: 88 cargas del mes detrás de 330 casos de meses anteriores.
+      const step = stepOf(allGood({
+        inbox: inbox(418, { carga: 88, caso: 330 }, "2026-08-18T14:00:00.000Z", { carga: "2026-10-25T14:00:00.000Z", caso: "2026-08-18T14:00:00.000Z" }),
+      }), "revisar")
+      expect(step).toMatchObject({ status: "pendiente", figure: "88", figureNote: "por decidir" })
+      expect(step.phrase).toBe("88 cargas por decidir. Lo más antiguo espera hace 6 días. 330 casos en seguimiento.")
+    })
+
+    it("sin nada por decidir pero con casos abiertos: «Nada por decidir», sigue pendiente y lleva a los casos", () => {
       const summary = inbox(346, { caso: 346, carga: 0, patente: 0, pedido: 0 }, "2026-08-30T14:00:00.000Z") as FuelInboxSummary & {
         caseBreakdown: Array<{ ruleCode: string; product: string; count: number }>
       }
@@ -245,8 +266,8 @@ describe("tira de cinco pasos del Panel", () => {
 
       const step = stepOf(allGood({ inbox: summary }), "revisar")
 
-      expect(step).toMatchObject({ figure: "346", figureNote: "casos por revisar" })
-      expect(step.phrase).toBe("346 casos. El caso más antiguo espera hace 62 días.")
+      expect(step).toMatchObject({ status: "pendiente", figure: "Nada", figureNote: "por decidir", cta: "Ver los casos", href: "/combustibles/revisar?tipo=caso" })
+      expect(step.phrase).toBe("346 casos en seguimiento. El más antiguo espera hace 62 días.")
       // Sin jerga de modelo de datos ni códigos de regla.
       expect(step.phrase).not.toMatch(/regresi|atribuible|[a-z]+_[a-z]+/)
     })

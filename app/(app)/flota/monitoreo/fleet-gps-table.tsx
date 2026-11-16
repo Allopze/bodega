@@ -21,6 +21,7 @@ import type { FleetGpsPosition } from "@/lib/services/fleet-gps"
 import { formatDateTime } from "@/lib/utils"
 import { formatGpsMeter } from "./fleet-gps-format"
 import { gpsSignalLabel, gpsSourceLabel, ignitionMeta } from "./fleet-gps-labels"
+import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) {
   const { searchQuery } = useSafeShellHeader()
@@ -31,6 +32,7 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
         position.code,
         position.brand,
         position.model,
+        position.typeName,
         position.worksiteName,
         position.providers.join(" "),
       ].some((value) => value?.toLocaleLowerCase("es-CL").includes(query)))
@@ -80,8 +82,8 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
                 <VehicleIdentity
                   code={position.code}
                   plate={position.plate}
-                  type={[position.brand, position.model].filter(Boolean).join(" ") || null}
-                  href={`/flota/${encodeURIComponent(position.vehicleId)}`}
+                  type={position.typeName}
+                  href={vehicleFichaHref(position.vehicleId)}
                 />
               </TableCell>
               <TableCell>{position.worksiteName}</TableCell>

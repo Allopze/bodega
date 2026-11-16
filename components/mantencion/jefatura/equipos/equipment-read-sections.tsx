@@ -104,20 +104,17 @@ export function EquipmentStatusCard({ data }: { data: EquipmentDetailData }) {
   )
 }
 
-/** Ficha del equipo en modo lectura. Si el código y la patente coinciden se muestra uno solo (regla 16). */
-export function EquipmentFichaCard({ data, canSeeSchedules }: { data: EquipmentDetailData; canSeeSchedules: boolean }) {
-  const samePlate = data.noPlate || data.plate === data.code
+/**
+ * Lo que Mantención decide del equipo, en modo lectura: su pauta, en qué se mide, su lectura
+ * inicial y si está activo. La identidad —código, patente, tipo y faena— va en la cabecera de la
+ * ficha; marca, modelo y año los dice la pestaña Flota y aquí sólo se muestran a quien no la ve
+ * (`showIdentity`). Antes esta tarjeta («Ficha») repetía todo eso (crítica 2026-11-15, paso 4b).
+ */
+export function EquipmentPlanCard({ data, canSeeSchedules, showIdentity }: { data: EquipmentDetailData; canSeeSchedules: boolean; showIdentity: boolean }) {
+  const unit = unitName(data.unit)
   return (
-    <SectionCard title="Ficha">
+    <SectionCard title="Plan de mantención">
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-        <DetailItem layout="stacked" mono label="Código interno" value={data.code} />
-        {!samePlate && <DetailItem layout="stacked" mono label="Patente" value={data.plate} />}
-        {data.noPlate && <DetailItem layout="stacked" label="Patente" value="Sin patente" muted />}
-        <DetailItem layout="stacked" label="Tipo" value={`${data.typeName} · se mide en ${unitName(data.unit)}`} />
-        <DetailItem layout="stacked" label="Marca" value={data.brandName} />
-        <DetailItem layout="stacked" label="Modelo" value={data.model} />
-        <DetailItem layout="stacked" label="Año" value={data.year} />
-        <DetailItem layout="stacked" label="Faena" value={data.worksiteName} />
         <DetailItem
           layout="stacked"
           label="Pauta"
@@ -128,16 +125,16 @@ export function EquipmentFichaCard({ data, canSeeSchedules }: { data: EquipmentD
               : data.schedule.name)
             : <span className="text-[var(--color-text-muted)]">Sin pauta</span>}
         />
+        <DetailItem layout="stacked" label="Se mide en" value={unit.charAt(0).toUpperCase() + unit.slice(1)} />
         <DetailItem layout="stacked" mono label="Lectura inicial" value={data.initialReading ? <ValueOnDate value={<NoBreak>{formatReading(data.initialReading.value, data.unit)}</NoBreak>} date={data.initialReading.date} /> : null} />
         <DetailItem layout="stacked" label="Estado" value={data.retired ? `Dado de baja${data.retiredReason ? ` · ${data.retiredReason}` : ""}` : "Activo"} />
-        {data.canViewFleet && (
-          // El mismo vehículo en el padrón de Flota: documentos, seguro, GPS y consumo viven allá.
-          <DetailItem
-            layout="stacked"
-            label="En Flota"
-            value={<Link href={`/flota/${data.vehicleId}`} className="inline-flex min-h-11 items-center text-[var(--color-primary-ink)] underline-offset-2 hover:underline sm:min-h-0">Ver la ficha de {data.code} en Flota</Link>}
-          />
-        )}
+        {showIdentity ? (
+          <>
+            <DetailItem layout="stacked" label="Marca" value={data.brandName} />
+            <DetailItem layout="stacked" label="Modelo" value={data.model} />
+            <DetailItem layout="stacked" label="Año" value={data.year} />
+          </>
+        ) : null}
       </dl>
     </SectionCard>
   )

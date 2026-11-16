@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { useActionState } from "react"
+import { useActionState, useTransition } from "react"
 import { toast } from "@/lib/toast"
 import {
   Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter,
@@ -56,7 +56,7 @@ export function CatalogFormSheet({
   bodyClassName, footerClassName, stableHeight, contentClassName, hiddenFields, externalActionState, children,
 }: CatalogFormSheetProps) {
   const action = isEdit ? update : create
-  const [internalState, internalFormAction] = useActionState<ActionState, FormData>(
+  const [internalState, internalFormAction, internalPending] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
       const result = await action(prev, formData)
       if (result.ok) {
@@ -71,9 +71,24 @@ export function CatalogFormSheet({
   )
   const state = externalActionState?.state ?? internalState
   const formAction = externalActionState?.formAction ?? internalFormAction
+  const [submitting, startSubmit] = useTransition()
+  const pending = submitting || (!externalActionState && internalPending)
 
   const form = (
-    <form action={formAction} className="flex flex-col flex-1 min-h-0">
+    <form
+      // `onSubmit` y no `action={formAction}`: React 19 vuelve los campos no controlados de un
+      // `<form action>` a su valor inicial al terminar la acción, también cuando el servidor la
+      // rechaza, y el error quedaba sobre lo que la persona ya había escrito, vaciado. Lo vio la
+      // crítica de Control operacional (2026-11-15, paso 4b): «Editar vehículo» pedía los productos
+      // compatibles y, al elegirlos, el modelo nuevo ya había vuelto al anterior y se guardaba
+      // sin él. Al cerrar, el contenido del sheet se desmonta: el alta siguiente parte en blanco.
+      onSubmit={(event) => {
+        event.preventDefault()
+        const formData = new FormData(event.currentTarget)
+        startSubmit(() => formAction(formData))
+      }}
+      className="flex flex-col flex-1 min-h-0"
+    >
       {isEdit && entityId && <input type="hidden" name="id" value={entityId} />}
       {hiddenFields}
 
@@ -104,7 +119,7 @@ export function CatalogFormSheet({
 
       <SheetFooter className={footerClassName}>
         <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
-        <SubmitButton label={submitLabel} loadingLabel={submittingLabel} />
+        <SubmitButton label={submitLabel} loadingLabel={submittingLabel} pending={pending} />
       </SheetFooter>
     </form>
   )

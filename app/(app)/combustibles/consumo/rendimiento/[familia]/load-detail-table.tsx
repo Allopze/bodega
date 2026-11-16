@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
 import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
@@ -61,8 +62,9 @@ export function LoadDetailTable({ rows, canViewPersonal }: { rows: LoadDetailRow
                 ) : formatDateTime(row.occurredAt)}
               </TableCell>
               <TableCell>
-                <span className="font-medium whitespace-nowrap">{row.code ?? row.plate ?? STAT_MISSING}</span>
-                <span className="block text-xs text-[var(--color-text-muted)]">{row.worksiteName}</span>
+                {/* La identidad de toda el área (código y patente); la faena, en su propia línea. */}
+                {row.code || row.plate ? <VehicleIdentity code={row.code} plate={row.plate} /> : STAT_MISSING}
+                <span className="block text-xs text-[var(--color-text-subtle)]">{row.worksiteName}</span>
               </TableCell>
               <TableCellNum>{meterText(row)}</TableCellNum>
               <TableCellNum>

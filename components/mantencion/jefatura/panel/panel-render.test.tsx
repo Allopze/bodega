@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 import { hasNoEquipmentInScope, PanelEmptyState } from "./panel-empty"
-import { PanelToday } from "./panel-today"
+import { PanelToday, workshopBreakdown } from "./panel-today"
 
 afterEach(cleanup)
 
@@ -30,6 +30,18 @@ describe("franja «Hoy» del Panel de mantención", () => {
     expect(screen.queryByRole("link", { name: /Órdenes por asignar/ })).toBeNull()
     expect(screen.queryByRole("link", { name: /Registros por revisar/ })).toBeNull()
     expect(screen.getByRole("link", { name: /Equipos en taller/ })).toBeTruthy()
+  })
+
+  it("dice de qué se componen los equipos en taller: el gráfico de al lado cuenta OT, no equipos", () => {
+    render(<PanelToday unassignedOrders={null} inWorkshop={6} inWorkshopByOrder={4} pendingReview={null} worksiteId={null} />)
+    expect(screen.getByRole("region", { name: "Hoy" }).textContent).toContain("4 por una OT · 2 por una correctiva")
+  })
+
+  it("el desglose omite la parte en cero y calla si no hay dato", () => {
+    expect(workshopBreakdown(6, 6)).toBe("6 por una OT")
+    expect(workshopBreakdown(3, 0)).toBe("3 por una correctiva")
+    expect(workshopBreakdown(3, null)).toBeUndefined()
+    expect(workshopBreakdown(0, 0)).toBeUndefined()
   })
 
   it("sin ninguna cifra que mostrar no deja una franja vacía", () => {

@@ -79,6 +79,9 @@ const OWN_SEARCH_PATTERNS = [
   // quedaban sin ningún buscador (auditoría Control operacional 2026-11-13, F1).
   /^\/flota$/,
   /^\/flota\/(?!conductores$|monitoreo$)[^/]+$/,
+  // Las pestañas de la ficha única del vehículo (crítica 2026-11-15): tampoco tienen una lista
+  // que la shell pueda filtrar. Mantención y Combustible no lo tenían en sus fichas anteriores.
+  /^\/flota\/(?!conductores\/|monitoreo\/|indicadores\/)[^/]+\/(?:flota|mantencion|combustible)$/,
 ]
 
 /**

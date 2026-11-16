@@ -534,14 +534,15 @@ test.describe.serial("Combustible — accesibilidad de las fichas (axe)", () => 
       `/combustibles/cargas/factura/${AXE_LOAD_ID}`,
       `/combustibles/pagos/estados/${AXE_STATEMENT_ID}`,
       `/combustibles/fuentes/archivos/tarjeta/${AXE_BATCH_ID}`,
-      // La carga de arriba es de este mes: la ficha de su equipo trae «Litros por mes».
-      `/combustibles/consumo/equipos/${REV_AXE.id}`,
+      // La carga de arriba es de este mes: la ficha de su equipo trae «Litros por mes». Desde la ficha única
+      // (crítica 2026-11-15, paso 4a) es la pestaña Combustible de `/flota/[id]`; la ruta vieja redirige.
+      `/flota/${REV_AXE.id}/combustible`,
     ]
     for (const ficha of fichas) {
       await page.goto(ficha)
       await page.waitForLoadState("networkidle")
       // El gráfico se carga aparte (`ssr: false`): axe tiene que verlo ya pintado.
-      if (ficha.includes("/consumo/equipos/")) await expect(page.getByRole("img", { name: /^Litros por mes de / })).toBeVisible()
+      if (ficha.endsWith("/combustible")) await expect(page.getByRole("img", { name: /^Litros por mes de / })).toBeVisible()
       expect.soft(new URL(page.url()).pathname, `${ficha} no debe redirigir`).toBe(ficha)
       const results = await new AxeBuilder({ page }).withTags([...AXE_TAGS]).disableRules([...AXE_DISABLED_RULES]).analyze()
       expect.soft(results.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(" ")).join(" | ")}`), ficha).toEqual([])
@@ -676,7 +677,8 @@ test.describe.serial("Combustible — tira de señales de terreno en Cargas", ()
     const params = new URL(page.url()).searchParams
     expect(params.get("tipo")).toBe("caso")
     expect(params.get("ref")).toBe("tae_pwa:tae-tira-2")
-    await expect(page.getByRole("list", { name: "Pendientes" }).getByRole("listitem")).toHaveCount(1)
+    // «En seguimiento» se lee por equipo y causa (crítica 2026-11-15, paso 4c): un caso solo es un grupo de uno.
+    await expect(page.getByRole("list", { name: "Casos en seguimiento por equipo y causa" }).getByRole("listitem")).toHaveCount(1)
     await expect(page.getByText("Sólo los casos de la carga elegida")).toBeVisible()
   })
 
@@ -764,7 +766,8 @@ test.describe.serial("Combustible — casos de una carga: filtro por estado, fic
     await seedCasos(cargaId)
 
     await page.goto(`/combustibles/revisar?tipo=caso&ref=${refDeLaCarga()}`)
-    const filas = page.getByRole("list", { name: "Pendientes" }).getByRole("listitem")
+    // «En seguimiento» lista grupos por equipo y causa (paso 4c): tres reglas distintas son tres grupos de un caso.
+    const filas = page.getByRole("list", { name: "Casos en seguimiento por equipo y causa" }).getByRole("listitem")
     await expect(filas).toHaveCount(3) // el descartado vive en «Decididas»
     const estado = page.getByRole("combobox", { name: "Filtrar por estado del caso" })
     await expect(estado).toContainText("Cualquier estado")
@@ -825,5 +828,22 @@ test.describe.serial("Combustible — casos de una carga: filtro por estado, fic
     const hoja = inboxSheet(page, REV_CASOS)
     await expect(hoja).toBeVisible()
     await expect(hoja.getByText("Descartado", { exact: true })).toHaveCount(1)
+  })
+
+  test("los grupos se toman en lote; con causas distintas no se resuelven ni descartan juntos (paso 4c)", async ({ page }) => {
+    await login(page)
+    await page.goto(`/combustibles/revisar?tipo=caso&ref=${refDeLaCarga()}`)
+    await page.getByRole("checkbox", { name: "Seleccionar todos los grupos de la página", exact: true }).check()
+    const lote = page.getByRole("region", { name: "Casos elegidos" })
+    await expect(lote).toContainText("3 casos en 3 grupos")
+    await expect(lote.getByText(/elige grupos de una misma causa/)).toBeVisible()
+    await lote.getByRole("textbox", { name: /Motivo común/ }).fill("QA_E2E motivo común")
+    await expect(lote.getByRole("button", { name: "Descartar 3 casos", exact: true })).toBeDisabled()
+    // El tomado por la cuenta E2E ya es suyo: se toman los otros dos.
+    await lote.getByRole("button", { name: "Tomar 2 casos", exact: true }).click()
+    await expect(page.getByText(/Tomaste 2 casos/)).toBeVisible()
+    await expect(lote.getByRole("button", { name: "Ya están tomados", exact: true })).toBeDisabled()
+    const tomados = await withSql(async (sql) => sql`select status from fuel_anomaly_cases where id in ('qa-e2e-case-crit', 'qa-e2e-case-high', 'qa-e2e-case-mid')`)
+    expect(tomados.map((row) => row.status)).toEqual(["in_review", "in_review", "in_review"])
   })
 })

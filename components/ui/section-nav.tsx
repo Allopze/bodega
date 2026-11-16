@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
+import { useScrollEdges } from "@/lib/hooks/use-scroll-edges"
 import { cn } from "@/lib/utils"
 
 export interface SectionNavItem {
@@ -39,6 +40,8 @@ export function SectionNav({
   carryParams?: readonly string[]
 }) {
   const searchParams = useSearchParams()
+  // En el móvil las pestañas se desplazan: el borde difuminado dice que hay más (paso 7).
+  const { attach, edges, style: scrollStyle } = useScrollEdges<HTMLElement>()
 
   function hrefFor(href: string) {
     if (carryParams.length === 0) return href
@@ -55,7 +58,14 @@ export function SectionNav({
   if (items.length <= 1) return null
 
   return (
-    <nav aria-label={ariaLabel} className="-mx-4 mb-5 overflow-x-auto border-b border-[var(--color-border)] px-4 md:mx-0 md:px-0">
+    <nav
+      ref={attach}
+      style={scrollStyle}
+      data-scroll-start={edges.start || undefined}
+      data-scroll-end={edges.end || undefined}
+      aria-label={ariaLabel}
+      className="-mx-4 mb-5 overflow-x-auto border-b border-[var(--color-border)] px-4 md:mx-0 md:px-0"
+    >
       <ul className="flex min-w-max gap-1">
         {items.map((item) => {
           const active = item.key === activeKey

@@ -42,7 +42,11 @@ const period = {
   to: "2026-11-10",
   previous: { from: "2026-10-22", to: "2026-10-31" },
   granularity: "day" as const,
+  // La ventana del gráfico es el período mismo (la de un rango de tres meses o más).
+  chart: { from: "2026-11-01", to: "2026-11-10", granularity: "day" as const },
 }
+// Un mes (lo que va de él) con los seis meses que terminan en él: la ventana de los gráficos por defecto.
+const periodWithHistory = { ...period, chart: { from: "2026-06-01", to: "2026-11-10", granularity: "month" as const } }
 
 const at = (day: string) => `${day}T15:00:00.000Z`
 let seq = 0
@@ -162,6 +166,18 @@ describe("getGpsUsageIndicators", () => {
     expect(data.hours.current).toBe(8)
   })
 
+  it("la serie sigue a la ventana del gráfico y las cifras al período", async () => {
+    const data = await getGpsUsageIndicators(session("global"), periodWithHistory)
+    expect(data.buckets.map((bucket) => bucket.key)).toEqual(["2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11"])
+    // Octubre trae el avance de vA que cierra el 31/10 (era el «período anterior» y ahora también es serie).
+    expect(data.buckets.find((bucket) => bucket.key === "2026-10")).toMatchObject({ km: 30, hours: 0 })
+    expect(data.buckets.find((bucket) => bucket.key === "2026-11")).toMatchObject({ km: 130, hours: 8 })
+    // Cifras, rankings y comparación, los del período: lo de octubre no entra en `current`.
+    expect(data.km).toEqual({ current: 130, previous: 30 })
+    expect(data.hours).toEqual({ current: 8, previous: 0 })
+    expect(data.byWorksite.map((row) => [row.worksiteId, row.km, row.hours])).toEqual([[IDS.wsA, 130, 0], [IDS.wsB, 0, 8]])
+  })
+
   it("sin flota:view no hay datos", async () => {
     await expect(getGpsUsageIndicators(session("global", []), period)).rejects.toThrow()
   })
@@ -193,6 +209,22 @@ describe("getGpsDrivingIndicators", () => {
     expect(data.topSpeeding.map((row) => row.vehicleId)).toEqual([IDS.vB])
   })
 
+  it("las series siguen a la ventana del gráfico; los totales, al período", async () => {
+    const data = await getGpsDrivingIndicators(session("global"), periodWithHistory)
+    expect(data.trips).toEqual({ current: 4, previous: 1, km: 41 })
+    expect(data.tripBuckets.map((bucket) => [bucket.key, bucket.trips])).toEqual([
+      ["2026-06", 0], ["2026-07", 0], ["2026-08", 0], ["2026-09", 0], ["2026-10", 1], ["2026-11", 4],
+    ])
+    // Seis meses se leen por semana; la semana del 1 de junio abre la serie y la del 9 de noviembre la cierra.
+    expect(data.alertGranularity).toBe("week")
+    expect(data.alertBuckets[0]!.key).toBe("2026-06-01")
+    expect(data.alertBuckets.at(-1)!.key).toBe("2026-11-09")
+    const speedingInChart = data.alertBuckets.reduce((sum, bucket) => sum + bucket.counts.speeding, 0)
+    expect(speedingInChart).toBe(4) // los 3 del período y el del 25/10
+    expect(data.alertTotals).toEqual({ speeding: 3, harsh_driving: 1, pothole: 0, idle: 1, other: 0 })
+    expect(data.speeding).toEqual({ current: 3, previous: 1 })
+  })
+
   it("exige flota:view_gps_history", async () => {
     await expect(getGpsDrivingIndicators(session("global", ["flota:view"]), period)).rejects.toThrow()
   })
@@ -206,6 +238,18 @@ describe("getGpsIdleIndicators", () => {
     expect(data.operatingHours).toEqual({ current: 18, previous: 10 })
     expect(data.idlePct).toBeCloseTo((3 / 18) * 100, 6)
     expect(data.previousIdlePct).toBeCloseTo((4 / 10) * 100, 6)
+  })
+
+  it("la serie mensual sigue a la ventana del gráfico; el % y las horas, al período", async () => {
+    const data = await getGpsIdleIndicators(session("global"), periodWithHistory)
+    expect(data.months).toEqual([
+      { key: "2026-10", workingHours: 6, idleHours: 4 },
+      { key: "2026-11", workingHours: 15, idleHours: 3 },
+    ])
+    expect(data.workingHours).toBe(15)
+    expect(data.idleHours).toBe(3)
+    expect(data.operatingHours).toEqual({ current: 18, previous: 10 })
+    expect(data.idlePct).toBeCloseTo((3 / 18) * 100, 6)
   })
 
   it("respeta el alcance de faena", async () => {

@@ -136,12 +136,24 @@ export function listAlertBuckets(from: string, to: string, granularity: AlertGra
 // ── Entrada común ────────────────────────────────────────────────────────────
 
 export interface GpsIndicatorsInput {
+  /** Período medido: de él salen las cifras, los rankings y los desgloses (por equipo, por faena). */
   from: string
   to: string
   previous: DateRange
   granularity: IndicatorGranularity
+  /**
+   * Ventana de los gráficos de evolución (`IndicatorPeriod.chart`): el propio período si abarca tres
+   * meses o más; si no, los seis meses que terminan en él. Las series (baldes) siguen a esta ventana
+   * y todo lo demás, al período: no se mezclan.
+   */
+  chart: { from: string; to: string; granularity: IndicatorGranularity }
   /** Faena elegida; el alcance del rol manda sobre ella. */
   worksiteId?: string
+}
+
+/** El día más temprano que alguna cifra o serie necesita: el menor entre la ventana del gráfico y el período anterior. */
+function earliestDay(input: GpsIndicatorsInput): string {
+  return input.chart.from < input.previous.from ? input.chart.from : input.previous.from
 }
 
 /** Rango [from, to] de la consulta como instantes: inicio del primer día y del día siguiente al último. */
@@ -201,6 +213,10 @@ export interface GpsUsageIndicators {
   vehiclesWithReadings: number
   /** Con avance de km u horas en el período. */
   vehiclesWithUse: number
+  /** Con km en el período (los que entran al ranking de recorrido, que muestra los primeros). */
+  vehiclesWithKm: number
+  /** Con horas de motor en el período (los que entran al ranking de horas). */
+  vehiclesWithHours: number
   km: { current: number; previous: number }
   hours: { current: number; previous: number }
   /**
@@ -208,6 +224,7 @@ export interface GpsUsageIndicators {
    * períodos miden lo mismo (igual largo), así que sirve para saber si el anterior es comparable.
    */
   readingDays: { current: number; previous: number }
+  /** La serie de la ventana del gráfico (`period.chart`), no del período: puede abarcar más meses que las cifras. */
   buckets: GpsUsageBucket[]
   byWorksite: GpsWorksiteUsage[]
   /** Con más km primero; sólo los que recorrieron algo. */
@@ -270,7 +287,7 @@ export function buildGpsUsage(input: {
     }
   }
 
-  const bucketKeys = listBuckets(period.from, period.to, period.granularity)
+  const bucketKeys = listBuckets(period.chart.from, period.chart.to, period.chart.granularity)
   const buckets = new Map(bucketKeys.map((key) => [key, { key, km: 0, hours: 0 }]))
   const perVehicle = new Map<string, { km: number; hours: number }>()
   const km = { current: 0, previous: 0 }
@@ -288,13 +305,18 @@ export function buildGpsUsage(input: {
       const points = series.get(`${vehicle.id}|${meterType}|${source}`) ?? []
       const maxPerDay = maxMeterRatePerDayOf(rule, meterType === "odometer" ? "km" : "hora", vehicle.typeSlug || undefined)
       const total = meterType === "odometer" ? km : hours
+      const field = meterType === "odometer" ? "km" : "hours"
       for (const { day, advance } of dailyAdvanceFromSeries(points, maxPerDay)) {
+        // La serie y las cifras son comprobaciones independientes: un día puede estar en la
+        // ventana del gráfico, en el período, en el anterior, o en varios a la vez.
+        if (day >= period.chart.from && day <= period.chart.to) {
+          const bucket = buckets.get(bucketKey(day, period.chart.granularity))
+          if (bucket) bucket[field] += advance
+        }
         if (day >= period.from && day <= period.to) {
           total.current += advance
-          const bucket = buckets.get(bucketKey(day, period.granularity))
-          if (bucket) bucket[meterType === "odometer" ? "km" : "hours"] += advance
           const acc = perVehicle.get(vehicle.id) ?? { km: 0, hours: 0 }
-          acc[meterType === "odometer" ? "km" : "hours"] += advance
+          acc[field] += advance
           perVehicle.set(vehicle.id, acc)
         } else if (day >= period.previous.from && day <= period.previous.to) {
           total.previous += advance
@@ -334,6 +356,8 @@ export function buildGpsUsage(input: {
     linkedVehicles: linked.size,
     vehiclesWithReadings: [...readingVehicles].filter((id) => linked.has(id)).length,
     vehiclesWithUse: usageRows.length,
+    vehiclesWithKm: usageRows.filter((row) => row.km > 0).length,
+    vehiclesWithHours: usageRows.filter((row) => row.hours > 0).length,
     km,
     hours,
     readingDays: { current: readingDaysCurrent.size, previous: readingDaysPrevious.size },
@@ -369,9 +393,11 @@ export async function getGpsUsageIndicators(session: Session, input: GpsIndicato
   const vehicleIds = vehicleRows.map((vehicle) => vehicle.id)
 
   // Una lectura por equipo, fuente, medidor y día chileno (la última del día), igual
-  // que el Panel. Se parte un día antes del período anterior: el par que abre el
-  // primer día necesita su lectura previa.
-  const { start, end } = instantRange(addDaysToPlainDate(input.previous.from, -1), input.to)
+  // que el Panel. Una sola consulta cubre la unión de la ventana del gráfico y el período
+  // anterior (los dos terminan en `to`); así la serie larga no suma una consulta por cada
+  // rango, y `buildGpsUsage` reparte cada día entre serie, período y anterior. Se parte un
+  // día antes: el par que abre el primer día necesita su lectura previa.
+  const { start, end } = instantRange(addDaysToPlainDate(earliestDay(input), -1), input.to)
   const dayExpr = chileDay(sql`${fuelMeterReadings.occurredAt}::timestamptz`)
   const [meterRows, ruleRows, positionRows, linkRows, telemetryRows] = await Promise.all([
     db.selectDistinctOn(
@@ -427,7 +453,7 @@ export interface GpsIdleMonth {
 }
 
 export interface GpsIdleIndicators {
-  /** Un elemento por mes del período con telemetría; los meses sin ella no aparecen (un hueco, no un cero). */
+  /** Un elemento por mes de la ventana del gráfico con telemetría; los meses sin ella no aparecen (un hueco, no un cero). */
   months: GpsIdleMonth[]
   /** Equipos con telemetría VisionLink en el período. */
   vehicles: number
@@ -458,14 +484,20 @@ function pctOf(idleHours: number, workingHours: number): number | null {
 export async function getGpsIdleIndicators(session: Session, input: GpsIndicatorsInput): Promise<GpsIdleIndicators> {
   if (!can(session, "combustibles:view")) throw new Error("Sin permisos para ver el ralentí")
   const current = controlFilters({ from: input.from, to: input.to }, input.worksiteId)
-  const [monthRows, previousRows, vehicles] = await Promise.all([
+  // La serie mensual sigue a la ventana del gráfico y el % y las horas, al período. Cuando la
+  // ventana ES el período (rangos de tres meses o más) se reutiliza la misma consulta; si no,
+  // se suma una sola agregación por mes sobre la ventana (`getIdleFleetMonths` no da días, así
+  // que el período no puede sacarse de los meses completos de la ventana).
+  const sameWindow = input.chart.from === input.from && input.chart.to === input.to
+  const [periodRows, previousRows, chartRows, vehicles] = await Promise.all([
     getIdleFleetMonths(session, current),
     getIdleFleetMonths(session, controlFilters(input.previous, input.worksiteId)),
+    sameWindow ? Promise.resolve(null) : getIdleFleetMonths(session, controlFilters(input.chart, input.worksiteId)),
     listIdleVehicles(session, current),
   ])
-  const months = monthRows.map((row) => ({ key: row.month, workingHours: row.workingHours, idleHours: row.idleHours }))
-  const workingHours = months.reduce((sum, row) => sum + row.workingHours, 0)
-  const idleHours = months.reduce((sum, row) => sum + row.idleHours, 0)
+  const months = (chartRows ?? periodRows).map((row) => ({ key: row.month, workingHours: row.workingHours, idleHours: row.idleHours }))
+  const workingHours = periodRows.reduce((sum, row) => sum + row.workingHours, 0)
+  const idleHours = periodRows.reduce((sum, row) => sum + row.idleHours, 0)
   const previousIdle = previousRows.reduce((sum, row) => sum + row.idleHours, 0)
   const previousWorking = previousRows.reduce((sum, row) => sum + row.workingHours, 0)
   return {
@@ -504,13 +536,17 @@ export interface GpsDrivingIndicators {
   /** Días con algún viaje o alerta de OnWay en cada período: la cobertura para comparar. */
   coverageDays: { current: number; previous: number }
   trips: { current: number; previous: number; km: number }
+  /** La serie de la ventana del gráfico; `trips` y `coverageDays` son del período. */
   tripBuckets: GpsTripBucket[]
   alertGranularity: AlertGranularity
+  /** La serie de la ventana del gráfico (semanas o meses), no del período. */
   alertBuckets: GpsAlertBucket[]
   /** Total del período por clase (sin las operacionales). */
   alertTotals: Record<CountedGpsAlertClass, number>
   speeding: { current: number; previous: number }
   topSpeeding: GpsSpeedingVehicle[]
+  /** Equipos con algún exceso en el período: el ranking muestra los primeros. */
+  speedingVehicles: number
 }
 
 const emptyCounts = (): Record<CountedGpsAlertClass, number> => ({ speeding: 0, harsh_driving: 0, pothole: 0, idle: 0, other: 0 })
@@ -520,10 +556,10 @@ export function buildGpsAlertAggregates(input: {
   rows: ReadonlyArray<{ vehicleId: string | null; day: string; title: string; n: number }>
   vehicles: ReadonlyMap<string, { code: string | null; plate: string; typeName: string }>
   period: GpsIndicatorsInput
-}): Pick<GpsDrivingIndicators, "alertGranularity" | "alertBuckets" | "alertTotals" | "speeding" | "topSpeeding"> {
+}): Pick<GpsDrivingIndicators, "alertGranularity" | "alertBuckets" | "alertTotals" | "speeding" | "topSpeeding" | "speedingVehicles"> {
   const { rows, vehicles, period } = input
-  const granularity = alertGranularity(period.from, period.to)
-  const keys = listAlertBuckets(period.from, period.to, granularity)
+  const granularity = alertGranularity(period.chart.from, period.chart.to)
+  const keys = listAlertBuckets(period.chart.from, period.chart.to, granularity)
   const buckets = new Map<string, GpsAlertBucket>(keys.map((key) => [key, { key, counts: emptyCounts() }]))
   const totals = emptyCounts()
   const speeding = { current: 0, previous: 0 }
@@ -532,25 +568,36 @@ export function buildGpsAlertAggregates(input: {
   for (const row of rows) {
     const cls = classifyGpsAlert(row.title)
     if (!isCountedGpsAlertClass(cls)) continue
+    const inChart = row.day >= period.chart.from && row.day <= period.chart.to
     const inCurrent = row.day >= period.from && row.day <= period.to
     const inPrevious = row.day >= period.previous.from && row.day <= period.previous.to
+    // La serie sigue a la ventana del gráfico; totales, excesos y ranking, al período.
+    if (inChart) {
+      const bucket = buckets.get(alertBucketKey(row.day, granularity))
+      if (bucket) bucket.counts[cls] += row.n
+    }
     if (cls === "speeding") {
       if (inCurrent) speeding.current += row.n
       else if (inPrevious) speeding.previous += row.n
     }
     if (!inCurrent) continue
     totals[cls] += row.n
-    const bucket = buckets.get(alertBucketKey(row.day, granularity))
-    if (bucket) bucket.counts[cls] += row.n
     if (cls === "speeding" && row.vehicleId) speedingByVehicle.set(row.vehicleId, (speedingByVehicle.get(row.vehicleId) ?? 0) + row.n)
   }
 
-  const topSpeeding = [...speedingByVehicle.entries()].flatMap(([vehicleId, count]) => {
+  const speedingRows = [...speedingByVehicle.entries()].flatMap(([vehicleId, count]) => {
     const vehicle = vehicles.get(vehicleId)
     return vehicle ? [{ vehicleId, code: vehicle.code, plate: vehicle.plate, typeName: vehicle.typeName, count }] : []
-  }).sort((a, b) => b.count - a.count || (a.code ?? a.plate).localeCompare(b.code ?? b.plate, "es")).slice(0, TOP_VEHICLES)
+  }).sort((a, b) => b.count - a.count || (a.code ?? a.plate).localeCompare(b.code ?? b.plate, "es"))
 
-  return { alertGranularity: granularity, alertBuckets: keys.map((key) => buckets.get(key)!), alertTotals: totals, speeding, topSpeeding }
+  return {
+    alertGranularity: granularity,
+    alertBuckets: keys.map((key) => buckets.get(key)!),
+    alertTotals: totals,
+    speeding,
+    topSpeeding: speedingRows.slice(0, TOP_VEHICLES),
+    speedingVehicles: speedingRows.length,
+  }
 }
 
 /**
@@ -560,7 +607,10 @@ export function buildGpsAlertAggregates(input: {
 export async function getGpsDrivingIndicators(session: Session, input: GpsIndicatorsInput): Promise<GpsDrivingIndicators> {
   if (!can(session, "flota:view") || !can(session, "flota:view_gps_history")) throw new Error("Sin permisos para ver el historial GPS")
   const scope = vehicleScope(session, input.worksiteId)
-  const { start, end } = instantRange(input.previous.from, input.to)
+  // Un solo rango, la unión de la ventana del gráfico y el período anterior (terminan en `to`):
+  // ambas consultas agrupan por día, así que `buildGpsAlertAggregates` y el bucle de viajes
+  // reparten cada día entre serie, período y anterior sin volver a la base.
+  const { start, end } = instantRange(earliestDay(input), input.to)
   const tripDay = chileDay(fleetGpsTrips.startedAt)
   const alertDay = chileDay(fleetGpsAlerts.occurredAt)
 
@@ -592,15 +642,17 @@ export async function getGpsDrivingIndicators(session: Session, input: GpsIndica
       .groupBy(fleetGpsAlerts.vehicleId, alertDay, fleetGpsAlerts.title, fuelVehicles.code, fuelVehicles.plate, fuelEquipmentTypes.name),
   ])
 
-  const tripKeys = listBuckets(input.from, input.to, input.granularity)
+  const tripKeys = listBuckets(input.chart.from, input.chart.to, input.chart.granularity)
   const tripBuckets = new Map<string, GpsTripBucket>(tripKeys.map((key) => [key, { key, trips: 0, km: 0 }]))
   const trips = { current: 0, previous: 0, km: 0 }
   for (const row of tripRows) {
+    if (row.day >= input.chart.from && row.day <= input.chart.to) {
+      const bucket = tripBuckets.get(bucketKey(row.day, input.chart.granularity))
+      if (bucket) { bucket.trips += row.n; bucket.km += row.km }
+    }
     if (row.day >= input.from && row.day <= input.to) {
       trips.current += row.n
       trips.km += row.km
-      const bucket = tripBuckets.get(bucketKey(row.day, input.granularity))
-      if (bucket) { bucket.trips += row.n; bucket.km += row.km }
     } else if (row.day >= input.previous.from && row.day <= input.previous.to) {
       trips.previous += row.n
     }

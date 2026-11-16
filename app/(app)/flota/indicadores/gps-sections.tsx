@@ -8,10 +8,10 @@ import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { BarRankingChartLazy } from "@/components/charts/bar-ranking-chart-lazy"
 import type { BarRankingItem } from "@/components/charts/bar-ranking-chart"
 import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "@/components/charts/chart-frame"
-import { ChartDataTable } from "@/components/charts/chart-data-table"
+import { ChartDataTable, type ChartDataExcel } from "@/components/charts/chart-data-table"
 import { DashboardSection } from "@/components/dashboard/dashboard-section"
 import { vehicleIdentityParts } from "@/components/fleet/vehicle-identity"
-import { bucketLabel, isPartialBucket, listBuckets, type IndicatorPeriod } from "@/lib/indicators/period"
+import { CHART_HISTORY_MONTHS, bucketLabel, chartWindowCaption, isPartialBucket, listBuckets, type IndicatorPeriod } from "@/lib/indicators/period"
 import type {
   GpsDrivingIndicators,
   GpsIdleIndicators,
@@ -22,6 +22,7 @@ import { formatPercent, formatQty, todayInChile } from "@/lib/utils"
 import { GpsAlertsChart, GpsIdleChart, GpsTripsChart, GpsUsageChart } from "./gps-charts-lazy"
 import { alertBucketLabel, alertBucketTitle, hasComparableBase, hoursText, kmText, percentChange, rangeText } from "./gps-format"
 import { layoutChartSlots, type SlotKind } from "@/lib/indicators/chart-layout"
+import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 const MONITORING = "/flota/monitoreo"
 const IDLE_PAGE = "/combustibles/consumo/motor-en-vacio"
@@ -45,7 +46,7 @@ function vehicleItem(row: GpsVehicleUsage, kind: "km" | "hours"): BarRankingItem
     label: primary,
     value: kind === "km" ? Math.round(row.km) : Math.round(row.hours * 10) / 10,
     detail: [secondary, other].filter(Boolean).join(" · ") || undefined,
-    href: `/flota/${row.vehicleId}`,
+    href: vehicleFichaHref(row.vehicleId),
   }
 }
 
@@ -83,7 +84,7 @@ function ChartSlots({ slots }: { slots: Array<{ key: string; kind: SlotKind; nod
 }
 
 /** Un ranking con su cabecera, su cifra de conclusión y «Ver datos». `null` sin filas. */
-function Ranking({ title, description, headline, caption, items, unit, ariaLabel, dataHeaders, dataRows }: {
+function Ranking({ title, description, headline, caption, items, unit, ariaLabel, dataHeaders, dataRows, excel }: {
   title: string
   description: string
   headline: string
@@ -93,6 +94,7 @@ function Ranking({ title, description, headline, caption, items, unit, ariaLabel
   ariaLabel: string
   dataHeaders: string[]
   dataRows: string[][]
+  excel?: ChartDataExcel
 }) {
   if (items.length === 0) return null
   return (
@@ -102,21 +104,93 @@ function Ranking({ title, description, headline, caption, items, unit, ariaLabel
       headline={<><ChartHeadlineValue>{headline}</ChartHeadlineValue><ChartHeadlineCaption>{caption}</ChartHeadlineCaption></>}
     >
       <BarRankingChartLazy items={items} unit={unit} ariaLabel={ariaLabel} limit={8} order="desc" />
-      <ChartDataTable caption={title} headers={dataHeaders} rows={dataRows} />
+      <ChartDataTable caption={title} headers={dataHeaders} rows={dataRows} excel={excel} />
+    </ChartFrame>
+  )
+}
+
+/**
+ * «Uso por faena»: km y horas de motor, un ranking por unidad (A5b). Sólo con km, una faena de
+ * grúas o cargadores (que se miden en horas) no aparecía, y la celda quedaba a medio llenar junto
+ * al gráfico mensual (crítica 2026-11-15).
+ */
+function WorksiteUsage({ usage, period, leading, excel }: { usage: GpsUsageIndicators; period: IndicatorPeriod; leading: GpsUsageIndicators["byWorksite"][number]; excel?: ChartDataExcel }) {
+  const equipment = (count: number) => `${count} ${count === 1 ? "equipo" : "equipos"}`
+  const byKm = usage.byWorksite.filter((row) => row.km > 0).map((row) => ({
+    key: row.worksiteId,
+    label: row.name,
+    value: Math.round(row.km),
+    detail: equipment(row.vehicles),
+  }))
+  const byHours = usage.byWorksite.filter((row) => row.hours > 0).sort((a, b) => b.hours - a.hours || a.name.localeCompare(b.name, "es")).map((row) => ({
+    key: row.worksiteId,
+    label: row.name,
+    value: Math.round(row.hours * 10) / 10,
+    detail: equipment(row.vehicles),
+  }))
+  const subhead = "text-xs font-semibold text-[var(--color-text-muted)]"
+  return (
+    <ChartFrame
+      title="Uso por faena"
+      description={`${byHours.length > 0 ? "Km recorridos y horas de motor" : "Km recorridos"} · ${rangeText(period)}`}
+      headline={<><ChartHeadlineValue>{sharePct(leading.km, usage.km.current)}</ChartHeadlineValue><ChartHeadlineCaption>{`del recorrido es de ${leading.name}`}</ChartHeadlineCaption></>}
+    >
+      {byKm.length > 0 && (
+        <>
+          {byHours.length > 0 && <p className={subhead}>Km recorridos</p>}
+          <BarRankingChartLazy items={byKm} unit=" km" ariaLabel="Km recorridos por faena" limit={8} order="desc" />
+        </>
+      )}
+      {byHours.length > 0 && (
+        <>
+          <p className={`${subhead} ${byKm.length > 0 ? "mt-4" : ""}`}>Horas de motor</p>
+          <BarRankingChartLazy items={byHours} unit=" h" ariaLabel="Horas de motor por faena" limit={8} order="desc" />
+        </>
+      )}
+      <ChartDataTable
+        caption="Uso por faena"
+        headers={["Faena", "Km", "Horas de motor", "Equipos"]}
+        rows={usage.byWorksite.map((row) => [row.name, formatQty(Math.round(row.km)), formatQty(row.hours, undefined, { maximumFractionDigits: 1 }), String(row.vehicles)])}
+        excel={excel}
+      />
     </ChartFrame>
   )
 }
 
 const sharePct = (part: number, total: number) => (total > 0 ? formatPercent((part / total) * 100, 0) : "—")
 
+/**
+ * Qué muestra un ranking de equipos: todos los que tienen el dato o los primeros de cuántos.
+ * «Km recorridos, los 1 primeros» no decía si había más.
+ */
+function rankingScope(what: string, shown: number, total: number, range: string): string {
+  return shown < total ? `${what}, los ${shown} con más de ${total} equipos · ${range}` : `${what} por equipo · ${range}`
+}
+
+/** Cómo se nombra al primero de un ranking: su código y, sin él, la patente. */
+const leaderName = (row: { code: string | null; plate: string; typeName: string }) => vehicleIdentityParts({ code: row.code, plate: row.plate, type: row.typeName }).primary
+
 // ── Sección 1: Uso de la flota ───────────────────────────────────────────────
 
-export function UsageSection({ usage, period }: { usage: GpsUsageIndicators; period: IndicatorPeriod }) {
+/**
+ * «Exportar Excel» de las tablas «Ver datos»: con `flota:export`, cada tabla se suma a la descarga
+ * del tablero. `scope` lleva la nota del período (rankings) y `chart`, la de la ventana del gráfico
+ * (las series, que miran seis meses cuando el período es corto). Sin el permiso, `undefined`.
+ */
+export interface GpsExcel {
+  scope: ChartDataExcel
+  chart: ChartDataExcel
+}
+
+export function UsageSection({ usage, period, excel }: { usage: GpsUsageIndicators; period: IndicatorPeriod; excel?: GpsExcel }) {
   const today = todayInChile()
-  const noun = GRANULARITY_NOUN[period.granularity]
-  const window = `${rangeText(period)} · Entel OnWay, Wialon y VisionLink`
+  const { chart } = period
+  const noun = GRANULARITY_NOUN[chart.granularity]
+  // La serie sigue a la ventana del gráfico (seis meses si el período es corto); los rankings, al período.
+  const window = `${chartWindowCaption(chart, rangeText)} · Entel OnWay, Wialon y VisionLink`
   const links = [{ label: "Monitoreo GPS", href: MONITORING }, { label: "Vehículos", href: "/flota" }]
   const hasData = usage.km.current > 0 || usage.hours.current > 0 || usage.km.previous > 0 || usage.hours.previous > 0 || usage.vehiclesWithReadings > 0
+    || usage.buckets.some((bucket) => bucket.km > 0 || bucket.hours > 0)
 
   if (!hasData) {
     return (
@@ -137,19 +211,16 @@ export function UsageSection({ usage, period }: { usage: GpsUsageIndicators; per
   const kmTrend = comparable ? percentChange(usage.km.current, usage.km.previous) : null
   const hoursTrend = comparable ? percentChange(usage.hours.current, usage.hours.previous) : null
 
-  const buckets = listBuckets(period.from, period.to, period.granularity)
-  const chartData = usage.buckets.map((bucket, index) => ({
+  const chartData = usage.buckets.map((bucket, index, all) => ({
     key: bucket.key,
-    label: bucketLabel(bucket.key, period.granularity),
+    label: bucketLabel(bucket.key, chart.granularity),
     km: Math.round(bucket.km * 10) / 10,
     hours: Math.round(bucket.hours * 10) / 10,
-    partial: index === buckets.length - 1 && isPartialBucket(bucket.key, period.granularity, today),
+    partial: index === all.length - 1 && isPartialBucket(bucket.key, chart.granularity, today),
   }))
 
   const topKm = usage.topByKm
-  const topKmShare = topKm.reduce((sum, row) => sum + row.km, 0)
   const topHours = usage.topByHours
-  const topHoursShare = topHours.reduce((sum, row) => sum + row.hours, 0)
   const leadingWorksite = usage.byWorksite[0]
 
   return (
@@ -157,8 +228,11 @@ export function UsageSection({ usage, period }: { usage: GpsUsageIndicators; per
       id="uso-flota"
       title="Uso de la flota"
       links={links}
-      coverage={usage.vehiclesWithReadings < usage.fleetVehicles
-        ? <CoverageLine>{`Lecturas GPS de ${usage.vehiclesWithReadings} de ${usage.fleetVehicles} vehículos de la flota: los demás no tienen medidor que informe en el período.`}</CoverageLine>
+      // Una sola base para toda la sección: los vehículos con GPS. Antes la línea de cobertura contaba
+      // los que informaron sobre la flota, la tira «de N vinculados» y el ranking «lo hacen N equipos»:
+      // tres denominadores para la misma pregunta (crítica 2026-11-15, paso 5).
+      coverage={usage.linkedVehicles < usage.fleetVehicles
+        ? <CoverageLine>{`${usage.linkedVehicles} de los ${usage.fleetVehicles} vehículos de la flota tienen GPS (Entel OnWay, Wialon o VisionLink): las cifras de esta sección son de ellos.`}</CoverageLine>
         : undefined}
       summary={<SummaryBar numerals="sans" stats={[
         {
@@ -179,14 +253,14 @@ export function UsageSection({ usage, period }: { usage: GpsUsageIndicators; per
           key: "equipos-con-uso",
           label: "Equipos con uso",
           value: usage.vehiclesWithUse,
-          secondary: `de ${usage.linkedVehicles} vinculados`,
+          secondary: `de ${usage.linkedVehicles} con GPS`,
           href: MONITORING,
         },
         {
           key: "sin-lecturas",
           label: "Equipos sin lecturas",
           value: withoutReadings,
-          secondary: withoutReadings > 0 ? "Vinculados sin medidor en el período" : "Todos los vinculados informaron",
+          secondary: withoutReadings > 0 ? "Con GPS y sin lecturas en el período" : "Todos los que tienen GPS informaron",
           tone: "signal",
           href: MONITORING,
         },
@@ -195,29 +269,12 @@ export function UsageSection({ usage, period }: { usage: GpsUsageIndicators; per
         ...(chartData.some((point) => point.km > 0 || point.hours > 0) ? [{
           key: "uso",
           kind: "one" as const,
-          node: <GpsUsageChart data={chartData} granularity={period.granularity} description={`Por ${noun} · ${window}`} />,
+          node: <GpsUsageChart data={chartData} granularity={chart.granularity} description={`Por ${noun} · ${window}`} excel={excel?.chart} />,
         }] : []),
         ...(usage.byWorksite.length > 1 && leadingWorksite ? [{
           key: "faenas",
           kind: "one" as const,
-          node: (
-            <Ranking
-              title="Uso por faena"
-              description={`Km recorridos · ${rangeText(period)}`}
-              headline={sharePct(leadingWorksite.km, usage.km.current)}
-              caption={`del recorrido es de ${leadingWorksite.name}`}
-              items={usage.byWorksite.map((row) => ({
-                key: row.worksiteId,
-                label: row.name,
-                value: Math.round(row.km),
-                detail: `${row.vehicles} ${row.vehicles === 1 ? "equipo" : "equipos"}${row.hours > 0 ? ` · ${hoursText(row.hours)}` : ""}`,
-              }))}
-              unit=" km"
-              ariaLabel="Km recorridos por faena"
-              dataHeaders={["Faena", "Km", "Horas de motor", "Equipos"]}
-              dataRows={usage.byWorksite.map((row) => [row.name, formatQty(Math.round(row.km)), formatQty(row.hours, undefined, { maximumFractionDigits: 1 }), String(row.vehicles)])}
-            />
-          ),
+          node: <WorksiteUsage usage={usage} period={period} leading={leadingWorksite} excel={excel?.scope} />,
         }] : []),
         ...(topKm.length > 0 ? [{
           key: "equipos-km",
@@ -225,14 +282,16 @@ export function UsageSection({ usage, period }: { usage: GpsUsageIndicators; per
           node: (
             <Ranking
               title="Equipos con más recorrido"
-              description={`Km recorridos, los ${topKm.length} primeros · ${rangeText(period)}`}
-              headline={sharePct(topKmShare, usage.km.current)}
-              caption={`del recorrido lo hacen ${topKm.length} equipos`}
+              description={rankingScope("Km recorridos", topKm.length, usage.vehiclesWithKm, rangeText(period))}
+              // Cuánto pesa el primero: «los N primeros hacen el 100 %» no decía nada cuando eran todos.
+              headline={sharePct(topKm[0]!.km, usage.km.current)}
+              caption={`del recorrido es de ${leaderName(topKm[0]!)}`}
               items={topKm.map((row) => vehicleItem(row, "km"))}
               unit=" km"
               ariaLabel="Equipos con más km recorridos"
               dataHeaders={["Equipo", "Faena", "Km", "Horas de motor"]}
               dataRows={topKm.map((row) => [row.code ?? row.plate, row.worksiteName, formatQty(Math.round(row.km)), formatQty(row.hours, undefined, { maximumFractionDigits: 1 })])}
+              excel={excel?.scope}
             />
           ),
         }] : []),
@@ -242,14 +301,15 @@ export function UsageSection({ usage, period }: { usage: GpsUsageIndicators; per
           node: (
             <Ranking
               title="Equipos con más horas de motor"
-              description={`Horas de motor, los ${topHours.length} primeros · ${rangeText(period)}`}
-              headline={sharePct(topHoursShare, usage.hours.current)}
-              caption={`de las horas son de ${topHours.length} equipos`}
+              description={rankingScope("Horas de motor", topHours.length, usage.vehiclesWithHours, rangeText(period))}
+              headline={sharePct(topHours[0]!.hours, usage.hours.current)}
+              caption={`de las horas de motor son de ${leaderName(topHours[0]!)}`}
               items={topHours.map((row) => vehicleItem(row, "hours"))}
               unit=" h"
               ariaLabel="Equipos con más horas de motor"
               dataHeaders={["Equipo", "Faena", "Horas de motor", "Km"]}
               dataRows={topHours.map((row) => [row.code ?? row.plate, row.worksiteName, formatQty(row.hours, undefined, { maximumFractionDigits: 1 }), formatQty(Math.round(row.km))])}
+              excel={excel?.scope}
             />
           ),
         }] : []),
@@ -258,34 +318,43 @@ export function UsageSection({ usage, period }: { usage: GpsUsageIndicators; per
   )
 }
 
-// ── Sección 2: Ralentí y conducción ──────────────────────────────────────────
+// ── Sección 2: Motor en vacío y conducción ──────────────────────────────────────────
 
-export function DrivingSection({ idle, driving, period, canViewIdle }: {
+export function DrivingSection({ idle, driving, period, canViewIdle, excel }: {
   /** `null`: sin permiso de combustibles o la consulta falló (el banner ya lo dice). */
   idle: GpsIdleIndicators | null
   driving: GpsDrivingIndicators | null
   period: IndicatorPeriod
   canViewIdle: boolean
+  excel?: GpsExcel
 }) {
   const today = todayInChile()
+  const { chart } = period
   const links = [
     ...(canViewIdle ? [{ label: "Motor en vacío", href: IDLE_PAGE }] : []),
     { label: "Monitoreo GPS", href: MONITORING },
     { label: "Vehículos", href: "/flota" },
   ]
 
+  // Las series miran la ventana del gráfico: con el período vacío puede haber historia que mostrar.
+  const alertBuckets = driving ? driving.alertBuckets : []
+  const alertChartTotals = alertBuckets.reduce((acc, bucket) => {
+    for (const cls of Object.keys(acc) as Array<keyof typeof acc>) acc[cls] += bucket.counts[cls]
+    return acc
+  }, { speeding: 0, harsh_driving: 0, pothole: 0, idle: 0, other: 0 })
+  const chartTrips = driving ? driving.tripBuckets.reduce((sum, bucket) => sum + bucket.trips, 0) : 0
   const idleHasData = idle !== null && idle.months.length > 0
-  const tripsHaveData = driving !== null && (driving.trips.current > 0 || driving.trips.previous > 0)
-  const alertsHaveData = driving !== null && (Object.values(driving.alertTotals).some((count) => count > 0) || driving.speeding.previous > 0)
+  const tripsHaveData = driving !== null && (driving.trips.current > 0 || driving.trips.previous > 0 || chartTrips > 0)
+  const alertsHaveData = driving !== null && (Object.values(driving.alertTotals).some((count) => count > 0) || driving.speeding.previous > 0 || Object.values(alertChartTotals).some((count) => count > 0))
   if (!idleHasData && !tripsHaveData && !alertsHaveData) {
     return (
       <DashboardSection
         id="ralenti-conduccion"
-        title="Ralentí y conducción"
+        title="Motor en vacío y conducción"
         links={links}
         charts={<EmptyBlock
-          title="Sin viajes, alertas ni ralentí en este período"
-          description="Los viajes y las alertas llegan de Entel OnWay y el ralentí de la telemetría VisionLink. Amplía el período o revisa que las fuentes estén al día en Monitoreo GPS."
+          title="Sin viajes, alertas ni horas de motor en este período"
+          description="Los viajes y las alertas llegan de Entel OnWay y las horas de motor en vacío, de la telemetría VisionLink. Amplía el período o revisa que las fuentes estén al día en Monitoreo GPS."
           ctaLabel="Ver Monitoreo GPS"
           ctaHref={MONITORING}
         />}
@@ -293,7 +362,7 @@ export function DrivingSection({ idle, driving, period, canViewIdle }: {
     )
   }
 
-  const idleMonths = idle ? listBuckets(period.from, period.to, "month") : []
+  const idleMonths = idle ? listBuckets(chart.from, chart.to, "month") : []
   const idleByMonth = new Map((idle?.months ?? []).map((month) => [month.key, month]))
   const idleData = idleMonths.map((key) => {
     const month = idleByMonth.get(key)
@@ -308,13 +377,12 @@ export function DrivingSection({ idle, driving, period, canViewIdle }: {
 
   const tripData = (driving?.tripBuckets ?? []).map((bucket, index, all) => ({
     key: bucket.key,
-    label: bucketLabel(bucket.key, period.granularity),
+    label: bucketLabel(bucket.key, chart.granularity),
     trips: bucket.trips,
     avgKm: bucket.trips > 0 ? Math.round((bucket.km / bucket.trips) * 10) / 10 : null,
-    partial: index === all.length - 1 && isPartialBucket(bucket.key, period.granularity, today),
+    partial: index === all.length - 1 && isPartialBucket(bucket.key, chart.granularity, today),
   }))
 
-  const alertBuckets = driving ? driving.alertBuckets : []
   const lastAlertKey = alertBuckets.at(-1)?.key
   const alertData = driving
     ? alertBuckets.map((bucket) => ({
@@ -335,7 +403,7 @@ export function DrivingSection({ idle, driving, period, canViewIdle }: {
   const drivingStats: SummaryStat[] = [
     ...(canViewIdle && idle ? [{
       key: "ralenti",
-      label: "% del motor en ralentí",
+      label: "% de horas de motor en vacío",
       value: idle.idlePct === null ? "Sin dato" : formatPercent(idle.idlePct, 1),
       valueKind: idle.idlePct === null ? ("text" as const) : ("number" as const),
       hint: trendHint(idleDelta, "pp"),
@@ -366,11 +434,11 @@ export function DrivingSection({ idle, driving, period, canViewIdle }: {
   return (
     <DashboardSection
       id="ralenti-conduccion"
-      title="Ralentí y conducción"
+      title="Motor en vacío y conducción"
       links={links}
       coverage={
         <CoverageLine>
-          {`${idle ? `El ralentí sólo incluye equipos con telemetría VisionLink (${idle.vehicles}). ` : ""}Los viajes y las alertas, sólo equipos con Entel OnWay.`}
+          {`${idle ? `El motor en vacío sólo incluye equipos con telemetría VisionLink (${idle.vehicles}). ` : ""}Los viajes y las alertas, sólo equipos con Entel OnWay.`}
         </CoverageLine>
       }
       summary={drivingStats.length > 0 ? <SummaryBar numerals="sans" stats={drivingStats} /> : undefined}
@@ -378,21 +446,23 @@ export function DrivingSection({ idle, driving, period, canViewIdle }: {
         ...(canViewIdle && idle && idleData.some((point) => (point.workingHours ?? 0) + (point.idleHours ?? 0) > 0) ? [{
           key: "ralenti",
           kind: "one" as const,
-          node: <GpsIdleChart data={idleData} description={`Por mes · ${rangeText(period)} · telemetría VisionLink`} />,
+          node: <GpsIdleChart data={idleData} description={`Por mes · ${chartWindowCaption(chart, rangeText)} · telemetría VisionLink`} excel={excel?.chart} />,
         }] : []),
-        ...(driving && driving.trips.current > 0 ? [{
+        ...(driving && chartTrips > 0 ? [{
           key: "viajes",
           kind: "one" as const,
-          node: <GpsTripsChart data={tripData} totalTrips={driving.trips.current} granularity={period.granularity} description={`Por ${GRANULARITY_NOUN[period.granularity]} · ${rangeText(period)} · Entel OnWay`} />,
+          node: <GpsTripsChart data={tripData} totalTrips={chartTrips} granularity={chart.granularity} description={`Por ${GRANULARITY_NOUN[chart.granularity]} · ${chartWindowCaption(chart, rangeText)} · Entel OnWay`} excel={excel?.chart} />,
         }] : []),
-        ...(driving && Object.values(driving.alertTotals).some((count) => count > 0) ? [{
+        ...(driving && Object.values(alertChartTotals).some((count) => count > 0) ? [{
           key: "alertas",
           kind: "one" as const,
           node: (
             <GpsAlertsChart
               data={alertData}
-              totals={driving.alertTotals}
-              description={`Por ${driving.alertGranularity === "week" ? "semana" : "mes"} · ${rangeText(period)} · Entel OnWay · sin encendido, apagado ni movimiento`}
+              totals={alertChartTotals}
+              totalCaption={chart.isHistory ? `alertas en los últimos ${CHART_HISTORY_MONTHS} meses` : "alertas en el período"}
+              description={`Por ${driving.alertGranularity === "week" ? "semana" : "mes"} · ${chartWindowCaption(chart, rangeText)} · Entel OnWay · sin encendido, apagado ni movimiento`}
+              excel={excel?.chart}
             />
           ),
         }] : []),
@@ -402,17 +472,18 @@ export function DrivingSection({ idle, driving, period, canViewIdle }: {
           node: (
             <Ranking
               title="Equipos con más excesos de velocidad"
-              description={`Alertas de exceso de velocidad · ${rangeText(period)}`}
-              headline={sharePct(speedingTop.reduce((sum, row) => sum + row.count, 0), speedingTotal)}
-              caption={`de los excesos son de ${speedingTop.length} ${speedingTop.length === 1 ? "equipo" : "equipos"}`}
+              description={rankingScope("Alertas de exceso de velocidad", speedingTop.length, driving?.speedingVehicles ?? speedingTop.length, rangeText(period))}
+              headline={sharePct(speedingTop[0]!.count, speedingTotal)}
+              caption={`de los excesos son de ${leaderName(speedingTop[0]!)}`}
               items={speedingTop.map((row) => {
                 const { primary, secondary } = vehicleIdentityParts({ code: row.code, plate: row.plate, type: row.typeName })
-                return { key: row.vehicleId, label: primary, value: row.count, detail: secondary ?? undefined, href: `/flota/${row.vehicleId}` }
+                return { key: row.vehicleId, label: primary, value: row.count, detail: secondary ?? undefined, href: vehicleFichaHref(row.vehicleId) }
               })}
               unit=""
               ariaLabel="Equipos con más excesos de velocidad"
               dataHeaders={["Equipo", "Excesos"]}
               dataRows={speedingTop.map((row) => [row.code ?? row.plate, String(row.count)])}
+              excel={excel?.scope}
             />
           ),
         }] : []),

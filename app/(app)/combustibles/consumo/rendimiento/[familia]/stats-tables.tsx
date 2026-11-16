@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -125,7 +126,9 @@ export function EquipmentStatsTable({ rows: allRows, equipmentHref, clearFilters
       <EmptyState
         compact
         title="Sin equipos con cargas"
-        description="Ningún equipo de esta familia tiene cargas con estos filtros. Amplía el período, o quita la faena, el medio o el equipo elegido."
+        description={clearFiltersHref
+          ? "Ningún equipo de esta familia tiene cargas con estos filtros. Amplía el período, o quita la faena, el medio o el equipo elegido."
+          : "Ningún equipo de esta familia tiene cargas en el período. Elige un período más amplio en la cabecera."}
         action={clearFiltersHref ? <Button asChild variant="secondary" size="sm"><Link href={clearFiltersHref}>Quitar filtros</Link></Button> : undefined}
       />
     )
@@ -164,17 +167,12 @@ export function EquipmentStatsTable({ rows: allRows, equipmentHref, clearFilters
         <TableBody>
           {rows.map((row) => {
             const worse = row.worseThanModel || row.worseThanHistory
-            const label = row.code ?? row.plate
             const href = equipmentHref?.(row.vehicleId)
             return (
               <TableRow key={row.vehicleId}>
-                <TableCell className="whitespace-nowrap">
-                  {href ? (
-                    <Link href={href} className="font-medium text-[var(--color-text)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]" title="Abrir la ficha del equipo">
-                      {label}
-                    </Link>
-                  ) : <span className="font-medium">{label}</span>}
-                  {row.code ? <span className="block text-xs text-[var(--color-text-muted)]">{row.plate}</span> : null}
+                <TableCell>
+                  {/* La familia ya dice el tipo (camiones, maquinaria): la segunda línea es la patente. */}
+                  <VehicleIdentity code={row.code} plate={row.plate} href={href} linkLabel={`Abrir la ficha de ${row.code ?? row.plate}`} />
                 </TableCell>
                 <TableCell>{row.worksiteName ?? STAT_MISSING}</TableCell>
                 <TableCell>{[row.brand, row.model].filter(Boolean).join(" ") || STAT_MISSING}</TableCell>
@@ -225,7 +223,7 @@ export function EquipmentStatisticsTable({ rows }: { rows: EquipmentStatRow[] })
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.vehicleId}>
-              <TableCell className="whitespace-nowrap font-medium">{row.code ?? row.plate}{row.code ? <span className="block text-xs font-normal text-[var(--color-text-muted)]">{row.plate}</span> : null}</TableCell>
+              <TableCell><VehicleIdentity code={row.code} plate={row.plate} /></TableCell>
               <TableCell>{row.equipmentType ?? STAT_MISSING}</TableCell>
               <TableCell>{row.brand ?? STAT_MISSING}</TableCell>
               <TableCell><UnitAbbr unit={row.unit} /></TableCell>

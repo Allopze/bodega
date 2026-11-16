@@ -1,8 +1,8 @@
 import type * as React from "react"
 import type { Metadata } from "next"
 import Link from "next/link"
-import { notFound, redirect } from "next/navigation"
-import { ArrowSquareOut, CaretRight } from "@phosphor-icons/react/dist/ssr"
+import { notFound } from "next/navigation"
+import { CaretRight } from "@phosphor-icons/react/dist/ssr"
 import { SeverityBadge } from "@/app/(app)/analitica/analytics-ranking-table"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,7 +16,7 @@ import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
 import { settle } from "@/lib/async-settle"
-import { can, requirePermission } from "@/lib/auth/can"
+import { can } from "@/lib/auth/can"
 import { PERFORMANCE_FAMILY_LABELS, PERFORMANCE_FAMILY_SLUGS, PERFORMANCE_UNIT_LABELS, PERFORMANCE_UNIT_TITLES, STAT_MISSING } from "@/lib/combustibles/control/contracts"
 import { WORSE_PERFORMANCE_THRESHOLD_PCT } from "@/lib/combustibles/control/view-helpers"
 import { fuelSourcesHref } from "@/lib/combustibles/coverage-notice"
@@ -28,12 +28,14 @@ import type { EquipmentFile } from "@/lib/combustibles/equipment/types"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import { FUEL_PATHS, fuelLoadHref, fuelPerformanceHref } from "@/lib/combustibles/routes"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
-import { IdleDailyChartLazy } from "../../_components/charts/idle-charts-lazy"
-import { hrefInContext } from "../../_components/page-links"
-import { RegularityBadge } from "../../rendimiento/[familia]/stats-tables"
+import { IdleDailyChartLazy } from "@/app/(app)/combustibles/consumo/_components/charts/idle-charts-lazy"
+import { hrefInContext } from "@/app/(app)/combustibles/consumo/_components/page-links"
+import { RegularityBadge } from "@/app/(app)/combustibles/consumo/rendimiento/[familia]/stats-tables"
 import { EquipmentLitersChart } from "./equipment-liters-chart-lazy"
 import { EquipmentLoadsTable } from "./equipment-loads-table"
 import { EquipmentPerformanceChart } from "./equipment-performance-chart-lazy"
+import { openVehicleFichaArea } from "../_ficha/access"
+import { vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaTabs } from "../_ficha/ficha-chrome"
 
 export const metadata: Metadata = { title: "Equipo" }
 
@@ -50,10 +52,14 @@ function signedPct(value: number | null): string {
 
 const stat = (value: number | null) => (value === null ? STAT_MISSING : formatQty(value, undefined, { maximumFractionDigits: 2 }))
 
+/**
+ * Pestaña «Combustible» de la ficha única del vehículo (crítica 2026-11-15, paso 4a). Era la
+ * ficha de `/combustibles/consumo/equipos/[id]`, que ahora redirige aquí con su período. Pide
+ * `combustibles:view` y la faena del vehículo (`openVehicleFichaArea`), como pedía ella.
+ */
 export default async function FichaEquipoPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<SearchParams> }) {
-  let session
-  try { session = await requirePermission("combustibles:view", FUEL_PATHS.consumo) } catch { redirect("/forbidden") }
   const { id } = await params
+  const { session, ctx } = await openVehicleFichaArea(id, "combustible")
   const period = await resolveFuelPeriodForPage(session, await searchParams)
 
   // `null` si el equipo no existe o queda fuera de la faena de quien consulta: el mismo 404 en los dos casos.
@@ -70,25 +76,26 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
     : null
   const unitLabel = vehicle.unit ? PERFORMANCE_UNIT_LABELS[vehicle.unit] : null
   const inContext = (href: string) => hrefInContext(href, period)
-  const canSeeFlota = can(session, "flota:view")
+  // La marca y el modelo están en la pestaña Flota; aquí sólo para quien no la ve.
+  const showIdentity = !ctx.areas.includes("flota")
   const canExport = can(session, "combustibles:export")
-  const description = [vehicle.typeName, [vehicle.brand, vehicle.model].filter(Boolean).join(" "), vehicle.worksiteName].filter(Boolean).join(" · ")
   const familyHref = vehicle.family ? inContext(fuelPerformanceHref(PERFORMANCE_FAMILY_SLUGS[vehicle.family])) : null
 
   const stats = buildStats(file, { periodLabel: period.inLabel, motorHref: inContext(`${FUEL_PATHS.consumoMotorVacio}?equipo=${encodeURIComponent(vehicle.id)}`), sealsHref: inContext(`${FUEL_PATHS.cuadraturaSellos}?equipo=${encodeURIComponent(vehicle.id)}`) })
 
   return (
-    <PageContainer>
+    <PageContainer width="workbench">
       <PageHeader
-        title={vehicle.label}
-        description={description}
+        title={ctx.label}
+        description={vehicleFichaDescription(ctx)}
         breadcrumb={<FuelBreadcrumbs items={[
           { label: "Consumo", href: FUEL_PATHS.consumo },
           ...(familyHref && vehicle.family ? [{ label: `Rendimiento · ${PERFORMANCE_FAMILY_LABELS[vehicle.family]}`, href: familyHref }] : []),
-          { label: vehicle.label },
+          { label: ctx.label },
         ]} />}
-        actions={<FuelHeaderActions period={period} />}
+        actions={<><FuelHeaderActions period={period} /><VehicleFichaEditAction ctx={ctx} /></>}
       />
+      <VehicleFichaTabs ctx={ctx} active="combustible" />
       <DegradedDataBanner degraded={degraded} total={sourceCount} />
       {!vehicle.isActive ? <p className="mb-4"><Badge variant="neutral" size="sm">Equipo inactivo</Badge></p> : null}
 
@@ -152,24 +159,17 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
 
           <Card className="p-6" aria-labelledby="datos-title">
             <CardHeader className="p-0 pb-3">
-              <CardTitle id="datos-title" className="text-base">Datos del equipo</CardTitle>
+              <CardTitle id="datos-title" className="text-base">Cómo carga</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
-                <Fact label="Tipo" value={vehicle.typeName} />
-                <Fact label="Marca y modelo" value={[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || STAT_MISSING} />
-                <Fact label="Patente" value={vehicle.plate} mono />
-                <Fact label="Faena" value={vehicle.worksiteName} />
+                {/* El tipo, la patente y la faena van en la cabecera de la ficha. */}
+                {showIdentity ? <Fact label="Marca y modelo" value={[ctx.vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || STAT_MISSING} /> : null}
                 <Fact label="Medidor" value={METER_LABEL[vehicle.meterType]} />
                 <Fact label="Rinde en" value={vehicle.unit ? <abbr title={PERFORMANCE_UNIT_TITLES[vehicle.unit]} className="no-underline">{unitLabel}</abbr> : "No mide rendimiento"} />
                 <Fact label="Estanque" value={vehicle.tankCapacityLiters === null ? STAT_MISSING : `${formatQty(vehicle.tankCapacityLiters, undefined, { maximumFractionDigits: 0 })} L`} mono />
                 <Fact label="Proveedor habitual" value={vehicle.usualSupplierName ?? STAT_MISSING} />
               </dl>
-              {canSeeFlota ? (
-                <Link href={`/flota/${encodeURIComponent(vehicle.id)}`} className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-ink)] underline-offset-2 hover:underline">
-                  Ver la ficha en Flota <ArrowSquareOut size={14} aria-hidden />
-                </Link>
-              ) : null}
             </CardContent>
           </Card>
         </div>

@@ -29,7 +29,9 @@ export function WorksiteRanking({ rows, hrefForWorksite, clearFiltersHref }: { r
       <EmptyState
         compact
         title="Sin rendimientos calculados"
-        description="Ninguna faena tiene cargas con rendimiento calculado y sin decisión pendiente con estos filtros. Amplía el período o quita la faena."
+        description={clearFiltersHref
+          ? "Ninguna faena tiene cargas con rendimiento calculado y sin decisión pendiente con estos filtros. Amplía el período o quita la faena."
+          : "Ninguna faena tiene cargas con rendimiento calculado y sin decisión pendiente en el período. Elige un período más amplio en la cabecera."}
         action={clearFiltersHref ? <Button asChild variant="secondary" size="sm"><Link href={clearFiltersHref}>Quitar filtros</Link></Button> : undefined}
       />
     )

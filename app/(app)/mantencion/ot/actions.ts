@@ -13,6 +13,7 @@ import { createWorkOrder } from "@/lib/services/mantencion/work-orders/create"
 import { exportWorkOrders } from "@/lib/services/mantencion/work-orders/export"
 import { WORK_ORDER_TABS, type WorkOrderListFilters } from "@/lib/services/mantencion/work-orders/query"
 import type { ActionState } from "@/lib/validation/masters"
+import { revalidateVehicleFicha } from "@/lib/routing/revalidate-vehicle-ficha"
 
 /**
  * Acciones de la lista de órdenes de trabajo. Cada una pide su permiso en el
@@ -47,7 +48,7 @@ export async function createWorkOrderAction(_prev: ActionState, formData: FormDa
       return { ok: false, message: result.message, ...(result.field ? { fieldErrors: { [result.field]: [result.message] } } : {}) }
     }
     revalidatePath(PATH)
-    revalidatePath(`/mantencion/equipos/${parsed.data.vehicleId}`)
+    revalidateVehicleFicha(parsed.data.vehicleId)
     return { ok: true, message: `Orden ${result.value.folio} creada.`, data: { id: result.value.id, folio: result.value.folio } }
   } catch (error) {
     return actionErrorResult(error, "No se pudo crear la orden de trabajo. Inténtalo de nuevo.")

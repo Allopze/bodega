@@ -4,7 +4,8 @@ import type { VehiclePurchaseRecord } from "@/lib/services/vehicle-purchase-hist
 import type { MantGpsReadingSource } from "@/lib/mantencion/gps-estimate"
 import type { MantEquipmentState, MantEquipmentStatus, MantUnit } from "@/lib/mantencion/types"
 import type { EquipmentLifeData } from "./equipment-life-section"
-import type { EquipmentFormCatalogs, EquipmentFormValues } from "./equipment-form-types"
+import type { EquipmentFormCatalogs } from "./equipment-form-types"
+import type { EquipmentPlanFormValues } from "./equipment-plan-form"
 
 /** Lo que la ficha en modo lectura muestra del equipo, ya resuelto en el servidor. */
 export interface EquipmentDetailData {
@@ -53,8 +54,11 @@ export interface EquipmentDetailData {
   purchaseLinks: { canOpenRequests: boolean; canOpenOrders: boolean; canOpenSpareParts: boolean; newRequestHref: string | null }
 }
 
-/** Lo que hace falta para editar: sólo se carga si la persona puede administrar equipos. */
+/**
+ * Lo que hace falta para «Editar mantención» (pauta, lectura inicial y baja): sólo se carga si la
+ * persona puede administrar equipos. La identidad se edita en «Editar vehículo» (paso 4b).
+ */
 export interface EquipmentEditData {
-  catalogs: EquipmentFormCatalogs
-  initial: EquipmentFormValues
+  schedules: EquipmentFormCatalogs["schedules"]
+  initial: EquipmentPlanFormValues
 }

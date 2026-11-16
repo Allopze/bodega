@@ -21,6 +21,7 @@ import {
 import type { WorkOrderActor } from "@/lib/services/mantencion/work-orders/types"
 import { registerWorkOrderRecordFromWeb, webSyncContext } from "@/lib/services/mantencion/web-record"
 import type { Permission } from "@/modules/permissions"
+import { revalidateVehicleFicha } from "@/lib/routing/revalidate-vehicle-ficha"
 
 /**
  * Acciones sobre una OT existente. Cada una sigue el mismo camino:
@@ -52,7 +53,7 @@ async function run<T extends { workOrderId: string }>(
       revalidatePath(PATH)
       revalidatePath(`${PATH}/${workOrderId}`)
       const vehicleId = await workOrderVehicleId(workOrderId)
-      if (vehicleId) revalidatePath(`/mantencion/equipos/${vehicleId}`)
+      if (vehicleId) revalidateVehicleFicha(vehicleId)
     }
     return toActionState(result)
   } catch (error) {
@@ -130,7 +131,7 @@ export async function registerWorkOrderRecordAction(formData: FormData): Promise
     if (!result.ok) return { ok: false, message: result.message, ...(result.field ? { fieldErrors: { [result.field]: [result.message] } } : {}) }
     revalidatePath(PATH)
     revalidatePath(`${PATH}/${result.workOrderId}`)
-    revalidatePath(`/mantencion/equipos/${result.vehicleId}`)
+    revalidateVehicleFicha(result.vehicleId)
     revalidatePath("/mantencion/registros")
     revalidatePath("/mantencion/panel")
     return {

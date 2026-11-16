@@ -172,7 +172,7 @@ export function PeriodControlCore<P>({
       </Button>
       <Popover open={open} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
-          <button type="button" className="inline-flex h-11 min-w-[10.5rem] items-center justify-center gap-2 border-x border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)] hover:bg-[var(--color-surface-2)] sm:h-[34px]">
+          <button type="button" className="inline-flex h-11 min-w-[10.5rem] flex-1 items-center justify-center gap-2 border-x border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text)] hover:bg-[var(--color-surface-2)] sm:h-[34px]">
             <CalendarBlank aria-hidden="true" className="size-4 text-[var(--color-text-muted)]" />
             <span>{label}</span>
             <CaretDown aria-hidden="true" className="size-3.5 text-[var(--color-text-muted)]" />

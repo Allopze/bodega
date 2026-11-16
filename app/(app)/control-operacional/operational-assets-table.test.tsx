@@ -79,7 +79,7 @@ describe("OperationalAssetsTable", () => {
     render(<OperationalAssetsTable assets={[asset()]} {...props} />)
 
     const table = screen.getByRole("table", { name: "Activos operacionales" })
-    expect(within(table).getByRole("link", { name: "Combustible de KA-115" }).getAttribute("href")).toBe("/combustibles/consumo/equipos/v1")
+    expect(within(table).getByRole("link", { name: "Combustible de KA-115" }).getAttribute("href")).toBe("/flota/v1/combustible")
   })
 
   it("la tarjeta móvil lleva identidad, estado, seis datos y «Ver ficha»", () => {

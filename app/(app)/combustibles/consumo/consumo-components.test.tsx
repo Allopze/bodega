@@ -6,7 +6,7 @@ import type { WatchItem } from "@/lib/combustibles/consumption-watch"
 import { ConsumptionWatchList } from "../consumption-alerts"
 import { FuelOriginSummary } from "../fuel-control-overview"
 import { UrlFold } from "./_components/url-fold"
-import { EquipmentLoadsTable } from "./equipos/[id]/equipment-loads-table"
+import { EquipmentLoadsTable } from "@/app/(app)/flota/[id]/combustible/equipment-loads-table"
 
 vi.mock("next/link", () => ({ default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a> }))
 

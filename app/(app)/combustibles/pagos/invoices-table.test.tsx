@@ -12,7 +12,7 @@ import { InvoicesTable, type InvoiceRow } from "./invoices-table"
 const row: InvoiceRow = {
   id: "load-1", loadDate: "2026-10-28", serviceType: "TCT", product: "PETROLEO DIESEL", receiptNumber: "F-881204",
   odometerReading: 120_300, hourMeterReading: null, liters: 62, baseAmount: 78_210, iecTotal: 14_880, ivaAmount: 17_690, totalAmount: 110_780,
-  status: "registered", vehicle: { code: "CM-11", plate: "AA-BB-11" }, supplierName: "Copec", worksiteName: "Biodiversa",
+  status: "registered", vehicle: { code: "CM-11", plate: "AA-BB-11", type: "Camión" }, supplierName: "Copec", worksiteName: "Biodiversa",
 }
 
 function renderTable(rows: InvoiceRow[] = [row], totalItems = rows.length) {
@@ -67,14 +67,17 @@ describe("InvoicesTable", () => {
     expect(within(cards).getByRole("link", { name: /ver factura f-881204/i })).toBeInTheDocument()
   })
 
-  it("cuenta facturas (no cargas) y nombra el equipo como en las demás tablas: código arriba, medidor y patente debajo", () => {
+  it("cuenta facturas (no cargas) y nombra el equipo como en las demás tablas: código arriba, tipo y patente debajo, y el medidor rotulado aparte", () => {
     renderTable()
 
     expect(screen.getByText(/factura en esta lista/)).toBeInTheDocument()
     expect(screen.queryByText(/cargas? en esta lista/)).toBeNull()
     const table = screen.getByRole("table")
     expect(within(table).getByText("CM-11")).toHaveClass("font-mono")
-    expect(within(table).getByText("120.300 km · AA-BB-11")).toBeInTheDocument()
+    expect(within(table).getByText("Camión · AA-BB-11")).toBeInTheDocument()
+    // El medidor ya no ocupa el lugar del tipo (se leía como otro dato del equipo): va en su línea, con su rótulo.
+    expect(within(table).getByText("Medidor:")).toBeInTheDocument()
+    expect(within(table).getByText("120.300 km")).toHaveClass("font-mono")
   })
 
   it("el proveedor y el número de factura no se parten ni desbordan: una línea, con el nombre completo en un title", () => {

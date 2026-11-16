@@ -452,7 +452,7 @@ test.describe("E2E 7 · Pautas", () => {
     await asJefe(page)
     for (const id of [ids.eq1, ids.eq2, ids.im1]) {
       await page.goto(`/mantencion/equipos/${id}`)
-      await page.getByRole("button", { name: "Editar ficha", exact: true }).click()
+      await page.getByRole("button", { name: "Editar mantención", exact: true }).click()
       await page.getByRole("radio", { name: "Dado de baja", exact: true }).check()
       await page.getByRole("textbox", { name: "Motivo de la baja", exact: true }).fill("Equipo de prueba automática")
       await page.getByRole("button", { name: "Guardar cambios", exact: true }).click()

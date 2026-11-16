@@ -23,6 +23,7 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 import {
   ensureSystemRbac,
   GRANT_ADDITIONS,
+  PERMISSION_MIRRORS,
   SYSTEM_ROLE_PERMISSIONS,
   getUserCount,
   generateInvitationToken,
@@ -276,6 +277,39 @@ describe("auth bootstrap service", () => {
     expect(notDefault).toEqual([])
     const keys = GRANT_ADDITIONS.map((addition) => addition.key)
     expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  /*
+   * `flota:export` (decisión 2026-11-15) parte el Excel de Flota, que colgaba de `flota:view`.
+   * En producción un administrador pudo dar `flota:view` a otros roles o personas: al estrenarse,
+   * el permiso nuevo llega a todos ellos, una sola vez.
+   */
+  it("flota:export llega a todo rol y persona con flota:view, una sola vez", async () => {
+    const marker = `rbac:permission-mirror:${PERMISSION_MIRRORS[0].key}`
+    await ensureSystemRbac()
+    // Estado de producción antes del deploy: `flota:view` dado a mano a un rol fuera del manifiesto
+    // y a una persona; el permiso nuevo y la marca no existen.
+    await inMemoryDb.insert(schema.rolePermissions).values({ roleId: "rol-prev", permissionId: "p-flot-view" }).onConflictDoNothing()
+    await inMemoryDb.insert(schema.users).values({ id: "u-flota-qa", email: "qa-flota@example.cl", name: "QA Flota", hashedPassword: "x" }).onConflictDoNothing()
+    await inMemoryDb.insert(schema.userPermissions).values({ userId: "u-flota-qa", permissionId: "p-flot-view" }).onConflictDoNothing()
+    await inMemoryDb.delete(schema.rolePermissions).where(eq(schema.rolePermissions.permissionId, "p-flot-export"))
+    await inMemoryDb.delete(schema.userPermissions).where(eq(schema.userPermissions.permissionId, "p-flot-export"))
+    await inMemoryDb.delete(schema.permissions).where(eq(schema.permissions.id, "p-flot-export"))
+    await inMemoryDb.delete(schema.systemSettings).where(eq(schema.systemSettings.key, marker))
+
+    await ensureSystemRbac()
+    const roles = async () => (await inMemoryDb.select().from(schema.rolePermissions).where(eq(schema.rolePermissions.permissionId, "p-flot-export"))).map((row) => row.roleId).sort()
+    expect(await roles()).toEqual(expect.arrayContaining(["rol-admin", "rol-jefa", "rol-jefe-mant", "rol-prev"]))
+    const users = await inMemoryDb.select().from(schema.userPermissions).where(eq(schema.userPermissions.permissionId, "p-flot-export"))
+    expect(users.map((row) => row.userId)).toEqual(["u-flota-qa"])
+
+    // Después manda la UI: si se le quita al rol, el siguiente deploy no lo devuelve.
+    await inMemoryDb.delete(schema.rolePermissions).where(and(eq(schema.rolePermissions.roleId, "rol-prev"), eq(schema.rolePermissions.permissionId, "p-flot-export")))
+    await ensureSystemRbac()
+    expect(await roles()).not.toContain("rol-prev")
+    // Deja la BD como la encontró: la prueba de `getUserCount` parte sin usuarios.
+    await inMemoryDb.delete(schema.users).where(eq(schema.users.id, "u-flota-qa"))
+    await inMemoryDb.delete(schema.rolePermissions).where(and(eq(schema.rolePermissions.roleId, "rol-prev"), eq(schema.rolePermissions.permissionId, "p-flot-view")))
   })
 
   it("getUserCount returns user count accurately", async () => {

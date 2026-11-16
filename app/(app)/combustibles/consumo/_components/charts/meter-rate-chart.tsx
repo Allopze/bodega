@@ -89,7 +89,9 @@ export function MeterRateChart({ series }: { series: MeterRateSeries }) {
       role="img"
       aria-label={`Rendimiento por mes en ${unit}${first && last ? `, de ${first.label} a ${last.label}` : ""}, con la banda de ±${RATE_BAND_PCT} % del global; bajo cada mes, el número de tramos`}
     >
-      <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }} accessibilityLayer={false}>
+      {/* `right: 22`: con `interval={0}` el último mes va centrado sobre su punto, y con 12 px «Nov 26»
+          se salía del gráfico y se leía «Nov 2» a 390 px (crítica 2026-11-15). */}
+      <LineChart data={data} margin={{ top: 8, right: 22, left: 0, bottom: 0 }} accessibilityLayer={false}>
         <CartesianGrid vertical={false} strokeDasharray="2 5" />
         <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} height={40} tick={monthTick(data)} />
         <YAxis

@@ -116,12 +116,15 @@ test.describe("Panel de mantención: gráficos", () => {
     await esperarGraficos(page)
 
     const ordenes = page.getByRole("region", { name: "Órdenes de trabajo", exact: true })
-    await expect(ordenes.getByRole("link", { name: /OT abiertas/ })).toBeVisible()
+    // Las OT abiertas son el total del gráfico por estado: su cifra va en el titular del gráfico, no en la tira (A5, paso 5).
+    await expect(ordenes.getByRole("link", { name: /^OT abiertas/ })).toHaveCount(0)
+    await expect(ordenes.getByText(/OT abiertas?(,| están)/).first()).toBeVisible()
     await expect(ordenes.getByRole("link", { name: /OT cerradas en el período/ })).toBeVisible()
     await expect(ordenes.getByRole("link", { name: /Tiempo medio de reparación/ })).toBeVisible()
     await expect(ordenes.getByRole("link", { name: /Mano de obra y taller/ })).toBeVisible()
     // Las OT abiertas por estado son un gráfico de barras (la sembrada «Por asignar» cuenta una).
-    const porEstado = ordenes.getByRole("img", { name: /^OT abiertas hoy por estado/ })
+    // Con enlaces por estado el ranking es un grupo con nombre, no una imagen (paso 6: nada interactivo dentro de role=img).
+    const porEstado = ordenes.getByRole("group", { name: /^OT abiertas hoy por estado/ })
     await expect(porEstado).toBeVisible()
     await expect(ordenes.locator('[data-chart-kind="bars"]').first()).toBeVisible()
     // El titular del gráfico dice la cifra, y «Ver datos» trae la misma tabla en texto.
@@ -150,7 +153,11 @@ test.describe("Panel de mantención: gráficos", () => {
 
     // Los gráficos no llevan tarjetas de KPI, sólo la tira compacta de cada sección (la franja «Hoy» es aparte).
     await expect(page.locator("[data-kpi-card]")).toHaveCount(0)
-    const cifras = { "Órdenes de trabajo": 4, "Pautas y disponibilidad": 3 } as const
+    // Con el gráfico «OT abiertas hoy, por estado» a la vista, su total va en su titular y sale de la tira (A5,
+    // crítica 2026-11-15, paso 5): la sección de órdenes tiene entonces tres cifras y no cuatro.
+    const nombre = /^OT abiertas hoy por estado/
+    const porEstado = await page.getByRole("img", { name: nombre }).or(page.getByRole("group", { name: nombre })).count()
+    const cifras = { "Órdenes de trabajo": porEstado > 0 ? 3 : 4, "Pautas y disponibilidad": 3 } as const
     for (const [region, esperadas] of Object.entries(cifras)) {
       const seccion = page.getByRole("region", { name: region, exact: true })
       const destinos = await seccion.locator("a[data-pressable]").evaluateAll((links) => links.map((link) => link.getAttribute("href")))

@@ -1,7 +1,7 @@
 import { FLEET_STOPPED_FILTER } from "@/lib/fleet-overview-filters"
 import { countOf, formatQty } from "@/lib/utils"
 import type { OperationalAttention } from "@/lib/services/operational-control"
-import { FUEL_INBOX_KINDS, type FuelInboxKind } from "@/lib/combustibles/inbox/types"
+import { FUEL_INBOX_ACTION_KINDS, FUEL_INBOX_KINDS, type FuelInboxKind } from "@/lib/combustibles/inbox/types"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 /**
@@ -147,8 +147,8 @@ const FUEL_KIND_PHRASES: Record<FuelInboxKind, { singular: string; plural: strin
   pedido: { singular: "pedido de revisión", plural: "pedidos de revisión", label: "Pedidos de revisión" },
 }
 
-/** Las colas que una persona resuelve con un gesto; los casos abiertos son seguimiento y van aparte. */
-const FUEL_ACTION_KINDS = ["carga", "patente", "pedido"] as const satisfies readonly FuelInboxKind[]
+/** Las colas que una persona resuelve con un gesto; los casos abiertos son seguimiento y van aparte (definición única del área). */
+const FUEL_ACTION_KINDS = FUEL_INBOX_ACTION_KINDS
 
 /** El seguimiento de casos abiertos: en prod son mayormente meses cerrados, no trabajo del día. */
 const FUEL_FOLLOW_UP_PHRASE = { singular: "caso en seguimiento", plural: "casos en seguimiento" }

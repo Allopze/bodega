@@ -12,7 +12,7 @@ import {
   useTooltipProps,
 } from "@/components/ui/chart-interactions"
 import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "@/components/charts/chart-frame"
-import { ChartDataTable } from "@/components/charts/chart-data-table"
+import { ChartDataTable, type ChartDataExcel } from "@/components/charts/chart-data-table"
 import {
   InteractiveLegend,
   SERIES_FADE_CLASS,
@@ -27,6 +27,7 @@ import { CHART_COLORS } from "@/lib/chart-palette"
 import { formatCompactQty, formatPercent, formatQty } from "@/lib/utils"
 import { GPS_ALERT_CLASS_LABELS, type CountedGpsAlertClass } from "@/lib/services/fleet-gps-alert-class"
 import type { IndicatorGranularity } from "@/lib/indicators/period"
+import { ongoingAbovePeak, ongoingPeakClause } from "@/lib/indicators/peak"
 import { peakBucket, peakPhrase } from "./gps-format"
 
 /*
@@ -65,7 +66,7 @@ const usageConfig = {
   hours: { label: "Horas de motor", color: CHART_COLORS.blue },
 } satisfies ChartConfig
 
-export function GpsUsageChart({ data, description, granularity }: { data: GpsUsagePoint[]; description: string; granularity: IndicatorGranularity }) {
+export function GpsUsageChart({ data, description, granularity, excel }: { data: GpsUsagePoint[]; description: string; granularity: IndicatorGranularity; excel?: ChartDataExcel }) {
   const motion = useChartMotion()
   const tooltip = useTooltipProps()
   const active = useActiveIndex()
@@ -80,6 +81,8 @@ export function GpsUsageChart({ data, description, granularity }: { data: GpsUsa
   const at = active.activeIndex === null ? undefined : data[Math.min(active.activeIndex, data.length - 1)]
   const partialFrom = data.findIndex((point) => point.partial === true)
   const peak = peakBucket(data, (point) => (hasKm ? point.km : point.hours))
+  // El tramo en curso que ya supera a todos los cerrados se dice (crítica 2026-11-15, paso 5).
+  const ongoing = ongoingAbovePeak(data, (point) => (hasKm ? point.km : point.hours))
   const legend: LegendEntry[] = [
     ...(hasKm ? [{ key: "km", label: "Km", color: CHART_COLORS.brand, swatch: "box" as const, value: at ? num(at.km, 1) : undefined }] : []),
     ...(hasHours ? [{ key: "hours", label: "Horas de motor", color: CHART_COLORS.blue, value: at ? num(at.hours, 1) : undefined }] : []),
@@ -103,6 +106,11 @@ export function GpsUsageChart({ data, description, granularity }: { data: GpsUsa
               <ChartHeadlineCaption>horas de motor</ChartHeadlineCaption>
             </>
           )}
+        </>
+      ) : ongoing ? (
+        <>
+          <ChartHeadlineValue>{num(ongoing.value)}</ChartHeadlineValue>
+          <ChartHeadlineCaption>{`${hasKm ? "km" : "horas de motor"} ${peakPhrase(ongoing.point.label, granularity)}${ongoingPeakClause(granularity)}`}</ChartHeadlineCaption>
         </>
       ) : peak ? (
         <>
@@ -160,12 +168,13 @@ export function GpsUsageChart({ data, description, granularity }: { data: GpsUsa
         caption="Km recorridos y horas de motor por período"
         headers={["Período", "Km", "Horas de motor"]}
         rows={data.map((point) => [point.label, num(point.km, 1), num(point.hours, 1)])}
+        excel={excel}
       />
     </ChartFrame>
   )
 }
 
-// ── Horas de trabajo y ralentí (VisionLink) ──────────────────────────────────
+// ── Horas de motor: trabajo y en vacío (VisionLink) ──────────────────────────────────
 
 export interface GpsIdlePoint {
   key: string
@@ -173,7 +182,7 @@ export interface GpsIdlePoint {
   /** `null`: el mes no tiene telemetría (un hueco, no un cero). */
   workingHours: number | null
   idleHours: number | null
-  /** El mes en curso: no compite por «el mes de más ralentí». */
+  /** El mes en curso: no compite por «el mes con más vacío». */
   partial?: boolean
 }
 
@@ -185,10 +194,10 @@ function idlePctOf(point: GpsIdlePoint): number | null {
 
 const idleConfig = {
   workingHours: { label: "Trabajo", color: CHART_COLORS.brand },
-  idleHours: { label: "Ralentí", color: CHART_COLORS.amber },
+  idleHours: { label: "En vacío", color: CHART_COLORS.amber },
 } satisfies ChartConfig
 
-export function GpsIdleChart({ data, description }: { data: GpsIdlePoint[]; description: string }) {
+export function GpsIdleChart({ data, description, excel }: { data: GpsIdlePoint[]; description: string; excel?: ChartDataExcel }) {
   const motion = useChartMotion()
   const tooltip = useTooltipProps()
   const active = useActiveIndex()
@@ -201,27 +210,27 @@ export function GpsIdleChart({ data, description }: { data: GpsIdlePoint[]; desc
   const peak = peakBucket(data, idlePctOf)
   const legend: LegendEntry[] = [
     { key: "workingHours", label: "Trabajo", color: CHART_COLORS.brand, swatch: "box", value: at ? (at.workingHours == null ? "—" : `${num(at.workingHours, 0)} h`) : undefined },
-    { key: "idleHours", label: "Ralentí", color: CHART_COLORS.amber, swatch: "box", value: at ? (at.idleHours == null ? "—" : `${num(at.idleHours, 0)} h`) : undefined },
+    { key: "idleHours", label: "En vacío", color: CHART_COLORS.amber, swatch: "box", value: at ? (at.idleHours == null ? "—" : `${num(at.idleHours, 0)} h`) : undefined },
   ]
 
   return (
     <ChartFrame
-      title="Horas de trabajo y ralentí"
+      title="Horas de motor: trabajo y en vacío"
       description={description}
       headline={at ? (
         <>
           <ChartHeadlineValue>{atPct == null ? "—" : formatPercent(atPct, 1)}</ChartHeadlineValue>
-          <ChartHeadlineCaption>{`del motor en ralentí · ${at.label}`}</ChartHeadlineCaption>
+          <ChartHeadlineCaption>{`de las horas de motor fue en vacío · ${at.label}`}</ChartHeadlineCaption>
         </>
       ) : peak ? (
         <>
           <ChartHeadlineValue>{formatPercent(peak.value, 1)}</ChartHeadlineValue>
-          <ChartHeadlineCaption>{`del motor en ralentí ${peakPhrase(peak.point.label, "month")}, el mes de más ralentí`}</ChartHeadlineCaption>
+          <ChartHeadlineCaption>{`de las horas de motor fue en vacío ${peakPhrase(peak.point.label, "month")}, el mes con más vacío`}</ChartHeadlineCaption>
         </>
       ) : undefined}
     >
       <ChartContainer config={idleConfig} className="h-60 w-full" data-chart-kind="bars">
-        <BarChart accessibilityLayer aria-label="Horas de trabajo y de ralentí por mes" data={data} margin={{ top: 12, right: 0, left: 0, bottom: 0 }}>
+        <BarChart accessibilityLayer aria-label="Horas de motor por mes: trabajo y en vacío" data={data} margin={{ top: 12, right: 0, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
           <ChartActiveSync labels={data.map((row) => row.label)} onIndex={active.setActiveIndex} />
@@ -230,7 +239,7 @@ export function GpsIdleChart({ data, description }: { data: GpsIdlePoint[]; desc
             {...tooltip}
             filterNull={false}
             cursor={<ColumnHoverCursor />}
-            content={<ChartTooltipCard names={{ workingHours: "Trabajo (h)", idleHours: "Ralentí (h)" }} />}
+            content={<ChartTooltipCard names={{ workingHours: "Trabajo (h)", idleHours: "En vacío (h)" }} />}
           />
           <Bar
             dataKey="workingHours"
@@ -243,7 +252,7 @@ export function GpsIdleChart({ data, description }: { data: GpsIdlePoint[]; desc
           />
           <Bar
             dataKey="idleHours"
-            name="Ralentí"
+            name="En vacío"
             stackId="hours"
             fill={CHART_COLORS.amber}
             radius={[4, 4, 0, 0]}
@@ -253,10 +262,10 @@ export function GpsIdleChart({ data, description }: { data: GpsIdlePoint[]; desc
           />
         </BarChart>
       </ChartContainer>
-      <InteractiveLegend entries={legend} focus={focus} label="Series de horas de trabajo y ralentí" />
+      <InteractiveLegend entries={legend} focus={focus} label="Series de horas de motor" />
       <ChartDataTable
-        caption="Horas de trabajo y ralentí por mes"
-        headers={["Mes", "Trabajo (h)", "Ralentí (h)", "% en ralentí"]}
+        caption="Horas de motor por mes: trabajo y en vacío"
+        headers={["Mes", "Trabajo (h)", "En vacío (h)", "% en vacío"]}
         rows={data.map((point) => {
           const total = (point.workingHours ?? 0) + (point.idleHours ?? 0)
           return [
@@ -266,6 +275,7 @@ export function GpsIdleChart({ data, description }: { data: GpsIdlePoint[]; desc
             point.idleHours != null && total > 0 ? formatPercent((point.idleHours / total) * 100, 1) : "—",
           ]
         })}
+        excel={excel}
       />
     </ChartFrame>
   )
@@ -287,7 +297,7 @@ const tripConfig = {
   avgKm: { label: "Km por viaje", color: CHART_COLORS.slate },
 } satisfies ChartConfig
 
-export function GpsTripsChart({ data, description, totalTrips, granularity }: { data: GpsTripPoint[]; description: string; totalTrips: number; granularity: IndicatorGranularity }) {
+export function GpsTripsChart({ data, description, totalTrips, granularity, excel }: { data: GpsTripPoint[]; description: string; totalTrips: number; granularity: IndicatorGranularity; excel?: ChartDataExcel }) {
   const motion = useChartMotion()
   const tooltip = useTooltipProps()
   const active = useActiveIndex()
@@ -298,6 +308,7 @@ export function GpsTripsChart({ data, description, totalTrips, granularity }: { 
   const at = active.activeIndex === null ? undefined : data[Math.min(active.activeIndex, data.length - 1)]
   const partialFrom = data.findIndex((point) => point.partial === true)
   const peak = peakBucket(data, (point) => point.trips)
+  const ongoing = ongoingAbovePeak(data, (point) => point.trips)
   const legend: LegendEntry[] = [
     { key: "trips", label: "Viajes", color: CHART_COLORS.teal, swatch: "box", value: at ? num(at.trips) : undefined },
     { key: "avgKm", label: "Km por viaje", color: CHART_COLORS.slate, value: at ? (at.avgKm == null ? "—" : num(at.avgKm, 1)) : undefined },
@@ -311,6 +322,11 @@ export function GpsTripsChart({ data, description, totalTrips, granularity }: { 
         <>
           <ChartHeadlineValue>{num(at.trips)}</ChartHeadlineValue>
           <ChartHeadlineCaption>{`viajes · ${at.label}`}</ChartHeadlineCaption>
+        </>
+      ) : ongoing ? (
+        <>
+          <ChartHeadlineValue>{num(ongoing.value)}</ChartHeadlineValue>
+          <ChartHeadlineCaption>{`viajes ${peakPhrase(ongoing.point.label, granularity)}${ongoingPeakClause(granularity)}`}</ChartHeadlineCaption>
         </>
       ) : peak ? (
         <>
@@ -364,6 +380,7 @@ export function GpsTripsChart({ data, description, totalTrips, granularity }: { 
         caption="Viajes y km por viaje por período"
         headers={["Período", "Viajes", "Km por viaje"]}
         rows={data.map((point) => [point.label, num(point.trips), point.avgKm == null ? "—" : num(point.avgKm, 1)])}
+        excel={excel}
       />
     </ChartFrame>
   )
@@ -390,7 +407,15 @@ const ALERT_COLORS: Record<CountedGpsAlertClass, string> = {
 }
 const ALERT_ORDER: CountedGpsAlertClass[] = ["speeding", "harsh_driving", "pothole", "idle", "other"]
 
-export function GpsAlertsChart({ data, description, totals }: { data: GpsAlertPoint[]; description: string; totals: Record<CountedGpsAlertClass, number> }) {
+export function GpsAlertsChart({ data, description, totals, totalCaption = "alertas en el período", excel }: {
+  data: GpsAlertPoint[]
+  description: string
+  excel?: ChartDataExcel
+  /** Total por clase de la ventana que dibuja el gráfico (la suma de sus baldes). */
+  totals: Record<CountedGpsAlertClass, number>
+  /** Cómo se llama el total de la cabecera en reposo: el período o, con historia, la ventana. */
+  totalCaption?: string
+}) {
   const motion = useChartMotion()
   const tooltip = useTooltipProps()
   const active = useActiveIndex()
@@ -421,7 +446,7 @@ export function GpsAlertsChart({ data, description, totals }: { data: GpsAlertPo
       headline={
         <>
           <ChartHeadlineValue>{num(atTotal ?? total)}</ChartHeadlineValue>
-          <ChartHeadlineCaption>{at ? `alertas · ${at.title}` : "alertas en el período"}</ChartHeadlineCaption>
+          <ChartHeadlineCaption>{at ? `alertas · ${at.title}` : totalCaption}</ChartHeadlineCaption>
         </>
       }
     >
@@ -456,6 +481,7 @@ export function GpsAlertsChart({ data, description, totals }: { data: GpsAlertPo
         caption="Alertas de conducción por clase y período"
         headers={["Período", ...classes.map((cls) => GPS_ALERT_CLASS_LABELS[cls])]}
         rows={data.map((point) => [point.title, ...classes.map((cls) => num(point.counts[cls]))])}
+        excel={excel}
       />
     </ChartFrame>
   )

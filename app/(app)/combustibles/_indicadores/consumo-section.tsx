@@ -32,7 +32,8 @@ import {
   topShare,
   windowCaption,
 } from "@/lib/combustibles/indicators/view"
-import { buildPanelFigures, variationLabel, type PanelFigure } from "@/lib/combustibles/panel/figures"
+import { buildPanelFigures, incompleteSourceNote, variationLabel, type PanelFigure } from "@/lib/combustibles/panel/figures"
+import { getFuelSourceStatuses, type FuelSourceStatus } from "@/lib/combustibles/sources-status"
 import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
 import { FUEL_PATHS, fuelPerformanceHref } from "@/lib/combustibles/routes"
 import { formatCLP, formatQty } from "@/lib/utils"
@@ -49,14 +50,19 @@ function variationHint(pct: number, versus: string): string {
   return `${sign}${formatQty(Math.abs(pct), undefined, { maximumFractionDigits: 0 })} % ${versus}`
 }
 
-/** Una cifra de litros o de rendimiento desde las cifras del Panel: sin dato dice qué falta, nunca un cero ni «—». */
-function figureStat({ figure, key, label, detail, icon, href }: {
+/**
+ * Una cifra de litros o de rendimiento desde las cifras del Panel: sin dato dice qué falta, nunca
+ * un cero ni «—». `notComparable` reemplaza la variación cuando una fuente no trae datos hasta el
+ * día que se compara: la caída sería de la fuente, no de las cargas.
+ */
+function figureStat({ figure, key, label, detail, icon, href, notComparable = null }: {
   figure: PanelFigure
   key: string
   label: string
   detail: string
   icon: ReactNode
   href: string
+  notComparable?: string | null
 }): SummaryStat {
   if (figure.value === null) return { key, label, icon, href, value: figure.emptyHint, valueKind: "text" }
   return {
@@ -65,7 +71,7 @@ function figureStat({ figure, key, label, detail, icon, href }: {
     icon,
     href,
     value: `${figure.value} ${figure.unit}`,
-    hint: figure.variation ? variationHint(figure.variation.pct, variationLabel(figure.variation)) : undefined,
+    hint: notComparable ?? (figure.variation ? variationHint(figure.variation.pct, variationLabel(figure.variation)) : undefined),
     secondary: detail,
   }
 }
@@ -90,7 +96,7 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
   const sourcesHref = fuelSourcesHref(session)
 
   const { track, degraded, total } = createSourceTracker("combustibles/panel/consumo")
-  const [figuresRaw, ledger, monthly, byWorksite, byType, coverage, anyLoads] = await Promise.all([
+  const [figuresRaw, ledger, monthly, byWorksite, byType, coverage, anyLoads, copec] = await Promise.all([
     track(getIndicatorFigures(session, period, { worksiteId }), null, "cifras del período"),
     // Sin `view_costs` el libro no se dibuja en ninguna parte: no se consulta ni entra al aviso de degradados.
     canViewCosts
@@ -101,6 +107,8 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
     track(getLitersByEquipmentType(session, dayFilters), null, "litros por tipo de equipo"),
     track(getFuelProviderCoverageGaps(session, windows.chart.monthKeys, { worksiteId }), { gapMonths: [], partialMonths: [] }, "cobertura del proveedor"),
     track(hasAnyLoads(session), true, "cargas en el alcance"),
+    // Hasta qué día trae datos Copec: sin él, una sincronización atrasada se leía como caída de litros.
+    track(getFuelSourceStatuses(session, period, { keys: ["copec"] }), [] as FuelSourceStatus[], "estado de Copec"),
   ])
 
   const withPeriod = (href: string, faena = worksiteId) => hrefInContext(href, period, faena)
@@ -183,6 +191,7 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
   if (figures) {
     stats.push(figureStat({
       figure: figures.liters,
+      notComparable: figures.liters.variation ? incompleteSourceNote(copec.data[0] ?? null, period) : null,
       key: "litros",
       label: "Litros cargados",
       detail: `${equipmentCount(figures.equipmentCount)} · ${figures.liters.hint ?? period.label}`,
@@ -289,7 +298,7 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
                 span={typeSpan}
                 title="Litros por tipo de equipo"
                 description={`${period.label} · cargas de equipos`}
-                headline={typeTop ? { value: `${formatQty(typeTop.sharePct, undefined, { maximumFractionDigits: 0 })} %`, caption: `de los litros lo cargaron ${typeTop.label.toLowerCase()}` } : undefined}
+                headline={typeTop ? { value: `${formatQty(typeTop.sharePct, undefined, { maximumFractionDigits: 0 })} %`, caption: `de los litros fueron para equipos tipo ${typeTop.label.toLowerCase()}` } : undefined}
                 ariaLabel="Litros por tipo de equipo en el período"
                 items={typeRows.map((row) => ({ key: row.typeId ?? "_none", label: row.name, value: row.liters, detail: equipmentCount(row.equipment) }))}
                 table={{

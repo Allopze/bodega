@@ -29,7 +29,7 @@ vi.mock("@/db", () => ({
 
 const { getUserRbacById } = await import("@/lib/auth/rbac")
 const { recordVisibility, recordVisibilitySql, viewerFromSession } = await import("@/lib/services/mantencion/access")
-const { loadEquipmentInsurance, loadLifeRows, loadLifeTotals, insuranceState, INSURANCE_WARNING_DAYS } = await import("@/lib/services/mantencion/equipment-life")
+const { loadEquipmentInsurance, loadLifeRows, loadLifeTotals, loadOpenWorkOrdersSummary, insuranceState, INSURANCE_WARNING_DAYS } = await import("@/lib/services/mantencion/equipment-life")
 const { expiryState } = await import("@/lib/expiry")
 const { exportEquipmentHistory } = await import("@/lib/services/mantencion/export-equipment-history")
 
@@ -257,5 +257,39 @@ describe("libro de Excel del historial", () => {
     const exports = rows.filter((row) => row.action === "export" && row.entityId === IDS.truckBio)
     expect(exports.length).toBeGreaterThanOrEqual(2)
     expect(exports[0]).toMatchObject({ entityCode: "KA-135", userId: IDS.jefe })
+  })
+})
+
+describe("Resumen de la ficha del vehículo: OT abiertas", () => {
+  const snapshot = { code: "KA-135", plate: "ABCD-12", noPlate: false, type: "Camión", brand: "Volvo", model: "FH", year: 2020, worksite: "Biodiversa", unit: "km" }
+  const order = (id: string, status: string, createdAt: string, extra: Record<string, unknown> = {}) => ({
+    id, folio: `OT-BIO-${id}`, vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, equipmentSnapshot: snapshot,
+    repair: true, repairDescription: "Falla de frenos", requestDate: daysAgo(10), requestedByUserId: IDS.jefe, requesterName: "Alexis Morales",
+    status, createdAt, ...extra,
+  })
+
+  beforeAll(async () => {
+    await testDb.insert(schema.mantWorkOrders).values([
+      // La anulada es la más reciente: si contara, sería «la más reciente».
+      order("0002", "anulada", "2026-10-25T12:00:00.000Z", { voidedAt: "2026-10-26T12:00:00.000Z", voidedByUserId: IDS.jefe, voidReason: "Pedida por error" }),
+      order("0003", "solicitada", "2026-10-10T12:00:00.000Z"),
+      order("0004", "asignada", "2026-10-20T12:00:00.000Z", { assignedToUserId: IDS.mecBio, assignedByUserId: IDS.jefe, assignedAt: "2026-10-20T13:00:00.000Z" }),
+    ] as never)
+  })
+
+  const summaryAs = async (userId: string) => loadOpenWorkOrdersSummary(IDS.truckBio, viewerFromSession(await sessionOf(userId)))
+
+  it("cuenta sólo las abiertas (una anulada no cuenta) y nombra la más reciente", async () => {
+    const summary = await summaryAs(IDS.jefe)
+    expect(summary).toMatchObject({ count: 2, latest: { folio: "OT-BIO-0004", status: "asignada" } })
+  })
+
+  it("respeta el alcance de OT: la administración de contrato de otra faena no las ve", async () => {
+    expect(await summaryAs(IDS.adminBio)).toMatchObject({ count: 2 })
+    expect(await summaryAs(IDS.adminCho)).toEqual({ count: 0, latest: null })
+  })
+
+  it("sin permiso de OT no dice «sin órdenes abiertas»: no las menciona", async () => {
+    expect(await summaryAs(IDS.plain)).toBeNull()
   })
 })

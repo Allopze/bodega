@@ -50,7 +50,7 @@ describe("buildCargaRowHrefs: los enlaces de una fila de Cargas", () => {
   it("la ficha, el equipo y el historial de un registro en terreno quedan como antes", () => {
     const hrefs = buildCargaRowHrefs(TAE, ALL)
     expect(hrefs.detail).toBe("/combustibles/cargas/terreno/tae-1?periodo=2026-10&faena=w-1")
-    expect(hrefs.equipment).toBe("/combustibles/consumo/equipos/veh-1?periodo=2026-10&faena=w-1")
+    expect(hrefs.equipment).toBe("/flota/veh-1/combustible?periodo=2026-10&faena=w-1")
     expect(hrefs.history).toBe("/combustibles/cargas/terreno/tae-1/historial?periodo=2026-10&faena=w-1")
   })
 

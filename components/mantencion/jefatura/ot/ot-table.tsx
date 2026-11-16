@@ -60,6 +60,8 @@ export function OtTable({ rows }: { rows: WorkOrderListRow[] }) {
         {rows.map((row) => (
           <li key={row.id}>
             <ResponsiveDataListCard
+              // La lista es el contenido de la página: sus tarjetas cuelgan del h1 (paso 6).
+              headingLevel={2}
               title={<span className="font-mono text-sm font-semibold">{row.folio}</span>}
               description={<>{equipmentText(row)} · {row.worksiteName}</>}
               status={<MetaBadge meta={OT_STATE_META[row.status]} size="sm" />}
@@ -69,14 +71,23 @@ export function OtTable({ rows }: { rows: WorkOrderListRow[] }) {
                 </Button>
               )}
             >
+              {/* Sólo los datos que la OT ya tiene: una «Por asignar» mostraba tres campos con «—»
+                  (crítica 2026-11-15, paso 7). La tabla de escritorio conserva todas las columnas. */}
               <ResponsiveDataListField label="Tipo"><span className="text-[var(--color-text)]">{workOrderTypeText(row)}</span></ResponsiveDataListField>
               <ResponsiveDataListField label="Mecánico"><span className="text-[var(--color-text)]">{row.assignedToName ?? "Sin asignar"}</span></ResponsiveDataListField>
-              <ResponsiveDataListField label="Ingreso">
-                <span className="whitespace-nowrap font-mono tabular-nums text-[var(--color-text)]">{row.workshopEntryAt ? formatDateTime(row.workshopEntryAt) : "—"}</span>
-              </ResponsiveDataListField>
-              <ResponsiveDataListField label="Entrega estimada"><EstimateCell row={row} /></ResponsiveDataListField>
-              <ResponsiveDataListField label="Días en taller"><span className="text-[var(--color-text)]">{daysText(row)}</span></ResponsiveDataListField>
+              {row.workshopEntryAt && (
+                <ResponsiveDataListField label="Ingreso">
+                  <span className="whitespace-nowrap font-mono tabular-nums text-[var(--color-text)]">{formatDateTime(row.workshopEntryAt)}</span>
+                </ResponsiveDataListField>
+              )}
+              {row.estimatedDeliveryDate && <ResponsiveDataListField label="Entrega estimada"><EstimateCell row={row} /></ResponsiveDataListField>}
+              {row.daysInWorkshop != null && <ResponsiveDataListField label="Días en taller"><span className="text-[var(--color-text)]">{daysText(row)}</span></ResponsiveDataListField>}
               {row.waitingParts && <ResponsiveDataListField label="Repuestos"><WaitingPartsNote /></ResponsiveDataListField>}
+              {row.rejectionCount > 0 && row.status !== "cerrada" && row.status !== "anulada" && (
+                <ResponsiveDataListField label="Devuelta">
+                  <span className="font-medium text-[var(--color-signal-ink)]">{row.rejectionCount === 1 ? "1 vez" : `${row.rejectionCount} veces`}</span>
+                </ResponsiveDataListField>
+              )}
             </ResponsiveDataListCard>
           </li>
         ))}
@@ -109,7 +120,7 @@ export function OtTable({ rows }: { rows: WorkOrderListRow[] }) {
                     {row.folio}
                   </Link>
                 </TableCell>
-                <TableCell><VehicleIdentity code={row.equipmentCode} plate={row.equipmentPlate} /></TableCell>
+                <TableCell><VehicleIdentity code={row.equipmentCode} plate={row.equipmentPlate} type={row.equipmentType} /></TableCell>
                 <TableCell>{row.worksiteName}</TableCell>
                 <TableCell className="whitespace-nowrap">{workOrderTypeText(row)}</TableCell>
                 <TableCell><StatusCell row={row} /></TableCell>

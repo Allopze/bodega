@@ -3,8 +3,8 @@ import { deltaPct, globalRatio } from "@/lib/combustibles/control/view-helpers"
 import { fuelPeriodLabels, previousFuelPeriods } from "@/lib/combustibles/period/parse"
 import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
 import type { DeltaPolarity } from "@/components/ui/delta"
-import { formatQty, pluralize, todayInChile } from "@/lib/utils"
-import { elapsedPeriodDays, formatPercentText, historyLabel, periodLengthDays } from "./format"
+import { addDaysToPlainDate, formatQty, pluralize, todayInChile } from "@/lib/utils"
+import { elapsedPeriodDays, formatPercentText, formatShortDay, historyLabel, periodLengthDays } from "./format"
 
 /**
  * «El período en tres cifras» del Panel: litros cargados, kilómetros por litro de
@@ -104,6 +104,30 @@ export function variationSentence(variation: PanelFigureVariation): string {
   const versus = variation.partialDays === null ? `en ${variation.versus}` : `en ${sameSpan(variation.partialDays)} de ${variation.versus}`
   if (variation.pct === 0) return `igual que ${versus}`
   return `${formatPercentText(Math.abs(variation.pct), 0)} ${variation.pct > 0 ? "más" : "menos"} que ${versus}`
+}
+
+/**
+ * Por qué la cifra de litros no se compara, o `null` si se puede comparar. Los litros miden lo
+ * que llegó, no lo que se cargó: si una fuente del período todavía no trae datos hasta el día
+ * que se compara, la caída es de la fuente. La crítica de Control operacional (2026-11-15,
+ * paso 5) vio «1.684 L −94 % vs. los mismos 14 días de octubre» con Copec sin sincronizar hace
+ * 12 días.
+ *
+ * Se compara hasta el último día del período (cerrado) o hasta hoy (en curso). Un día de atraso
+ * es lo normal de la sincronización —la misma tolerancia con la que «Fuentes de datos» la da por
+ * «Hasta ayer»—; `completeUntil` nulo (la fuente no lo sabe) no anula nada.
+ */
+export function incompleteSourceNote(
+  source: { name: string; completeUntil?: string | null } | null,
+  period: Pick<ResolvedFuelPeriod, "from" | "to" | "status">,
+  today = todayInChile(),
+): string | null {
+  if (!source?.completeUntil) return null
+  const inProgress = period.status === "en_curso"
+  const comparedUntil = inProgress ? addDaysToPlainDate(period.from, elapsedPeriodDays(period.from, period.to, today) - 1) : period.to
+  const required = inProgress ? addDaysToPlainDate(comparedUntil, -1) : comparedUntil
+  if (source.completeUntil >= required) return null
+  return `No se compara: ${source.name} trae datos hasta el ${formatShortDay(source.completeUntil, today)}`
 }
 
 function excludedNote(count: number): string | null {

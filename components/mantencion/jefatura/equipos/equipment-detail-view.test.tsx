@@ -13,7 +13,7 @@ vi.mock("@/components/ui/page-header", () => ({
   PageHeader: ({ title, actions }: { title: string; actions?: React.ReactNode }) => <header><h1>{title}</h1>{actions}</header>,
 }))
 // Las acciones de servidor traen consigo la base de datos; esta prueba sólo mira lo que la ficha dibuja.
-vi.mock("@/app/(app)/mantencion/equipos/actions", () => ({ updateEquipmentAction: vi.fn() }))
+vi.mock("@/app/(app)/mantencion/equipos/actions", () => ({ updateEquipmentPlanAction: vi.fn(async () => ({ ok: false })) }))
 vi.mock("@/app/(app)/mantencion/equipos/[id]/actions", () => ({ exportEquipmentHistoryAction: vi.fn() }))
 vi.mock("@/app/(app)/mantencion/ot/actions", () => ({ createWorkOrderAction: vi.fn() }))
 
@@ -42,8 +42,10 @@ function data(overrides: Partial<EquipmentDetailData> = {}): EquipmentDetailData
   }
 }
 
+const HEADER = { title: "KA-107", description: "Camión · Santa Fe · Operativo", breadcrumb: [{ label: "Equipos", href: "/mantencion/equipos" }, { label: "KA-107" }] }
+
 const view = (overrides: Partial<EquipmentDetailData> = {}) => (
-  <EquipmentDetailView data={data(overrides)} edit={null} canSeeSchedules={false} canExport={false} justCreated={false} />
+  <EquipmentDetailView data={data(overrides)} edit={null} canSeeSchedules={false} canExport={false} justCreated={false} header={HEADER} />
 )
 
 afterEach(cleanup)
@@ -100,7 +102,7 @@ describe("ficha del equipo: crear una orden de trabajo y el enlace a Flota", () 
   }
 
   it("«Crear orden de trabajo» abre el formulario con el equipo ya elegido", async () => {
-    render(<EquipmentDetailView data={data()} edit={null} canSeeSchedules={false} canExport={false} justCreated={false} newOrder={newOrder} />)
+    render(<EquipmentDetailView data={data()} edit={null} canSeeSchedules={false} canExport={false} justCreated={false} newOrder={newOrder} header={HEADER} />)
     fireEvent.click(screen.getByRole("button", { name: /Crear orden de trabajo/ }))
     const sheet = within(await screen.findByRole("dialog"))
     expect((sheet.getByRole("combobox", { name: /Equipo/ }) as HTMLInputElement).value).toContain("KA-107")
@@ -113,11 +115,46 @@ describe("ficha del equipo: crear una orden de trabajo y el enlace a Flota", () 
     expect(screen.queryByRole("button", { name: /Crear orden de trabajo/ })).toBeNull()
   })
 
-  it("con acceso a Flota, la ficha enlaza al mismo vehículo; sin él, no", () => {
-    const { unmount } = render(view({ canViewFleet: true }))
-    expect(screen.getByRole("link", { name: "Ver la ficha de KA-107 en Flota" }).getAttribute("href")).toBe("/flota/veh-1")
+  it("la ficha no enlaza a «la ficha en Flota»: las dos son pestañas de la misma ficha (crítica 2026-11-15)", () => {
+    render(view({ canViewFleet: true }))
+    expect(screen.queryByRole("link", { name: /^Ver la ficha de .+ en Flota$/ })).toBeNull()
+  })
+
+  it("la cabecera y las pestañas son las de la ficha; el seguro sólo para quien no ve la pestaña Flota", () => {
+    const { unmount } = render(<EquipmentDetailView data={data()} edit={null} canSeeSchedules={false} canExport={false} justCreated={false} header={HEADER} tabs={<nav aria-label="Ficha de KA-107" />} showInsurance={false} />)
+    expect(screen.getByRole("heading", { level: 1, name: "KA-107" })).toBeDefined()
+    expect(screen.getByRole("navigation", { name: "Ficha de KA-107" })).toBeDefined()
+    expect(screen.queryByRole("heading", { name: "Seguro" })).toBeNull()
     unmount()
-    render(view({ canViewFleet: false }))
-    expect(screen.queryByRole("link", { name: /en Flota/ })).toBeNull()
+    render(view())
+    expect(screen.getByRole("heading", { name: "Seguro" })).toBeDefined()
+  })
+
+  it("«Editar mantención» cambia la columna por la pauta, la lectura y la baja; «Editar vehículo» llega de la ficha (paso 4b)", () => {
+    const edit = {
+      schedules: [{ id: "s1", name: "Camiones y tractos", unit: "km" as const, intervalCount: 5 }],
+      initial: { scheduleId: "s1", initialReading: "90.000", initialReadingDate: "2026-09-01", retired: false, retiredReason: "" },
+    }
+    render(
+      <EquipmentDetailView
+        data={data()} edit={edit} canSeeSchedules={false} canExport={false} justCreated={false} header={HEADER}
+        fichaActions={<button type="button">Editar vehículo</button>}
+      />,
+    )
+    expect(screen.queryByRole("button", { name: "Editar ficha" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Editar vehículo" })).toBeDefined()
+    fireEvent.click(screen.getByRole("button", { name: "Editar mantención" }))
+    const form = screen.getByRole("form", { name: "Editar mantención" })
+    expect(within(form).getByRole("combobox", { name: /^Pauta de mantención/ })).toBeDefined()
+    expect(within(form).queryByLabelText(/^Código interno/)).toBeNull()
+    // Con registros la lectura inicial queda fija.
+    expect((within(form).getByLabelText(/^Lectura actual/) as HTMLInputElement).readOnly).toBe(true)
+    fireEvent.click(within(form).getByRole("button", { name: "Cancelar" }))
+    expect(screen.queryByRole("form", { name: "Editar mantención" })).toBeNull()
+  })
+
+  it("sin permiso para administrar equipos no hay «Editar mantención»", () => {
+    render(view())
+    expect(screen.queryByRole("button", { name: "Editar mantención" })).toBeNull()
   })
 })

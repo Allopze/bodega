@@ -103,10 +103,11 @@ test.describe("Panel de combustible: gráficos", () => {
     await page.goto(RUTA)
     await esperarGraficos(page)
 
-    // El gráfico de barras se pinta dentro de un `role="img"` cuyo nombre trae el del ranking; con una
-    // sola faena (o sin cargas) la celda no existe, así que se afirma por ranking presente.
+    // El gráfico de barras se pinta dentro de un `role="img"` cuyo nombre trae el del ranking, o de un
+    // `role="group"` si sus barras enlazan (paso 6); con una sola faena (o sin cargas) la celda no
+    // existe, así que se afirma por ranking presente.
     for (const nombre of ["Litros por faena en el período", "Litros por tipo de equipo en el período"]) {
-      const grafico = page.getByRole("img", { name: new RegExp(nombre) })
+      const grafico = page.getByRole("img", { name: new RegExp(nombre) }).or(page.getByRole("group", { name: new RegExp(nombre) }))
       expect(await grafico.count(), `gráficos «${nombre}»`).toBeLessThanOrEqual(1)
       if ((await grafico.count()) === 1) await expect(page.getByRole("list", { name: nombre })).toHaveCount(0)
     }

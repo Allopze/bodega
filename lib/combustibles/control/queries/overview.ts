@@ -7,6 +7,7 @@ import { worksiteScopeSql } from "@/lib/auth/scope"
 import { buildLoadWhere, countableLoadSql, loadPerformanceUnitSql, statisticallyValidLoadSql, type ControlFilters } from "@/lib/combustibles/control/filters"
 import { buildCrosstab, globalRatio, type Crosstab, type MonthMediumRow } from "@/lib/combustibles/control/view-helpers"
 import { toNumber as num } from "./shared"
+import { supplyMediumNameSql } from "./supply-medium-name"
 
 /**
  * Consultas de la vista general (G-01 a G-07). Todo se agrega en SQL; el alcance
@@ -72,7 +73,7 @@ export async function getLitersByMonthAndMedium(session: Session, filters: Contr
   const rows = await db.select({
     month: fuelEquipmentLoads.month,
     mediumId: fuelSupplyMedia.id,
-    mediumName: fuelSupplyMedia.name,
+    mediumName: supplyMediumNameSql(),
     mediumOrder: fuelSupplyMedia.sortOrder,
     liters: sql<number>`sum(${fuelEquipmentLoads.liters})::float8`,
   }).from(fuelEquipmentLoads)
@@ -98,7 +99,7 @@ export async function getWorksiteMediumCrosstab(session: Session, filters: Contr
     worksiteId: worksites.id,
     worksiteName: worksites.name,
     mediumId: fuelSupplyMedia.id,
-    mediumName: fuelSupplyMedia.name,
+    mediumName: supplyMediumNameSql(),
     mediumOrder: fuelSupplyMedia.sortOrder,
     liters: sql<number>`${liters}::float8`,
   }).from(fuelEquipmentLoads)

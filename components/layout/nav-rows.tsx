@@ -171,20 +171,76 @@ function BranchRow({
   )
 }
 
+/** Un ítem (o un hijo suyo) es la pantalla actual. */
+function itemIsActive(item: NavItem, pathname: string): boolean {
+  return isHrefActive(item.href, pathname) || (item.children ?? []).some((child) => isHrefActive(child.href, pathname))
+}
+
+/** Los ítems de un área partidos en tramos consecutivos del mismo grupo (los sin grupo, en su propio tramo). */
+function groupSections(items: NavItem[]): Array<{ group: string | null; items: NavItem[] }> {
+  const sections: Array<{ group: string | null; items: NavItem[] }> = []
+  for (const item of items) {
+    const group = item.group ?? null
+    const last = sections[sections.length - 1]
+    if (last && last.group === group) last.items.push(item)
+    else sections.push({ group, items: [item] })
+  }
+  return sections
+}
+
+/**
+ * Un grupo del cajón móvil que se pliega bajo su rótulo. En el móvil, Control operacional
+ * mostraba sus 19 destinos de una vez (Seguimiento, Flota, Mantención, Combustible) y la pantalla
+ * actual quedaba enterrada (crítica 2026-11-15, paso 7). El grupo de la pantalla actual abre; los
+ * demás quedan plegados, y si traen pendientes su rótulo los suma para que nada urgente se esconda.
+ */
+function GroupDisclosure({ label, defaultOpen, pending, children }: { label: string; defaultOpen: boolean; pending: number; children: React.ReactNode }) {
+  const [open, setOpen] = React.useState(defaultOpen)
+  const [wasDefaultOpen, setWasDefaultOpen] = React.useState(defaultOpen)
+  // Al navegar a otro grupo, ése se abre sin cerrar el que la persona abrió a mano.
+  if (defaultOpen !== wasDefaultOpen) {
+    setWasDefaultOpen(defaultOpen)
+    if (defaultOpen) setOpen(true)
+  }
+  return (
+    <Collapsible.Root open={open} onOpenChange={setOpen}>
+      <Collapsible.Trigger asChild>
+        <button
+          type="button"
+          aria-expanded={open}
+          className="mt-1 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left hover:bg-nav-hover-bg focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-(--color-primary)"
+        >
+          <span className="text-eyebrow flex-1">{label}</span>
+          {!open && pending > 0 && <CountBadge count={pending} />}
+          <CaretDown size={14} aria-hidden className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")} />
+        </button>
+      </Collapsible.Trigger>
+      <Collapsible.Content className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
+        <ul className="space-y-0.5">{children}</ul>
+      </Collapsible.Content>
+    </Collapsible.Root>
+  )
+}
+
 /**
  * Lista de ítems de un área (con acordeón para submenús). Reutilizada por el
  * panel desktop, el flyout del rail colapsado y el drawer móvil.
+ *
+ * `collapseInactiveGroups` (sólo el cajón móvil): los grupos se pliegan bajo su rótulo y abre el
+ * de la pantalla actual. Sin pantalla actual en el área, todos quedan abiertos, como antes.
  */
 const AreaItemsInner = React.memo(function AreaItemsInner({
   area,
   pathname,
   badgeCounts,
   onNavigate,
+  collapseInactiveGroups = false,
 }: {
   area:         AreaNode
   pathname:     string
   badgeCounts?: Record<string, number>
   onNavigate?:  () => void
+  collapseInactiveGroups?: boolean
 }) {
   const listRef = React.useRef<HTMLUListElement>(null)
 
@@ -207,10 +263,39 @@ const AreaItemsInner = React.memo(function AreaItemsInner({
     }
   }, [pathname])
 
+  const countOf = (item: NavItem) => (item.badge === "count" ? (badgeCounts?.[item.href] ?? 0) : 0)
+  const row = (item: NavItem) => {
+    const count = countOf(item)
+    return item.children && item.children.length > 0
+      ? <BranchRow item={item} pathname={pathname} count={count} onNavigate={onNavigate} />
+      : <LeafRow   item={item} pathname={pathname} count={count} onNavigate={onNavigate} />
+  }
+
+  if (collapseInactiveGroups && area.items.some((item) => item.group)) {
+    const sections = groupSections(area.items)
+    const activeGroup = sections.find((section) => section.items.some((item) => itemIsActive(item, pathname)))?.group
+    return (
+      <ul ref={listRef} className="space-y-0.5">
+        {sections.map((section) => section.group === null
+          ? section.items.map((item) => <li key={item.href}>{row(item)}</li>)
+          : (
+            <li key={`grupo-${section.group}`}>
+              <GroupDisclosure
+                label={section.group}
+                defaultOpen={activeGroup === undefined || activeGroup === section.group}
+                pending={section.items.reduce((sum, item) => sum + countOf(item), 0)}
+              >
+                {section.items.map((item) => <li key={item.href}>{row(item)}</li>)}
+              </GroupDisclosure>
+            </li>
+          ))}
+      </ul>
+    )
+  }
+
   return (
     <ul ref={listRef} className="space-y-0.5">
       {area.items.map((item, index) => {
-        const count = item.badge === "count" ? (badgeCounts?.[item.href] ?? 0) : 0
         const showGroupHeader = item.group && item.group !== area.items[index - 1]?.group
         return (
           <React.Fragment key={item.href}>
@@ -219,11 +304,7 @@ const AreaItemsInner = React.memo(function AreaItemsInner({
                 {item.group}
               </li>
             )}
-            <li>
-              {item.children && item.children.length > 0
-                ? <BranchRow item={item} pathname={pathname} count={count} onNavigate={onNavigate} />
-                : <LeafRow   item={item} pathname={pathname} count={count} onNavigate={onNavigate} />}
-            </li>
+            <li>{row(item)}</li>
           </React.Fragment>
         )
       })}

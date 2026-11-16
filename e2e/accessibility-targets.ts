@@ -76,9 +76,14 @@ export const ROUTE_URL_OVERRIDES: Record<string, string> = {
   // La ficha de una medida: el control sembrado en esa misma MIPER, el que usa
   // `prevencion-miper-controles.spec.ts`.
   "/prevencion/miper/controles/[id]": "/prevencion/miper/controles/riskcontrol-activo-e2e",
-  // El equipo de combustible sembrado. Las demás fichas de Combustible (carga, estado de cuenta,
-  // archivo) no tienen registro sembrado: las audita `combustibles-rediseno.spec.ts` con datos propios.
-  "/combustibles/consumo/equipos/[id]": "/combustibles/consumo/equipos/fuel-veh-e2e",
+  // El equipo de combustible sembrado, en la ficha única del vehículo (crítica 2026-11-15): su
+  // Resumen y sus pestañas. `/combustibles/consumo/equipos/[id]` y `/mantencion/equipos/[id]` sólo
+  // redirigen ahí. Las demás fichas de Combustible (carga, estado de cuenta, archivo) no tienen
+  // registro sembrado: las audita `combustibles-rediseno.spec.ts` con datos propios.
+  "/flota/[id]": "/flota/fuel-veh-e2e",
+  "/flota/[id]/flota": "/flota/fuel-veh-e2e/flota",
+  "/flota/[id]/mantencion": "/flota/fuel-veh-e2e/mantencion",
+  "/flota/[id]/combustible": "/flota/fuel-veh-e2e/combustible",
 }
 
 /**

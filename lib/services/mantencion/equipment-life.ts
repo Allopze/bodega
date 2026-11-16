@@ -8,7 +8,7 @@ import { expiryState, type ExpiryState } from "@/lib/expiry"
 import { daysBetween } from "@/lib/mantencion/readings"
 import { workshopState } from "@/lib/mantencion/status"
 import type { MantExecutorKind, MantRecordKind, MantRecordStatus, MantReview, MantUnit } from "@/lib/mantencion/types"
-import type { OtStatus } from "@/lib/mantencion/work-order-states"
+import { OT_OPEN_STATUSES, type OtStatus } from "@/lib/mantencion/work-order-states"
 import { todayInChile } from "@/lib/utils"
 import type { MantViewer } from "./access"
 
@@ -246,6 +246,43 @@ function workOrderWorksiteScope(viewer: MantViewer): "all" | string[] | null {
   if (viewer.permissions.includes("mant:ot:view_all")) return "all"
   if (viewer.permissions.includes("mant:ot:view_worksite")) return viewer.isGlobal ? "all" : [...viewer.worksiteIds]
   return null
+}
+
+/**
+ * Las OT abiertas del equipo para el «Resumen» de la ficha: cuántas hay y la más reciente, con
+ * sus días en taller. Mismo alcance que la hoja de vida; `null` sin permiso de OT (la línea no
+ * las menciona, en vez de decir «sin órdenes abiertas» a quien no puede verlas).
+ */
+export async function loadOpenWorkOrdersSummary(vehicleId: string, viewer: MantViewer): Promise<{
+  count: number
+  latest: { id: string; folio: string; status: OtStatus; daysInWorkshop: number | null } | null
+} | null> {
+  const scope = workOrderWorksiteScope(viewer)
+  if (scope === null) return null
+  const where = and(
+    eq(mantWorkOrders.vehicleId, vehicleId),
+    inArray(mantWorkOrders.status, [...OT_OPEN_STATUSES]),
+    scope === "all" ? undefined : scope.length ? inArray(mantWorkOrders.worksiteId, scope) : sql`false`,
+  )
+  const [[latest], [count]] = await Promise.all([
+    db.select({ id: mantWorkOrders.id, folio: mantWorkOrders.folio, status: mantWorkOrders.status, workshopEntryAt: mantWorkOrders.workshopEntryAt })
+      .from(mantWorkOrders)
+      .where(where)
+      .orderBy(desc(mantWorkOrders.createdAt), asc(mantWorkOrders.id))
+      .limit(1),
+    db.select({ total: sql<number>`count(*)::int` }).from(mantWorkOrders).where(where),
+  ])
+  return {
+    count: count?.total ?? 0,
+    latest: latest
+      ? {
+          id: latest.id,
+          folio: latest.folio,
+          status: latest.status as OtStatus,
+          daysInWorkshop: latest.workshopEntryAt ? Math.max(0, daysBetween(todayInChile(latest.workshopEntryAt), todayInChile())) : null,
+        }
+      : null,
+  }
 }
 
 /**

@@ -9,6 +9,7 @@ export const flotaModule = {
     "flota:view_gps_history",
     "flota:view_gps_driver",
     "flota:manage_licenses",
+    "flota:export",
   ] as const,
 
   permissionMeta: {
@@ -18,6 +19,9 @@ export const flotaModule = {
     "flota:view_gps_history": { id: "p-flot-view-gps-history", description: "Ver recorridos y viajes GPS" },
     "flota:view_gps_driver": { id: "p-flot-view-gps-driver", description: "Ver identidad vinculada del conductor GPS" },
     "flota:manage_licenses": { id: "p-flot-manage-licenses", description: "Ver y actualizar licencias de conducir y recibir sus avisos de vencimiento" },
+    // Decisión 2026-11-15: el Excel de Vehículos y de los Indicadores GPS es opt-in, como en el resto de
+    // la plataforma. Al estrenarse se copia de `flota:view` (`PERMISSION_MIRRORS` en lib/auth/bootstrap.ts).
+    "flota:export": { id: "p-flot-export", description: "Exportar a Excel los vehículos y los indicadores GPS" },
   },
 
   nav: [
@@ -89,5 +93,9 @@ export const flotaModule = {
     { roleSlug: "administrador", permission: "flota:view_gps_driver" },
     { roleSlug: "jefe_mantencion", permission: "flota:view_gps_driver" },
     { roleSlug: "jefa_chome", permission: "flota:view_gps_driver" },
+    // Los mismos roles que ven la flota: con el permiso nuevo nadie gana ni pierde una descarga.
+    { roleSlug: "administrador", permission: "flota:export" },
+    { roleSlug: "jefe_mantencion", permission: "flota:export" },
+    { roleSlug: "jefa_chome", permission: "flota:export" },
   ],
 } as const satisfies ModuleManifest

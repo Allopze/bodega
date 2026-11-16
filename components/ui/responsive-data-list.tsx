@@ -13,6 +13,7 @@ export function ResponsiveDataListCard({
   children,
   actions,
   className,
+  headingLevel = 3,
 }: {
   title: React.ReactNode
   description?: React.ReactNode
@@ -20,7 +21,14 @@ export function ResponsiveDataListCard({
   children?: React.ReactNode
   actions?: React.ReactNode
   className?: string
+  /**
+   * Nivel del título de la tarjeta. Por omisión `h3`, para una lista dentro de una sección con
+   * su `h2`. Una lista que es el contenido principal de la página —directo bajo el `h1` de
+   * `PageHeader`— pasa `2`: si no, la página salta de `h1` a `h3` (crítica 2026-11-15, paso 6).
+   */
+  headingLevel?: 2 | 3 | 4
 }) {
+  const Heading = `h${headingLevel}` as "h2" | "h3" | "h4"
   return (
     <article
       className={cn(
@@ -35,7 +43,7 @@ export function ResponsiveDataListCard({
               ancho completo del texto: el recorte era sólo visual y el enlace
               medía más que el pozo (14 px en /prevencion/emergencias a 390). Como
               bloque, la caja del enlace es la del título y la elipsis cae en él. */}
-          <h3 className="truncate text-sm font-medium text-[var(--color-text)] [&>a]:block [&>a]:truncate">{title}</h3>
+          <Heading className="truncate text-sm font-medium text-[var(--color-text)] [&>a]:block [&>a]:truncate">{title}</Heading>
           {description && (
             <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">{description}</div>
           )}

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { login, textoVisible } from "./helpers"
 
 test.describe("Flota module", () => {
   test.beforeEach(async ({ page }) => {
@@ -13,7 +13,10 @@ test.describe("Flota module", () => {
 
   test("vehicle detail page loads", async ({ page }) => {
     await page.goto("/flota/fuel-veh-e2e")
-    await expect(page.getByRole("heading", { name: "E2E-FUEL-1" })).toBeVisible({ timeout: 10_000 })
+    // La ficha única se titula con el código interno si el vehículo lo tiene, con la patente debajo; sin código, con la
+    // patente (`VehicleIdentity`, crítica 2026-11-15). Otra especificación le asigna «E2E-01», así que vale cualquiera.
+    await expect(page.getByRole("heading", { level: 1, name: /^(E2E-01|E2E-FUEL-1)$/ })).toBeVisible({ timeout: 10_000 })
+    await expect(textoVisible(page, /E2E-FUEL-1/).first()).toBeVisible()
   })
 
   test("la lista abre cada vehículo desde un enlace real, no desde una fila con rol de enlace", async ({ page }) => {

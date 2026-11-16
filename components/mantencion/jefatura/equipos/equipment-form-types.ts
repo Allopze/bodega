@@ -21,11 +21,9 @@ export interface EquipmentFormValues {
   scheduleId: string
   initialReading: string
   initialReadingDate: string
-  retired: boolean
-  retiredReason: string
 }
 
 export const EMPTY_EQUIPMENT_VALUES: EquipmentFormValues = {
   code: "", plate: "", noPlate: false, equipmentTypeId: "", brandId: "", model: "", year: "", worksiteId: "",
-  scheduleId: "", initialReading: "", initialReadingDate: "", retired: false, retiredReason: "",
+  scheduleId: "", initialReading: "", initialReadingDate: "",
 }

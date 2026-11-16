@@ -1,12 +1,14 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { IndicatorFilters } from "@/components/dashboard/indicator-filters"
+import { BoardExportButton } from "@/components/dashboard/board-export-button"
+import { BoardHeaderActions } from "@/components/dashboard/board-scope"
 import { Callout } from "@/components/ui/callout"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { PeriodControl } from "@/components/ui/period-control"
 import { can, requireAnyPermission } from "@/lib/auth/can"
-import { DEFAULT_RANGE_LABEL, defaultIndicatorRange, resolveIndicatorPeriod } from "@/lib/indicators/period"
+import { chartWindowCaption, DEFAULT_RANGE_LABEL, defaultIndicatorRange, indicatorPeriodLabel, resolveIndicatorPeriod } from "@/lib/indicators/period"
 import { logger } from "@/lib/logger"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
 import {
@@ -25,7 +27,6 @@ import { hasNoEquipmentInScope, PanelEmptyState } from "@/components/mantencion/
 import { PanelToday } from "@/components/mantencion/jefatura/panel/panel-today"
 import { countUnassignedWorkOrders } from "@/lib/services/mantencion/work-orders/query"
 import { PautasSection, WorkOrdersSection } from "./indicators-sections"
-import { PanelExportButton } from "./panel-export-button"
 
 export const metadata: Metadata = { title: "Panel de mantención" }
 export const dynamic = "force-dynamic"
@@ -74,6 +75,8 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
     to: period.to,
     granularity: period.granularity,
     previous: period.previous,
+    // Los gráficos de evolución miran los seis meses que terminan en el período cuando éste es corto.
+    chart: period.chart,
     today,
     ...(worksiteId ? { worksiteId } : {}),
   }
@@ -111,11 +114,14 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
   })
 
   const scopeName = worksite?.name ?? (worksites.length === 1 ? worksites[0]!.name : "todas las faenas")
-  const scopeNote = `${formatDate(period.from)} al ${formatDate(period.to)} · ${scopeName}`
+  const datesOf = (range: { from: string; to: string }) => `${formatDate(range.from)} al ${formatDate(range.to)}`
+  const scopeNote = `${datesOf(period)} · ${scopeName}`
   const common = {
     from: period.from,
     to: period.to,
     granularity: period.granularity,
+    chart: period.chart,
+    chartNote: `${chartWindowCaption(period.chart, datesOf)} · ${scopeName}`,
     worksiteId,
     scopeNote,
     canExport,
@@ -131,23 +137,23 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
           { label: "Mantención" },
           { label: "Panel" },
         ]} />}
-        // El libro trae las listas de detalle (próximas mantenciones, en taller, horas por faena, ítems sin
-        // hacer) de los últimos 30 días y la faena elegida; su hoja de metadatos lo dice.
-        actions={canExport ? <PanelExportButton params={worksiteId ? { faena: worksiteId } : {}} /> : undefined}
+        // Esqueleto común de los tableros: faena y período primero, después «Exportar Excel» (todas las
+        // tablas «Ver datos» de la pantalla, una hoja por gráfico, con este período y esta faena).
+        actions={
+          <BoardHeaderActions
+            worksites={worksites}
+            worksiteId={worksiteId}
+            period={<PeriodControl mode="range" from={period.requested.from} to={period.requested.to} defaultRange={{ ...defaultIndicatorRange(today), label: DEFAULT_RANGE_LABEL }} />}
+          >
+            {canExport ? (
+              <BoardExportButton title="Panel de mantención" range={{ from: period.from, to: period.to }} scope={{ periodo: indicatorPeriodLabel(period.requested, datesOf), faena: worksite?.name ?? (worksites.length === 1 ? worksites[0]!.name : "Todas las faenas") }} />
+            ) : null}
+          </BoardHeaderActions>
+        }
       />
 
-      <div className="mb-4">
-        <IndicatorFilters
-          from={period.from}
-          to={period.to}
-          defaultRange={{ ...defaultIndicatorRange(today), label: DEFAULT_RANGE_LABEL }}
-          worksites={worksites}
-          worksiteId={worksiteId}
-        />
-      </div>
-
       {period.invalid && (
-        <Callout tone="warning" className="mb-4">El rango de fechas de la dirección no es válido: se muestran {DEFAULT_RANGE_LABEL}.</Callout>
+        <Callout tone="warning" className="mb-4">El rango de fechas de la dirección no es válido: se muestra {DEFAULT_RANGE_LABEL}.</Callout>
       )}
       <DegradedDataBanner degraded={degraded} total={tracked} />
 
@@ -160,6 +166,7 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
           <PanelToday
             unassignedOrders={unassignedOrders}
             inWorkshop={pautas?.inWorkshop ?? null}
+            inWorkshopByOrder={pautas?.inWorkshopByOrder ?? null}
             pendingReview={pendingReview}
             worksiteId={worksiteId}
           />

@@ -14,7 +14,8 @@ import {
   fuelProviderTransactions, fuelTaeSubmissions, fuelVehicleOperationalIntervals, fuelVehicles,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { todayInChile } from "@/lib/utils"
+import { formatPercent, todayInChile } from "@/lib/utils"
+import { meterJumpText, regressiveReadingText } from "./case-text"
 import { createAnomalyCase, type AnomalySeverity } from "./anomaly-cases"
 import { detectCorruptEvidence, getReusedEvidence } from "./evidence-management"
 import { fuelOperationOccurredAtSql } from "./fuel-log"
@@ -503,7 +504,7 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
         worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId,
         // Singular, como los otros detectores: `fuelLogEntityType()` no emite el plural.
         referenceEntityType: "fuel_consumption_record", referenceEntityId: curr.id,
-        description: `Consumo de ${fuelVariationProductLabel(product)} varió ${Math.round(pct)}% respecto al período anterior (${Number(curr.cantidad).toLocaleString("es-CL")} L vs ${Number(prev.cantidad).toLocaleString("es-CL")} L).`,
+        description: `Consumo de ${fuelVariationProductLabel(product)} varió ${formatPercent(Math.round(pct), 0)} respecto al período anterior (${Number(curr.cantidad).toLocaleString("es-CL")} L vs ${Number(prev.cantidad).toLocaleString("es-CL")} L).`,
         observedValue: `+${Math.round(pct)}%`, expectedValue: `< ${thresholdPct}%`,
       })
       if (outcome.wasCreated) created++; else skipped++
@@ -753,7 +754,6 @@ function flagRegressivePairs<T extends { vehicleId: string | null }>(
  */
 function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
   const ruleCode = meterType === "hora" ? "horometro_regresivo" : "kilometraje_regresivo"
-  const meterLabel = meterType === "hora" ? "de horómetro" : "de odómetro"
   return async (rule) => {
     const rowLimit = batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT)
     let created = 0, skipped = 0, failed = 0, scanned = 0
@@ -782,7 +782,7 @@ function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
           ruleId: rule.id, ruleCode, severity: severityOf(rule, "high"),
           worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
           referenceEntityType: "fuel_operation_record", referenceEntityId: curr.id,
-          description: `Lectura ${meterLabel} (${curr.horometro}) del log operacional de ${curr.plate} es menor que la carga anterior (${prev.horometro}).`,
+          description: regressiveReadingText({ meter: meterType, reading: Number(curr.horometro), previous: Number(prev.horometro), plate: curr.plate, source: "operation" }),
           observedValue: String(curr.horometro), expectedValue: `> ${prev.horometro}`,
         })
         if (outcome.wasCreated) created++; else skipped++
@@ -812,7 +812,7 @@ function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
           ruleId: rule.id, ruleCode, severity: severityOf(rule, "high"),
           worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
           referenceEntityType: "fuel_load", referenceEntityId: curr.id,
-          description: `Lectura ${meterLabel} (${curr.reading}) de la carga de ${curr.plate} es menor que la carga anterior (${prev.reading}).`,
+          description: regressiveReadingText({ meter: meterType, reading: Number(curr.reading), previous: Number(prev.reading), plate: curr.plate, source: "load" }),
           observedValue: String(curr.reading), expectedValue: `> ${prev.reading}`,
         })
         if (outcome.wasCreated) created++; else skipped++
@@ -834,7 +834,7 @@ function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
           ruleId: rule.id, ruleCode, severity: severityOf(rule, "high"),
           worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
           referenceEntityType: "fuel_meter_reading", referenceEntityId: curr.id,
-          description: `Lectura ${meterLabel} (${curr.value}) de la carga de ${curr.plate} en ${curr.stationName ?? "estación no informada"} es menor que la carga anterior (${prev.value}).`,
+          description: regressiveReadingText({ meter: meterType, reading: curr.value, previous: prev.value, plate: curr.plate, source: "load", station: curr.stationName ?? null }),
           observedValue: String(curr.value), expectedValue: `> ${prev.value}`,
         })
         if (outcome.wasCreated) created++; else skipped++
@@ -908,8 +908,6 @@ const detectImplausibleMeterJump: DetectorFn = async (rule) => {
   const page = await vehiclePage(rule.cursor, rowLimit)
 
   for (const meterType of ["km", "hora"] as const) {
-    const unit = meterType === "hora" ? "h" : "km"
-    const meterLabel = meterType === "hora" ? "de horómetro" : "de odómetro"
     const readings = await meterReadingRows(meterType, page.ids)
     truncated = truncated || readings.length >= BATCH_SCAN_ROW_LIMIT
     for (const { prev, curr } of providerReadingPairs(readings)) {
@@ -926,7 +924,7 @@ const detectImplausibleMeterJump: DetectorFn = async (rule) => {
           ruleId: rule.id, ruleCode: "salto_medidor_implausible", severity: severityOf(rule, "high"),
           worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
           referenceEntityType: "fuel_meter_reading", referenceEntityId: curr.id,
-          description: `Lectura ${meterLabel} de ${curr.plate} sube ${Math.round(delta).toLocaleString("es-CL")} ${unit} en ${days} día(s) (${Math.round(rate).toLocaleString("es-CL")} ${unit}/día): supera lo posible para el equipo.`,
+          description: meterJumpText({ meter: meterType, plate: curr.plate, delta, days, ratePerDay: rate }),
           observedValue: String(curr.value), expectedValue: `≤ ${Math.round(prev.value + maxPerDay * days)}`,
         })
         if (outcome.wasCreated) created++; else skipped++

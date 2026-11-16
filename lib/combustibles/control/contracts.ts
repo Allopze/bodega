@@ -10,7 +10,7 @@ export const PERFORMANCE_FAMILIES = ["camiones", "cargadores_camionetas", "maqui
 export type PerformanceFamily = (typeof PERFORMANCE_FAMILIES)[number]
 
 export const PERFORMANCE_FAMILY_LABELS: Record<PerformanceFamily, string> = {
-  camiones: "Camiones y tracto camiones",
+  camiones: "Camiones y tractocamiones",
   cargadores_camionetas: "Cargadores y camionetas",
   maquinaria: "Retroexcavadoras, excavadoras y maquinaria",
 }

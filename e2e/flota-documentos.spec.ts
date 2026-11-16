@@ -12,12 +12,12 @@ test.describe("Flota — gestión documental", () => {
   })
 
   test("vehicle detail shows documents panel", async ({ page }) => {
-    await page.goto("/flota/fuel-veh-e2e")
+    await page.goto("/flota/fuel-veh-e2e/flota")
     await expect(page.getByRole("heading", { name: "Documentos", exact: true })).toBeVisible({ timeout: 10_000 })
   })
 
   test("subir un documento se hace desde una hoja, no desde un formulario siempre abierto", async ({ page }) => {
-    await page.goto("/flota/fuel-veh-e2e")
+    await page.goto("/flota/fuel-veh-e2e/flota")
     await expect(page.getByRole("heading", { name: "Documentos", exact: true })).toBeVisible({ timeout: 10_000 })
     // El formulario no está en la página hasta que se pide.
     await expect(page.getByRole("dialog", { name: "Subir documento" })).toHaveCount(0)
@@ -41,7 +41,7 @@ test.describe("Flota — gestión documental", () => {
 test.describe("Flota — actualizar vencimientos desde la ficha", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
-    await page.goto("/flota/fuel-veh-e2e")
+    await page.goto("/flota/fuel-veh-e2e/flota")
   })
 
   const vencimientos = (page: Page) => page.getByRole("list", { name: "Vencimientos del equipo" })

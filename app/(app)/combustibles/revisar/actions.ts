@@ -4,7 +4,7 @@ import { guardAnyPermission, guardPermission } from "@/lib/auth/can"
 import { safeActionMessage } from "@/lib/action-error"
 import { isNetworkError } from "@/lib/network-error"
 import { logger } from "@/lib/logger"
-import { takeAnomalyCase, type AnomalyCaseStatus } from "@/lib/combustibles/anomaly-cases"
+import { closeAnomalyCases, MAX_CASE_BATCH, takeAnomalyCase, takeAnomalyCases, type AnomalyCaseStatus, type ExpectedAnomalyCase } from "@/lib/combustibles/anomaly-cases"
 import { decideFlaggedLoads, MAX_BATCH_DECISION, reopenFlaggedDecision, resolveReviewRequest } from "@/lib/combustibles/control/review"
 import { FUEL_PATHS, fuelLoadHref, type FuelLoadOrigin } from "@/lib/combustibles/routes"
 import { notifyAfterCommit, notifySafe } from "@/lib/services/notifications"
@@ -18,9 +18,10 @@ import { revalidateInbox } from "./revalidate-inbox"
  * revisado son rutina. Lo irreversible —descartar un caso— vive en
  * `anomalias/actions.ts` y la hoja de decisión lo confirma antes de llamarlo.
  *
- * Los casos (resolver, descartar, reabrir, comentar, asignar) siguen en
+ * Los casos de a uno (resolver, descartar, reabrir, comentar, asignar) siguen en
  * `anomalias/actions.ts`; las decisiones de una sola carga viejas, en
- * `control/revision/actions.ts`.
+ * `control/revision/actions.ts`. Tomar, resolver y descartar casos EN LOTE
+ * (crítica 2026-11-15, paso 4c) viven aquí, con los mismos permisos que de a uno.
  */
 
 type Result = { ok: boolean; message?: string }
@@ -99,6 +100,71 @@ export async function takeAnomalyCaseAction(
     return { ok: true, message: "Caso tomado: eres su responsable" }
   } catch (error) {
     return failure(error, "No se pudo tomar el caso")
+  }
+}
+
+/** La selección de casos tal como llegó del cliente: sólo pasa lo que tiene la forma de un caso. */
+function parseCaseSelection(cases: unknown): ExpectedAnomalyCase[] | null {
+  if (!Array.isArray(cases) || cases.length === 0 || cases.length > MAX_CASE_BATCH) return null
+  const parsed: ExpectedAnomalyCase[] = []
+  for (const item of cases) {
+    if (!item || typeof item !== "object") return null
+    const { id, status, assigneeId } = item as Record<string, unknown>
+    if (typeof id !== "string" || id.trim() === "" || id.length > 64) return null
+    if (typeof status !== "string" || !CASE_STATUSES.has(status)) return null
+    if (assigneeId !== null && (typeof assigneeId !== "string" || assigneeId.length > 64)) return null
+    parsed.push({ id, status: status as AnomalyCaseStatus, assigneeId })
+  }
+  return parsed
+}
+
+const casesWord = (n: number) => (n === 1 ? "1 caso" : `${n} casos`)
+
+/**
+ * «Tomar» varios casos (los grupos elegidos en «En seguimiento»): quedas como responsable de los
+ * que no tenían. Mismo permiso que tomar uno; el alcance de faenas se vuelve a exigir caso por caso.
+ */
+export async function takeAnomalyCasesAction(input: { cases: ExpectedAnomalyCase[] }): Promise<Result & { taken?: number }> {
+  const guard = await guardPermission("combustibles:review_anomalies", FUEL_PATHS.revisar)
+  if (guard.error) return guard.error
+  const cases = parseCaseSelection(input?.cases)
+  if (!cases) return { ok: false, message: `Elige entre 1 y ${MAX_CASE_BATCH} casos` }
+  try {
+    const result = await takeAnomalyCases(guard.session, cases)
+    revalidateInbox()
+    const parts = [result.taken > 0 ? `Tomaste ${casesWord(result.taken)}: eres su responsable` : "No había casos por tomar"]
+    if (result.alreadyYours > 0) parts.push(`${casesWord(result.alreadyYours)} ya ${result.alreadyYours === 1 ? "era tuyo" : "eran tuyos"}`)
+    if (result.heldByOthers > 0) parts.push(`${casesWord(result.heldByOthers)} ${result.heldByOthers === 1 ? "lo tiene" : "los tiene"} otra persona y se ${result.heldByOthers === 1 ? "dejó" : "dejaron"} como estaba${result.heldByOthers === 1 ? "" : "n"}`)
+    return { ok: true, taken: result.taken, message: parts.join(". ") }
+  } catch (error) {
+    return failure(error, "No se pudieron tomar los casos. Reintenta.")
+  }
+}
+
+/**
+ * «Resolver» o «Descartar» varios casos de una misma causa con un motivo común. Mismo permiso que
+ * cerrar uno (`combustibles:resolve_anomalies`); o se cierran todos o ninguno.
+ */
+export async function closeAnomalyCasesAction(
+  input: { cases: ExpectedAnomalyCase[]; status: "resolved" | "dismissed"; resolution: string },
+): Promise<Result & { closed?: number }> {
+  const guard = await guardPermission("combustibles:resolve_anomalies", FUEL_PATHS.revisar)
+  if (guard.error) return guard.error
+  if (!input || (input.status !== "resolved" && input.status !== "dismissed") || typeof input.resolution !== "string") {
+    return { ok: false, message: "Solicitud incompleta: falta la decisión o el motivo" }
+  }
+  if (input.resolution.trim().length === 0 || input.resolution.length > 2000) {
+    return { ok: false, message: "Escribe el motivo (hasta 2.000 caracteres): queda en cada caso" }
+  }
+  const cases = parseCaseSelection(input.cases)
+  if (!cases) return { ok: false, message: `Elige entre 1 y ${MAX_CASE_BATCH} casos` }
+  try {
+    const result = await closeAnomalyCases(guard.session, { cases, status: input.status, resolution: input.resolution })
+    revalidateInbox()
+    const verb = input.status === "resolved" ? (result.closed === 1 ? "resuelto" : "resueltos") : (result.closed === 1 ? "descartado" : "descartados")
+    return { ok: true, closed: result.closed, message: result.closed === 1 ? `Caso ${verb}` : `${result.closed} casos ${verb}` }
+  } catch (error) {
+    return failure(error, input.status === "resolved" ? "No se pudieron resolver los casos. Reintenta." : "No se pudieron descartar los casos. Reintenta.")
   }
 }
 

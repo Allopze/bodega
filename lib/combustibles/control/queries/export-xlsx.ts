@@ -2,6 +2,7 @@ import type ExcelJS from "exceljs"
 import type { Session } from "next-auth"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
+import { supplyMediumNameSql } from "@/lib/combustibles/control/queries/supply-medium-name"
 import { fuelMandantes, fuelSupplyMedia, worksites } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
@@ -54,7 +55,7 @@ export async function resolveFilterNames(filters: ControlFilters): Promise<Filte
   const [worksite, mandante, medium] = await Promise.all([
     filters.worksiteId ? nameOf(() => db.select({ name: worksites.name }).from(worksites).where(eq(worksites.id, filters.worksiteId!)).limit(1)) : undefined,
     filters.mandanteId ? nameOf(() => db.select({ name: fuelMandantes.name }).from(fuelMandantes).where(eq(fuelMandantes.id, filters.mandanteId!)).limit(1)) : undefined,
-    filters.supplyMediumId ? nameOf(() => db.select({ name: fuelSupplyMedia.name }).from(fuelSupplyMedia).where(eq(fuelSupplyMedia.id, filters.supplyMediumId!)).limit(1)) : undefined,
+    filters.supplyMediumId ? nameOf(() => db.select({ name: supplyMediumNameSql() }).from(fuelSupplyMedia).where(eq(fuelSupplyMedia.id, filters.supplyMediumId!)).limit(1)) : undefined,
   ])
   return { worksite, mandante, medium }
 }

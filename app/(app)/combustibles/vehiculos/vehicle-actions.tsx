@@ -49,7 +49,7 @@ export function VehicleActions({
         title="Importar vehículos desde Excel"
         description="Crea o actualiza vehículos por patente usando el consolidado de combustibles de Chome."
         action={importFuelVehiclesFromXlsx}
-        helperText="Columnas requeridas: CODIGO, PATENTE, FAENA, TIPO, MARCA, MODELO y AÑO. Las faenas deben existir y estar dentro de tu alcance."
+        helperText="Columnas requeridas: CODIGO, PATENTE, FAENA, TIPO, MARCA, MODELO y AÑO. Las faenas deben existir y estar dentro de tu alcance. En los equipos de Mantención se conserva la marca de su lista y se aplican sus reglas: una fila que las rompa se omite."
       />
     </>
   )

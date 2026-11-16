@@ -14,6 +14,7 @@ import type { getFleetOverview } from "@/lib/services/fleet"
 import { fleetExpirySubject } from "./fleet-expiry-subject"
 import { FleetMeterReading } from "./fleet-meter-reading"
 import { Button } from "@/components/ui/button"
+import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 type VehicleRow = Awaited<ReturnType<typeof getFleetOverview>>[number]
 
@@ -41,6 +42,15 @@ function hasFuelData(vehicle: VehicleRow): boolean {
 function meterSourceTooltip(source: string | null): string | undefined {
   const label = meterSourceLabel(source)
   return label ? `Lectura ${label}` : undefined
+}
+
+/** De dónde sale el costo por km u hora y cuándo el recorrido es una cota inferior. */
+function unitCostTooltip(vehicle: VehicleRow): string | undefined {
+  return [
+    "Costo por km u hora en 12 meses.",
+    meterSourceTooltip(vehicle.meterSource),
+    vehicle.meterSeriesIncomplete ? "El recorrido es una cota inferior: parte de la serie se descartó por lecturas inválidas." : null,
+  ].filter(Boolean).join(" ") || undefined
 }
 
 /**
@@ -73,20 +83,23 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
   // `openWorkOrders` es null sin `mant:ot:view_*`: sin la capacidad no hay columna, no un 0 engañoso.
   const showWorkOrders = vehicles.some((v) => v.openWorkOrders != null)
   const showMeterReading = canViewFuel && vehicles.some((v) => v.lastOdometerReading != null || v.lastHourMeterReading != null)
+  // Una columna entera de «—» no dice nada: «Responsable» aparece cuando algún vehículo lo tiene (crítica 2026-11-15).
+  const showResponsible = vehicles.some((v) => v.responsibleName != null)
+  const showFuel = canViewCosts && canViewFuel
 
   const columns = React.useMemo(() => [
     { key: "plate", label: "Vehículo", sortable: true },
     { key: "worksiteName", label: "Faena", sortable: true },
     { key: "operationalStatus", label: "Estado", sortable: true },
-    { key: "responsibleName", label: "Responsable", sortable: true },
+    ...(showResponsible ? [{ key: "responsibleName", label: "Responsable", sortable: true }] : []),
     { key: "nextExpiryDate", label: "Próximo vencimiento", sortable: true },
-    ...(canViewCosts && canViewFuel ? [{ key: "totalFuelAmount", label: "Gasto combustible (12 m)", sortable: true, numeric: true }] : []),
-    // Ratio de dos unidades distintas (CLP/km y CLP/h): ordenarlo por el número
-    // crudo compararía magnitudes que no lo son.
-    ...(canViewCosts && canViewFuel ? [{ key: "fuelCostPerUnit", label: "Costo por km u hora", sortable: false, numeric: true }] : []),
+    // El gasto y su costo por km u hora van en una celda (el costo debajo, con su unidad): en dos
+    // columnas la tabla no cabía a 1440 px y cortaba la lectura (crítica 2026-11-15). Se ordena por el
+    // gasto: el costo es un ratio de dos unidades (CLP/km y CLP/h) que no se comparan entre sí.
+    ...(showFuel ? [{ key: "totalFuelAmount", label: "Gasto combustible (12 m)", sortable: true, numeric: true }] : []),
     ...(showWorkOrders ? [{ key: "openWorkOrders", label: "OT abiertas", sortable: true, numeric: true }] : []),
     ...(showMeterReading ? [{ key: "_meterReading", label: "Lectura (km u h)", sortable: false, numeric: true }] : []),
-  ], [canViewCosts, canViewFuel, showWorkOrders, showMeterReading])
+  ], [showResponsible, showFuel, showWorkOrders, showMeterReading])
 
   return (
     <DataTable
@@ -107,9 +120,9 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
           </div>
           <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
             <div><dt className="text-[var(--color-text-subtle)]">Faena</dt><dd>{vehicle.worksiteName}</dd></div>
-            <div><dt className="text-[var(--color-text-subtle)]">Responsable</dt><dd>{vehicle.responsibleName ?? "—"}</dd></div>
+            {vehicle.responsibleName ? <div><dt className="text-[var(--color-text-subtle)]">Responsable</dt><dd>{vehicle.responsibleName}</dd></div> : null}
             <div className="col-span-2"><dt className="text-[var(--color-text-subtle)]">Próximo vencimiento</dt><dd className="mt-0.5"><NextExpiry vehicle={vehicle} today={today} warningDays={warningDays} /></dd></div>
-            {canViewCosts && canViewFuel && (
+            {canViewCosts && canViewFuel && vehicle.fuelCostPerUnit != null && (
               <div><dt className="text-[var(--color-text-subtle)]">Costo por km u hora</dt><dd className="font-mono">{formatUnitCost(vehicle.fuelCostPerUnit, vehicle.fuelCostPerUnitLabel)}</dd></div>
             )}
             {vehicle.openWorkOrders != null && <div><dt className="text-[var(--color-text-subtle)]">OT abiertas</dt><dd>{vehicle.openWorkOrders}{vehicle.inWorkshopNow ? " · en taller" : ""}</dd></div>}
@@ -117,7 +130,7 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
             {showMeterReading && <div><dt className="text-[var(--color-text-subtle)]">Lectura (km u h)</dt><dd className="font-mono"><FleetMeterReading vehicle={vehicle} /></dd></div>}
           </dl>
           <Button asChild size="sm" variant="secondary" className="mt-3 w-full">
-            <Link href={`/flota/${vehicle.id}`} aria-label={`Ver ficha de ${vehicle.code || vehicle.plate}`}>Ver ficha</Link>
+            <Link href={vehicleFichaHref(vehicle.id)} aria-label={`Ver ficha de ${vehicle.code || vehicle.plate}`}>Ver ficha</Link>
           </Button>
         </article>
       )}
@@ -126,25 +139,26 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
           <TableRow key={vehicle.id}>
             <TableCell>
               {/* El enlace es real (clic medio, «abrir en pestaña»); antes la fila entera era un `role="link"`. */}
-              <VehicleIdentity code={vehicle.code} plate={vehicle.plate} type={vehicle.type} href={`/flota/${vehicle.id}`} />
+              <VehicleIdentity code={vehicle.code} plate={vehicle.plate} type={vehicle.type} href={vehicleFichaHref(vehicle.id)} />
             </TableCell>
             <TableCell>{vehicle.worksiteName}</TableCell>
             <TableCell>
               <StateBadge entity="fleet" state={fleetState(vehicle)} />
             </TableCell>
-            <TableCell>{vehicle.responsibleName ?? "—"}</TableCell>
+            {showResponsible && <TableCell>{vehicle.responsibleName ?? "—"}</TableCell>}
             <TableCell><NextExpiry vehicle={vehicle} today={today} warningDays={warningDays} /></TableCell>
-            {canViewCosts && canViewFuel && <TableCell className="text-right font-mono">{hasFuelData(vehicle) ? formatCLP(vehicle.totalFuelAmount ?? 0) : "—"}</TableCell>}
-            {canViewCosts && canViewFuel && (
-              <TableCell
-                className="text-right font-mono"
-                title={[
-                  meterSourceTooltip(vehicle.meterSource),
-                  vehicle.meterSeriesIncomplete ? "El recorrido es una cota inferior: parte de la serie se descartó por lecturas inválidas." : null,
-                  vehicle.meterSeriesCovered === false ? "Costo por km u hora no calculado: la serie no cubre los 12 meses." : null,
-                ].filter(Boolean).join(" ") || undefined}
-              >
-                {formatUnitCost(vehicle.fuelCostPerUnit, vehicle.fuelCostPerUnitLabel)}
+            {showFuel && (
+              <TableCell className="text-right font-mono">
+                {hasFuelData(vehicle) ? (
+                  <>
+                    <span className="block" title={vehicle.fuelCostPerUnit == null && vehicle.meterSeriesCovered === false ? "Costo por km u hora no calculado: la serie de lecturas no cubre los 12 meses." : undefined}>{formatCLP(vehicle.totalFuelAmount ?? 0)}</span>
+                    {vehicle.fuelCostPerUnit != null && vehicle.fuelCostPerUnitLabel != null ? (
+                      <span className="block text-xs text-[var(--color-text-muted)]" title={unitCostTooltip(vehicle)}>
+                        {formatUnitCost(vehicle.fuelCostPerUnit, vehicle.fuelCostPerUnitLabel)}
+                      </span>
+                    ) : null}
+                  </>
+                ) : "—"}
               </TableCell>
             )}
             {showWorkOrders && <TableCell className="text-right font-mono">

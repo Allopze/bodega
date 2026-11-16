@@ -103,6 +103,7 @@ describe("buildGpsUsage", () => {
     to: "2026-11-10",
     previous: { from: "2026-10-22", to: "2026-10-31" },
     granularity: "day" as const,
+    chart: { from: "2026-11-01", to: "2026-11-10", granularity: "day" as const },
   }
   const vehicles = [
     { id: "v1", code: "KA-1", plate: "AA-0001", typeName: "Camión", typeSlug: "camion", worksiteId: "w1", worksiteName: "Faena 1" },
@@ -165,11 +166,53 @@ describe("buildGpsUsage", () => {
   it("agrupa por mes cuando la granularidad es mensual", () => {
     const monthly = buildGpsUsage({
       vehicles, meterRows, linkedExtra: new Set(), rule: { config: null },
-      period: { from: "2026-10-01", to: "2026-11-30", previous: { from: "2026-08-01", to: "2026-09-30" }, granularity: "month" },
+      period: {
+        from: "2026-10-01", to: "2026-11-30", previous: { from: "2026-08-01", to: "2026-09-30" }, granularity: "month",
+        chart: { from: "2026-10-01", to: "2026-11-30", granularity: "month" },
+      },
     })
     expect(monthly.buckets.map((bucket) => bucket.key)).toEqual(["2026-10", "2026-11"])
     expect(monthly.buckets[0]).toMatchObject({ km: 10 + 0 })
     expect(monthly.buckets[1]).toMatchObject({ km: 100, hours: 14 })
+  })
+})
+
+describe("buildGpsUsage con la ventana del gráfico más larga que el período", () => {
+  // Un mes (1-10 nov) con los seis meses que terminan en él: la ventana de los gráficos por defecto.
+  const period = {
+    from: "2026-11-01",
+    to: "2026-11-10",
+    previous: { from: "2026-10-22", to: "2026-10-31" },
+    granularity: "day" as const,
+    chart: { from: "2026-06-01", to: "2026-11-10", granularity: "month" as const },
+  }
+  const vehicles = [
+    { id: "v1", code: "KA-1", plate: "AA-0001", typeName: "Camión", typeSlug: "camion", worksiteId: "w1", worksiteName: "Faena 1" },
+  ]
+  const odo = (day: string, value: number) => ({ vehicleId: "v1", source: "gps_wialon", meterType: "odometer", occurredAt: at(day), value })
+  // Junio +100 (cierra el 2), julio +200 (cierra el 2), octubre +10 (cierra el 31), noviembre +30 y +20.
+  const meterRows = [
+    odo("2026-06-01", 0), odo("2026-06-02", 100),
+    odo("2026-07-01", 100), odo("2026-07-02", 300),
+    odo("2026-10-30", 300), odo("2026-10-31", 310),
+    odo("2026-11-01", 310), odo("2026-11-02", 340), odo("2026-11-03", 360),
+  ]
+  const data = buildGpsUsage({ vehicles, meterRows, linkedExtra: new Set(), rule: { config: null }, period })
+
+  it("la serie tiene seis baldes mensuales aunque el período sea un mes", () => {
+    expect(data.buckets.map((bucket) => bucket.key)).toEqual(["2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11"])
+    expect(data.buckets.map((bucket) => bucket.km)).toEqual([100, 200, 0, 0, 10, 50])
+  })
+
+  it("las cifras, la comparación y los rankings sólo suman el período y el anterior", () => {
+    expect(data.km).toEqual({ current: 50, previous: 10 })
+    expect(data.topByKm).toHaveLength(1)
+    expect(data.topByKm[0]!.km).toBe(50)
+    expect(data.byWorksite).toEqual([{ worksiteId: "w1", name: "Faena 1", km: 50, hours: 0, vehicles: 1 }])
+  })
+
+  it("la cobertura de lecturas es la del período, no la de la ventana", () => {
+    expect(data.readingDays).toEqual({ current: 3, previous: 2 })
   })
 })
 
@@ -179,6 +222,7 @@ describe("buildGpsAlertAggregates", () => {
     to: "2026-11-15",
     previous: { from: "2026-10-19", to: "2026-11-01" },
     granularity: "day" as const,
+    chart: { from: "2026-11-02", to: "2026-11-15", granularity: "day" as const },
   }
   const vehicles = new Map([
     ["v1", { code: "KA-1", plate: "AA-0001", typeName: "Camión" }],
@@ -210,5 +254,21 @@ describe("buildGpsAlertAggregates", () => {
   it("compara los excesos con el período anterior y rankea por equipo", () => {
     expect(out.speeding).toEqual({ current: 5, previous: 7 })
     expect(out.topSpeeding.map((row) => [row.vehicleId, row.count])).toEqual([["v1", 4], ["v2", 1]])
+  })
+
+  it("con una ventana de seis meses la serie la sigue y los totales siguen al período", () => {
+    const history = buildGpsAlertAggregates({
+      rows: [...rows, { vehicleId: "v1", day: "2026-07-14", title: speed, n: 6 }],
+      vehicles,
+      period: { ...period, chart: { from: "2026-06-01", to: "2026-11-15", granularity: "month" } },
+    })
+    expect(history.alertGranularity).toBe("week")
+    expect(history.alertBuckets[0]!.key).toBe("2026-06-01")
+    expect(history.alertBuckets.find((bucket) => bucket.key === "2026-07-13")!.counts.speeding).toBe(6)
+    // El del 25/10 también es serie (es de la ventana), pero no es del período.
+    expect(history.alertBuckets.find((bucket) => bucket.key === "2026-10-19")!.counts.speeding).toBe(7)
+    expect(history.alertTotals).toEqual({ speeding: 5, harsh_driving: 3, pothole: 0, idle: 2, other: 0 })
+    expect(history.speeding).toEqual({ current: 5, previous: 7 })
+    expect(history.topSpeeding.map((row) => [row.vehicleId, row.count])).toEqual([["v1", 4], ["v2", 1]])
   })
 })

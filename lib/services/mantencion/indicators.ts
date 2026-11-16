@@ -33,10 +33,17 @@ import { workOrderVisibility, workOrderVisibilitySql } from "./work-orders/acces
  */
 
 export interface MantIndicatorQuery {
+  /** El período medido (cortado en hoy): cifras, totales, rankings. */
   from: string
   to: string
   granularity: IndicatorGranularity
   previous: DateRange
+  /**
+   * Ventana de los gráficos de evolución (`period.chart`): el propio período si abarca tres meses o más; si no,
+   * los seis meses que terminan en él, por mes. Las series (`points`) la siguen; los totales y las cifras
+   * contra el período anterior, no.
+   */
+  chart: { from: string; to: string; granularity: IndicatorGranularity }
   /** Faena elegida; `undefined` = todas las visibles. */
   worksiteId?: string
   today?: string
@@ -217,10 +224,15 @@ function workOrderScope(viewer: MantViewer, worksiteId: string | undefined): SQL
 const SANTIAGO_DAY = (column: AnyColumn) =>
   sql<string | null>`to_char(${column} AT TIME ZONE 'America/Santiago', 'YYYY-MM-DD')`
 
-/** OT creadas / cerradas / backlog por balde y mezcla reparación-mantención. */
+/**
+ * OT creadas / cerradas / backlog por balde y mezcla reparación-mantención, sobre la ventana de los
+ * gráficos (`query.chart`), no sobre el período: la serie no entrega totales, así que no hay nada que
+ * recortar al período.
+ */
 export async function loadWorkOrderSeries(viewer: MantViewer, query: MantIndicatorQuery): Promise<WorkOrderSeriesPoint[]> {
   const today = query.today ?? todayInChile()
-  const fromInstant = chileDayStartInstant(query.from)
+  const { chart } = query
+  const fromInstant = chileDayStartInstant(chart.from)
   // Una OT cerrada o anulada antes del rango no cuenta en ningún balde (ni en el backlog).
   const rows = await db.select({
     requestDate: mantWorkOrders.requestDate,
@@ -233,11 +245,11 @@ export async function loadWorkOrderSeries(viewer: MantViewer, query: MantIndicat
     .from(mantWorkOrders)
     .where(and(
       workOrderScope(viewer, query.worksiteId),
-      lte(mantWorkOrders.requestDate, query.to),
+      lte(mantWorkOrders.requestDate, chart.to),
       or(isNull(mantWorkOrders.closedAt), gte(mantWorkOrders.closedAt, fromInstant)),
       or(isNull(mantWorkOrders.voidedAt), gte(mantWorkOrders.voidedAt, fromInstant)),
     ))
-  return buildWorkOrderSeries(rows, { from: query.from, to: query.to, granularity: query.granularity, today })
+  return buildWorkOrderSeries(rows, { from: chart.from, to: chart.to, granularity: chart.granularity, today })
 }
 
 export interface WorkOrderPeriodStats {
@@ -343,6 +355,12 @@ export interface PautaState {
   total: number
   /** Equipos detenidos en taller hoy (correctiva u OT abierta): la misma regla que la ficha y Equipos «En taller». */
   inWorkshop: number
+  /**
+   * De esos, los que están por una OT en ejecución; el resto, por una correctiva sin OT. El Panel lo dice
+   * junto a la cifra porque el gráfico de OT de al lado cuenta OT en la etapa «En taller», no equipos, y
+   * «Equipos en taller 6» sobre «En taller 4 OT» se leía como una contradicción (crítica 2026-11-15).
+   */
+  inWorkshopByOrder: number
 }
 
 /** Estado de las pautas hoy: la única fuente es `loadFleet`. */
@@ -350,7 +368,13 @@ export async function loadPautaState(viewer: MantViewer, worksiteId: string | un
   const fleet = await loadFleet({ scope: fleetScopeFor(viewer, worksiteId), today })
   const counts = Object.fromEntries(MANT_EQUIPMENT_STATES.map((state) => [state, 0])) as Record<MantEquipmentState, number>
   for (const row of fleet) counts[row.status.state] += 1
-  return { counts, total: fleet.length, inWorkshop: fleet.filter((row) => row.workshop).length }
+  const inWorkshop = fleet.filter((row) => row.workshop)
+  return {
+    counts,
+    total: fleet.length,
+    inWorkshop: inWorkshop.length,
+    inWorkshopByOrder: inWorkshop.filter((row) => row.workshop?.workOrderId).length,
+  }
 }
 
 export interface RecordSeriesPoint {
@@ -366,27 +390,37 @@ export interface RecordIndicators {
   preventivePrevious: number
 }
 
-/** Registros preventivos vs correctivos por balde y total preventivo contra el período anterior. */
+/**
+ * Registros preventivos vs correctivos por balde de la ventana de los gráficos (`query.chart`), y total
+ * preventivo del período contra el anterior (`query.from/to` y `query.previous`).
+ *
+ * Una sola consulta: se trae por día la unión de la ventana del gráfico y del período anterior (la ventana
+ * siempre contiene al período) y se reparte en JS: los baldes del gráfico, el total del período y el del
+ * anterior. Tres consultas por rango harían lo mismo con más idas a la base.
+ */
 export async function loadRecordIndicators(viewer: MantViewer, query: MantIndicatorQuery): Promise<RecordIndicators> {
   const today = query.today ?? todayInChile()
-  const [current, previous] = await Promise.all([
-    loadRecordSeries(viewer, { from: query.from, to: query.to, granularity: query.granularity, worksiteId: query.worksiteId }),
-    loadRecordSeries(viewer, { from: query.previous.from, to: query.previous.to, granularity: "month", worksiteId: query.worksiteId }),
-  ])
-  const keys = listBuckets(query.from, query.to, query.granularity)
+  const { chart } = query
+  const unionFrom = [chart.from, query.previous.from, query.from].reduce((min, value) => (value < min ? value : min))
+  const unionTo = chart.to > query.to ? chart.to : query.to
+  const rows = await loadRecordSeries(viewer, { from: unionFrom, to: unionTo, granularity: "day", worksiteId: query.worksiteId })
+  const keys = listBuckets(chart.from, chart.to, chart.granularity)
   const points = new Map<string, RecordSeriesPoint>(
-    keys.map((key) => [key, { key, preventive: 0, corrective: 0, partial: isPartialBucket(key, query.granularity, today) && query.to >= today }]),
+    keys.map((key) => [key, { key, preventive: 0, corrective: 0, partial: isPartialBucket(key, chart.granularity, today) && chart.to >= today }]),
   )
-  for (const row of current) {
-    const point = points.get(bucketKey(row.bucket, query.granularity))
-    if (point) point[row.kind === "P" ? "preventive" : "corrective"] += row.n
+  let preventive = 0
+  let preventivePrevious = 0
+  for (const row of rows) {
+    // `bucket` es el día (`YYYY-MM-DD`) de la fecha de trabajo.
+    if (row.bucket >= chart.from && row.bucket <= chart.to) {
+      const point = points.get(bucketKey(row.bucket, chart.granularity))
+      if (point) point[row.kind === "P" ? "preventive" : "corrective"] += row.n
+    }
+    if (row.kind !== "P") continue
+    if (row.bucket >= query.from && row.bucket <= query.to) preventive += row.n
+    if (row.bucket >= query.previous.from && row.bucket <= query.previous.to) preventivePrevious += row.n
   }
-  const list = keys.map((key) => points.get(key)!)
-  return {
-    points: list,
-    preventive: list.reduce((sum, point) => sum + point.preventive, 0),
-    preventivePrevious: previous.filter((row) => row.kind === "P").reduce((sum, row) => sum + row.n, 0),
-  }
+  return { points: keys.map((key) => points.get(key)!), preventive, preventivePrevious }
 }
 
 export interface OutOfServicePoint {
@@ -403,14 +437,19 @@ export interface OutOfServiceIndicators {
 }
 
 /**
- * Días-equipo fuera de servicio por balde: traslape de los intervalos operacionales en
+ * Días-equipo fuera de servicio por balde de la ventana de los gráficos (`query.chart`): traslape de los intervalos operacionales en
  * `mantencion` o `fuera_servicio` (los dos estados que el Panel operacional cuenta como
- * detenido, `countStoppedVehicles`) de los equipos activos del alcance.
+ * detenido, `countStoppedVehicles`) de los equipos activos del alcance. El total y el del período
+ * anterior se miden sobre el período (`query.from/to`, `query.previous`), no sobre la ventana: una sola
+ * consulta de intervalos (la unión de ambos rangos) y cada cifra se calcula con su propia ventana.
  */
 export async function loadOutOfService(viewer: MantViewer, query: MantIndicatorQuery, now: Date = new Date()): Promise<OutOfServiceIndicators> {
   const today = query.today ?? todayInChile(now)
-  const rangeStart = chileDayStartInstant(query.previous.from)
-  const rangeEnd = chileDayStartInstant(addDaysToPlainDate(query.to, 1))
+  const { chart } = query
+  const earliest = [chart.from, query.previous.from, query.from].reduce((min, value) => (value < min ? value : min))
+  const latest = chart.to > query.to ? chart.to : query.to
+  const rangeStart = chileDayStartInstant(earliest)
+  const rangeEnd = chileDayStartInstant(addDaysToPlainDate(latest, 1))
   const intervals = await db.select({
     startedAt: fuelVehicleOperationalIntervals.startedAt,
     endedAt: fuelVehicleOperationalIntervals.endedAt,
@@ -424,12 +463,12 @@ export async function loadOutOfService(viewer: MantViewer, query: MantIndicatorQ
       lt(fuelVehicleOperationalIntervals.startedAt, rangeEnd),
       or(isNull(fuelVehicleOperationalIntervals.endedAt), gte(fuelVehicleOperationalIntervals.endedAt, rangeStart)),
     ))
-  const keys = listBuckets(query.from, query.to, query.granularity)
-  const range = { from: query.from, to: query.to }
+  const keys = listBuckets(chart.from, chart.to, chart.granularity)
+  const range = { from: chart.from, to: chart.to }
   const windows = [
-    ...keys.map((key) => bucketWindow(key, query.granularity, range, today)),
-    // La ventana del período completo y la del anterior: el total no es la suma de los
-    // baldes redondeados a 1 decimal.
+    ...keys.map((key) => bucketWindow(key, chart.granularity, range, today)),
+    // La ventana del período completo y la del anterior: el total no es la suma de los baldes
+    // (redondeados a 1 decimal y, con la ventana de seis meses, de más meses que el período).
     { from: query.from, to: query.to < today ? query.to : today },
     query.previous,
   ]
@@ -439,7 +478,7 @@ export async function loadOutOfService(viewer: MantViewer, query: MantIndicatorQ
     points: keys.map((key, index) => ({
       key,
       days: round1(bucketDays[index] ?? 0),
-      partial: isPartialBucket(key, query.granularity, today) && query.to >= today,
+      partial: isPartialBucket(key, chart.granularity, today) && chart.to >= today,
     })),
     total: round1(days[keys.length] ?? 0),
     totalPrevious: round1(days[keys.length + 1] ?? 0),

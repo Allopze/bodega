@@ -10,6 +10,12 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 const session = vi.hoisted(() => ({ permissions: ["mant:records:view_all"] as string[] }))
 const scope = vi.hoisted(() => ({ equipment: 3, records: 5, inWorkshop: 1 }))
 const unassigned = vi.hoisted(() => vi.fn(async () => 2))
+// Los cargadores de series quedan como espías: la página debe pasarles la ventana de los gráficos (`chart`).
+const loaders = vi.hoisted(() => ({
+  series: vi.fn(async (..._args: unknown[]) => [{ key: "2026-10", created: 1, closed: 0, backlog: 1 }]),
+  records: vi.fn(async (..._args: unknown[]) => ({ points: [{ key: "2026-10", preventive: scope.records, corrective: 0, partial: false }], preventive: scope.records, preventivePrevious: 0 })),
+  outOfService: vi.fn(async (..._args: unknown[]) => ({ points: [], total: 0, totalPrevious: 0 })),
+}))
 
 vi.mock("next/navigation", () => ({ redirect: (href: string) => { throw new Error(`redirect:${href}`) } }))
 vi.mock("@/lib/auth/can", () => ({
@@ -23,27 +29,27 @@ vi.mock("@/lib/services/mantencion/panel", () => ({
 }))
 vi.mock("@/lib/services/mantencion/work-orders/query", () => ({ countUnassignedWorkOrders: unassigned }))
 vi.mock("@/lib/services/mantencion/indicators", () => ({
-  loadWorkOrderSeries: async () => [{ key: "2026-10", created: 1, closed: 0, backlog: 1 }],
+  loadWorkOrderSeries: loaders.series,
   loadWorkOrderPeriodStats: async () => ({}),
   loadOpenWorkOrdersByStatus: async () => [],
   loadTopRepairEquipment: async () => [],
-  loadPautaState: async () => ({ counts: {}, total: scope.equipment, inWorkshop: scope.inWorkshop }),
-  loadRecordIndicators: async () => ({ points: [{ key: "2026-10", preventive: scope.records, corrective: 0, partial: false }], preventive: scope.records, preventivePrevious: 0 }),
-  loadOutOfService: async () => ({ points: [], total: 0, previous: 0 }),
+  loadPautaState: async () => ({ counts: {}, total: scope.equipment, inWorkshop: scope.inWorkshop, inWorkshopByOrder: scope.inWorkshop }),
+  loadRecordIndicators: loaders.records,
+  loadOutOfService: loaders.outOfService,
 }))
 vi.mock("@/components/ui/page-header", () => ({ PageHeader: () => null, Breadcrumbs: () => null }))
-vi.mock("@/components/dashboard/indicator-filters", () => ({ IndicatorFilters: () => null }))
 vi.mock("./indicators-sections", () => ({ WorkOrdersSection: () => null, PautasSection: () => null }))
-vi.mock("./panel-export-button", () => ({ PanelExportButton: () => null }))
 
 import MantencionPanelPage from "./page"
+import { BoardExportButton } from "@/components/dashboard/board-export-button"
+import { BoardHeaderActions } from "@/components/dashboard/board-scope"
 import { PageHeader } from "@/components/ui/page-header"
 import { PanelEmptyState } from "@/components/mantencion/jefatura/panel/panel-empty"
 import { PanelToday } from "@/components/mantencion/jefatura/panel/panel-today"
 import { WorkOrdersSection } from "./indicators-sections"
-import { PanelExportButton } from "./panel-export-button"
 
 afterEach(() => {
+  vi.useRealTimers()
   session.permissions = ["mant:records:view_all"]
   Object.assign(scope, { equipment: 3, records: 5, inWorkshop: 1 })
   unassigned.mockClear()
@@ -88,12 +94,38 @@ describe("/mantencion/panel · franja «Hoy» y gráficos", () => {
   })
 })
 
+describe("/mantencion/panel · ventana de los gráficos", () => {
+  it("el mes en curso pide las series sobre los seis meses que terminan en él y las secciones reciben el pie de la ventana", async () => {
+    session.permissions = ["mant:records:view_all", "mant:ot:view_all"]
+    // Fecha fija: el mes «en curso» se corta en hoy y la ventana se cuenta hacia atrás desde ahí.
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-11-15T15:00:00Z"))
+    const tree = await page({ desde: "2026-11-01", hasta: "2026-11-30" })
+    const query = loaders.series.mock.calls.at(-1)![1] as { from: string; to: string; chart: { from: string; to: string; granularity: string; isHistory: boolean } }
+    // El período sigue siendo el mes (cortado en hoy); la serie mira seis meses, por mes.
+    expect(query.from).toBe("2026-11-01")
+    expect(query.to).toBe("2026-11-15")
+    expect(query.chart).toMatchObject({ granularity: "month", isHistory: true })
+    expect(query.chart.from).toBe("2026-06-01")
+    expect(query.chart.to).toBe(query.to)
+    expect(loaders.records.mock.calls.at(-1)![1]).toMatchObject({ chart: query.chart })
+    expect(loaders.outOfService.mock.calls.at(-1)![1]).toMatchObject({ chart: query.chart })
+    const props = findElement(tree, WorkOrdersSection)!.props
+    expect(props.chart).toMatchObject({ isHistory: true })
+    expect(props.chartNote).toMatch(/^Últimos 6 meses, hasta noviembre de 2026 · /)
+    expect(String(props.scopeNote)).not.toMatch(/Últimos/)
+  })
+})
+
 describe("/mantencion/panel · Excel", () => {
-  it("sólo con `mant:export`, y con la faena elegida", async () => {
-    expect(findElement(await page(), PageHeader)!.props.actions).toBeUndefined()
+  it("la cabecera lleva el control de faena y período; «Exportar Excel» sólo con `mant:export`", async () => {
+    const without = findElement(await page(), PageHeader)!.props.actions as ReactNode
+    expect(findElement(without, BoardHeaderActions)).not.toBeNull()
+    expect(findElement(without, BoardExportButton)).toBeNull()
     session.permissions = ["mant:records:view_all", "mant:export"]
     const actions = findElement(await page({ faena: "ws-1" }), PageHeader)!.props.actions as ReactNode
-    expect(findElement(actions, PanelExportButton)!.props.params).toEqual({ faena: "ws-1" })
+    expect(findElement(actions, BoardHeaderActions)!.props).toMatchObject({ worksiteId: "ws-1" })
+    expect(findElement(actions, BoardExportButton)!.props).toMatchObject({ title: "Panel de mantención", scope: { faena: "Biodiversa" } })
   })
 })
 

@@ -363,7 +363,7 @@ export function CopecSyncStatus({ source, initialStatus, initialStartOptions, qu
       </div>
 
       <details>
-        <summary className="cursor-pointer text-xs font-medium text-[var(--color-text)]">Confirmar un producto y canal sin movimientos</summary>
+        <summary className="cursor-pointer py-3.5 text-xs font-medium text-[var(--color-text)] sm:py-0">Confirmar un producto y canal sin movimientos</summary>
         <form onSubmit={confirmEmptyPeriod} className="mt-3 grid gap-3">
           <p className="text-xs text-[var(--color-text-muted)]">Disponible para meses cerrados. Registra qué verificaste en el portal; la confirmación queda asociada a tu usuario.</p>
           <div className="grid gap-3 sm:grid-cols-2">

@@ -120,7 +120,7 @@ test.describe("Panel operacional — combustible por vehículo", () => {
     // El enlace dice a qué vehículo pertenece: «Combustible de E2E…».
     await expect(row.getByRole("link", { name: /^Combustible de / })).toHaveAttribute(
       "href",
-      `/combustibles/consumo/equipos/${VEHICLE_ID}`,
+      `/flota/${VEHICLE_ID}/combustible`,
     )
   })
 

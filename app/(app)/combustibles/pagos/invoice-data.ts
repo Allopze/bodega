@@ -1,7 +1,7 @@
 import type { Session } from "next-auth"
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelLoads, fuelProducts, fuelSuppliers, fuelVehicles, worksites } from "@/db/schema"
+import { fuelEquipmentTypes, fuelLoads, fuelProducts, fuelSuppliers, fuelVehicles, worksites } from "@/db/schema"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
 import { buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
@@ -151,11 +151,13 @@ export async function loadInvoicesData(session: Session, filters: InvoiceFilters
       status: fuelLoads.status,
       vehicleCode: fuelVehicles.code,
       vehiclePlate: fuelVehicles.plate,
+      vehicleType: fuelEquipmentTypes.name,
       supplierName: fuelSuppliers.name,
       worksiteName: worksites.name,
     })
       .from(fuelLoads)
       .leftJoin(fuelVehicles, eq(fuelVehicles.id, fuelLoads.vehicleId))
+      .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
       .leftJoin(fuelSuppliers, eq(fuelSuppliers.id, fuelLoads.fuelSupplierId))
       .leftJoin(worksites, eq(worksites.id, fuelLoads.worksiteId))
       .where(where)
@@ -165,9 +167,9 @@ export async function loadInvoicesData(session: Session, filters: InvoiceFilters
     [],
     "facturas-lista",
   )
-  const rows: InvoiceRow[] = listRows.map(({ vehicleCode, vehiclePlate, ...row }) => ({
+  const rows: InvoiceRow[] = listRows.map(({ vehicleCode, vehiclePlate, vehicleType, ...row }) => ({
     ...row,
-    vehicle: vehiclePlate ? { code: vehicleCode, plate: vehiclePlate } : null,
+    vehicle: vehiclePlate ? { code: vehicleCode, plate: vehiclePlate, type: vehicleType } : null,
   }))
 
   const summary = summaryRows[0]

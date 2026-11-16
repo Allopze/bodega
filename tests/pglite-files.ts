@@ -485,6 +485,7 @@ export const pgliteTestFiles = [
   // otro carril edita este archivo. (Carril A) suplantación del ejecutor,
   // alcance de escritura del taller y permisos de lectura del canal móvil.
   "lib/__tests__/mantencion-seguridad-pglite.test.ts",
+  "lib/__tests__/padron-identidad-mantencion-pglite.test.ts",
   // (Carril B) composición de fotos, anulación de registros con OT, folio único
   // e idempotencia de `client_op_id`.
   "lib/__tests__/mantencion-integridad-pglite.test.ts",

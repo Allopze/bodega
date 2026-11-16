@@ -34,6 +34,8 @@ describe("buscador de la shell", () => {
   })
   it("Flota (F1): la lista y la ficha traen su búsqueda; Conductores y Monitoreo usan la de la shell", () => {
     for (const path of ["/flota", "/flota/veh-1"]) expect(hidesShellSearch(path), path).toBe(true)
+    // Las pestañas de la ficha única del vehículo tampoco tienen lista que la shell pueda filtrar.
+    for (const path of ["/flota/veh-1/flota", "/flota/veh-1/mantencion", "/flota/veh-1/combustible"]) expect(hidesShellSearch(path), path).toBe(true)
     for (const path of ["/flota/conductores", "/flota/monitoreo"]) expect(hidesShellSearch(path), path).toBe(false)
   })
 })

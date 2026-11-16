@@ -127,7 +127,8 @@ export function EvolutionChart({ data, showCosts = true, emptyAction }: { data: 
             cursor={{ stroke: "var(--color-border-strong)", strokeDasharray: "3 3" }}
             content={<TooltipPanel formatValue={(value, name) => name === "Consumo" ? `${formatCompactQty(value)} L` : formatCompactCLP(value)} />}
           />
-          <Legend iconType="plainline" iconSize={10} wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+          {/* El rótulo en el texto secundario: con el de recharts salía en el color de la serie, ilegible en el ocre. */}
+          <Legend iconType="plainline" iconSize={10} wrapperStyle={{ fontSize: 12, paddingTop: 8 }} formatter={(value) => <span className="text-[var(--color-text-muted)]">{value}</span>} />
           {showCosts && <Area
             yAxisId="monto"
             type="linear"

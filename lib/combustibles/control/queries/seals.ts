@@ -1,6 +1,7 @@
 import type { Session } from "next-auth"
 import { and, desc, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
+import { supplyMediumNameSql } from "@/lib/combustibles/control/queries/supply-medium-name"
 import { fuelTaeEvidence, fuelTaeLoadingPoints, fuelTaeSubmissions, fuelSupplyMedia, fuelVehicles, worksites } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { mandanteWorksitesSql, type ControlFilters } from "../filters"
@@ -148,7 +149,7 @@ export async function listSealDetail(
       worksiteName: worksites.name,
       loadingPointType: fuelTaeLoadingPoints.type,
       loadingPointName: fuelTaeLoadingPoints.name,
-      mediumName: fuelSupplyMedia.name,
+      mediumName: supplyMediumNameSql(),
       liters: fuelTaeSubmissions.liters,
       meterType: fuelTaeSubmissions.meterType,
       meterReading: fuelTaeSubmissions.meterReading,

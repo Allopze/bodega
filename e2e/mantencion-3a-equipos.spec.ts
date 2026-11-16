@@ -80,14 +80,14 @@ test.describe("E2E 6 · Equipos", () => {
     })
     await page.getByRole("button", { name: "Crear equipo", exact: true }).click()
 
-    await expect(page).toHaveURL(/\/mantencion\/equipos\/(?!nuevo)[^/?]+/)
+    await expect(page).toHaveURL(/\/flota\/[^/?]+\/mantencion/)
     ids.eq1 = idFromPath(page)
     await expect(page.getByText(/Equipo QA-EQ1 creado/)).toBeVisible()
     await expectPageTitle(page, "QA-EQ1")
     // El código se normalizó y la patente quedó con guion; la faena es la elegida y no se creó ninguna.
-    await expect(fichaValue(page, "Código interno")).toHaveText("QA-EQ1")
-    await expect(fichaValue(page, "Patente")).toHaveText("ZZZB-71")
-    await expect(fichaValue(page, "Faena")).toHaveText("Cholguan")
+    // La identidad va en la cabecera de la ficha; la tarjeta de Mantención dice lo suyo (paso 4b).
+    await expect(page.getByRole("banner")).toContainText("ZZZB-71")
+    await expect(page.getByRole("banner")).toContainText("Cholguan")
     await expect(fichaValue(page, "Pauta")).toHaveText("Camiones y tractos")
     expect(await withSql(async (sql) => Number((await sql`select count(*) as n from worksites`)[0]?.n))).toBe(worksitesBefore)
     // El historial dice que se creó, con fecha y autor en una línea.
@@ -108,30 +108,42 @@ test.describe("E2E 6 · Equipos", () => {
     await page.getByLabel("Sin patente", { exact: true }).check()
     await expect(page.getByRole("textbox", { name: "Patente", exact: true })).toBeDisabled()
     await page.getByRole("button", { name: "Crear equipo", exact: true }).click()
-    await expect(page).toHaveURL(/\/mantencion\/equipos\/(?!nuevo)[^/?]+/)
+    await expect(page).toHaveURL(/\/flota\/[^/?]+\/mantencion/)
     ids.eq2 = idFromPath(page)
-    // Código y patente coinciden: la ficha muestra uno solo y dice que no tiene patente.
-    await expect(fichaValue(page, "Código interno")).toHaveText("QA-EQ2")
-    await expect(fichaValue(page, "Patente")).toHaveText("Sin patente")
+    // Código y patente coinciden: la cabecera nombra el código y dice que no tiene patente.
+    await expectPageTitle(page, "QA-EQ2")
+    await expect(page.getByRole("banner")).toContainText("Sin patente")
     await expect(fichaValue(page, "Pauta")).toHaveText("Sin pauta")
   })
 
-  test("edita la ficha: se abre en lectura, la faena se cambia por otra existente y el historial lo cuenta", async ({ page }) => {
+  test("la identidad se edita en «Editar vehículo», con las reglas de Mantención, y el historial lo cuenta", async ({ page }) => {
     const errors = trackConsole(page)
     await asJefe(page)
     await page.goto(`/mantencion/equipos/${ids.eq1}`)
-    // Modo lectura: no hay formulario hasta «Editar ficha».
-    await expect(page.getByRole("textbox", { name: "Modelo", exact: true })).toHaveCount(0)
-    await page.getByRole("button", { name: "Editar ficha", exact: true }).click()
-    await page.getByRole("textbox", { name: "Modelo", exact: true }).fill("R500")
-    await selectRadixById(page, "eq-worksite", "Biodiversa")
-    await page.getByRole("button", { name: "Guardar cambios", exact: true }).click()
+    // «Editar mantención» ya no trae la identidad: sólo pauta, lectura inicial y baja (paso 4b).
+    await page.getByRole("button", { name: "Editar mantención", exact: true }).click()
+    const plan = page.getByRole("form", { name: "Editar mantención" })
+    await expect(plan.getByRole("combobox", { name: /^Pauta de mantención/ })).toBeVisible()
+    await expect(plan.getByRole("textbox", { name: "Modelo", exact: true })).toHaveCount(0)
+    await plan.getByRole("button", { name: "Cancelar", exact: true }).click()
 
-    await expect(page.getByText("Cambios guardados en QA-EQ1.")).toBeVisible()
-    await expect(page.getByRole("textbox", { name: "Modelo", exact: true })).toHaveCount(0)
-    await expect(fichaValue(page, "Modelo")).toHaveText("R500")
-    await expect(fichaValue(page, "Faena")).toHaveText("Biodiversa")
-    await expect(page.getByText(/Editado · Modelo: R450 → R500 · Faena: Cholguan → Biodiversa/)).toBeVisible()
+    await page.getByRole("button", { name: "Editar vehículo", exact: true }).click()
+    const sheet = page.getByRole("dialog", { name: "Editar vehículo" })
+    await expect(sheet.getByText(/Está en Mantención/)).toBeVisible()
+    // La marca es la de la lista de Mantención, no un texto libre.
+    await expect(sheet.getByRole("combobox", { name: /^Marca/ })).toContainText("Scania")
+    await sheet.getByRole("textbox", { name: "Modelo", exact: true }).fill("R500")
+    await selectRadixById(page, "v-worksite", "Biodiversa")
+    // Un equipo creado en Mantención no trae productos compatibles: el padrón los pide y lleva a su pestaña.
+    await sheet.getByRole("button", { name: "Guardar cambios", exact: true }).click()
+    await expect(sheet.getByRole("tab", { name: /^Combustible/ })).toHaveAttribute("aria-selected", "true")
+    await sheet.getByLabel(/Diésel$/).check()
+    await sheet.getByRole("button", { name: "Guardar cambios", exact: true }).click()
+
+    await expect(page.getByText("Vehículo actualizado")).toBeVisible()
+    await expect(sheet).toHaveCount(0)
+    await expect(page.getByRole("banner")).toContainText("Biodiversa")
+    await expect(page.getByText(/Editado en Vehículos · Modelo: R450 → R500 · Faena: Cholguan → Biodiversa/)).toBeVisible()
     expect(errors).toEqual([])
   })
 
@@ -207,7 +219,7 @@ test.describe("E2E 6 · Equipos", () => {
     const errors = trackConsole(page)
     await asJefe(page)
     await page.goto(`/mantencion/equipos/${ids.im1}`)
-    await page.getByRole("button", { name: "Editar ficha", exact: true }).click()
+    await page.getByRole("button", { name: "Editar mantención", exact: true }).click()
     await page.getByRole("radio", { name: "Dado de baja", exact: true }).check()
     // Sin motivo no se da de baja.
     await page.getByRole("button", { name: "Guardar cambios", exact: true }).click()
@@ -227,7 +239,7 @@ test.describe("E2E 6 · Equipos", () => {
 
     // Reactivar lo devuelve a la lista normal.
     await page.goto(`/mantencion/equipos/${ids.im1}`)
-    await page.getByRole("button", { name: "Editar ficha", exact: true }).click()
+    await page.getByRole("button", { name: "Editar mantención", exact: true }).click()
     await page.getByRole("radio", { name: "Activo", exact: true }).check()
     await page.getByRole("button", { name: "Guardar cambios", exact: true }).click()
     await expect(fichaValue(page, "Estado")).toHaveText("Activo")

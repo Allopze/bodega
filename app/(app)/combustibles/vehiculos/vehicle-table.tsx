@@ -15,6 +15,7 @@ import { VehicleForm } from "./vehicle-form"
 import { VehicleDesktopRow, VehicleMobileCard, type VehicleRow } from "./vehicle-catalog-items"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
 import { pluralize } from "@/lib/utils"
+import type { PadronBrandOption } from "@/lib/mantencion/padron-identity"
 
 const MIN_REASON_LENGTH = 5
 
@@ -25,13 +26,15 @@ async function toggleVehicleActive(_prev: unknown, formData: FormData) {
   return toggleFuelVehicleActiveAction(id, activate, reason)
 }
 
-export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes, suppliers, products }: {
+export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes, suppliers, products, maintenanceBrands }: {
   vehicles: VehicleRow[]
   worksites: Array<{ id: string; name: string }>
   users: Array<{ id: string; name: string }>
   equipmentTypes: Array<{ id: string; name: string; category: string; defaultMeterType: string; defaultPerformanceUnit: string; isActive: boolean }>
   suppliers: Array<{ id: string; name: string }>
   products: Array<{ id: string; name: string; unit: string; isActive: boolean }>
+  /** Marcas de Mantención para los vehículos que están en ella (crítica 2026-11-15, paso 4b). */
+  maintenanceBrands: PadronBrandOption[]
 }) {
   const {
     sheetOpen: formOpen,
@@ -323,6 +326,7 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
         suppliers={suppliers}
         products={products}
         editVehicle={editVehicle}
+        maintenanceBrands={maintenanceBrands}
       />
     </>
   )

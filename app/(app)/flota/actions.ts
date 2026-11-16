@@ -26,6 +26,7 @@ import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { recordAudit } from "@/lib/audit"
 import { fleetProviderGapNotice } from "./fleet-provider-gap"
 import { formatLastReading } from "./fleet-last-reading"
+import { revalidateVehicleFicha } from "@/lib/routing/revalidate-vehicle-ficha"
 
 const FLEET_EXPORT_LIMIT = 10_000
 
@@ -92,7 +93,7 @@ export async function uploadFleetDocumentAction(
     }, session, serviceWorksiteScope(session))
 
     revalidatePath("/flota")
-    revalidatePath(`/flota/${vehicleId}`)
+    revalidateVehicleFicha(vehicleId)
     return { ok: true, message: "Documento subido", data: { id: docId } }
   } catch (e) {
     await fs.unlink(absolutePath).catch(() => undefined)
@@ -118,7 +119,7 @@ export async function deleteFleetDocumentAction(
     // FLO-003: se anula con motivo, no se borra. El archivo se conserva.
     await deleteFleetDocument(documentId, session, serviceWorksiteScope(session), reason)
     revalidatePath("/flota")
-    if (vehicleId) revalidatePath(`/flota/${vehicleId}`)
+    if (vehicleId) revalidateVehicleFicha(vehicleId)
     return { ok: true, message: "Documento anulado" }
   } catch (e) {
     logger.error("[deleteFleetDocumentAction]", e)
@@ -194,7 +195,7 @@ export async function updateVehicleExpiriesAction(
     })
 
     revalidatePath("/flota")
-    revalidatePath(`/flota/${vehicleId}`)
+    revalidateVehicleFicha(vehicleId)
     return { ok: true, message: changed.length === 1 ? "Vencimiento actualizado" : "Vencimientos actualizados" }
   } catch (e) {
     logger.error("[updateVehicleExpiriesAction]", e)
@@ -204,7 +205,7 @@ export async function updateVehicleExpiriesAction(
 
 export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) {
   let session
-  try { session = await requirePermission("flota:view", "/flota") }
+  try { session = await requirePermission("flota:export", "/flota") }
   catch { return { ok: false as const, message: "Sin permisos para exportar la flota" } }
 
   const [rows, settings, providerGapMonths] = await Promise.all([

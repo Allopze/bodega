@@ -46,8 +46,10 @@ export function fichaValue(page: Page, label: string): Locator {
   return page.locator("dl > div").filter({ has: page.locator("dt", { hasText: new RegExp(`^${label}$`) }) }).locator("dd")
 }
 
+/** El id del equipo en la URL: la ficha única es `/flota/<id>/mantencion` (crítica 2026-11-15). */
 export function idFromPath(page: Page): string {
-  return new URL(page.url()).pathname.split("/").pop() ?? ""
+  const parts = new URL(page.url()).pathname.split("/")
+  return parts[1] === "flota" ? parts[2] ?? "" : parts.pop() ?? ""
 }
 
 export async function scheduleState(name: string) {

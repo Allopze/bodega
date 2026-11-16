@@ -5,7 +5,7 @@ import type { EquipmentInsurance, LifeRow } from "@/lib/services/mantencion/equi
 import type { EquipmentDetailData } from "./equipment-detail-types"
 import { EquipmentInsuranceCard, insuranceNeedsAttention } from "./equipment-insurance-card"
 import { EquipmentLifeSection } from "./equipment-life-section"
-import { EquipmentFichaCard, EquipmentStatusCard } from "./equipment-read-sections"
+import { EquipmentPlanCard, EquipmentStatusCard } from "./equipment-read-sections"
 
 function data(overrides: Partial<EquipmentDetailData> = {}): EquipmentDetailData {
   return {
@@ -67,7 +67,7 @@ describe("«Mantención» de la ficha", () => {
 
 describe("«Ficha» del equipo", () => {
   it("el enlace a la pauta tiene objetivo táctil de 44 px en móvil", () => {
-    render(<EquipmentFichaCard data={data()} canSeeSchedules />)
+    render(<EquipmentPlanCard data={data()} canSeeSchedules showIdentity={false} />)
     const link = screen.getByRole("link", { name: "Camiones y tractos" })
     expect(link.className).toContain("min-h-11")
     expect(link.getAttribute("href")).toBe("/mantencion/pautas/s1")
@@ -75,10 +75,29 @@ describe("«Ficha» del equipo", () => {
   })
 })
 
+describe("«Plan de mantención» de la ficha (crítica 2026-11-15, paso 4b)", () => {
+  const labels = () => screen.getAllByRole("term").map((term) => term.textContent)
+
+  it("dice lo que decide Mantención y no repite la identidad que ya está en la cabecera", () => {
+    render(<EquipmentPlanCard data={data()} canSeeSchedules showIdentity={false} />)
+    expect(screen.getByRole("heading", { name: "Plan de mantención" })).toBeDefined()
+    expect(labels()).toEqual(["Pauta", "Se mide en", "Lectura inicial", "Estado"])
+    expect(screen.getByText("Kilómetros")).toBeDefined()
+    expect(screen.queryByText("KA-107")).toBeNull()
+    expect(screen.queryByText("Santa Fe")).toBeNull()
+  })
+
+  it("a quien no ve la pestaña Flota le suma marca, modelo y año", () => {
+    render(<EquipmentPlanCard data={data()} canSeeSchedules={false} showIdentity />)
+    expect(labels()).toEqual(["Pauta", "Se mide en", "Lectura inicial", "Estado", "Marca", "Modelo", "Año"])
+    expect(screen.getByText("Ford Cargo 5032 E")).toBeDefined()
+  })
+})
+
 describe("«Seguro» de la ficha", () => {
-  it("sin datos es un vacío compacto con un botón real a la ficha de flota", () => {
+  it("sin datos es un vacío compacto con un botón real a los documentos de la pestaña Flota", () => {
     render(<EquipmentInsuranceCard insurance={data().insurance} vehicleId="veh-1" canViewFleet />)
-    expect(screen.getByRole("link", { name: "Cargar en la ficha de flota" }).getAttribute("href")).toBe("/flota/veh-1")
+    expect(screen.getByRole("link", { name: "Cargar en Flota" }).getAttribute("href")).toBe("/flota/veh-1/flota#documentos")
     // El título del vacío no compite con el del bloque como encabezado.
     expect(screen.getAllByRole("heading").map((heading) => heading.textContent)).toEqual(["Seguro"])
   })

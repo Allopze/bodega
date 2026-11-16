@@ -53,7 +53,7 @@ describe("patentes para mirar", () => {
 
   it("una patente que es un equipo abre su ficha", () => {
     const [item] = buildWatchItems({ alerts: [alert({})], rankings: [ranking] })
-    expect(item).toMatchObject({ href: "/combustibles/consumo/equipos/veh-1", hrefLabel: "Abrir la ficha del equipo", label: "KA-01 (AB1234)" })
+    expect(item).toMatchObject({ href: "/flota/veh-1/combustible", hrefLabel: "Abrir la ficha del equipo", label: "KA-01 (AB1234)" })
   })
 
   it("una patente que no es un equipo filtra las tarjetas por la patente real", () => {

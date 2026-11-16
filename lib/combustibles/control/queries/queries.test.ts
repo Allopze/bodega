@@ -147,6 +147,11 @@ describe("vista general", () => {
     expect(get("2026-03", "fsm-cmpc")).toBe(232)
     expect(get("2026-05", "fsm-tae")).toBe(10)
     expect(rows.some((row) => row.month === "2025-06")).toBe(false)
+    // Un medio llamado con la sigla de su canal Copec se muestra con el nombre del canal; los demás, como se escribieron.
+    const nameOf = (mediumId: string) => rows.find((row) => row.mediumId === mediumId)?.mediumName
+    expect(nameOf("fsm-tae")).toBe("Tarjeta Copec de abastecimiento")
+    expect(nameOf("fsm-tct")).toBe("Tarjeta Copec de equipos")
+    expect(nameOf("fsm-cmpc")).toBe("Surtidor CMPC")
   })
 
   it("tabla cruzada km/L: totales de fila, columna y general cuadran, y las faenas vienen por total descendente", async () => {
@@ -283,7 +288,7 @@ describe("rendimiento por familia", () => {
     const march = describeFuelPeriod({ kind: "month", year: 2026, month: 3 }, "url", "2026-04-15")
     const result = await countEquipmentWorseThanModel(globalSession, march, 3)
     expect(result.count).toBe(1)
-    expect(result.examples).toEqual([expect.objectContaining({ vehicleId: "v1", code: "KA-01", familyLabel: "Camiones y tracto camiones" })])
+    expect(result.examples).toEqual([expect.objectContaining({ vehicleId: "v1", code: "KA-01", familyLabel: "Camiones y tractocamiones" })])
     expect(result.examples[0]!.deltaPct).toBeCloseTo(-100 / 3, 6)
   })
 

@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowRight } from "@phosphor-icons/react/dist/ssr"
+import { ArrowRight, CaretRight } from "@phosphor-icons/react/dist/ssr"
 import { Badge, type BadgeProps } from "@/components/ui/badge"
 import type { PanelStep, PanelStepStatus } from "@/lib/combustibles/panel/steps"
 import type { FuelPeriodStatus } from "@/lib/combustibles/period/types"
@@ -11,6 +11,10 @@ import { cn } from "@/lib/utils"
  * se dice con una insignia con palabra visible (el color solo no basta) y el
  * borde de la tarjeta no se colorea. El avance se muestra una sola vez, como
  * texto: no hay barra además (excepción declarada en AGENTS.md, A1/A5).
+ *
+ * En el móvil cada paso es una fila: número, nombre, insignia y la cifra. El título y la frase
+ * viven desde `md`: los cinco pasos medían ~1.100 px antes del primer gráfico (crítica
+ * 2026-11-15, paso 7), y la frase la explica la pantalla a la que lleva cada paso.
  */
 
 const PERIOD_STATUS_LABEL: Record<FuelPeriodStatus, string> = {
@@ -19,7 +23,14 @@ const PERIOD_STATUS_LABEL: Record<FuelPeriodStatus, string> = {
   futuro: "Todavía no empieza",
 }
 
-export function PanelProgress({ label, status, ready, total }: { label: string; status: FuelPeriodStatus; ready: number; total: number }) {
+export function PanelProgress({ label, status, ready, total, scopeNote }: {
+  label: string
+  status: FuelPeriodStatus
+  ready: number
+  total: number
+  /** Con una faena elegida: aclara que los pasos no la siguen (el cierre es de todo el alcance). */
+  scopeNote?: string
+}) {
   return (
     <p className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[var(--color-text-muted)]">
       <span className="whitespace-nowrap">
@@ -28,6 +39,7 @@ export function PanelProgress({ label, status, ready, total }: { label: string; 
       <span className="whitespace-nowrap">
         <strong className="font-semibold text-[var(--color-text)]">{ready} de {total}</strong> pasos listos
       </span>
+      {scopeNote ? <span>{scopeNote}</span> : null}
     </p>
   )
 }
@@ -66,14 +78,14 @@ function StepFigure({ figure, note, valueClass }: { figure: string; note?: strin
   const noteClass = "ml-1.5 text-sm font-medium text-[var(--color-text-muted)]"
   if (numeral === null) {
     return (
-      <p className="mt-1 flex min-h-8 items-center text-base font-medium leading-tight text-[var(--color-text-muted)]">
+      <p className="flex items-center text-sm font-medium leading-tight text-[var(--color-text-muted)] md:mt-1 md:min-h-8 md:text-base">
         {figure}
         {note ? <span className="ml-1.5 text-sm">{note}</span> : null}
       </p>
     )
   }
   return (
-    <p className={cn("mt-1 min-h-8 font-sans text-2xl font-semibold leading-tight tabular-nums", valueClass)}>
+    <p className={cn("font-sans text-lg font-semibold leading-tight tabular-nums md:mt-1 md:min-h-8 md:text-2xl", valueClass)}>
       {numeral}
       {word ? <span className={noteClass}>{word}</span> : null}
       {note ? <span className={noteClass}>{note}</span> : null}
@@ -93,7 +105,7 @@ export function PanelStepsStrip({ steps }: { steps: PanelStep[] }) {
             <li key={step.key} data-step={step.key} data-status={step.status} className="bg-[var(--color-surface)]">
               <Link
                 href={step.href}
-                className="group flex h-full flex-col gap-1.5 p-5 transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-3 focus-visible:outline-[var(--color-primary)]"
+                className="group flex h-full flex-col gap-1 px-4 py-3 transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-3 focus-visible:outline-[var(--color-primary)] md:gap-1.5 md:p-5"
               >
                 {/* Título e insignia en la misma línea: el título se trunca antes de que la insignia caiga a otra. */}
                 <span className="flex items-center justify-between gap-2 text-sm text-[var(--color-text-muted)]">
@@ -103,10 +115,14 @@ export function PanelStepsStrip({ steps }: { steps: PanelStep[] }) {
                   </span>
                   <Badge variant={style.badge} size="sm" className="shrink-0 whitespace-nowrap">{step.statusLabel}</Badge>
                 </span>
-                <StepFigure figure={step.figure} note={step.figureNote} valueClass={style.value} />
-                <h3 className="text-base font-semibold text-[var(--color-text)]">{step.heading}</h3>
-                <p className="text-sm text-[var(--color-text-muted)]">{step.phrase}</p>
-                <span className="mt-auto inline-flex items-center gap-1.5 pt-2 text-sm font-semibold text-[var(--color-primary-ink)]">
+                {/* En el móvil la cifra va con un chevrón: la fila entera es el enlace. */}
+                <span className="flex items-center justify-between gap-2">
+                  <StepFigure figure={step.figure} note={step.figureNote} valueClass={style.value} />
+                  <CaretRight size={16} weight="bold" aria-hidden className="shrink-0 text-[var(--color-text-subtle)] md:hidden" />
+                </span>
+                <h3 className="hidden text-base font-semibold text-[var(--color-text)] md:block">{step.heading}</h3>
+                <p className="hidden text-sm text-[var(--color-text-muted)] md:block">{step.phrase}</p>
+                <span className="mt-auto hidden items-center gap-1.5 pt-2 text-sm font-semibold text-[var(--color-primary-ink)] md:inline-flex">
                   {step.cta}
                   <ArrowRight size={14} weight="bold" aria-hidden className="transition-transform duration-[var(--duration-fast)] group-hover:translate-x-0.5" />
                 </span>

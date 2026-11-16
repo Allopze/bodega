@@ -76,3 +76,12 @@ export const METER_RESOLUTION_KIND_LABELS: Record<MeterResolutionKind, string> =
 export function requiresMeterResolutionKind(ruleCode: string): boolean {
   return (METER_RESET_RULE_CODES as readonly string[]).includes(ruleCode)
 }
+
+/**
+ * Tope de casos por lote (tomar, resolver o descartar varios a la vez; crítica 2026-11-15, paso
+ * 4c). En bodega_dev el grupo más grande (un equipo, una causa) tenía 14 casos y una página de la
+ * bandeja muestra hasta 50 grupos; 200 cubre varias páginas de grupos chicos sin que una
+ * transacción bloquee la tabla por mucho rato. Lo exige el servidor y la barra del lote lo avisa
+ * antes de enviar.
+ */
+export const MAX_CASE_BATCH = 200

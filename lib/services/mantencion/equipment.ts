@@ -14,12 +14,15 @@ import {
   EQUIPMENT_FIELD_LABELS, diffEquipmentFields, summarizeChanges, writeEquipmentHistory, type EquipmentFields, type MantActor,
 } from "./equipment-history"
 import {
-  NEW_WORKSITE, equipmentFailure, loadEquipmentCurrent, resolveEquipment,
-  type EquipmentCurrent, type EquipmentInput, type EquipmentResult, type FieldErrors, type ResolvedEquipment, type VehicleIdentity,
+  NEW_WORKSITE, equipmentFailure, loadEquipmentCurrent, loadScheduleCatalog, resolveEquipment, resolveEquipmentPlan,
+  type EquipmentCurrent, type EquipmentInput, type EquipmentPlanInput, type EquipmentResult, type FieldErrors, type ResolvedEquipment,
+  type VehicleIdentity,
 } from "./equipment-resolve"
+import { unitName } from "@/lib/mantencion/format"
+import { todayInChile } from "@/lib/utils"
 
 export { NEW_WORKSITE, countEquipmentRecords, hasMaintenanceProfile } from "./equipment-resolve"
-export type { EquipmentCurrent, EquipmentInput, EquipmentResult, FieldErrors, ResolvedEquipment } from "./equipment-resolve"
+export type { EquipmentCurrent, EquipmentInput, EquipmentPlanInput, EquipmentResult, FieldErrors, ResolvedEquipment } from "./equipment-resolve"
 
 /**
  * Escritura de equipos (§10): alta (o incorporación de un vehículo que ya
@@ -28,6 +31,11 @@ export type { EquipmentCurrent, EquipmentInput, EquipmentResult, FieldErrors, Re
  * en `equipment-resolve.ts`. El permiso `mant:equipment:manage` lo exige la
  * acción que llama, y el alcance de faenas llega en `MantActor.scope`: un
  * encargado no global no puede tocar equipos de otra faena por id.
+ *
+ * Desde la crítica del 2026-11-15 (paso 4b) la identidad de un equipo que ya existe —código,
+ * patente, tipo, marca, modelo, año y faena— se edita en un solo lugar, el padrón de Vehículos,
+ * que pasa por `resolveFleetIdentity` y `applyFleetIdentity` con estas mismas reglas. Mantención
+ * edita lo suyo: pauta, lectura inicial y baja (`updateEquipmentPlan`).
  */
 
 /** Índice único de la patente en la flota compartida. */
@@ -296,47 +304,230 @@ async function applyReactivate(tx: Tx, actor: MantActor, vehicleId: string, code
 }
 
 /**
- * Edita la ficha y, si cambia, el estado (activo / dado de baja) en una sola
- * transacción: un error en cualquier parte no deja la ficha a medias.
+ * «Editar mantención»: la pauta, la lectura inicial y, si cambia, el estado (activo / dado de
+ * baja), en una sola transacción: un error en cualquier parte no deja la ficha a medias. La
+ * identidad del equipo no se toca aquí: se edita en el padrón (`resolveFleetIdentity`).
  */
-export async function updateEquipment(
+export async function updateEquipmentPlan(
   actor: MantActor,
   vehicleId: string,
-  input: EquipmentInput,
+  input: EquipmentPlanInput,
   status: EquipmentStatusInput,
 ): Promise<EquipmentResult<{ changed: boolean }>> {
   const scope = actorEquipmentScope(actor)
-  if (input.worksiteId === NEW_WORKSITE) return equipmentFailure({ worksiteId: NEW_WORKSITE_NOT_ALLOWED })
-  try {
-    return await db.transaction(async (tx) => {
-      const current = await loadEquipmentCurrent(tx, vehicleId)
-      if (!current) return equipmentFailure({}, "Ese equipo no existe en la mantención.")
-      // La faena de ORIGEN y la de destino tienen que estar en el alcance.
-      if (!isWorksiteInScope(scope, await currentWorksiteId(tx, vehicleId))) return equipmentFailure({}, EQUIPMENT_OUT_OF_SCOPE)
-      if (!status.active && current.active && !isValidReason(status.retiredReason)) {
-        return equipmentFailure({ retiredReason: reasonRequiredMessage("el motivo de la baja") })
-      }
-      const resolved = await resolveEquipment(tx, input, { current, keepWorksiteId: current.worksiteId })
-      if (!resolved.ok) return equipmentFailure(resolved.fieldErrors)
-      if (!resolved.value.worksite.id) return equipmentFailure({ worksiteId: NEW_WORKSITE_NOT_ALLOWED })
-      if (!isWorksiteInScope(scope, resolved.value.worksite.id)) return equipmentFailure({ worksiteId: EQUIPMENT_OUT_OF_SCOPE })
-      const edited = await applyUpdate(tx, actor, current, resolved.value, "update")
-      let statusChanged = false
-      if (!status.active && current.active) {
-        await applyRetire(tx, actor, vehicleId, resolved.value.code, status.retiredReason.trim())
-        statusChanged = true
-      } else if (status.active && !current.active) {
-        await applyReactivate(tx, actor, vehicleId, resolved.value.code)
-        statusChanged = true
-      }
-      const changed = edited || statusChanged
-      return { ok: true as const, data: { changed }, message: changed ? `Cambios guardados en ${resolved.value.code}.` : "No había cambios que guardar." }
-    })
-  } catch (error) {
-    const mapped = uniqueFailure(error)
-    if (mapped) return mapped
-    throw error
+  return db.transaction(async (tx) => {
+    const current = await loadEquipmentCurrent(tx, vehicleId)
+    if (!current) return equipmentFailure({}, "Ese equipo no existe en la mantención.")
+    if (!isWorksiteInScope(scope, current.worksiteId)) return equipmentFailure({}, EQUIPMENT_OUT_OF_SCOPE)
+    if (!status.active && current.active && !isValidReason(status.retiredReason)) {
+      return equipmentFailure({ retiredReason: reasonRequiredMessage("el motivo de la baja") })
+    }
+    const plan = resolveEquipmentPlan(await loadScheduleCatalog(tx), input, current.unit, current, { today: todayInChile() })
+    if (Object.keys(plan.errors).length > 0) return equipmentFailure(plan.errors)
+
+    const { schedule, initialReading, initialReadingDate } = plan.value
+    const fields: EquipmentFields = { ...current.fields, schedule: schedule?.name ?? null, initialReading, initialReadingDate }
+    const changes = diffEquipmentFields(current.fields, fields)
+    const edited = Object.keys(changes).length > 0
+    if (edited) {
+      await tx.update(mantEquipmentProfiles).set({
+        scheduleId: schedule?.id ?? null,
+        initialReading,
+        initialReadingDate,
+        updatedAt: new Date().toISOString(),
+        updatedBy: actor.userId,
+      }).where(eq(mantEquipmentProfiles.vehicleId, vehicleId))
+      const action = historyActionFor(changes)
+      await writeEquipmentHistory(tx, {
+        vehicleId,
+        action,
+        summary: action === "schedule_change"
+          ? scheduleChangeSummary(current.fields.schedule, fields.schedule)
+          : `Editado · ${summarizeChanges(changes)}`,
+        changes,
+        userId: actor.userId,
+      })
+      await recordAudit({
+        userId: actor.userId,
+        userEmail: actor.email ?? undefined,
+        action: "update",
+        entityType: "mant_equipment",
+        entityId: vehicleId,
+        entityCode: current.fields.code,
+        oldState: auditState(current.fields),
+        newState: auditState(fields),
+        worksiteId: current.worksiteId,
+      }, tx)
+    }
+    let statusChanged = false
+    if (!status.active && current.active) {
+      await applyRetire(tx, actor, vehicleId, current.fields.code, status.retiredReason.trim())
+      statusChanged = true
+    } else if (status.active && !current.active) {
+      await applyReactivate(tx, actor, vehicleId, current.fields.code)
+      statusChanged = true
+    }
+    const changed = edited || statusChanged
+    return { ok: true as const, data: { changed }, message: changed ? `Cambios guardados en ${current.fields.code}.` : "No había cambios que guardar." }
+  })
+}
+
+/** Lo que el padrón dice de la identidad de un vehículo (Vehículos › Editar vehículo). */
+export interface FleetIdentityInput {
+  code: string
+  /** Tal como se escribió: la regla 16 la normaliza («bcdf 12» → `BCDF-12`). */
+  plate: string
+  /** `undefined` = el formulario no lo trae: se conserva el del perfil. */
+  noPlate?: boolean
+  equipmentTypeId: string
+  /** Marca de la lista cerrada; `undefined` = se conserva la del perfil. */
+  brandId?: string
+  model: string
+  year: number | null
+  worksiteId: string
+}
+
+export type FleetIdentityResolution =
+  | { ok: true; current: EquipmentCurrent; resolved: ResolvedEquipment }
+  | { ok: false; fieldErrors: FieldErrors }
+
+/**
+ * La identidad de un equipo de Mantención, editada desde el padrón (crítica 2026-11-15, paso
+ * 4b). Antes había dos formularios para lo mismo: el padrón guardaba la marca en texto libre,
+ * sin historial y sin mirar los registros, y Mantención la tomaba de su lista cerrada. Ahora,
+ * para un vehículo con perfil, el padrón resuelve aquí con las MISMAS reglas que el alta
+ * (`resolveEquipment`): código único, patente de la regla 16 o «Sin patente», tipo medido en
+ * km u horas que no cambia de unidad con registros, marca de la lista y faena activa (o la que
+ * ya tenía). La pauta y la lectura inicial no se tocan.
+ *
+ * La marca y «Sin patente» son del perfil de Mantención: sin `canChangeProfile`
+ * (`mant:equipment:manage` en la faena del equipo) se conservan las actuales, digan lo que
+ * digan los campos. El padrón no amplía quién decide la marca, de la que dependen las reglas
+ * de las pautas.
+ *
+ * `null` si el vehículo no está en Mantención: el padrón sigue con sus propias reglas.
+ */
+export async function resolveFleetIdentity(
+  tx: Pick<Tx, "select">,
+  vehicleId: string,
+  identity: FleetIdentityInput,
+  options: { canChangeProfile: boolean },
+): Promise<FleetIdentityResolution | null> {
+  const current = await loadEquipmentCurrent(tx, vehicleId)
+  if (!current) return null
+  const keepProfile = !options.canChangeProfile
+  const input: EquipmentInput = {
+    code: identity.code,
+    plate: identity.plate,
+    noPlate: keepProfile || identity.noPlate === undefined ? current.fields.noPlate : identity.noPlate,
+    equipmentTypeId: identity.equipmentTypeId,
+    brandId: keepProfile || identity.brandId === undefined ? current.brandId : identity.brandId,
+    model: identity.model,
+    year: identity.year,
+    worksiteId: identity.worksiteId,
+    newWorksiteName: "",
+    scheduleId: current.scheduleId,
+    initialReading: current.fields.initialReading,
+    initialReadingDate: current.fields.initialReadingDate,
   }
+  if (input.worksiteId === NEW_WORKSITE) return { ok: false, fieldErrors: { worksiteId: NEW_WORKSITE_NOT_ALLOWED } }
+  const result = await resolveEquipment(tx, input, {
+    current,
+    keepWorksiteId: current.worksiteId,
+    keepEquipmentTypeId: current.equipmentTypeId,
+    keepBrandId: current.brandId,
+  })
+  if (!result.ok) return { ok: false, fieldErrors: fleetIdentityErrors(result.fieldErrors, current) }
+  return { ok: true, current, resolved: result.value }
+}
+
+/**
+ * Los errores, dichos para el formulario del padrón. La pauta y la lectura inicial no están en
+ * él: si el tipo nuevo choca con la pauta, el error va en el tipo y dice dónde se arregla.
+ */
+function fleetIdentityErrors(errors: FieldErrors, current: EquipmentCurrent): FieldErrors {
+  const { scheduleId, initialReading, initialReadingDate, ...rest } = errors
+  const mapped: FieldErrors = { ...rest }
+  if (scheduleId && !mapped.equipmentTypeId) {
+    mapped.equipmentTypeId = `Tiene la pauta «${current.fields.schedule ?? ""}», que se mide en ${unitName(current.unit)}: quítala o cámbiala en la pestaña Mantención antes de cambiar a un tipo de otra unidad.`
+  }
+  const other = initialReading ?? initialReadingDate
+  if (other && Object.keys(mapped).length === 0) mapped.code = other
+  return mapped
+}
+
+/**
+ * Aplica en el perfil lo que el padrón cambió de un equipo de Mantención (marca, «Sin patente»)
+ * y deja el rastro: una fila de historial —el que se ve en la pestaña Mantención— y una de
+ * auditoría, en la transacción del padrón. Las columnas del vehículo las escribe el padrón con
+ * los valores ya resueltos. Devuelve si hubo cambios.
+ */
+export async function applyFleetIdentity(
+  tx: Tx,
+  actor: MantActor,
+  current: EquipmentCurrent,
+  resolved: ResolvedEquipment,
+  origin: "padron" | "padron_import",
+): Promise<boolean> {
+  const changes = diffEquipmentFields(current.fields, resolved.fields)
+  if (Object.keys(changes).length === 0) return false
+  if (resolved.brand.id !== current.brandId || resolved.noPlate !== current.fields.noPlate) {
+    await tx.update(mantEquipmentProfiles).set({
+      brandId: resolved.brand.id,
+      noPlate: resolved.noPlate,
+      updatedAt: new Date().toISOString(),
+      updatedBy: actor.userId,
+    }).where(eq(mantEquipmentProfiles.vehicleId, current.vehicleId))
+  }
+  await writeEquipmentHistory(tx, {
+    vehicleId: current.vehicleId,
+    action: "update",
+    summary: `${origin === "padron_import" ? "Actualizado por la importación de Vehículos" : "Editado en Vehículos"} · ${summarizeChanges(changes)}`,
+    changes,
+    userId: actor.userId,
+  })
+  await recordAudit({
+    userId: actor.userId,
+    userEmail: actor.email ?? undefined,
+    action: "update",
+    entityType: "mant_equipment",
+    entityId: current.vehicleId,
+    entityCode: resolved.code,
+    oldState: auditState(current.fields),
+    newState: { ...auditState(resolved.fields), origin },
+    worksiteId: resolved.worksite.id,
+  }, tx)
+  return true
+}
+
+/**
+ * El padrón activa o desactiva un vehículo (Vehículos › Activar/Desactivar, también en lote). Si
+ * está en Mantención eso es su reactivación o su baja: queda el motivo en el perfil y una fila en
+ * su historial, como cuando se hace desde «Editar mantención» (crítica 2026-11-15, paso 6). Antes
+ * el equipo salía de la app del mecánico sin rastro en su ficha. El padrón escribe la columna del
+ * vehículo y su auditoría; esto, el lado de Mantención. Devuelve si el vehículo tenía perfil.
+ */
+export async function recordFleetActivation(
+  tx: Tx,
+  actor: { userId: string },
+  vehicleId: string,
+  active: boolean,
+  reason: string,
+): Promise<boolean> {
+  const [profile] = await tx.select({ vehicleId: mantEquipmentProfiles.vehicleId }).from(mantEquipmentProfiles)
+    .where(eq(mantEquipmentProfiles.vehicleId, vehicleId)).limit(1)
+  if (!profile) return false
+  await tx.update(mantEquipmentProfiles)
+    .set({ retiredReason: active ? null : reason, updatedAt: new Date().toISOString(), updatedBy: actor.userId })
+    .where(eq(mantEquipmentProfiles.vehicleId, vehicleId))
+  await writeEquipmentHistory(tx, {
+    vehicleId,
+    action: active ? "reactivate" : "retire",
+    summary: active ? `Reactivado en Vehículos: ${reason}` : `Dado de baja en Vehículos: ${reason}`,
+    changes: { Estado: active ? { from: "Dado de baja", to: "Activo" } : { from: "Activo", to: "Dado de baja" } },
+    userId: actor.userId,
+  })
+  return true
 }
 
 /** Da de baja un equipo con su motivo (sus registros se conservan). */

@@ -1,6 +1,6 @@
 import "server-only"
 import type { Session } from "next-auth"
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lt, lte, sql, type AnyColumn, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lt, lte, or, sql, type AnyColumn, type SQL } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
@@ -24,6 +24,7 @@ import {
 import { can } from "@/lib/auth/can"
 import { serviceWorksiteScope, worksiteScopeSqlFor } from "@/lib/auth/scope"
 import { getAnomalyCases, type AnomalyCaseRow } from "@/lib/combustibles/anomaly-cases"
+import { readableCaseText, readableCaseValue } from "@/lib/combustibles/case-text"
 import { ANOMALY_STATUS_LABELS } from "@/lib/combustibles/anomaly-labels"
 import { parseInstantMs } from "@/lib/combustibles/control/calc/performance-series"
 import { LOAD_SOURCE_LABELS, PERFORMANCE_UNIT_LABELS, PERFORMANCE_UNIT_TITLES, type LoadSource, type PerformanceUnit } from "@/lib/combustibles/control/contracts"
@@ -47,7 +48,9 @@ import {
 } from "./case-weeks"
 import { flagDatum, flagReasonsLabel, flagReasonTitle, knownFlagReasons, primaryFlagReason } from "./reasons"
 import {
+  FUEL_INBOX_ACTION_KINDS,
   FUEL_INBOX_KINDS,
+  caseGroupKey,
   compareInboxRows,
   INBOX_LATE_DETECTION_DAYS,
   inboxDueDate,
@@ -55,7 +58,10 @@ import {
   parseInboxRowKey,
   type FuelInboxEvidence,
   type FuelInboxCaseBreakdownItem,
+  type FuelInboxCaseGroup,
+  type FuelInboxCaseGroupPage,
   type FuelInboxCaseRule,
+  type FuelInboxOpenCaseStatus,
   type FuelInboxItemDetail,
   type FuelInboxKind,
   type FuelInboxPage,
@@ -404,7 +410,7 @@ function casoToRow(row: AnomalyCaseRow, month: string, labels: Map<string, { cod
   const vehicle = row.vehicleId ? labels.get(row.vehicleId) : undefined
   const decided = row.status === "resolved" || row.status === "dismissed"
   const ruleLabel = row.ruleName ?? row.ruleCode
-  const datum = row.description || ruleLabel
+  const datum = row.description ? readableCaseText(row.description) : ruleLabel
   const legacyFuelVariation = row.ruleCode === "variacion_brusca_consumo"
     && isLegacyFuelConsumptionReference(row.referenceEntityType, row.referenceEntityId)
   return {
@@ -789,9 +795,94 @@ async function countByKind(ctx: Ctx, view: View, kinds: readonly FuelInboxKind[]
 }
 
 /** Tipos que entran en la vista según `tipo` y la decisión elegida (cada decisión sólo existe para un tipo). */
+/* ───────────────────────── Casos agrupados («En seguimiento», paso 4c) ───────────────────────── */
+
+const SEVERITY_RANK: Record<string, number> = { low: 1, medium: 2, high: 3, critical: 4 }
+
+/** Un grupo por faena, equipo y regla, con los mismos filtros de la lista de casos. */
+function caseGroupsQuery(where: SQL | undefined) {
+  return db.select({
+    worksiteId: fuelAnomalyCases.worksiteId,
+    vehicleId: fuelAnomalyCases.vehicleId,
+    ruleCode: fuelAnomalyCases.ruleCode,
+    n: sql<number>`count(*)::int`.as("n"),
+  })
+    .from(fuelAnomalyCases)
+    .where(where)
+    .groupBy(fuelAnomalyCases.worksiteId, fuelAnomalyCases.vehicleId, fuelAnomalyCases.ruleCode)
+}
+
+/**
+ * «En seguimiento» por equipo y causa (crítica 2026-11-15, paso 4c). Los mismos casos y filtros
+ * que la lista de casos pendientes (`casoWhere`), agrupados por faena, equipo y regla; la página
+ * es de grupos, ordenados por su fecha límite más próxima y, a igual fecha, por lo que más espera.
+ * Cada grupo trae sus casos completos (fila de siempre, estado y responsable) para abrir uno o
+ * decidir el lote.
+ */
+export async function getFuelInboxCaseGroups(session: Session, period: ResolvedFuelPeriod, filters: FuelInboxQueryFilters): Promise<FuelInboxCaseGroupPage> {
+  const ctx = buildCtx(session, period, { ...filters, view: "pendientes", kind: "caso" })
+  const pageSize = Math.min(Math.max(1, Math.floor(filters.pageSize ?? DEFAULT_PAGE_SIZE)), MAX_PAGE_SIZE)
+  const where = casoWhere(ctx, "pendientes")
+  const [totals] = await db.select({
+    groups: sql<number>`count(*)::int`,
+    cases: sql<number>`coalesce(sum(${sql.identifier("n")}), 0)::int`,
+  }).from(caseGroupsQuery(where).as("g"))
+  const totalGroups = totals?.groups ?? 0
+  const totalCases = totals?.cases ?? 0
+  const page = Math.min(Math.max(1, Math.floor(filters.page) || 1), Math.max(1, Math.ceil(totalGroups / pageSize)))
+  if (totalGroups === 0) return { groups: [], totalGroups: 0, totalCases: 0, page, pageSize }
+
+  const due = caseDueSql()
+  const pageGroups = await caseGroupsQuery(where)
+    .orderBy(asc(sql`min(${due})`), asc(sql`min(${fuelAnomalyCases.detectedAt})`), asc(fuelAnomalyCases.vehicleId), asc(fuelAnomalyCases.ruleCode), asc(fuelAnomalyCases.worksiteId))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize)
+  const inPage = or(...pageGroups.map((group) => and(
+    group.worksiteId === null ? isNull(fuelAnomalyCases.worksiteId) : eq(fuelAnomalyCases.worksiteId, group.worksiteId),
+    group.vehicleId === null ? isNull(fuelAnomalyCases.vehicleId) : eq(fuelAnomalyCases.vehicleId, group.vehicleId),
+    eq(fuelAnomalyCases.ruleCode, group.ruleCode),
+  )))
+  const memberIds = await db.select({ id: fuelAnomalyCases.id, month: caseMonthSql() })
+    .from(fuelAnomalyCases)
+    .where(and(where, inPage))
+    .orderBy(asc(due), asc(fuelAnomalyCases.detectedAt), asc(fuelAnomalyCases.id))
+  const ids = memberIds.map((row) => row.id)
+  const { cases } = await getAnomalyCases({ ids, limit: ids.length }, session)
+  const byId = new Map(cases.map((row) => [row.id, row]))
+  const labels = await vehicleLabels(cases.map((row) => row.vehicleId).filter((id): id is string => Boolean(id)))
+
+  const groups = new Map<string, FuelInboxCaseGroup>()
+  for (const group of pageGroups) {
+    const key = caseGroupKey(group.worksiteId, group.vehicleId, group.ruleCode)
+    groups.set(key, {
+      key, ruleCode: group.ruleCode, ruleLabel: group.ruleCode, equipmentLabel: "", vehicleId: group.vehicleId, worksiteName: null,
+      severity: null, dueDate: "", waitingSince: "", firstMonth: "", lastMonth: "", members: [],
+    })
+  }
+  for (const entry of memberIds) {
+    const found = byId.get(entry.id)
+    if (!found) continue
+    const group = groups.get(caseGroupKey(found.worksiteId, found.vehicleId, found.ruleCode))
+    if (!group) continue
+    const row = casoToRow(found, entry.month, labels, session)
+    group.members.push({ row, status: found.status as FuelInboxOpenCaseStatus, assigneeId: found.assigneeId })
+    group.ruleLabel = row.reasonLabel
+    group.equipmentLabel = row.equipmentLabel
+    group.worksiteName = row.worksiteName
+    if ((SEVERITY_RANK[found.severity] ?? 0) > (SEVERITY_RANK[group.severity ?? ""] ?? 0)) group.severity = found.severity
+    if (!group.dueDate || row.dueDate < group.dueDate) group.dueDate = row.dueDate
+    if (!group.waitingSince || row.waitingSince < group.waitingSince) group.waitingSince = row.waitingSince
+    if (!group.firstMonth || row.dataMonth < group.firstMonth) group.firstMonth = row.dataMonth
+    if (!group.lastMonth || row.dataMonth > group.lastMonth) group.lastMonth = row.dataMonth
+  }
+  // Un grupo sin casos visibles (cambió entre la consulta de grupos y la de casos) no se dibuja vacío.
+  return { groups: [...groups.values()].filter((group) => group.members.length > 0), totalGroups, totalCases, page, pageSize }
+}
+
 function includedKinds(filters: FuelInboxQueryFilters): FuelInboxKind[] {
   const byDecision = filters.view === "decididas" ? decisionKindsFor(filters.decision) : [...FUEL_INBOX_KINDS]
-  return filters.kind ? byDecision.filter((kind) => kind === filters.kind) : byDecision
+  if (filters.kind) return byDecision.filter((kind) => kind === filters.kind)
+  return filters.kinds ? byDecision.filter((kind) => filters.kinds!.includes(kind)) : byDecision
 }
 
 /** Pendientes: todo lo cuyo mes del dato es ≤ fin del período (lo vencido sigue apareciendo). Decididas: decididas dentro del período. */
@@ -831,8 +922,9 @@ export async function summarizeFuelInbox(session: Session, period: ResolvedFuelP
   const values = Object.values(byKind)
   const total = values.some((value) => value === null) ? null : values.reduce<number>((sum, value) => sum + (value ?? 0), 0)
   const oldest = FUEL_INBOX_KINDS.map((kind) => counts[kind].oldest).filter((value): value is string => Boolean(value)).sort()[0] ?? null
+  const oldestByKind = Object.fromEntries(FUEL_INBOX_KINDS.map((kind) => [kind, counts[kind].oldest])) as FuelInboxSummary["oldestByKind"]
   const breakdown = counts.caso.n === null ? null : await caseBreakdown(ctx)
-  return { total, byKind, oldestWaitingSince: oldest, caseBreakdown: breakdown }
+  return { total, byKind, oldestWaitingSince: oldest, oldestByKind, caseBreakdown: breakdown }
 }
 
 /**
@@ -974,13 +1066,16 @@ export async function getFuelInboxPendingForSession(session: Session): Promise<R
 }
 
 /**
- * Pendientes de toda la bandeja, sin período, para el contador del menú
- * (`app/(app)/layout.tsx`). Un tipo cuya consulta falló suma 0: el menú no se
- * cae por eso (el tile del Panel, en cambio, dice «Sin dato»).
+ * Lo que se decide ahora (`FUEL_INBOX_ACTION_KINDS`), sin período, para el
+ * contador del menú (`app/(app)/layout.tsx`): la misma cifra que el tile del
+ * Panel operacional y que la pestaña «Por decidir». Los casos en seguimiento no
+ * entran; con ellos el menú decía «99+» mientras el tile decía 88.
+ * Un tipo cuya consulta falló suma 0: el menú no se cae por eso (el tile del
+ * Panel, en cambio, dice «Sin dato»).
  */
 export async function countFuelInboxPending(scope: Scope): Promise<number> {
   const byKind = await getFuelInboxPendingByKind(scope)
-  return FUEL_INBOX_KINDS.reduce((sum, kind) => sum + (byKind[kind] ?? 0), 0)
+  return FUEL_INBOX_ACTION_KINDS.reduce((sum, kind) => sum + (byKind[kind] ?? 0), 0)
 }
 
 /* ──────────────────────────────── Pie de la bandeja ──────────────────────────── */
@@ -1139,7 +1234,7 @@ export async function getFuelInboxItem(session: Session, key: string): Promise<F
     const [monthRow] = await db.select({ month: caseMonthSql() }).from(fuelAnomalyCases).where(eq(fuelAnomalyCases.id, found.id)).limit(1)
     const labels = await vehicleLabels(found.vehicleId ? [found.vehicleId] : [])
     const row = casoToRow(found, monthRow?.month ?? found.detectedAt.slice(0, 7), labels, session)
-    const text = [row.datum, found.observedValue ? `Observado: ${found.observedValue}.` : null, found.expectedValue ? `Esperado: ${found.expectedValue}.` : null].filter(Boolean).join(" ")
+    const text = [row.datum, found.observedValue ? `Observado: ${readableCaseValue(found.observedValue)}.` : null, found.expectedValue ? `Esperado: ${readableCaseValue(found.expectedValue)}.` : null].filter(Boolean).join(" ")
     const evidence: FuelInboxEvidence[] = [{ type: "text", text }]
     if (found.resolution) evidence.push({ type: "text", text: `Motivo del cierre: ${found.resolution}` })
     const history = [

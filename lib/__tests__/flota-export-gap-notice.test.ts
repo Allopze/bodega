@@ -74,4 +74,15 @@ describe("exportFleetXlsxAction · aviso de meses sin datos del proveedor", () =
     expect(entries.some(([label]) => label === "Nota")).toBe(false)
     expect(entries.map(([label]) => label)).toContain("Filas incluidas")
   })
+
+  it("exige `flota:export`, no `flota:view` (decisión 2026-11-15)", async () => {
+    mockGetGapMonths.mockResolvedValue([])
+    await exportFleetXlsxAction({})
+    expect(mockRequirePermission).toHaveBeenCalledWith("flota:export", "/flota")
+
+    mockRequirePermission.mockRejectedValueOnce(new Error("Forbidden"))
+    const denied = await exportFleetXlsxAction({})
+    expect(denied.ok).toBe(false)
+    expect(mockGetFleetOverview).toHaveBeenCalledTimes(1)
+  })
 })

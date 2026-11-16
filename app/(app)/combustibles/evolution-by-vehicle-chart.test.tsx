@@ -65,7 +65,7 @@ describe("EvolutionByVehicleChart (small multiples)", () => {
     render(<EvolutionByVehicleChart view={view} />)
 
     const link = screen.getByRole("link", { name: "KA-1 · AA-0001" })
-    expect(link).toHaveAttribute("href", "/combustibles/consumo/equipos/veh-AA-0001")
+    expect(link).toHaveAttribute("href", "/flota/veh-AA-0001/combustible")
     expect(link.closest('[role="img"]')).toBeNull()
     expect(screen.queryByRole("link", { name: "ZZ-9999" })).toBeNull()
     expect(screen.getByText("ZZ-9999")).toBeInTheDocument()

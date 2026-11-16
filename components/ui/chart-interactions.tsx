@@ -304,7 +304,8 @@ export function seriesOpacity(key: string, focused: string | null) {
 }
 
 export const chartLegendButtonClass = cn(
-  "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)]",
+  // 44 px en móvil (el dedo); la fila compacta de siempre desde `sm` (crítica 2026-11-15, paso 6).
+  "inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[var(--color-text-muted)] sm:min-h-0",
   "transition-[background-color,opacity] duration-[var(--duration-fast)] hover:bg-[var(--color-surface-2)]",
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
 )

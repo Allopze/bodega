@@ -26,6 +26,7 @@ import {
 } from "@/components/charts/chart-parts"
 import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "@/components/charts/chart-frame"
 import { bucketLabel, type IndicatorGranularity } from "@/lib/indicators/period"
+import { ongoingAbovePeak, ongoingPeakClause } from "@/lib/indicators/peak"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { formatPercent, formatQty } from "@/lib/utils"
 
@@ -310,6 +311,14 @@ export function OutOfServiceChart(props: ChartCommon & { data: OutOfServicePoint
         // El total del período es el del tile (se calcula y redondea una sola vez, en el servicio): aquí se
         // dice cuándo se concentró, que es lo que el tile no dice.
         if (at) return { value: formatDays(at.days), caption: `días-equipo fuera de servicio en ${bucketFullLabel(at.key, props.granularity)}` }
+        // El mes en curso que ya supera a todos los cerrados se dice: callarlo contradecía la barra más alta.
+        const ongoing = ongoingAbovePeak(all, (point) => point.days)
+        if (ongoing) {
+          return {
+            value: formatDays(ongoing.value),
+            caption: `días-equipo fuera de servicio en ${bucketFullLabel(ongoing.point.key, props.granularity)}${ongoingPeakClause(props.granularity)}`,
+          }
+        }
         const peak = peakOf(all, (point) => point.days)
         return {
           value: formatDays(peak.value),
@@ -354,10 +363,13 @@ export function WorkOrderFlowChart({ data, granularity, scopeNote, excel }: Char
   const partialFrom = data.findIndex((point) => point.partial)
   // El titular no repite los tiles de la sección (OT abiertas, OT cerradas): dice cuándo se pidió más trabajo.
   const peak = peakOf(data, (point) => point.created)
-  const headlineValue = at ? at.created : peak.value
+  const ongoing = ongoingAbovePeak(data, (point) => point.created)
+  const headlineValue = at ? at.created : ongoing ? ongoing.value : peak.value
   const headlineCaption = at
     ? `OT creadas en ${bucketFullLabel(at.key, granularity)} · ${formatQty(at.closed)} cerradas y ${formatQty(at.backlog)} en cola al cierre`
-    : peak.point
+    : ongoing
+      ? `OT creadas en ${bucketFullLabel(ongoing.point.key, granularity)}${ongoingPeakClause(granularity)}`
+      : peak.point
       ? `OT creadas en ${bucketFullLabel(peak.point.key, granularity)}, el período con más`
       : `OT creadas en cada uno de ${peak.tied} períodos, el máximo del rango`
   const legend: LegendEntry[] = [

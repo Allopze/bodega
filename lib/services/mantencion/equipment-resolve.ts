@@ -89,6 +89,10 @@ export interface EquipmentCurrent {
   retiredReason: string | null
   unit: MantUnit
   recordCount: number
+  /** Marca del perfil (lista cerrada): la conserva el padrón cuando quien edita no administra Mantención. */
+  brandId: string
+  /** Pauta vigente; `null` sin pauta o si la que tenía se eliminó. */
+  scheduleId: string | null
   fields: EquipmentFields
 }
 
@@ -106,11 +110,17 @@ export interface EquipmentCatalogs {
  * actualizando fila a fila, de modo que dos filas del mismo archivo con el
  * mismo código o patente chocan igual que dos altas seguidas.
  */
+/** Las pautas vigentes (sin las eliminadas), con su unidad. */
+export async function loadScheduleCatalog(client: Reader): Promise<EquipmentCatalogs["schedules"]> {
+  const rows = await client.select({ id: mantSchedules.id, name: mantSchedules.name, unit: mantSchedules.unit }).from(mantSchedules).where(isNull(mantSchedules.deletedAt))
+  return rows.map((row) => ({ ...row, unit: row.unit as MantUnit }))
+}
+
 export async function loadEquipmentCatalogs(client: Reader): Promise<EquipmentCatalogs> {
   const [types, brands, schedules, sites, vehicles] = await Promise.all([
     client.select().from(fuelEquipmentTypes),
     client.select({ id: mantBrands.id, name: mantBrands.name, isActive: mantBrands.isActive }).from(mantBrands),
-    client.select({ id: mantSchedules.id, name: mantSchedules.name, unit: mantSchedules.unit }).from(mantSchedules).where(isNull(mantSchedules.deletedAt)),
+    loadScheduleCatalog(client),
     client.select({ id: worksites.id, name: worksites.name, isActive: worksites.isActive }).from(worksites),
     client
       .select({
@@ -127,7 +137,7 @@ export async function loadEquipmentCatalogs(client: Reader): Promise<EquipmentCa
       unit: unitFromMeter(row.defaultMeterType), meterType: row.defaultMeterType, performanceUnit: row.defaultPerformanceUnit,
     })),
     brands,
-    schedules: schedules.map((row) => ({ ...row, unit: row.unit as MantUnit })),
+    schedules,
     worksites: sites,
     identities: vehicles.map((row) => ({
       id: row.id, code: row.code, plate: row.plate, isActive: row.isActive, hasProfile: row.profile !== null,
@@ -180,6 +190,8 @@ export async function loadEquipmentCurrents(client: Reader, vehicleId?: string):
       worksiteName: worksites.name,
       scheduleName: mantSchedules.name,
       noPlate: mantEquipmentProfiles.noPlate,
+      brandId: mantEquipmentProfiles.brandId,
+      scheduleId: mantSchedules.id,
       retiredReason: mantEquipmentProfiles.retiredReason,
       initialReading: mantEquipmentProfiles.initialReading,
       initialReadingDate: mantEquipmentProfiles.initialReadingDate,
@@ -211,6 +223,8 @@ export async function loadEquipmentCurrents(client: Reader, vehicleId?: string):
       retiredReason: row.retiredReason,
       unit,
       recordCount: withRecords.get(row.vehicleId) ?? 0,
+      brandId: row.brandId,
+      scheduleId: row.scheduleId,
       fields: {
         code: row.code ?? row.plate,
         plate: row.plate,
@@ -259,11 +273,86 @@ export interface ResolveOptions {
    */
   keepWorksiteId?: string | null
   /**
+   * Tipo y marca que el equipo YA tiene: se aceptan aunque se hayan desactivado. Los pasa el
+   * padrón (crítica 2026-11-15, paso 4b): quien corrige un SOAP no puede quedar trabado por
+   * una marca que otro dio de baja en el catálogo y que, sin `mant:equipment:manage`, ni
+   * siquiera puede cambiar.
+   */
+  keepEquipmentTypeId?: string | null
+  keepBrandId?: string | null
+  /**
    * Importación: si el equipo ya tiene registros y la fila trae otra lectura
    * inicial, se conserva la actual con un aviso en vez de rechazar toda la fila
    * (la planilla real traía 45 filas así; 2026-11-11). El formulario no lo usa.
    */
   ignoreLockedInitialReading?: boolean
+}
+
+/** Lo que es de Mantención en la ficha del equipo: su pauta y su lectura inicial. */
+export interface EquipmentPlanInput {
+  scheduleId: string | null
+  initialReading: number | null
+  initialReadingDate: string | null
+}
+
+export interface ResolvedEquipmentPlan {
+  schedule: { id: string; name: string } | null
+  initialReading: number | null
+  initialReadingDate: string | null
+}
+
+/**
+ * Pauta y lectura inicial (§10). Una sola definición para el alta y la importación —dentro de
+ * `resolveEquipment`— y para «Editar mantención», que sólo cambia esto (crítica 2026-11-15, paso
+ * 4b). La pauta tiene que medirse en la unidad del equipo; con registros, la lectura inicial
+ * queda fija porque el cálculo de lecturas la usa como piso.
+ */
+export function resolveEquipmentPlan(
+  schedules: EquipmentCatalogs["schedules"],
+  input: EquipmentPlanInput,
+  /** Unidad del equipo; `null` si su tipo todavía no se resolvió (el error ya está en el tipo). */
+  unit: MantUnit | null,
+  current: EquipmentCurrent | null,
+  options: { today: string; ignoreLockedInitialReading?: boolean },
+): { value: ResolvedEquipmentPlan; errors: FieldErrors; notices: string[] } {
+  const errors: FieldErrors = {}
+  const notices: string[] = []
+  const { today } = options
+
+  let schedule: ResolvedEquipmentPlan["schedule"] = null
+  if (input.scheduleId) {
+    const row = schedules.find((item) => item.id === input.scheduleId)
+    if (!row) errors.scheduleId = "Esa pauta no existe."
+    else if (unit && row.unit !== unit) {
+      errors.scheduleId = `Esa pauta se mide en ${unitName(row.unit)} y el equipo en ${unitName(unit)}.`
+    } else schedule = { id: row.id, name: row.name }
+  }
+
+  let initialReading = input.initialReading
+  let initialReadingDate = input.initialReadingDate
+  if (initialReading !== null && (!Number.isFinite(initialReading) || initialReading < 0 || initialReading > 99_999_999)) {
+    errors.initialReading = "Escribe una lectura válida: un número que no sea negativo."
+  }
+  if (current && current.recordCount > 0) {
+    if ((initialReading ?? null) !== current.fields.initialReading) {
+      if (options.ignoreLockedInitialReading) notices.push("La lectura inicial no se cambia: el equipo ya tiene registros. Se conserva la actual.")
+      else errors.initialReading = "La lectura inicial no se puede cambiar: el equipo ya tiene registros."
+    }
+    initialReading = current.fields.initialReading
+    initialReadingDate = current.fields.initialReadingDate
+  } else if (initialReading === null) {
+    initialReadingDate = null
+  } else if (!initialReadingDate) {
+    initialReadingDate = current && current.fields.initialReading === initialReading && current.fields.initialReadingDate
+      ? current.fields.initialReadingDate
+      : today
+  } else if (!isRealDate(initialReadingDate)) {
+    errors.initialReadingDate = "La fecha de la lectura no es válida."
+  } else if (initialReadingDate > today) {
+    errors.initialReadingDate = "La fecha de la lectura no puede ser futura."
+  }
+
+  return { value: { schedule, initialReading, initialReadingDate }, errors, notices }
 }
 
 /**
@@ -293,7 +382,8 @@ export async function resolveEquipment(
   if (!input.equipmentTypeId) errors.equipmentTypeId = "Elige el tipo de equipo."
   else {
     const row = catalogs.types.find((item) => item.id === input.equipmentTypeId)
-    if (!row || !row.isActive) errors.equipmentTypeId = "Ese tipo de equipo no existe o está inactivo."
+    const keeping = !!row && row.id === options.keepEquipmentTypeId
+    if (!row || (!row.isActive && !keeping)) errors.equipmentTypeId = "Ese tipo de equipo no existe o está inactivo."
     else if (!row.unit) errors.equipmentTypeId = `«${row.name}» no se mide en kilómetros ni en horas.`
     else type = { id: row.id, slug: row.slug, name: row.name, unit: row.unit, meterType: row.meterType, performanceUnit: row.performanceUnit }
   }
@@ -305,7 +395,8 @@ export async function resolveEquipment(
   if (!input.brandId) errors.brandId = "Elige la marca de la lista."
   else {
     const row = catalogs.brands.find((item) => item.id === input.brandId)
-    if (!row || !row.isActive) errors.brandId = "Esa marca no está en la lista."
+    const keeping = !!row && row.id === options.keepBrandId
+    if (!row || (!row.isActive && !keeping)) errors.brandId = "Esa marca no está en la lista."
     else brand = { id: row.id, name: row.name }
   }
 
@@ -315,39 +406,12 @@ export async function resolveEquipment(
     errors.year = "Año no válido."
   }
 
-  let schedule: ResolvedEquipment["schedule"] = null
-  if (input.scheduleId) {
-    const row = catalogs.schedules.find((item) => item.id === input.scheduleId)
-    if (!row) errors.scheduleId = "Esa pauta no existe."
-    else if (type && row.unit !== type.unit) {
-      errors.scheduleId = `Esa pauta se mide en ${unitName(row.unit)} y el equipo en ${unitName(type.unit)}.`
-    } else schedule = { id: row.id, name: row.name }
-  }
-
-  // Lectura inicial: con registros queda fija (el cálculo de lecturas la usa como piso).
-  let initialReading = input.initialReading
-  let initialReadingDate = input.initialReadingDate
-  if (initialReading !== null && (!Number.isFinite(initialReading) || initialReading < 0 || initialReading > 99_999_999)) {
-    errors.initialReading = "Escribe una lectura válida: un número que no sea negativo."
-  }
-  if (current && current.recordCount > 0) {
-    if ((initialReading ?? null) !== current.fields.initialReading) {
-      if (options.ignoreLockedInitialReading) notices.push("La lectura inicial no se cambia: el equipo ya tiene registros. Se conserva la actual.")
-      else errors.initialReading = "La lectura inicial no se puede cambiar: el equipo ya tiene registros."
-    }
-    initialReading = current.fields.initialReading
-    initialReadingDate = current.fields.initialReadingDate
-  } else if (initialReading === null) {
-    initialReadingDate = null
-  } else if (!initialReadingDate) {
-    initialReadingDate = current && current.fields.initialReading === initialReading && current.fields.initialReadingDate
-      ? current.fields.initialReadingDate
-      : today
-  } else if (!isRealDate(initialReadingDate)) {
-    errors.initialReadingDate = "La fecha de la lectura no es válida."
-  } else if (initialReadingDate > today) {
-    errors.initialReadingDate = "La fecha de la lectura no puede ser futura."
-  }
+  const plan = resolveEquipmentPlan(catalogs.schedules, input, type?.unit ?? null, current, {
+    today, ignoreLockedInitialReading: options.ignoreLockedInitialReading,
+  })
+  Object.assign(errors, plan.errors)
+  notices.push(...plan.notices)
+  const { schedule, initialReading, initialReadingDate } = plan.value
 
   // Faena existente, o nueva (regla 17: coincide normalizada → se usa la existente).
   let worksiteName: string | null = null

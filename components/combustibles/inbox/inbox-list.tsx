@@ -6,26 +6,15 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import type { FuelInboxRow } from "@/lib/combustibles/inbox/types"
-import { formatShortDay, monthNameOfKey } from "@/lib/combustibles/panel/format"
-import { cn, formatDate, todayInChile } from "@/lib/utils"
+import { formatShortDay } from "@/lib/combustibles/panel/format"
+import { cn, formatDate } from "@/lib/utils"
 import { BulkDecideBar } from "./bulk-decide-bar"
+import { dataMonthLabel, waitLabel } from "./inbox-row-format"
 import { InboxRowBadges } from "./inbox-row-badges"
 import { useInboxSeen } from "./use-inbox-seen"
 
-const DAY_MS = 86_400_000
-
-/** «enero 2026»: el mes del dato siempre con su año, para que un caso viejo no parezca de este mes. */
-function dataMonthLabel(dataMonth: string): string {
-  return `${monthNameOfKey(dataMonth)} ${dataMonth.slice(0, 4)}`
-}
-
-function waitLabel(since: string, today: string): string {
-  const days = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${todayInChile(since)}T00:00:00Z`)) / DAY_MS)
-  if (days <= 0) return "Hoy"
-  return days === 1 ? "1 día" : `${days} días`
-}
-
-function actionLabel(row: FuelInboxRow, view: "pendientes" | "decididas"): string {
+/** Lo que dice el botón de una fila: lo que se hace al abrirla. */
+export function actionLabel(row: FuelInboxRow, view: "pendientes" | "decididas"): string {
   if (view === "decididas") return row.kind === "carga" && row.canAct ? "Deshacer" : "Ver"
   if (!row.canAct) return "Ver"
   switch (row.kind) {

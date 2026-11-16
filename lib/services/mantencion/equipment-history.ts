@@ -69,6 +69,8 @@ export function diffEquipmentFields(before: EquipmentFields, after: EquipmentFie
 function displayValue(label: string, value: unknown): string {
   if (value === null || value === undefined || value === "") return "—"
   if (typeof value === "boolean") return value ? "Sí" : "No"
+  // Un año no es una cantidad: «2021», no «2.021».
+  if (typeof value === "number" && label === EQUIPMENT_FIELD_LABELS.year) return String(value)
   if (typeof value === "number") return formatNumber(value)
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && label.toLowerCase().includes("fecha")) return formatDate(value)
   return String(value)

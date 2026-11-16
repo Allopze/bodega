@@ -3,6 +3,7 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { asc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
+import { supplyMediumNameSql } from "@/lib/combustibles/control/queries/supply-medium-name"
 import { fuelSupplyMedia, worksites } from "@/db/schema"
 import { settle } from "@/lib/async-settle"
 import { can, requireAnyPermission } from "@/lib/auth/can"
@@ -69,7 +70,7 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
       : Promise.resolve([]),
     addKind === "surtidor"
       ? settle<MediumOption[] | typeof FAILED>(
-          db.select({ id: fuelSupplyMedia.id, name: fuelSupplyMedia.name }).from(fuelSupplyMedia).where(eq(fuelSupplyMedia.isActive, true)).orderBy(asc(fuelSupplyMedia.sortOrder), asc(fuelSupplyMedia.name)),
+          db.select({ id: fuelSupplyMedia.id, name: supplyMediumNameSql() }).from(fuelSupplyMedia).where(eq(fuelSupplyMedia.isActive, true)).orderBy(asc(fuelSupplyMedia.sortOrder), asc(fuelSupplyMedia.name)),
           FAILED, "fuentes-medios")
       : Promise.resolve([]),
   ])
