@@ -21,6 +21,8 @@ vi.mock("./reconciliation-charts-lazy", () => ({
 
 import { DteCharts } from "./dte-charts"
 
+vi.mock("@/app/(app)/chart-data-export-action", () => ({ exportChartDataAction: vi.fn() }))
+
 afterEach(cleanup)
 
 const TODAY = "2026-11-03"
@@ -81,5 +83,24 @@ describe("DteCharts", () => {
   it("con pocos documentos la frase no da un porcentaje", () => {
     render(<DteCharts orders={orders} dte={shapeDteCoverage([dteRow("2026-10", "oc", 3), dteRow("2026-10", "none", 2, 90_000)], months, TODAY)} periodo="2026-10" />)
     expect(screen.getByText(/datos insuficientes para un porcentaje \(n = 5\)/)).toBeTruthy()
+  })
+
+  // «Ver datos» → Excel es opt-in con `purchasing:export`: quien ve los gráficos no recibe por eso la descarga.
+  it("«Ver datos» no ofrece Excel sin el permiso de exportar de Compras", () => {
+    render(<DteCharts orders={orders} dte={dte} periodo="2026-10" />)
+    expect(screen.queryByText("Exportar Excel", { exact: false })).toBeNull()
+  })
+
+  it("con `purchasing:export` ofrece Exportar Excel en cada gráfico que se dibuja", () => {
+    const { unmount } = render(<DteCharts orders={orders} dte={dte} periodo="2026-10" excelPermission="purchasing:export" />)
+    expect(screen.getAllByText("Exportar Excel", { exact: false }).map((node) => node.closest("button")!.getAttribute("aria-label"))).toEqual([
+      "Exportar Excel: OC emitidas por mes y estado de conciliación",
+      "Exportar Excel: DTE recibidos por período y vínculo",
+    ])
+    unmount()
+
+    // Sin visibilidad de la empresa entera no hay cobertura de DTE y, por lo tanto, tampoco su Excel.
+    render(<DteCharts orders={orders} dte={null} periodo="2026-10" excelPermission="purchasing:export" />)
+    expect(screen.getAllByText("Exportar Excel", { exact: false })).toHaveLength(1)
   })
 })

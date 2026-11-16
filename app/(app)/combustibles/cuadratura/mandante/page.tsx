@@ -92,7 +92,7 @@ export default async function CuadraturaMandantePage({ searchParams }: { searchP
   return chrome(
     <>
       <DegradedDataBanner degraded={degraded} total={total()} />
-      <ControlFilters worksites={ctx.worksites} mandantes={ctx.mandantes} extraKeys={["equipo"]} />
+      <ControlFilters worksites={ctx.worksites} allWorksitesLabel={ctx.allWorksitesLabel} mandantes={ctx.mandantes} extraKeys={["equipo"]} />
 
       {note ? <Callout tone="info" className="mb-4">{note}</Callout> : null}
       {equipment ? (

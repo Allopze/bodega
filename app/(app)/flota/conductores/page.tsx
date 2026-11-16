@@ -2,6 +2,8 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { PageContainer } from "@/components/ui/page-container"
 import { can, requirePermission } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import { getDriverRosterRow, listDriverCandidates, listDriverRoster } from "@/lib/services/driver-licenses"
 import { DriversWorkbench } from "./drivers-workbench"
 import { countDriversByEstado, defaultDriverEstado, parseDriverEstado } from "./drivers-view"
@@ -60,6 +62,7 @@ export default async function ConductoresPage({
         faenaParam={faena}
         editarWorkerId={editarWorkerId}
         editRow={editRow}
+        allWorksitesLabel={allWorksitesLabel(resolveWorksiteScope(session))}
       />
     </PageContainer>
   )

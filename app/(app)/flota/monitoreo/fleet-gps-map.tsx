@@ -77,7 +77,12 @@ function MapLegend() {
   )
 }
 
-export function FleetGpsMap({ positions }: { positions: FleetGpsPosition[] }) {
+export function FleetGpsMap({ positions, selectedId: controlledId, onSelectedChange }: {
+  positions: FleetGpsPosition[]
+  /** Selección controlada desde afuera (la lista lateral); sin esta prop, el mapa la lleva solo. */
+  selectedId?: string | null
+  onSelectedChange?: (id: string | null) => void
+}) {
   const element = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const popupRef = useRef<Popup | null>(null)
@@ -85,7 +90,20 @@ export function FleetGpsMap({ positions }: { positions: FleetGpsPosition[] }) {
   const positionsRef = useRef(positions)
   const [loaded, setLoaded] = useState(false)
   const [popupNode, setPopupNode] = useState<HTMLDivElement | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [internalId, setInternalId] = useState<string | null>(null)
+  const selectedId = controlledId !== undefined ? controlledId : internalId
+  // Los handlers del mapa se registran una sola vez: llaman a la función vigente por esta ref.
+  // `fromMapRef` recuerda lo elegido en el mapa, que ya está a la vista y no hay que encuadrar.
+  const selectRef = useRef<(id: string | null) => void>(() => {})
+  const fromMapRef = useRef<string | null>(null)
+  const easedRef = useRef<string | null>(null)
+  useEffect(() => {
+    selectRef.current = (id) => {
+      fromMapRef.current = id
+      setInternalId(id)
+      onSelectedChange?.(id)
+    }
+  }, [onSelectedChange])
   const [error, setError] = useState<string | null>(null)
   const style = resolveMapStyleUrl()
   const hasPositions = positions.length > 0
@@ -129,7 +147,7 @@ export function FleetGpsMap({ positions }: { positions: FleetGpsPosition[] }) {
         const popup = new maplibregl.Popup({ closeOnClick: false, offset: 14, maxWidth: "320px", className: "fleet-gps-popup" })
         const node = document.createElement("div")
         popup.setDOMContent(node)
-        popup.on("close", () => { if (!disposed) setSelectedId(null) })
+        popup.on("close", () => { if (!disposed) selectRef.current(null) })
         popupRef.current = popup
         setPopupNode(node)
 
@@ -157,10 +175,10 @@ export function FleetGpsMap({ positions }: { positions: FleetGpsPosition[] }) {
 
           nextMap.on("click", (event) => {
             const [feature] = nextMap.queryRenderedFeatures(event.point, { layers: [POINT_LAYER, CLUSTER_LAYER] })
-            if (!feature) { setSelectedId(null); return }
+            if (!feature) { selectRef.current(null); return }
             if (feature.layer.id === POINT_LAYER) {
               const id = feature.properties?.id
-              setSelectedId(typeof id === "string" ? id : null)
+              selectRef.current(typeof id === "string" ? id : null)
               return
             }
             // Un grupo se abre acercando hasta donde sus vehículos se separan.
@@ -223,14 +241,35 @@ export function FleetGpsMap({ positions }: { positions: FleetGpsPosition[] }) {
     if (!popup.isOpen()) popup.addTo(map)
   }, [selectedId, selectedLng, selectedLat, loaded])
 
+  // Un vehículo elegido desde la lista lateral puede estar fuera del encuadre o dentro de un grupo:
+  // el mapa se acerca hasta que se vea suelto. Una vez por selección: el refresco en vivo mueve el
+  // punto y no debe volver a encuadrar.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!selectedId) {
+      easedRef.current = null
+      fromMapRef.current = null
+      return
+    }
+    if (!map || !loaded || selectedLng === undefined || selectedLat === undefined) return
+    if (fromMapRef.current === selectedId || easedRef.current === selectedId) return
+    easedRef.current = selectedId
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    map.easeTo({ center: [selectedLng, selectedLat], zoom: Math.max(map.getZoom(), 13), duration: reduceMotion ? 0 : 600 })
+  }, [selectedId, selectedLng, selectedLat, loaded])
+
   if (!style) return <p role="status" className="rounded-xl border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">{MAP_NOT_CONFIGURED}</p>
   if (!hasPositions) return null
   return (
     <section aria-label="Mapa de posiciones GPS" className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="relative">
         {/* Alto ligado a la ventana: con 360 px fijos el mapa quedaba en 4:1 a lo
-            ancho de la página y la flota se veía como una franja. */}
-        <div ref={element} className="h-[clamp(320px,65svh,760px)] w-full" />
+            ancho de la página y la flota se veía como una franja; con 65svh llenaba
+            un 1440×900 entero. A 48svh (≈430 px) queda compacto; desde `xl` la lista
+            de vehículos va a su lado con el mismo alto (`FleetGpsSideList`), porque
+            debajo quedaba bajo el pliegue por las cifras y las fuentes de arriba. En
+            móvil manda el piso de 320 px, manejable con el dedo. */}
+        <div ref={element} className="h-[clamp(320px,48svh,560px)] w-full" />
         {error ? (
           <p role="status" className="absolute inset-0 flex items-center justify-center bg-[var(--color-surface-2)] p-6 text-center text-sm text-[var(--color-text-muted)]">
             {error}

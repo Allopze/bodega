@@ -7,7 +7,7 @@ import {
   receipts, worksites,
 } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
-import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
+import { can, isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { worksiteScopeSqlFor } from "@/lib/auth/scope"
 import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
 import { issuedOrderPredicate } from "@/lib/services/operational-period-metrics"
@@ -280,6 +280,16 @@ export default async function Page({
             caption: "Ítems sin OC y OC por recibir, por faena",
             headers: ["Faena", "Ítems sin OC", "OC por recibir"],
             rows: backlog.map((row) => [row.label, row.withoutOrder, row.pendingReceipt]),
+            // «Exportar Excel» de «Ver datos»: permiso propio, no el de ver (decisión 2026-11-16).
+            ...(can(session, "reports:export") ? {
+              excel: {
+                permission: "reports:export" as const,
+                notes: [
+                  worksiteId ? "Foto de hoy, de la faena elegida." : "Foto de hoy, de todas las faenas dentro del alcance de quien exporta.",
+                  "No depende del período elegido: cuenta los ítems aprobados sin OC y las OC enviadas que esperan recepción.",
+                ],
+              },
+            } : {}),
           }}
           empty={backlog.length === 0 ? { label: "No hay nada pendiente de abastecimiento", hint: "Aparece cuando hay ítems aprobados sin orden de compra u OC enviadas esperando recepción." } : null}
         >

@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { useId, type ReactNode } from "react"
+import type { ChartDataExcel } from "@/components/charts/chart-data-table"
 import { ChartSection } from "@/components/charts/chart-section"
 import { ShareBar, type ShareSegment } from "@/components/charts/share-bar"
 import { Card } from "@/components/ui/card"
@@ -40,6 +41,7 @@ export function StockCoverageStrip({
   noun,
   active,
   hrefFor,
+  excel,
 }: {
   summary: CoverageSummary
   noun: CoverageNoun
@@ -47,6 +49,8 @@ export function StockCoverageStrip({
   active: CoverageBand | ""
   /** Destino de cada banda; `""` quita el filtro. Conserva el resto de los filtros de la URL. */
   hrefFor: (band: CoverageBand | "") => string
+  /** «Exportar Excel» de «Ver datos»: la pantalla lo pasa sólo a quien tiene `warehouse:export`. */
+  excel?: ChartDataExcel
 }) {
   const text = coverageSummary(summary, noun)
   if (!text) return null
@@ -84,6 +88,7 @@ export function StockCoverageStrip({
         caption: "Cobertura del stock por banda",
         headers: ["Cobertura", "Qué significa", "Cantidad"],
         rows: COVERAGE_BAND_ORDER.map((band) => [COVERAGE_BANDS[band].label, COVERAGE_BANDS[band].definition, summary.byBand[band]]),
+        ...(excel ? { excel } : {}),
       }}
     >
       <ShareBar label="Cobertura del stock" segments={segments} noun={typeof noun === "string" ? noun : ""} inPlace />

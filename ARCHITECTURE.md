@@ -75,11 +75,11 @@ Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 | `admin` | 37 | Usuarios, faenas, productos, proveedores, trabajadores, catálogos, configuración, auditoría, Talana (datos y configuración) |
 | `requests` | 4 | Solicitudes de compra |
 | `approvals` | 1 | Aprobaciones de ítems |
-| `purchasing` | 6 | Órdenes de compra |
+| `purchasing` | 7 | Órdenes de compra y su exportación |
 | `receiving` | 3 | Recepción de mercadería |
-| `warehouse` | 10 | Stock, movimientos y guías de despacho internas (Oficina → Faena) |
+| `warehouse` | 11 | Stock, movimientos, guías de despacho internas (Oficina → Faena) y su exportación |
 | `deliveries` | 3 | Entregas |
-| `reports` | 1 | Reportes y exportaciones |
+| `reports` | 2 | Reportes y exportaciones |
 | `analytics` | 2 | Analítica |
 | `repuestos` | 6 | Solicitudes y catálogo de repuestos |
 | `servicios` | 5 | Solicitudes de servicios |
@@ -91,10 +91,10 @@ Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 | `combustibles` | 27 | Cargas (terreno, planilla, factura, carga pasada), bandeja «Por revisar», cuadratura, consumo y rendimiento, pagos y estados de cuenta, fuentes de datos, ajustes |
 | `flota` | 7 | Vehículos, licencias de conducir y su exportación |
 | `mantencion_equipos` | 18 | Mantención preventiva y correctiva de equipos y órdenes de trabajo (app del mecánico + jefatura) |
-| `prevention` | 117 | Documentación SST, capacitaciones, incidentes, inspecciones, PDTP, indicadores |
+| `prevention` | 121 | Documentación SST, capacitaciones, incidentes, inspecciones, PDTP, indicadores |
 | `ti` | 10 | Módulo de TI |
 
-**Total: 288 permisos**, derivados automáticamente. Recalcular con:
+**Total: 295 permisos**, derivados automáticamente. Recalcular con:
 
 ```bash
 npx tsx -e "import { registry } from './modules/registry'; \
@@ -303,7 +303,7 @@ Fuente de verdad: `SYSTEM_ROLES` en `lib/auth/system-rbac.ts`.
 | `subgerente_operaciones` | Todas | Subgerente de operaciones |
 | `tecnico_ti` | Todas | Técnico TI |
 
-**288 permisos granulares** derivados del registry (`modules/registry.ts` vía
+**295 permisos granulares** derivados del registry (`modules/registry.ts` vía
 `modules/permissions.ts`). La lista completa vive en el registry, no se mantiene a mano.
 
 ### Guards

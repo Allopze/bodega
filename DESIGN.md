@@ -724,7 +724,7 @@ con el botón de siempre, `ExportButton`, sin un mecanismo de descarga propio.
   módulo separa `*:export` de `*:view`. Quien dibuja el gráfico pasa `excel` sólo si
   `can(session, permission)`; sin `excel` no hay botón. Los permisos válidos son los de exportación
   general (`CHART_EXPORT_PERMISSIONS` en `lib/reports/chart-data-export.ts`: `combustibles:export`,
-  `analytics:export`, `billing:export`, `mant:export`, `flota:export`, `ti:export`, los `prevention:*:export`…), no
+  `analytics:export`, `billing:export`, `mant:export`, `flota:export`, `warehouse:export`, `purchasing:export`, `reports:export`, `ti:export`, los `prevention:*:export`; el PPA usa `ppa:manage`, su permiso de exportar…), no
   `combustibles:export_sensitive` ni los de datos personales.
 - **Lo que va a Excel es lo que se lee.** Las celdas son `ReactNode`: un enlace exporta su texto, un
   número conserva su tipo y el texto sale con su formato de pantalla (`chartCellValue`,

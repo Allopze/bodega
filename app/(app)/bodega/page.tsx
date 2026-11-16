@@ -96,7 +96,11 @@ export default async function BodegaPage({
   const canCreateGuide       = can(session, "warehouse:create_guide")
   const canViewGuides        = can(session, "warehouse:view_guides")
   const canViewReceiving     = can(session, "receiving:view")
-  const canExportStock       = can(session, "warehouse:view_stock")
+  // El Excel de stock y movimientos es opt-in con `warehouse:export` (decisión 2026-11-16): al estrenarse se
+  // copió a quien tenía `warehouse:view_stock` (`PERMISSION_MIRRORS`), así que nadie perdió la descarga.
+  const canExportStock       = can(session, "warehouse:view_stock") && can(session, "warehouse:export")
+  // «Exportar Excel» de «Ver datos» de los gráficos: permiso propio, no el de ver (decisión 2026-11-16).
+  const canExportCharts      = can(session, "warehouse:export")
   const canViewDeliveries    = can(session, "deliveries:view")
   const canCreateDeliveries  = can(session, "deliveries:create")
   const onlyDemand           = firstStr(sp.demanda) === "1"
@@ -492,6 +496,13 @@ export default async function BodegaPage({
         worksiteName={worksiteLabel}
         unit={balance.unit}
         truncated={balance.truncated}
+        excel={canExportCharts ? {
+          permission: "warehouse:export",
+          notes: [
+            `Saldo de ${productLabel} en ${worksiteLabel}, del ${formatDate(from)} al ${formatDate(to)}.`,
+            ...(balance.truncated ? [`Hay más movimientos de los que caben: la serie conserva los ${(series?.movements ?? balance.movements.length).toLocaleString("es-CL")} más recientes.`] : []),
+          ],
+        } : undefined}
         empty={{
           label: `Sin movimientos de este producto entre el ${formatDate(from)} y el ${formatDate(to)}`,
           hint: "Cuando entre o salga stock en este período, aquí verás cómo se movió el saldo.",
@@ -547,7 +558,19 @@ export default async function BodegaPage({
 
       {view === "stock" ? (
         <>
-          <StockCoverageStrip summary={coverageSummaryData} noun={coverageNoun} active={coverageFilter} hrefFor={coverageHref} />
+          <StockCoverageStrip
+            summary={coverageSummaryData}
+            noun={coverageNoun}
+            active={coverageFilter}
+            hrefFor={coverageHref}
+            excel={canExportCharts ? {
+              permission: "warehouse:export",
+              notes: [
+                "Foto de hoy de las líneas de stock (un producto en una faena) con saldo o algo por recibir, con la faena y la búsqueda elegidas.",
+                "No aplica el filtro de cobertura: el reparto es el completo aunque una banda esté elegida.",
+              ],
+            } : undefined}
+          />
           <StockSection
             worksites={visibleWorksites}
             stockByWorksite={stockByWorksite}

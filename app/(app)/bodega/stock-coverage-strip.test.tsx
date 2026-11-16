@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { summarizeCoverage, type CoverageBand } from "@/lib/bodega/stock-coverage"
 import { StockCoverageStrip } from "./stock-coverage-strip"
+
+vi.mock("@/app/(app)/chart-data-export-action", () => ({ exportChartDataAction: vi.fn() }))
 
 afterEach(cleanup)
 
@@ -65,5 +67,17 @@ describe("StockCoverageStrip", () => {
   it("sin ninguna línea no dibuja nada: la tabla ya explica su vacío", () => {
     const { container } = render(<StockCoverageStrip summary={summarizeCoverage([])} noun="producto" active="" hrefFor={hrefFor} />)
     expect(container.firstChild).toBeNull()
+  })
+
+  // «Ver datos» → Excel es opt-in con `warehouse:export`: quien ve la cobertura no recibe por eso la descarga.
+  it("«Ver datos» no ofrece Excel sin el permiso de exportar de Bodega", () => {
+    render(<StockCoverageStrip summary={summary} noun="producto" active="" hrefFor={hrefFor} />)
+    expect(screen.queryByText("Exportar Excel", { exact: false })).toBeNull()
+  })
+
+  it("con `warehouse:export` «Ver datos» ofrece Exportar Excel de la cobertura", () => {
+    render(<StockCoverageStrip summary={summary} noun="producto" active="" hrefFor={hrefFor} excel={{ permission: "warehouse:export", notes: ["Foto de hoy."] }} />)
+    const button = screen.getByText("Exportar Excel", { exact: false }).closest("button")!
+    expect(button.getAttribute("aria-label")).toBe("Exportar Excel: Cobertura del stock por banda")
   })
 })

@@ -4,7 +4,7 @@ import { and, asc, eq, inArray } from "drizzle-orm"
 import { Truck } from "@phosphor-icons/react/dist/ssr"
 import { db } from "@/db"
 import { dispatchGuides, worksites } from "@/db/schema"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -159,6 +159,7 @@ export default async function DispatchGuidesPage({
         ageCounts={ageCounts}
         ageActive={ageFilter}
         faena={faena}
+        excelPermission={can(session, "warehouse:export") ? "warehouse:export" : undefined}
       />
 
       {total === 0 ? (

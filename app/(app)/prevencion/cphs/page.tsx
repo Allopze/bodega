@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -142,6 +142,11 @@ export default async function CphsPage({
         // La celda lleva a la ficha del comité, donde se convoca y se cierra la sesión del mes.
         hrefFor={(committeeId) => `/prevencion/cphs/${committeeId}`}
         linkNavigation={{}}
+        // «Exportar Excel» de «Ver datos»: permiso propio, no el de ver (decisión 2026-11-16).
+        excel={can(session, "prevention:cphs:export") ? {
+          permission: "prevention:cphs:export",
+          notes: [`Sesiones de ${year} de los comités del alcance de quien exporta; el mes en curso está incompleto.`],
+        } : undefined}
         className="mb-4"
       />
       <CommitteeList

@@ -25,6 +25,7 @@ export function FuelHeaderActions({
   granularity,
   worksites,
   worksiteId = null,
+  allWorksitesLabel,
   exportButton,
   children,
 }: {
@@ -33,6 +34,8 @@ export function FuelHeaderActions({
   /** Sólo el Panel: faenas visibles, para el selector de faena del tablero. */
   worksites?: ReadonlyArray<{ id: string; name: string }>
   worksiteId?: string | null
+  /** Sólo el Panel: rótulo de «todas las faenas» según el alcance (`allWorksitesLabel`). */
+  allWorksitesLabel?: string
   /** Sólo el Panel: «Exportar Excel» del tablero. */
   exportButton?: React.ReactNode
   children?: React.ReactNode
@@ -41,7 +44,7 @@ export function FuelHeaderActions({
   return (
     <div className="flex flex-wrap items-center gap-2 sm:justify-end">
       {worksites && periodControl ? (
-        <BoardScope worksites={worksites} worksiteId={worksiteId} period={periodControl} />
+        <BoardScope worksites={worksites} worksiteId={worksiteId} period={periodControl} allLabel={allWorksitesLabel} />
       ) : periodControl ? (
         <div className="max-sm:w-full">{periodControl}</div>
       ) : null}

@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -89,6 +89,11 @@ export default async function EmergenciasPage({ searchParams }: { searchParams: 
           return planId ? `/prevencion/emergencias/${planId}?anio=${slotYear}` : undefined
         }}
         linkNavigation={{}}
+        // «Exportar Excel» de «Ver datos»: permiso propio, no el de ver (decisión 2026-11-16).
+        excel={can(session, "prevention:emergency:export") ? {
+          permission: "prevention:emergency:export",
+          notes: [`Simulacros del programa ${slotYear} de todas las faenas del alcance de quien exporta, no sólo las de la página de planes.`],
+        } : undefined}
         className="mb-4"
       />
       <EmergencyList

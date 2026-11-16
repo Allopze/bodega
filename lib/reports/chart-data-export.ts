@@ -31,12 +31,22 @@ export const CHART_EXPORT_PERMISSIONS = [
   "combustibles:tae_export",
   "flota:export",
   "mant:export",
+  // PPA no tiene un `ppa:export` aparte: `ppa:manage` («Gestionar y exportar PPA Digital») ya es su permiso de
+  // exportar —gobierna la ruta del Excel de la lista—, así que el de los gráficos es el mismo.
+  "ppa:manage",
+  "prevention:cgrd:export",
+  "prevention:cphs:export",
+  "prevention:emergency:export",
   "prevention:incidents:export",
   "prevention:inspections:export",
   "prevention:legal:export",
+  "prevention:pdtp:export",
   "prevention:permits:export",
   "prevention:training:export",
+  "purchasing:export",
+  "reports:export",
   "ti:export",
+  "warehouse:export",
 ] as const satisfies readonly Permission[]
 
 export type ChartExportPermission = (typeof CHART_EXPORT_PERMISSIONS)[number]

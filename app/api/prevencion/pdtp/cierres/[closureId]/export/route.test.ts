@@ -18,7 +18,7 @@ vi.mock("@/lib/services/pdtp/re36-document", () => ({ buildPdtpRe36Document: moc
 
 import { GET } from "./route"
 
-function session(permissions = ["prevention:pdtp:view"], worksiteIds = ["w1"], isGlobal = false) {
+function session(permissions = ["prevention:pdtp:view", "prevention:pdtp:export"], worksiteIds = ["w1"], isGlobal = false) {
   return { user: { id: "u1", email: "u1@test.cl", permissions, roles: [isGlobal ? "administrador" : "prevencionista_faena"], worksiteIds, isGlobal } }
 }
 
@@ -74,8 +74,13 @@ describe("GET export de un cierre PDTP", () => {
     expect(mockGetClosure).not.toHaveBeenCalled()
   })
 
+  it("devuelve 403 con el permiso de ver pero sin el de exportar (decisión 2026-11-16)", async () => {
+    mockAuth.mockResolvedValue(session(["prevention:pdtp:view"]))
+    expect((await GET(request(), context)).status).toBe(403)
+  })
+
   it("devuelve 403 cuando la faena del cierre está fuera del alcance", async () => {
-    mockAuth.mockResolvedValue(session(["prevention:pdtp:view"], ["w9"]))
+    mockAuth.mockResolvedValue(session(["prevention:pdtp:view", "prevention:pdtp:export"], ["w9"]))
     mockGetClosure.mockRejectedValue(new Error("Sin acceso a la faena solicitada."))
 
     const response = await GET(request(), context)

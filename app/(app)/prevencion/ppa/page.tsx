@@ -8,12 +8,13 @@ import {
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { PPA_STOP_REASON_LABELS, tipoTrabajoLabel, type PpaStopReason } from "@/lib/ppa/types"
+import type { ChartDataExcel } from "@/components/charts/chart-data-table"
 import { PpaMetricBar } from "./ppa-metric-bar"
 import { PpaList } from "./ppa-list"
 import { PpaAccessPanel } from "./ppa-access-panel"
 import { PpaExportButton } from "./ppa-export-button"
 import { scopeToIds } from "@/lib/ppa/utils"
-import { shapePpaMonthly, shapeWorksiteRanking } from "@/lib/ppa/detention-rate"
+import { PPA_RATE_MIN_SAMPLE, shapePpaMonthly, shapeWorksiteRanking } from "@/lib/ppa/detention-rate"
 import { windowStartDay } from "@/lib/prevention/monthly-series"
 import { todayInChile } from "@/lib/utils"
 import { PpaCountRankingSection, PpaTrendSection, PpaWorksiteRateSection } from "./ppa-charts-section"
@@ -49,6 +50,10 @@ export default async function PpaPanelPage({ searchParams }: { searchParams: Pro
   const worksiteRanking = shapeWorksiteRanking(worksiteRows)
   const canReview = can(session, "ppa:review")
   const canExport = can(session, "ppa:manage")
+  // «Exportar Excel» de «Ver datos» de los gráficos: el mismo permiso que la descarga de la lista
+  // (`ppa:manage`, «Gestionar y exportar PPA Digital»). Las salvedades repiten el alcance de la pantalla.
+  const chartExcel = (notes: string[]): ChartDataExcel | undefined =>
+    canExport ? { permission: "ppa:manage", notes } : undefined
 
   return (
     <PageContainer>
@@ -79,10 +84,22 @@ export default async function PpaPanelPage({ searchParams }: { searchParams: Pro
       <div className="flex flex-col gap-8">
         <PpaMetricBar stats={stats} />
 
-        <PpaTrendSection points={monthlyPoints} />
+        <PpaTrendSection
+          points={monthlyPoints}
+          excel={chartExcel([
+            "Últimos 12 meses, con el alcance de faenas de quien exporta; el mes en curso está incompleto.",
+            "La tasa de detención sólo se calcula en los meses con base suficiente de PPA; en los demás la celda queda sin porcentaje.",
+          ])}
+        />
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <PpaWorksiteRateSection ranking={worksiteRanking} />
+          <PpaWorksiteRateSection
+            ranking={worksiteRanking}
+            excel={chartExcel([
+              "Últimos 12 meses, con el alcance de faenas de quien exporta.",
+              `Las faenas con menos de ${PPA_RATE_MIN_SAMPLE} PPA van sin porcentaje: la base es demasiado chica para comparar.`,
+            ])}
+          />
           <PpaCountRankingSection
             title="Motivos de alerta más frecuentes"
             ariaLabel="Motivos de alerta más frecuentes"

@@ -6,6 +6,7 @@ import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { IDS, filtersFor, globalSession, scopedSession, seedControlFixtures, submission } from "./test-fixtures"
+import { SUPPLY_MEDIUM_CHANNEL_LABELS } from "@/lib/combustibles/source-labels"
 
 const pg = new PGlite()
 const testDb = drizzle(pg, { schema }) as unknown as DB
@@ -124,17 +125,18 @@ describe("getMediumCross", () => {
     expect(cmpc.differenceLiters).toBe(500)
     expect(cmpc.differencePct).toBeCloseTo((500 / 1400) * 100, 6)
     // TCT: terreno 550; informado = 500 + 80 + 10 (marzo) + 60 (agregado de abril sin detalle).
-    const tct = byName.get("TCT")!
+    // La cuadratura nombra los medios como la pantalla: la sigla de su canal Copec no llega al usuario.
+    const tct = byName.get(SUPPLY_MEDIUM_CHANNEL_LABELS.TCT)!
     expect(tct).toMatchObject({ fieldLiters: 550, reportedLiters: 650 })
     // TAE sin cargas en terreno: aparece con lo informado.
-    expect(byName.get("TAE")).toMatchObject({ fieldLiters: 0, reportedLiters: 40 })
+    expect(byName.get(SUPPLY_MEDIUM_CHANNEL_LABELS.TAE)).toMatchObject({ fieldLiters: 0, reportedLiters: 40 })
     // Sin medio asignado: hay 20 L en terreno y no existe informe.
     expect(byName.get("Sin medio asignado")).toMatchObject({ fieldLiters: 20, reportedLiters: null, differenceLiters: null, differencePct: null })
   })
 
   it("un medio con cargas pero sin informe del proveedor queda con reportedLiters nulo", async () => {
     const rows = await getMediumCross(globalSession(), filtersFor({ mandante: IDS.m1, meses: "3" }))
-    expect(rows.find((row) => row.name === "TCT")?.reportedLiters).toBe(590)
+    expect(rows.find((row) => row.name === SUPPLY_MEDIUM_CHANNEL_LABELS.TCT)?.reportedLiters).toBe(590)
     const none = await getMediumCross(globalSession(), filtersFor({ mandante: IDS.m1, faena: IDS.wsB, meses: "3" }))
     expect(none).toEqual([])
   })

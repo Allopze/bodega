@@ -4,6 +4,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelEquipmentLoads, fuelMandantes, worksites } from "@/db/schema"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
+import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import { settle } from "@/lib/async-settle"
 import { codeYear } from "@/lib/utils"
 
@@ -12,6 +13,8 @@ export interface ControlContext {
   mandantes: Array<{ id: string; name: string }>
   years: number[]
   defaultYear: number
+  /** Rótulo de «todas» de los selectores de faena según el alcance: «Todas las faenas» o «Todas tus faenas». */
+  allWorksitesLabel: string
 }
 
 /**
@@ -55,5 +58,5 @@ export async function loadControlContext(session: Session, options: { years?: bo
     .filter((year) => Number.isInteger(year))
     .sort((left, right) => right - left)
 
-  return { worksites: worksiteRows, mandantes: mandanteRows, years, defaultYear: current }
+  return { worksites: worksiteRows, mandantes: mandanteRows, years, defaultYear: current, allWorksitesLabel: allWorksitesLabel(scope) }
 }

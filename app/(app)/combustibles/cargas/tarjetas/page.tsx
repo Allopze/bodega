@@ -6,6 +6,7 @@ import { fuelConsumptionRecords, worksites } from "@/db/schema"
 import { settle } from "@/lib/async-settle"
 import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
+import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import { logger } from "@/lib/logger"
 import { buildConsumptionWhere } from "@/lib/combustibles/consumption-queries"
 import { inboxDueDate } from "@/lib/combustibles/inbox/types"
@@ -179,6 +180,7 @@ export default async function CargasTarjetasPage({ searchParams }: { searchParam
       </Callout>
 
       <TarjetasFilters
+        allWorksitesLabel={allWorksitesLabel(scope)}
         worksites={worksitesList.map((item) => ({ value: item.id, label: item.name }))}
         suppliers={fuentes.map((name) => ({ value: name, label: fuelRecordSourceLabel(name) }))}
       />

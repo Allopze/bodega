@@ -10,6 +10,7 @@ import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-too
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ALL_WORKSITES_LABEL } from "@/lib/auth/worksite-label"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import {
   FUEL_LOAD_ORIGIN_LABEL,
@@ -61,6 +62,8 @@ export interface CargasFilterLookups {
   anomalyAssignees: CargasFilterOption[]
   /** Rótulo del equipo del filtro `equipo` (la URL trae su id). */
   equipmentLabel: string | null
+  /** Rótulo de «todas» del filtro de faena según el alcance (`allWorksitesLabel`); sin él, el global. */
+  allWorksitesLabel?: string
 }
 
 const EVIDENCE_KIND_OPTIONS: CargasFilterOption[] = [
@@ -296,7 +299,7 @@ export function CargasFilters({ lookups, canViewPersonal }: { lookups: CargasFil
           pageKeys={PAGE_KEYS}
           className="h-11 w-full pl-8 text-xs sm:h-8 sm:w-80"
         />
-        <SelectFilter value={get("faena")} onValue={(next) => setFilter("faena", next)} allLabel="Todas tus faenas" ariaLabel="Filtrar por faena" options={lookups.worksites} />
+        <SelectFilter value={get("faena")} onValue={(next) => setFilter("faena", next)} allLabel={lookups.allWorksitesLabel ?? ALL_WORKSITES_LABEL} ariaLabel="Filtrar por faena" options={lookups.worksites} />
         <OriginFilter selected={origins} onChange={(next) => setFilter("como", next.length > 0 ? next.join(",") : null)} />
         <SelectFilter
           value={stateValue}

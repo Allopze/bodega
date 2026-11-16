@@ -132,6 +132,11 @@ export default async function CgrdPage({
           hrefFor={(rowId, cellMonth) => viewHref({ faena: rowId, mes: cellMonth })}
           clearHref={viewHref({ faena: worksiteId, mes: null })}
           selected={worksiteId && month ? { rowId: worksiteId, month } : null}
+          // «Exportar Excel» de «Ver datos»: permiso propio, no el de ver (decisión 2026-11-16).
+          excel={can(session, "prevention:cgrd:export") ? {
+            permission: "prevention:cgrd:export",
+            notes: [`Actas de ${slotYear} de todas las faenas del alcance de quien exporta, no sólo la faena elegida.`],
+          } : undefined}
           className="mt-4"
         />
       )}

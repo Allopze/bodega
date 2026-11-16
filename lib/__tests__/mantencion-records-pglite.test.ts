@@ -45,8 +45,7 @@ const { listRecords, loadRecordFilterOptions, loadRecordIndicators, loadRecordNe
 const { loadRecordDetail } = await import("@/lib/services/mantencion/records-detail")
 const { loadFleet } = await import("@/lib/services/mantencion/fleet")
 const { filterFleet } = await import("@/lib/services/mantencion/equipment-list")
-const { loadPanel } = await import("@/lib/services/mantencion/panel")
-const { parsePanelFilters } = await import("@/lib/services/mantencion/panel-filters")
+const { countPendingReview, fleetScopeFor, loadRecordSeries } = await import("@/lib/services/mantencion/panel")
 const { exportRecords } = await import("@/lib/services/mantencion/export-records")
 const { voidRecord } = await import("@/lib/services/mantencion/record-lifecycle")
 const { getRecordPdf, pdfMutableFingerprint, pdfRevision, pdfStorageName } = await import("@/lib/services/mantencion/record-pdf")
@@ -581,45 +580,30 @@ describe("PDF archivado: lo que cambia después de firmar invalida el archivo", 
   })
 })
 
-describe("panel", () => {
-  const weeksFor = (data: Awaited<ReturnType<typeof loadPanel>>) => data.weeks.reduce((sum, week) => sum + week.preventive + week.corrective, 0)
+describe("anulación y lecturas del Panel", () => {
+  /** Registros de la serie semanal del Panel (la consulta que comparten el Panel y los Indicadores). */
+  const seriesTotal = async (viewer: Awaited<ReturnType<typeof viewerOf>>) =>
+    (await loadRecordSeries(viewer, { from: "2000-01-01", granularity: "week" })).reduce((sum, row) => sum + row.n, 0)
 
-  it("cuenta lo vigente del período y el alcance del supervisor es el de su faena", async () => {
-    const filters = parsePanelFilters({ periodo: "todo" })
-    const jefe = await loadPanel(await viewerOf(IDS.jefe), filters)
-    expect(jefe.records).toMatchObject({ total: 5, preventive: 3, corrective: 2 })
-    expect(jefe.records.hours).toBeCloseTo(6.5)
-    expect(jefe.workshop).toMatchObject({ equipment: 1, stale: 1 })
-    // El tile «Equipos en taller» lleva a `/mantencion/equipos?taller=1`: esa lista reproduce su cifra.
-    const fleet = await loadFleet({ scope: "all" })
-    expect(filterFleet(fleet, { includeRetired: false, inWorkshop: true })).toHaveLength(jefe.workshop.equipment)
-    expect(jefe.fleet.active).toBe(4)
-    expect(jefe.hoursByWorksite.map((row) => row.worksiteName)).toEqual(["Cholguán", "Biodiversa"])
-    expect(jefe.notDone).toEqual([expect.objectContaining({ item: "Revisión pastillas", count: 1, lastReason: "Falta repuesto" })])
-    expect(weeksFor(jefe)).toBe(5)
-
-    const sup = await loadPanel(await viewerOf(IDS.supBio), filters)
-    expect(sup.records.total).toBe(3)
-    expect(sup.fleet.active).toBe(2)
-    expect(sup.workshop.equipment).toBe(0)
+  it("las lecturas del Panel cuentan lo vigente y respetan el alcance de faenas", async () => {
+    const jefe = await viewerOf(IDS.jefe)
+    expect(await seriesTotal(jefe)).toBe(5)
+    expect(await countPendingReview(jefe, undefined)).toBe(5)
+    expect(await countPendingReview(jefe, IDS.wsCho)).toBe(1)
+    // El supervisor de Biodiversa ve su faena y lo propio, nunca Cholguán.
+    const sup = await viewerOf(IDS.supBio)
+    expect(await seriesTotal(sup)).toBe(3)
+    expect(await countPendingReview(sup, IDS.wsCho)).toBe(0)
   })
 
-  it("el período y la faena achican el conjunto", async () => {
-    const viewer = await viewerOf(IDS.jefe)
-    expect((await loadPanel(viewer, parsePanelFilters({ periodo: "7" }))).records.total).toBe(4)
-    expect((await loadPanel(viewer, parsePanelFilters({ periodo: "todo", faena: IDS.wsCho }))).records.total).toBe(1)
+  it("el filtro de faena sólo achica el alcance de equipos, nunca lo agranda", async () => {
+    const jefe = await viewerOf(IDS.jefe)
+    const sup = await viewerOf(IDS.supBio)
+    expect(fleetScopeFor(jefe, undefined)).toBe("all")
+    expect(fleetScopeFor(jefe, IDS.wsCho)).toEqual([IDS.wsCho])
+    expect(fleetScopeFor(sup, IDS.wsBio)).toEqual([IDS.wsBio])
     // Una faena que el supervisor no tiene no le abre nada de la flota.
-    const sup = await loadPanel(await viewerOf(IDS.supBio), parsePanelFilters({ periodo: "todo", faena: IDS.wsCho }))
-    expect(sup.fleet.active).toBe(0)
-    expect(sup.records.total).toBe(0)
-  })
-
-  it("el estado de la flota sale de `loadFleet`: cada equipo activo cae en un estado y las próximas se acotan", async () => {
-    const data = await loadPanel(await viewerOf(IDS.jefe), parsePanelFilters({ periodo: "todo" }))
-    const total = Object.values(data.fleet.counts).reduce((sum, value) => sum + value, 0)
-    expect(total).toBe(data.fleet.active)
-    expect(data.upcoming.length).toBeGreaterThan(0)
-    expect(data.upcoming.length).toBeLessThanOrEqual(8)
+    expect(fleetScopeFor(sup, IDS.wsCho)).toEqual([])
   })
 
   it("anular rechaza un motivo de menos de 10 caracteres", async () => {
@@ -629,23 +613,20 @@ describe("panel", () => {
     expect((await loadRecordDetail(viewer, R.prev))?.status).toBe("vigente")
   })
 
-  it("los registros anulados quedan fuera de los indicadores del panel", async () => {
+  it("los registros anulados quedan fuera de las lecturas del Panel y de los indicadores de la lista", async () => {
     const viewer = await viewerOf(IDS.jefe)
-    const filters = parsePanelFilters({ periodo: "todo" })
-    const before = await loadPanel(viewer, filters)
+    const seriesBefore = await seriesTotal(viewer)
+    const pendingBefore = await countPendingReview(viewer, undefined)
+    expect(filterFleet(await loadFleet({ scope: "all" }), { includeRetired: false, inWorkshop: true })).toHaveLength(1)
 
     // Anula la preventiva con el ítem no realizado y la correctiva que dejó el equipo en taller.
     expect((await voidRecord({ recordId: R.prev, reason: "Se registró en el equipo equivocado", viewer })).ok).toBe(true)
     expect((await voidRecord({ recordId: R.workshop, reason: "Duplicada por error de digitación", viewer })).ok).toBe(true)
 
-    const after = await loadPanel(viewer, filters)
-    expect(after.records.total).toBe(before.records.total - 2)
-    expect(after.records.corrective).toBe(before.records.corrective - 1)
-    expect(after.records.hours).toBeCloseTo(before.records.hours - 4.5)
-    expect(after.notDone).toEqual([])
-    expect(after.workshop.equipment).toBe(0)
-    expect(after.stoppedDays.total).toBeLessThan(before.stoppedDays.total)
-    expect(weeksFor(after)).toBe(weeksFor(before) - 2)
+    expect(await seriesTotal(viewer)).toBe(seriesBefore - 2)
+    expect(await countPendingReview(viewer, undefined)).toBe(pendingBefore - 2)
+    // La correctiva anulada ya no retiene al equipo en taller.
+    expect(filterFleet(await loadFleet({ scope: "all" }), { includeRetired: false, inWorkshop: true })).toHaveLength(0)
 
     // La lista sigue mostrándolos, marcados, pero los indicadores de la lista tampoco los cuentan.
     const list = await listAs(IDS.jefe)

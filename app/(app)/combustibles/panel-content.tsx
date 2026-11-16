@@ -1,6 +1,8 @@
 import type { Session } from "next-auth"
 import { Suspense } from "react"
 import { can } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
@@ -48,6 +50,7 @@ export async function PanelContent({ session, searchParams: sp }: { session: Ses
   const variant = panelVariantForSession(session)
   const link = panelLinker(period)
 
+  const allLabel = allWorksitesLabel(resolveWorksiteScope(session))
   const canRegister = can(session, "combustibles:register_load")
   const addDataOptions = fuelAddDataOptions(session)
 
@@ -63,6 +66,7 @@ export async function PanelContent({ session, searchParams: sp }: { session: Ses
           period={period}
           worksites={board?.worksites}
           worksiteId={board?.worksiteId}
+          allWorksitesLabel={allLabel}
           exportButton={board && can(session, "combustibles:export")
             ? <BoardExportButton title="Panel de combustible" range={{ from: period.from, to: period.to }} scope={{ periodo: period.label, faena: board.worksiteName }} />
             : null}
@@ -102,7 +106,7 @@ export async function PanelContent({ session, searchParams: sp }: { session: Ses
   const requested = first(sp.faena)
   const worksite = requested ? ctx.worksites.find((item) => item.id === requested) : undefined
   const worksiteId = worksite?.id
-  const worksiteName = worksite?.name ?? (ctx.worksites.length === 1 ? ctx.worksites[0]!.name : "Todas las faenas")
+  const worksiteName = worksite?.name ?? (ctx.worksites.length === 1 ? ctx.worksites[0]!.name : allLabel)
 
   return (
     <PageContainer>

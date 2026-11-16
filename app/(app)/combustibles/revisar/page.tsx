@@ -22,6 +22,8 @@ import { SegmentedControl } from "@/components/ui/segmented-control"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { settle } from "@/lib/async-settle"
 import { can, requirePermission } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import {
   ANOMALY_SEVERITY_LABELS,
   ANOMALY_STATUS_LABELS,
@@ -290,7 +292,7 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
         ) : null}
       </div>
 
-      <InboxFilterBar worksites={worksites} showSeverity={caseOnly && view === "pendientes"} showState={caseOnly && view === "pendientes"} chips={chips} />
+      <InboxFilterBar allWorksitesLabel={allWorksitesLabel(resolveWorksiteScope(session))} worksites={worksites} showSeverity={caseOnly && view === "pendientes"} showState={caseOnly && view === "pendientes"} chips={chips} />
 
       {listEmpty ? (
         degradedList ? null : caseOnly && !filtered && view === "pendientes" ? (

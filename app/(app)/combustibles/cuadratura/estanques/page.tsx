@@ -118,7 +118,7 @@ export default async function CuadraturaEstanquesPage({ searchParams }: { search
       />
       <SectionNav items={cuadraturaNavItems(session)} activeKey="estanques" ariaLabel="Vistas de cuadratura" carryParams={FUEL_CARRY_PARAMS} />
       <DegradedDataBanner degraded={degraded} total={total()} />
-      <ControlFilters worksites={ctx.worksites} extraKeys={["producto", "etapa"]}>
+      <ControlFilters worksites={ctx.worksites} allWorksitesLabel={ctx.allWorksitesLabel} extraKeys={["producto", "etapa"]}>
         <UrlSelect param="producto" options={products.map((item) => ({ id: item.id, label: item.name }))} value={productId ?? ""} ariaLabel="Producto" allLabel="Todos los productos" className="w-56" searchable={false} />
       </ControlFilters>
 

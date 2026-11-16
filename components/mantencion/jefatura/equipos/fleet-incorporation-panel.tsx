@@ -15,6 +15,7 @@ import { OptionSelect } from "@/components/ui/option-select"
 import { PageHeader } from "@/components/ui/page-header"
 import { ResponsiveDataListCard } from "@/components/ui/responsive-data-list"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
+import { ALL_WORKSITES_LABEL } from "@/lib/auth/worksite-label"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { plural, unitName } from "@/lib/mantencion/format"
 import { nameKey } from "@/lib/mantencion/normalize"
@@ -36,13 +37,15 @@ const UNIT_SHORT: Record<MantUnit, string> = { km: "km", h: "h" }
  * se muestran como texto, no como campos: no se cambian desde esta pantalla.
  * La búsqueda de la barra superior filtra la tabla (una sola tabla en la página).
  */
-export function FleetIncorporationPanel({ candidates, brands, schedules, today, canCreateBrands = false }: {
+export function FleetIncorporationPanel({ candidates, brands, schedules, today, canCreateBrands = false, allWorksitesLabel = ALL_WORKSITES_LABEL }: {
   candidates: IncorporationCandidate[]
   brands: Array<{ id: string; name: string }>
   schedules: Array<{ id: string; name: string; unit: MantUnit }>
   today: string
   /** Quien ve todas las faenas puede crear la marca de la flota que no está en la lista. */
   canCreateBrands?: boolean
+  /** Rótulo de «todas» del selector de faena según el alcance (`allWorksitesLabel`); sin él, el global. */
+  allWorksitesLabel?: string
 }) {
   const { searchQuery } = useSafeShellHeader()
   // La marca viene puesta: la de la lista que coincide con la flota o, si no está y se pueden crear, la de la flota tal cual.
@@ -192,7 +195,7 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
         )}
         <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
           {worksites.length > 1 && (
-            <OptionSelect aria-label="Filtrar por faena" className="h-9 w-full sm:w-52" emptyLabel="Todas las faenas" options={worksites} value={worksiteId} onValueChange={setWorksiteId} />
+            <OptionSelect aria-label="Filtrar por faena" className="h-9 w-full sm:w-52" emptyLabel={allWorksitesLabel} options={worksites} value={worksiteId} onValueChange={setWorksiteId} />
           )}
           {selected.size > 0 && (
             <div className="flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="Aplicar a los marcados">

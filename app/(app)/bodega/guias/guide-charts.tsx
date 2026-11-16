@@ -2,6 +2,7 @@ import Link from "next/link"
 import { AgingBar, type AgingBucket } from "@/components/charts/aging-bar"
 import { ChartSection } from "@/components/charts/chart-section"
 import { RankedList } from "@/components/ui/ranked-list"
+import type { ChartExportPermission } from "@/lib/reports/chart-data-export"
 import {
   GUIDE_AGE_BUCKETS,
   GUIDE_MIN_N,
@@ -34,6 +35,7 @@ export function GuideCharts({
   ageCounts,
   ageActive,
   faena,
+  excelPermission,
 }: {
   transit: GuideTransitShape
   /** Período de la medición, encabezando la frase («En los últimos 6 meses»). */
@@ -45,6 +47,12 @@ export function GuideCharts({
   ageActive: GuideAgeFilter
   /** Faena de destino a la vista (`""` = todas). */
   faena: string
+  /**
+   * Permiso de exportar del módulo (`warehouse:export`), que la pantalla pasa sólo a quien lo tiene: con él
+   * «Ver datos» ofrece «Exportar Excel»; sin él no hay botón. Las salvedades de cada Excel salen de aquí
+   * porque son las que la frase del gráfico ya dice (período, base, qué guías no entran).
+   */
+  excelPermission?: ChartExportPermission
 }) {
   const agedTotal = Object.values(ageCounts).reduce((sum, count) => sum + count, 0)
   if (transit.destinations.length === 0 && agedTotal === 0) return null
@@ -64,7 +72,11 @@ export function GuideCharts({
       <ChartSection
         title="Cuánto tardan los destinos en confirmar"
         summary={summary}
-        data={{ caption: "Días entre el despacho y la confirmación, por destino", headers: table.headers, rows: table.rows }}
+        data={{ caption: "Días entre el despacho y la confirmación, por destino", headers: table.headers, rows: table.rows, ...(excelPermission ? { excel: { permission: excelPermission, notes: [
+          `${windowText}, guías emitidas con destino en las faenas a la vista.`,
+          "Días entre el despacho y la confirmación de cada guía. P90: el 90 % de las guías se confirmó en ese tiempo o menos; el P90 sólo se calcula con una base mínima de guías.",
+          "Las guías confirmadas con diferencias no entran: su fecha de recepción es la del último cotejo.",
+        ] } } : {}) }}
         empty={transit.destinations.length > 0 ? null : {
           label: "Ninguna guía confirmada en este período",
           hint: "Cuando un destino confirme la recepción de una guía, aquí verás cuántos días tardó.",
@@ -125,6 +137,10 @@ export function GuideCharts({
           caption: "Guías despachadas sin confirmar, por antigüedad",
           headers: ["Antigüedad", "Guías"],
           rows: GUIDE_AGE_BUCKETS.map((bucket) => [bucket.label, ageCounts[bucket.key]]),
+          ...(excelPermission ? { excel: { permission: excelPermission, notes: [
+            "Foto de hoy de las guías despachadas que siguen sin confirmar, con destino en las faenas a la vista.",
+            "Los días corren desde que salió la guía y no dependen del período elegido.",
+          ] } } : {}),
         }}
         empty={agedTotal > 0 ? null : {
           label: "No hay guías despachadas esperando confirmación",

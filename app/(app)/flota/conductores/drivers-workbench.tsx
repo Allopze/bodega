@@ -14,6 +14,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { DriverCandidate, DriverRosterRow } from "@/lib/services/driver-licenses-contract"
 import { toast } from "@/lib/toast"
+import { ALL_WORKSITES_LABEL } from "@/lib/auth/worksite-label"
 import { cn, countOf } from "@/lib/utils"
 import { exportDriversXlsxAction } from "./actions"
 import { DriverLicenseSheet, subjectFromCandidate, subjectFromRow, type LicenseSheetTarget } from "./driver-license-sheet"
@@ -45,6 +46,8 @@ export interface DriversWorkbenchProps {
   /** `?editar=`: trabajador cuya hoja se abre sola (el destino del correo de aviso). */
   editarWorkerId: string | null
   editRow: DriverRosterRow | null
+  /** Rótulo de «todas» del selector de faena según el alcance (`allWorksitesLabel`); sin él, el global. */
+  allWorksitesLabel?: string
 }
 
 /** Radix no admite `value=""` en un `SelectItem`: «todas las faenas» lleva un centinela propio. */
@@ -90,6 +93,7 @@ export function DriversWorkbench({
   faenaParam,
   editarWorkerId,
   editRow,
+  allWorksitesLabel = ALL_WORKSITES_LABEL,
 }: DriversWorkbenchProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -237,10 +241,10 @@ export function DriversWorkbench({
           {(worksites.length > 1 || faena) && (
             <Select value={faena ?? ALL_WORKSITES} onValueChange={(value) => changeFaena(value === ALL_WORKSITES ? null : value)}>
               <SelectTrigger className="w-full text-xs sm:w-56" aria-label="Faena">
-                <SelectValue placeholder="Todas las faenas" />
+                <SelectValue placeholder={allWorksitesLabel} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL_WORKSITES}>Todas las faenas</SelectItem>
+                <SelectItem value={ALL_WORKSITES}>{allWorksitesLabel}</SelectItem>
                 {worksites.map((worksite) => (
                   <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>
                 ))}

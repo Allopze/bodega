@@ -4,6 +4,7 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { FilterSearchInput } from "@/components/ui/filter-search-input"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { OptionSelect, type OptionSelectOption } from "@/components/ui/option-select"
+import { ALL_WORKSITES_LABEL } from "@/lib/auth/worksite-label"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import type { WorkOrderFilterOptions } from "@/lib/services/mantencion/work-orders/query"
 import { formatDate } from "@/lib/utils"
@@ -29,7 +30,7 @@ export interface OtFilterEquipment {
  * campos con lupa no dejaban claro cuál usar. `?equipo=<id>` sigue siendo válido
  * (la ficha del equipo enlaza así a sus órdenes) y se ve como pastilla removible.
  */
-export function OtListFilters({ options, equipment }: { options: WorkOrderFilterOptions; equipment: OtFilterEquipment[] }) {
+export function OtListFilters({ options, equipment, allWorksitesLabel = ALL_WORKSITES_LABEL }: { options: WorkOrderFilterOptions; equipment: OtFilterEquipment[]; /** Rótulo de «todas» del selector de faena según el alcance (`allWorksitesLabel`); sin él, el global. */ allWorksitesLabel?: string }) {
   const { searchParams, setFilter, setFilters, getFilter } = useUrlFilters({ pageKey: "pagina" })
   const showWorksite = options.worksites.length > 1
 
@@ -71,7 +72,7 @@ export function OtListFilters({ options, equipment }: { options: WorkOrderFilter
         className="h-11 w-full pl-8 text-xs sm:h-8 sm:w-72"
       />
       {showWorksite && (
-        <OptionSelect aria-label="Filtrar por faena" className={BAR_SELECT_CLASS} emptyLabel="Todas las faenas" options={worksiteOptions} value={worksiteId} onValueChange={(v) => setFilter("faena", v)} />
+        <OptionSelect aria-label="Filtrar por faena" className={BAR_SELECT_CLASS} emptyLabel={allWorksitesLabel} options={worksiteOptions} value={worksiteId} onValueChange={(v) => setFilter("faena", v)} />
       )}
       <OptionSelect aria-label="Filtrar por mecánico" className={BAR_SELECT_CLASS} emptyLabel="Todos los mecánicos" options={mechanicOptions} value={mechanicId} onValueChange={(v) => setFilter("mecanico", v)} />
       <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">

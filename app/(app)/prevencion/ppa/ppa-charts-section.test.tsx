@@ -5,10 +5,12 @@
  * muestra el conteo honesto («3 de 11 PPA detenidos») y que la base es demasiado chica
  * (n = 11); con base suficiente la tasa lleva su n.
  */
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { render, screen, within } from "@testing-library/react"
 import { PpaCountRankingSection, PpaTrendSection, PpaWorksiteRateSection } from "./ppa-charts-section"
 import { PpaMetricBar } from "./ppa-metric-bar"
+
+vi.mock("@/app/(app)/chart-data-export-action", () => ({ exportChartDataAction: vi.fn() }))
 import { shapePpaMonthly, shapeWorksiteRanking } from "@/lib/ppa/detention-rate"
 import type { PpaStats } from "@/lib/services/ppa"
 
@@ -112,6 +114,26 @@ describe("PpaTrendSection", () => {
   it("sin PPA no dibuja nada", () => {
     const { container } = render(<PpaTrendSection points={[]} />)
     expect(container.firstChild).toBeNull()
+  })
+})
+
+// «Ver datos» → Excel es opt-in con el permiso de exportar del PPA (`ppa:manage`): quien ve el gráfico no recibe por eso la descarga.
+describe("PPA · «Ver datos» → Excel", () => {
+  const points = shapePpaMonthly([{ month: "2026-10", total: 4, detained: 1 }], "2026-10-20")
+  const ranking = shapeWorksiteRanking([{ worksiteId: "a", worksiteName: "Cholguán", total: 22, detained: 6 }])
+
+  it("sin el permiso no hay botón en ninguno de los dos gráficos", () => {
+    render(<><PpaTrendSection points={points} /><PpaWorksiteRateSection ranking={ranking} /></>)
+    expect(screen.queryByText("Exportar Excel", { exact: false })).toBeNull()
+  })
+
+  it("con el permiso cada gráfico ofrece Exportar Excel de su tabla", () => {
+    const excel = { permission: "ppa:manage" as const, notes: ["Últimos 12 meses."] }
+    render(<><PpaTrendSection points={points} excel={excel} /><PpaWorksiteRateSection ranking={ranking} excel={excel} /></>)
+    expect(screen.getAllByText("Exportar Excel", { exact: false }).map((node) => node.closest("button")!.getAttribute("aria-label"))).toEqual([
+      "Exportar Excel: PPA y tasa de detención por mes",
+      "Exportar Excel: Tasa de detención por faena",
+    ])
   })
 })
 

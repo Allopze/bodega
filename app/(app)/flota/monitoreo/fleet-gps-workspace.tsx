@@ -14,6 +14,7 @@ import { FleetGpsLiveStatus } from "./fleet-gps-live-status"
 import { FleetGpsMap } from "./fleet-gps-map"
 import type { SourceStatusRow } from "./fleet-gps-source-status"
 import { FleetGpsSourcesPanel } from "./fleet-gps-sources-panel"
+import { FleetGpsSideList } from "./fleet-gps-side-list"
 import { FleetGpsTable } from "./fleet-gps-table"
 import { OnwayControls } from "./onway-controls"
 import { WialonControls } from "./wialon-controls"
@@ -53,6 +54,8 @@ export function FleetGpsWorkspace({ positions, alerts, adminStatus, wialonStatus
   // Fuera de las pestañas: el refresco sigue aunque se mire «Alertas», y se
   // detiene sólo al salir de Monitoreo GPS (este componente no vive en otra página).
   const live = useGpsLiveRefresh()
+  // El vehículo elegido lo comparten el mapa y la lista lateral (pantallas anchas).
+  const [selectedId, setSelectedId] = React.useState<string | null>(null)
   return (
     <div className="space-y-3">
       <FleetGpsSourcesPanel rows={sourceRows} onOpenSettings={canConfigure ? () => setTab("settings") : undefined} />
@@ -74,7 +77,16 @@ export function FleetGpsWorkspace({ positions, alerts, adminStatus, wialonStatus
         <TabsContent value="live" className="space-y-3">
           {positions.length === 0 && emptyState ? emptyState : (
             <>
-              <FleetGpsMap positions={positions} />
+              {/* Desde `xl` la lista de vehículos va al lado del mapa, con su mismo alto: abajo de él quedaba
+                  bajo el pliegue (crítica 2026-11-15). La tabla completa sigue debajo para el detalle. */}
+              <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-3">
+                <FleetGpsMap positions={positions} selectedId={selectedId} onSelectedChange={setSelectedId} />
+                <div className="relative hidden xl:block">
+                  <div className="absolute inset-0">
+                    <FleetGpsSideList positions={positions} selectedId={selectedId} onSelect={setSelectedId} />
+                  </div>
+                </div>
+              </div>
               <Card id="vehiculos-gps" className="overflow-hidden">
                 <CardHeader>
                   <CardTitle as="h2" className="text-base">Vehículos monitoreados</CardTitle>

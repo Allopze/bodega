@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { FilterSearchInput } from "@/components/ui/filter-search-input"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ALL_WORKSITES_LABEL } from "@/lib/auth/worksite-label"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 
 const ALL = "_all"
@@ -32,7 +33,7 @@ function SelectFilter({ value, onValue, allLabel, ariaLabel, options }: { value:
  * «sólo patentes sin vincular». El período vive en la cabecera. Cada filtro
  * activo tiene su chip; se aplican al instante con `router.replace`.
  */
-export function TarjetasFilters({ worksites, suppliers }: { worksites: Option[]; suppliers: Option[] }) {
+export function TarjetasFilters({ worksites, suppliers, allWorksitesLabel = ALL_WORKSITES_LABEL }: { worksites: Option[]; suppliers: Option[]; /** Rótulo de «todas» según el alcance (`allWorksitesLabel`). */ allWorksitesLabel?: string }) {
   useWorksiteFilterPresence(worksites.length > 0)
   const { searchParams, setFilter, setFilters, isPending } = useUrlFilters({ resetPageKeys: PAGE_KEYS })
   const get = (key: string) => searchParams.get(key) ?? ""
@@ -55,7 +56,7 @@ export function TarjetasFilters({ worksites, suppliers }: { worksites: Option[];
         onClearAll={() => setFilters({ faena: null, fuente: null, sin_vincular: null, patente: null, proveedor: null })}
       >
         <FilterSearchInput param="patente" placeholder="Buscar patente o equipo…" ariaLabel="Buscar patente o equipo" pageKeys={PAGE_KEYS} className="h-11 w-full pl-8 text-xs sm:h-8 sm:w-64" />
-        <SelectFilter value={get("faena")} onValue={(next) => setFilter("faena", next)} allLabel="Todas tus faenas" ariaLabel="Filtrar por faena" options={worksites} />
+        <SelectFilter value={get("faena")} onValue={(next) => setFilter("faena", next)} allLabel={allWorksitesLabel} ariaLabel="Filtrar por faena" options={worksites} />
         <SelectFilter value={supplier} onValue={(next) => setFilters({ fuente: next === ALL ? null : next, proveedor: null })} allLabel="Todos los proveedores" ariaLabel="Filtrar por proveedor" options={suppliers} />
         <Checkbox id="tarjetas-sin-vincular" label="Sólo patentes sin vincular" checked={unlinkedOnly} onChange={(event) => setFilter("sin_vincular", event.target.checked ? "si" : null)} />
       </FilterToolbar>

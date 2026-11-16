@@ -17,7 +17,8 @@ export async function GET(req: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 })
   }
-  if (!can(session, "warehouse:view_stock")) {
+  // Exportar es opt-in con `warehouse:export` (decisión 2026-11-16) y sigue pidiendo ver el stock.
+  if (!can(session, "warehouse:view_stock") || !can(session, "warehouse:export")) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 

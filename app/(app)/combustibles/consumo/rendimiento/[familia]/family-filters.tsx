@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/field"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { WorksiteSelect } from "@/components/ui/worksite-select"
+import { ALL_WORKSITES_LABEL } from "@/lib/auth/worksite-label"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 
 const ALL = "_all"
@@ -20,6 +21,8 @@ export interface FamilyFiltersProps {
   mandantes: Option[]
   media: Option[]
   vehicles: Array<{ plate: string; code: string | null; brand: string | null; model: string | null }>
+  /** Rótulo de «todas» del selector de faena según el alcance (`ctx.allWorksitesLabel`); sin él, el global. */
+  allWorksitesLabel?: string
 }
 
 const UNIT_LABELS: Record<string, string> = { km_per_liter: "km/L (odómetro)", liters_per_hour: "L/h (horómetro)" }
@@ -32,7 +35,7 @@ const UNIT_LABELS: Record<string, string> = { km_per_liter: "km/L (odómetro)", 
  * (no es texto libre). El período ya no vive aquí: lo elige el control de la
  * cabecera y «Quitar filtros» no lo toca.
  */
-export function FamilyFilters({ worksites, mandantes, media, vehicles }: FamilyFiltersProps) {
+export function FamilyFilters({ worksites, mandantes, media, vehicles, allWorksitesLabel = ALL_WORKSITES_LABEL }: FamilyFiltersProps) {
   const searchParams = useSearchParams()
   // `cargas` es la página del detalle de cargas: cambiar un filtro la vuelve a la primera.
   const { setFilter, setFilters, isPending } = useUrlFilters({ pageKey: "pagina", resetPageKeys: ["cargas"] })
@@ -110,6 +113,8 @@ export function FamilyFilters({ worksites, mandantes, media, vehicles }: FamilyF
       >
         <WorksiteSelect
           worksites={worksites}
+          allLabel={allWorksitesLabel}
+          placeholder={allWorksitesLabel}
           value={worksite}
           onChange={(value) => setFilter("faena", value || null)}
           triggerClassName="w-56"

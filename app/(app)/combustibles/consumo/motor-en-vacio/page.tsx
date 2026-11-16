@@ -109,7 +109,7 @@ export default async function MotorEnVacioPage({ searchParams }: { searchParams:
       />
       <DegradedDataBanner degraded={degraded} total={total()} />
       <ConsumoNav activeKey="motor-en-vacio" />
-      <ControlFilters worksites={ctx.worksites} mandantes={ctx.mandantes} extraKeys={["equipo"]} />
+      <ControlFilters worksites={ctx.worksites} allWorksitesLabel={ctx.allWorksitesLabel} mandantes={ctx.mandantes} extraKeys={["equipo"]} />
 
       {fleet && fleet.idlePct !== null ? (
         <p className="mb-6 max-w-[78ch] text-base text-[var(--color-text)]">

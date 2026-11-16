@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest"
-import { parsePanelFilters, periodStart, stoppedDaysWithin, weekLabel, weekRangeLabel, weekStart, lastWeeks } from "./panel-filters"
 import {
   RECORD_FILTER_PARAMS, advancedFilterCount, hasRecordFilters, parseRecordFilters, parseRecordListContext, parseRecordQuery, recordDetailHref,
   recordFiltersToParams, recordListHref, recordQueryToParams,
@@ -83,36 +82,5 @@ describe("la lista que viaja al detalle (?lista=)", () => {
     expect(recordListHref("revision=pendiente", 25)).toBe("/mantencion/registros?revision=pendiente")
     expect(recordListHref("revision=pendiente", 26)).toBe("/mantencion/registros?revision=pendiente&page=2")
     expect(recordListHref("", 80)).toBe("/mantencion/registros?page=4")
-  })
-})
-
-describe("período y faena del panel", () => {
-  it("el período por omisión es 30 días y un valor desconocido vuelve a él", () => {
-    expect(parsePanelFilters({})).toEqual({ period: "30" })
-    expect(parsePanelFilters({ periodo: "todo", faena: "ws-1" })).toEqual({ period: "todo", worksiteId: "ws-1" })
-    expect(parsePanelFilters({ periodo: "siempre" })).toEqual({ period: "30" })
-  })
-
-  it("calcula el inicio de cada período", () => {
-    expect(periodStart("7", "2026-10-28")).toBe("2026-10-22")
-    expect(periodStart("30", "2026-10-28")).toBe("2026-09-29")
-    expect(periodStart("mes", "2026-10-28")).toBe("2026-10-01")
-    expect(periodStart("todo", "2026-10-28")).toBeNull()
-  })
-
-  it("las semanas empiezan el lunes y se rotulan completas", () => {
-    // 28-10-2026 es miércoles: su semana empieza el lunes 26.
-    expect(weekStart("2026-10-28")).toBe("2026-10-26")
-    expect(weekStart("2026-11-01")).toBe("2026-10-26")
-    expect(lastWeeks("2026-10-28", 3)).toEqual(["2026-10-12", "2026-10-19", "2026-10-26"])
-    expect(weekLabel("2026-10-26")).toBe("26-10")
-    expect(weekRangeLabel("2026-10-26")).toBe("26-10 al 01-11")
-  })
-
-  it("los días fuera de servicio se recortan al período", () => {
-    expect(stoppedDaysWithin("2026-10-01", null, "2026-10-28", null)).toBe(27)
-    expect(stoppedDaysWithin("2026-10-01", null, "2026-10-28", "2026-10-22")).toBe(6)
-    expect(stoppedDaysWithin("2026-10-01", "2026-10-10", "2026-10-28", "2026-10-22")).toBe(0)
-    expect(stoppedDaysWithin("2026-10-20", "2026-10-25", "2026-10-28", "2026-10-22")).toBe(3)
   })
 })

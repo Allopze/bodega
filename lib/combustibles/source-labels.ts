@@ -30,6 +30,18 @@ export const SERVICE_TYPE_LABELS: Record<string, string> = {
   TAE: "Tarjeta Copec de abastecimiento",
 }
 
+/**
+ * Nombre de un medio de suministro de canal Copec: de dónde salió el combustible de UNA carga de un
+ * equipo. No es lo mismo que el tipo de tarjeta de Pagos (`SERVICE_TYPE_LABELS`): con el canal TAE,
+ * Copec carga la vasija con su tarjeta y el equipo carga desde la vasija, no desde una tarjeta
+ * (decisión del usuario 2026-11-16: Copec tiene dos flujos, tarjeta del equipo en estación y
+ * carga a una vasija). Lo usan el formulario de terreno, la cuadratura por medio y los litros por medio.
+ */
+export const SUPPLY_MEDIUM_CHANNEL_LABELS: Record<CopecChannel, string> = {
+  TCT: COPEC_CHANNEL_LABELS.TCT,
+  TAE: "Vasija (carga Copec)",
+}
+
 export const FUEL_PRODUCT_SOURCE_LABELS: Record<string, string> = {
   diesel: "Diésel",
   bluemax: "BlueMax",

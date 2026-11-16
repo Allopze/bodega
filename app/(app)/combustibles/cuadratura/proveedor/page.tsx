@@ -50,7 +50,7 @@ export default async function CuadraturaProveedorPage({ searchParams }: { search
       />
       <SectionNav items={cuadraturaNavItems(session)} activeKey="proveedor" ariaLabel="Vistas de cuadratura" carryParams={FUEL_CARRY_PARAMS} />
       <DegradedDataBanner degraded={degraded} total={total()} />
-      <ControlFilters worksites={ctx.worksites} mandantes={ctx.mandantes} />
+      <ControlFilters worksites={ctx.worksites} allWorksitesLabel={ctx.allWorksitesLabel} mandantes={ctx.mandantes} />
       {note ? <Callout tone="info" className="mb-4">{note}</Callout> : null}
       {answer ? <p className="mb-5 max-w-3xl text-base text-[var(--color-text)]" data-testid="proveedor-answer">{answer}</p> : null}
       {cross.failed ? (

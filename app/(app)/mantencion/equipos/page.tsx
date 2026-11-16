@@ -12,6 +12,7 @@ import { EquipmentFilters } from "@/components/mantencion/jefatura/equipos/equip
 import { EquipmentTable } from "@/components/mantencion/jefatura/equipos/equipment-table"
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { EQUIPMENT_STATE_LABEL, plural } from "@/lib/mantencion/format"
+import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import { equipmentScope, viewerFromSession } from "@/lib/services/mantencion/access"
 import {
   NO_SCHEDULE, filterFleet, hasEquipmentListFilters, parseEquipmentListFilters, sortFleetByState, toEquipmentListRow,
@@ -110,7 +111,7 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
             </ul>
           </Callout>
         )}
-        <EquipmentFilters options={options} canViewGps={canViewFleet} />
+        <EquipmentFilters options={options} canViewGps={canViewFleet} allWorksitesLabel={allWorksitesLabel(equipmentScope(viewer) === "all")} />
         <EquipmentTable rows={rows} canManage={canManage} canViewGps={canViewFleet} filtered={hasEquipmentListFilters(filters)} pendingFleet={pendingFleet} />
       </div>
     </PageContainer>

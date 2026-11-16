@@ -19,24 +19,13 @@ import {
 } from "@/components/ui/table"
 import type { FleetGpsPosition } from "@/lib/services/fleet-gps"
 import { formatDateTime } from "@/lib/utils"
-import { formatGpsMeter } from "./fleet-gps-format"
+import { filterGpsPositions, formatGpsMeter } from "./fleet-gps-format"
 import { gpsSignalLabel, gpsSourceLabel, ignitionMeta } from "./fleet-gps-labels"
 import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) {
   const { searchQuery } = useSafeShellHeader()
-  const query = searchQuery.trim().toLocaleLowerCase("es-CL")
-  const rows = query
-    ? positions.filter((position) => [
-        position.plate,
-        position.code,
-        position.brand,
-        position.model,
-        position.typeName,
-        position.worksiteName,
-        position.providers.join(" "),
-      ].some((value) => value?.toLocaleLowerCase("es-CL").includes(query)))
-    : positions
+  const rows = filterGpsPositions(positions, searchQuery)
 
   if (positions.length === 0) {
     return (

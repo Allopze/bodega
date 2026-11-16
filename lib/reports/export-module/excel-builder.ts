@@ -106,16 +106,12 @@ export function safeWorksheetName(rawName: string | undefined, usedNames?: Set<s
   // comilla) o un nombre de 32 caracteres con comilla en la posición 31
   // terminaban empezando o terminando en comilla simple —que Excel rechaza—
   // pese a haber pasado por el saneado.
-  const cleaned = (rawName ?? "")
-    .replace(/[*?:\\/[\]]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, WORKSHEET_NAME_MAX)
-    .replace(/^'+|'+$/g, "")
-    .trim()
+  const cleaned = cleanWorksheetText(rawName ?? "")
+  const shortened = cleaned.length <= WORKSHEET_NAME_MAX ? cleaned : shortenTitle(rawName ?? "", cleaned, WORKSHEET_NAME_MAX)
+  const trimmed = shortened.replace(/^'+|'+$/g, "").trim()
 
   // `History` está reservado por Excel; el resto de los vacíos caen en "Hoja".
-  let base = cleaned.length > 0 ? cleaned : "Hoja"
+  let base = trimmed.length > 0 ? trimmed : "Hoja"
   if (base.toLowerCase() === "history") base = "Historial"
 
   if (!usedNames) return base
@@ -124,15 +120,58 @@ export function safeWorksheetName(rawName: string | undefined, usedNames?: Set<s
     return base
   }
 
-  // Desambiguación con sufijo, recortando la base para no pasarse del límite.
+  // Desambiguación con sufijo, recortando la base (en palabra completa si se puede) para no
+  // pasarse del límite.
   for (let n = 2; ; n += 1) {
     const suffix = ` (${n})`
-    const candidate = `${base.slice(0, WORKSHEET_NAME_MAX - suffix.length).trim()}${suffix}`
+    const room = WORKSHEET_NAME_MAX - suffix.length
+    const stem = base.length <= room ? base : cutAtWord(base, room)
+    const candidate = `${stem.replace(/^'+|'+$/g, "").trim()}${suffix}`
     if (!usedNames.has(candidate.toLowerCase())) {
       usedNames.add(candidate.toLowerCase())
       return candidate
     }
   }
+}
+
+/** Caracteres prohibidos por Excel a espacio, espacios colapsados y extremos limpios. */
+function cleanWorksheetText(text: string): string {
+  return text.replace(/[*?:\\/[\]]/g, " ").replace(/\s+/g, " ").trim()
+}
+
+/** Signos que no pueden quedar colgando al final de un nombre recortado. */
+const TRAILING_PUNCTUATION = /[\s,;:.\-\u2013\u2014(&/]+$/
+
+/**
+ * Corta `text` a lo más en `max` caracteres sin partir una palabra: se queda con la última
+ * palabra completa que cabe y no deja signos colgando. Si no hay ninguna frontera de palabra
+ * (una sola palabra más larga que el tope), corta en seco.
+ */
+function cutAtWord(text: string, max: number): string {
+  const head = text.slice(0, max)
+  // Si justo después del corte viene un espacio, la última palabra del tramo quedó completa.
+  const endsOnBoundary = text.length === max || /\s/.test(text.charAt(max))
+  let cut = head
+  if (!endsOnBoundary) {
+    const lastSpace = head.lastIndexOf(" ")
+    if (lastSpace > 0) cut = head.slice(0, lastSpace)
+  }
+  const tidy = cut.replace(TRAILING_PUNCTUATION, "")
+  return tidy.length > 0 ? tidy : head.trim()
+}
+
+/**
+ * Reduce un título que no cabe en un nombre de hoja. Si tiene «:» o «,» y lo de antes cabe, usa
+ * esa parte («Órdenes de trabajo creadas, cerradas…» → «Órdenes de trabajo»); si no, la última
+ * palabra completa que quepa. Los nombres que ya caben no pasan por acá.
+ */
+function shortenTitle(raw: string, cleaned: string, max: number): string {
+  const separator = raw.search(/[:,]/)
+  if (separator > 0) {
+    const lead = cleanWorksheetText(raw.slice(0, separator)).replace(TRAILING_PUNCTUATION, "")
+    if (lead.length > 0 && lead.length <= max) return lead
+  }
+  return cutAtWord(cleaned, max)
 }
 
 /** Neutraliza inyección de fórmulas (CSV injection) sin tocar números. Idempotente. */

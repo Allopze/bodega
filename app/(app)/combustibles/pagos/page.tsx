@@ -3,6 +3,8 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { Plus } from "@phosphor-icons/react/dist/ssr"
 import { can, requirePermission } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 import { toInvoiceFilters } from "@/lib/combustibles/period"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
@@ -120,6 +122,7 @@ export default async function PagosPage({ searchParams }: { searchParams: Promis
         worksites={data.options.worksites}
         products={data.options.products}
         current={params}
+        allWorksitesLabel={allWorksitesLabel(resolveWorksiteScope(session))}
       />
 
       {degraded.includes("facturas-lista") ? null : rows.length === 0 ? (

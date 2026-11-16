@@ -230,6 +230,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/operational-control-wialon-cross-pglite.test.ts",
   "lib/__tests__/fuel-statements-preview-pglite.test.ts",
   "lib/__tests__/fuel-sources-status-pglite.test.ts",
+  "lib/__tests__/copec-medio-tct-pglite.test.ts",
   // Faltaba desde que se escribió: instancia PGlite y migra, igual que las de
   // arriba con el mismo comentario.
   "lib/__tests__/anomaly-detection-integration.test.ts",
@@ -477,6 +478,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-schedules-pglite.test.ts",
   // Mantención de equipos: lista de registros por alcance, filtros, indicadores, panel, Excel y PDF archivado (L3).
   "lib/__tests__/mantencion-records-pglite.test.ts",
+  // «Marcar como revisados» en lote de Registros firmados: alcance, anulados, ya revisados, tope y bitácora.
+  "lib/__tests__/mantencion-records-review-batch-pglite.test.ts",
   // Mantención de equipos: hoja de vida de la ficha (alcance, anuladas, totales), seguro y Excel del historial.
   "lib/__tests__/mantencion-equipment-life-pglite.test.ts",
   "lib/__tests__/mantencion-historical-import-pglite.test.ts",
@@ -489,9 +492,9 @@ export const pgliteTestFiles = [
   // (Carril B) composición de fotos, anulación de registros con OT, folio único
   // e idempotencia de `client_op_id`.
   "lib/__tests__/mantencion-integridad-pglite.test.ts",
-  // (Carril D) «Días fuera de servicio» y «En taller ahora» de OT, `stale` y
-  // totales del panel frente a la flota y el Excel.
-  "lib/__tests__/mantencion-panel-pglite.test.ts",
+  // (Carril D) `stale` de una OT en taller, salida de taller determinista, medidor del tipo y
+  // pautas (el Panel viejo y su `loadPanel` se retiraron; ver el encabezado del archivo).
+  "lib/__tests__/mantencion-taller-y-pautas-pglite.test.ts",
   // Estimación de mantención con lectura GPS o VisionLink más nueva que la oficial (y regresión de `!isActive`).
   "lib/__tests__/mantencion-gps-estimate-pglite.test.ts",
   // (Carril E) la base rechaza fotos duplicadas, orden repetido y `sort_order`

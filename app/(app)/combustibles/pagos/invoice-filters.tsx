@@ -7,6 +7,7 @@ import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-too
 import { Label } from "@/components/ui/field"
 import { OptionSelect } from "@/components/ui/option-select"
 import { WorksiteSelect } from "@/components/ui/worksite-select"
+import { ALL_WORKSITES_LABEL } from "@/lib/auth/worksite-label"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { FUEL_LOAD_STATUS_LABELS } from "@/lib/combustibles/labels"
 import { INVOICE_FILTER_KEYS, SERVICE_TYPE_LABELS, type InvoiceListParams } from "./invoice-params"
@@ -17,6 +18,8 @@ interface InvoiceFiltersProps {
   worksites: Array<{ id: string; name: string }>
   products: Array<{ id: string; name: string }>
   current: InvoiceListParams
+  /** Rótulo de «todas» del selector de faena según el alcance (`allWorksitesLabel`); sin él, el global. */
+  allWorksitesLabel?: string
 }
 
 /** La página vuelve a la 1 al cambiar cualquier filtro, incluida la clave que traían las URL antiguas. */
@@ -30,7 +33,7 @@ const LEGACY_KEYS = { equipo: "vehicle", estado: "status", servicio: "service" }
  * servicio, proveedor y producto tras «Más filtros (N)». Cada filtro activo
  * tiene su chip removible.
  */
-export function InvoiceFilters({ equipment, suppliers, worksites, products, current }: InvoiceFiltersProps) {
+export function InvoiceFilters({ equipment, suppliers, worksites, products, current, allWorksitesLabel = ALL_WORKSITES_LABEL }: InvoiceFiltersProps) {
   useWorksiteFilterPresence(worksites.length > 1)
   const { setFilter, setFilters } = useUrlFilters({ resetPageKeys: RESET_PAGE_KEYS })
 
@@ -122,6 +125,8 @@ export function InvoiceFilters({ equipment, suppliers, worksites, products, curr
       {worksites.length > 1 && (
         <WorksiteSelect
           worksites={worksites}
+          allLabel={allWorksitesLabel}
+          placeholder={allWorksitesLabel}
           value={current.faena}
           onChange={(v) => setFilter("faena", v)}
           triggerClassName="h-11 w-full text-xs sm:h-8 sm:w-44"

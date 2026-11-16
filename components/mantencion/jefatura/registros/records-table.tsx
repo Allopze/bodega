@@ -9,6 +9,7 @@ import { executorText, formatReading, plural, recordKindText } from "@/lib/mante
 import type { RecordListRow } from "@/lib/services/mantencion/records-query"
 import { recordDetailHref, type RecordSortKey, type SortDirection } from "@/lib/services/mantencion/records-filters"
 import { formatDate } from "@/lib/utils"
+import { RecordSelectCheckbox } from "./record-selection"
 
 interface SortableColumn {
   key: RecordSortKey
@@ -117,6 +118,10 @@ function ExecutorLine({ row }: { row: RecordListRow }) {
  * una tabla de ocho columnas en 390 px sólo dejaba ver Folio, Fecha y Faena.
  * Ambas quedan en el DOM (ver «Locators in this repository» de AGENTS.md).
  *
+ * Con `selectable` (quien puede revisar), cada registro que admite revisión lleva una casilla
+ * —columna en la tabla, esquina de la tarjeta—: la selección vive en `RecordSelectionProvider`,
+ * que envuelve la lista, y las dos casillas de una misma fila marcan lo mismo.
+ *
  * Cada enlace al detalle lleva `?lista=` con los filtros y el orden de la lista,
  * para que el detalle ofrezca anterior y siguiente dentro de ella.
  */
@@ -126,6 +131,7 @@ export function RecordsTable({
   dir,
   sortHref,
   listQuery,
+  selectable = false,
 }: {
   rows: RecordListRow[]
   sort: RecordSortKey
@@ -134,6 +140,8 @@ export function RecordsTable({
   sortHref: (key: RecordSortKey) => string
   /** Los filtros y el orden de la lista, para que el detalle sepa de dónde se llegó. */
   listQuery: string
+  /** Dibuja las casillas para elegir registros (requiere `RecordSelectionProvider` sobre la lista). */
+  selectable?: boolean
 }) {
   const header = (column: SortableColumn) => {
     const active = sort === column.key
@@ -158,6 +166,7 @@ export function RecordsTable({
             <li key={row.id}>
               <ResponsiveDataListCard
                 title={<span className="font-mono text-sm font-semibold">{folio}</span>}
+                status={selectable ? <RecordSelectCheckbox row={row} folio={folio} /> : undefined}
                 description={<><span className="whitespace-nowrap font-mono tabular-nums">{formatDate(row.workDate)}</span> · {row.worksiteName}</>}
                 actions={(
                   <Button asChild variant="secondary" size="sm" className="w-full">
@@ -183,6 +192,7 @@ export function RecordsTable({
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
+              {selectable && <TableHead className="w-10"><span className="sr-only">Elegir</span></TableHead>}
               {header(SORTABLE.folio!)}
               {header(SORTABLE.fecha!)}
               {header(SORTABLE.faena!)}
@@ -196,6 +206,7 @@ export function RecordsTable({
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id} className={row.status === "anulado" ? "bg-[var(--color-surface-2)]/60" : undefined}>
+                {selectable && <TableCell><RecordSelectCheckbox row={row} folio={row.folio ?? "sin folio"} /></TableCell>}
                 <TableCell className="whitespace-nowrap">
                   <Link
                     href={recordDetailHref(row.id, listQuery)}
