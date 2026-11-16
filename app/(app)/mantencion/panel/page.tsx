@@ -10,7 +10,8 @@ import { PeriodControl } from "@/components/ui/period-control"
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { chartWindowCaption, DEFAULT_RANGE_LABEL, defaultIndicatorRange, indicatorPeriodLabel, resolveIndicatorPeriod } from "@/lib/indicators/period"
 import { logger } from "@/lib/logger"
-import { viewerFromSession } from "@/lib/services/mantencion/access"
+import { allWorksitesLabel } from "@/lib/auth/worksite-label"
+import { equipmentScope, viewerFromSession } from "@/lib/services/mantencion/access"
 import {
   loadOpenWorkOrdersByStatus,
   loadOutOfService,
@@ -113,7 +114,9 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
     workOrders: series ? series.reduce((sum, point) => sum + point.created + point.closed + point.backlog, 0) : null,
   })
 
-  const scopeName = worksite?.name ?? (worksites.length === 1 ? worksites[0]!.name : "todas las faenas")
+  // El alcance de los equipos de Mantención no es el de la sesión: `mant:records:view_all` abre todas.
+  const allLabel = allWorksitesLabel(equipmentScope(viewer) === "all")
+  const scopeName = worksite?.name ?? (worksites.length === 1 ? worksites[0]!.name : allLabel.toLowerCase())
   const datesOf = (range: { from: string; to: string }) => `${formatDate(range.from)} al ${formatDate(range.to)}`
   const scopeNote = `${datesOf(period)} · ${scopeName}`
   const common = {
@@ -143,10 +146,11 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
           <BoardHeaderActions
             worksites={worksites}
             worksiteId={worksiteId}
+            allLabel={allLabel}
             period={<PeriodControl mode="range" from={period.requested.from} to={period.requested.to} defaultRange={{ ...defaultIndicatorRange(today), label: DEFAULT_RANGE_LABEL }} />}
           >
             {canExport ? (
-              <BoardExportButton title="Panel de mantención" range={{ from: period.from, to: period.to }} scope={{ periodo: indicatorPeriodLabel(period.requested, datesOf), faena: worksite?.name ?? (worksites.length === 1 ? worksites[0]!.name : "Todas las faenas") }} />
+              <BoardExportButton title="Panel de mantención" range={{ from: period.from, to: period.to }} scope={{ periodo: indicatorPeriodLabel(period.requested, datesOf), faena: worksite?.name ?? (worksites.length === 1 ? worksites[0]!.name : allLabel) }} />
             ) : null}
           </BoardHeaderActions>
         }

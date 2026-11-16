@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { OptionSelect, type OptionSelectOption } from "@/components/ui/option-select"
+import { ALL_WORKSITES_LABEL } from "@/lib/auth/worksite-label"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { EQUIPMENT_STATE_LABEL } from "@/lib/mantencion/format"
 import { MANT_EQUIPMENT_STATES } from "@/lib/mantencion/types"
@@ -35,7 +36,7 @@ const FILTER_KEYS = ["faena", "tipo", "pauta", "estado", "estimacionGps", "bajas
  * URL (`router.replace`, sin mover el scroll), así que el panel puede enlazar con
  * `?estado=vencida` y el filtro sobrevive a recargar la página.
  */
-export function EquipmentFilters({ options, canViewGps = true }: { options: EquipmentFilterOptions; canViewGps?: boolean }) {
+export function EquipmentFilters({ options, canViewGps = true, allWorksitesLabel = ALL_WORKSITES_LABEL }: { options: EquipmentFilterOptions; canViewGps?: boolean; /** Rótulo de «todas» del selector de faena según el alcance (`allWorksitesLabel`); sin él, el global. */ allWorksitesLabel?: string }) {
   const { searchParams, setFilter, setFilters, getFilter } = useUrlFilters()
   const filters = parseEquipmentListFilters(Object.fromEntries(searchParams.entries()))
   // La casilla responde al toque antes de que termine la navegación de la URL; si la URL cambia
@@ -70,7 +71,7 @@ export function EquipmentFilters({ options, canViewGps = true }: { options: Equi
       onRemoveChip={(key) => setFilter(key, null)}
       onClearAll={() => setFilters(Object.fromEntries(FILTER_KEYS.map((key) => [key, null])))}
     >
-      <OptionSelect aria-label="Filtrar por faena" className={SELECT_CLASS} emptyLabel="Todas las faenas" options={options.worksites} value={getFilter("faena")} onValueChange={(v) => setFilter("faena", v)} />
+      <OptionSelect aria-label="Filtrar por faena" className={SELECT_CLASS} emptyLabel={allWorksitesLabel} options={options.worksites} value={getFilter("faena")} onValueChange={(v) => setFilter("faena", v)} />
       <OptionSelect aria-label="Filtrar por tipo de equipo" className={SELECT_CLASS} emptyLabel="Todos los tipos" options={options.types} value={getFilter("tipo")} onValueChange={(v) => setFilter("tipo", v)} />
       <OptionSelect aria-label="Filtrar por pauta" className={SELECT_CLASS} emptyLabel="Todas las pautas" options={scheduleOptions} value={getFilter("pauta")} onValueChange={(v) => setFilter("pauta", v)} />
       <OptionSelect aria-label="Filtrar por estado de mantención" className={SELECT_CLASS} emptyLabel="Todos los estados" options={STATE_OPTIONS} value={getFilter("estado")} onValueChange={(v) => setFilter("estado", v)} />

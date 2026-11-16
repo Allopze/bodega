@@ -77,7 +77,7 @@ export default async function CuadraturaTarjetaTerrenoPage({ searchParams }: { s
       />
       <SectionNav items={cuadraturaNavItems(session)} activeKey="tarjeta-y-terreno" ariaLabel="Vistas de cuadratura" carryParams={FUEL_CARRY_PARAMS} />
       <DegradedDataBanner degraded={degraded} total={total()} />
-      <ControlFilters worksites={ctx.worksites} extraKeys={["q", "cobertura"]}>
+      <ControlFilters worksites={ctx.worksites} allWorksitesLabel={ctx.allWorksitesLabel} extraKeys={["q", "cobertura"]}>
         <FilterSearchInput param="q" placeholder="Buscar patente o equipo…" ariaLabel="Buscar patente o equipo" pageKeys={["pagina"]} />
       </ControlFilters>
 

@@ -17,6 +17,7 @@ export const warehouseModule = {
     "warehouse:cancel_guide",
     "warehouse:view_traceability",
     "warehouse:reconcile_integrity",
+    "warehouse:export",
   ] as const,
 
   permissionMeta: {
@@ -30,6 +31,9 @@ export const warehouseModule = {
     "warehouse:cancel_guide":       { id: "p-wh-gdi-cancel",   description: "Anular guías de despacho" },
     "warehouse:view_traceability":  { id: "p-wh-trace-view",   description: "Ver trazabilidad y seguimiento de solicitudes por faena" },
     "warehouse:reconcile_integrity": { id: "p-wh-trace-reconcile-integrity", description: "Detectar y regularizar excepciones históricas de trazabilidad" },
+    // Decisión 2026-11-16: el Excel de «Ver datos» de los gráficos de Bodega (cobertura, saldo, guías) es
+    // opt-in y no se copia de `warehouse:view_stock`: quien ve una cifra no recibe por eso la descarga.
+    "warehouse:export": { id: "p-wh-export", description: "Exportar a Excel los datos de los gráficos de Bodega (cobertura, saldo y guías)" },
   },
   nav: [
     {
@@ -120,5 +124,8 @@ export const warehouseModule = {
     { roleSlug: "prevencionista_faena", permission: "warehouse:register_movement" },
     { roleSlug: "jefe_mantencion", permission: "warehouse:view_stock" },
     { roleSlug: "jefe_mantencion", permission: "warehouse:view_traceability" },
+    // Sólo administración y jefatura: el permiso es nuevo y no se siembra desde `view_stock`.
+    { roleSlug: "administrador",  permission: "warehouse:export" },
+    { roleSlug: "jefa_chome",     permission: "warehouse:export" },
   ],
 } as const satisfies ModuleManifest

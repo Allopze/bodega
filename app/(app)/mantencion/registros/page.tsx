@@ -11,9 +11,11 @@ import { ServerPagination } from "@/components/ui/server-pagination"
 import { StageTabs, type StageTab } from "@/components/ui/stage-tabs"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { RecordsFilters } from "@/components/mantencion/jefatura/registros/records-filters"
+import { RecordSelectionProvider, RecordsBulkBar, RecordsSelectAll } from "@/components/mantencion/jefatura/registros/record-selection"
 import { RecordsTable } from "@/components/mantencion/jefatura/registros/records-table"
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { plural } from "@/lib/mantencion/format"
+import { isReviewableRecord } from "@/lib/mantencion/record-review-batch"
 import type { MantReview } from "@/lib/mantencion/types"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
@@ -221,7 +223,16 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
         />
       ) : (
         <>
-          <RecordsTable rows={list.rows} sort={query.sort} dir={query.dir} sortHref={sortHref} listQuery={listQuery} />
+          {/* «Marcar como revisados» en lote: sólo para quien revisa; observar y anular siguen caso por caso. */}
+          {canReview ? (
+            <RecordSelectionProvider rows={list.rows.map((row) => ({ id: row.id, status: row.status, review: row.review }))}>
+              <RecordsBulkBar />
+              <RecordsSelectAll />
+              <RecordsTable rows={list.rows} sort={query.sort} dir={query.dir} sortHref={sortHref} listQuery={listQuery} selectable={list.rows.some(isReviewableRecord)} />
+            </RecordSelectionProvider>
+          ) : (
+            <RecordsTable rows={list.rows} sort={query.sort} dir={query.dir} sortHref={sortHref} listQuery={listQuery} />
+          )}
           <ServerPagination pagination={pagination} hrefForPage={(page) => buildPaginationHref(PATHNAME, raw, page)} />
         </>
       )}

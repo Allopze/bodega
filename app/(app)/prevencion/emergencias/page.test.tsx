@@ -14,11 +14,14 @@ const mocks = vi.hoisted(() => ({
   drills: vi.fn(),
   worksites: vi.fn(),
   counts: vi.fn(),
+  /** Permisos de la sesión simulada: el de ver, y a veces el de exportar el Excel de «Ver datos». */
+  permissions: ["prevention:emergency:view"] as string[],
 }))
 
 vi.mock("next/navigation", () => ({ redirect: (href: string) => { throw new Error(`redirect:${href}`) } }))
 vi.mock("@/lib/auth/can", () => ({
-  requirePermission: async () => ({ user: { id: "u-1", permissions: ["prevention:emergency:view"] } }),
+  requirePermission: async () => ({ user: { id: "u-1", permissions: mocks.permissions } }),
+  can: (session: { user: { permissions: string[] } }, permission: string) => session.user.permissions.includes(permission),
 }))
 vi.mock("@/lib/auth/scope", () => ({ resolveWorksiteScope: () => ({ mode: "some", ids: ["ws-1"] }) }))
 vi.mock("@/lib/services/prevention-emergency", () => ({
@@ -41,12 +44,14 @@ vi.mock("@/components/prevention/pdtp-scheduled-activity-panel-server", () => ({
 
 import EmergenciasPage from "./page"
 import { EmergencyList } from "./emergency-list"
+import { ProgramComplianceSection } from "@/components/prevention/program-compliance-section"
 
 beforeEach(() => {
   mocks.plans.mockResolvedValue({ rows: [], total: 120, limit: 50, offset: 0 })
   mocks.drills.mockResolvedValue([])
   mocks.worksites.mockResolvedValue([])
   mocks.counts.mockResolvedValue({})
+  mocks.permissions = ["prevention:emergency:view"]
 })
 afterEach(() => vi.clearAllMocks())
 
@@ -107,3 +112,23 @@ describe("página de emergencias — paginación de planes", () => {
     expect(pagination).toMatchObject({ page: 3, totalPages: 3 })
   })
 })
+
+describe("página de emergencias — Excel del calendario de simulacros", () => {
+  const excelOf = async () => {
+    const tree = await EmergenciasPage({ searchParams: Promise.resolve({}) })
+    const calendar = findElement(tree, ProgramComplianceSection)
+    if (!calendar) throw new Error("no se encontró el calendario de simulacros")
+    return calendar.props.excel
+  }
+
+  // «Ver datos» → Excel es opt-in con `prevention:emergency:export`: quien ve el calendario no recibe por eso la descarga.
+  it("sin `prevention:emergency:export` el calendario no ofrece Excel", async () => {
+    expect(await excelOf()).toBeUndefined()
+  })
+
+  it("con `prevention:emergency:export` el calendario recibe el permiso y el alcance de las cifras", async () => {
+    mocks.permissions = ["prevention:emergency:view", "prevention:emergency:export"]
+    expect(await excelOf()).toMatchObject({ permission: "prevention:emergency:export", notes: [expect.stringContaining("2026")] })
+  })
+})
+

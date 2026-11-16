@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { shapeBalanceSeries } from "@/lib/bodega/balance-series"
 
 vi.mock("./stock-balance-chart-lazy", () => ({ StockBalanceChart: () => <div data-testid="trazado" /> }))
+vi.mock("@/app/(app)/chart-data-export-action", () => ({ exportChartDataAction: vi.fn() }))
 
 import { StockBalanceSection } from "./stock-balance-section"
 import { StockBalanceChart } from "./stock-balance-chart"
@@ -38,6 +39,16 @@ describe("StockBalanceSection", () => {
   it("si había más movimientos que el tope lo dice, con cuántos se muestran", () => {
     render(<StockBalanceSection {...base} series={series} truncated />)
     expect(screen.getByText(/se muestran los 2 más recientes/)).toBeTruthy()
+  })
+
+  it("«Ver datos» ofrece Excel sólo con el permiso de exportar de Bodega", () => {
+    const { unmount } = render(<StockBalanceSection {...base} series={series} truncated={false} />)
+    expect(screen.queryByText("Exportar Excel", { exact: false })).toBeNull()
+    unmount()
+
+    render(<StockBalanceSection {...base} series={series} truncated={false} excel={{ permission: "warehouse:export" }} />)
+    const button = screen.getByText("Exportar Excel", { exact: false }).closest("button")!
+    expect(button.getAttribute("aria-label")).toBe("Exportar Excel: Saldo de Guante en Cholguán")
   })
 
   it("sin movimientos explica el vacío y ofrece ampliar la ventana (A4)", () => {

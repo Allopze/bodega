@@ -195,7 +195,7 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
       />
       <DegradedDataBanner degraded={degraded} total={total()} />
       <ConsumoNav activeKey="litros" />
-      <ControlFilters worksites={ctx.worksites} mandantes={ctx.mandantes} />
+      <ControlFilters worksites={ctx.worksites} allWorksitesLabel={ctx.allWorksitesLabel} mandantes={ctx.mandantes} />
 
       {/* La respuesta primero: cuánto se cargó, en cuántos equipos y cómo se compara. */}
       {header.failed || !loads ? null : loads.loadCount > 0 ? (

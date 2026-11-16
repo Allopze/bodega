@@ -188,7 +188,7 @@ export default async function CuadraturaSellosPage({ searchParams }: { searchPar
           />
         </div>
       ) : null}
-      <ControlFilters worksites={ctx.worksites} extraKeys={["equipo", "sello", "patente"]}>{filterExtras}</ControlFilters>
+      <ControlFilters worksites={ctx.worksites} allWorksitesLabel={ctx.allWorksitesLabel} extraKeys={["equipo", "sello", "patente"]}>{filterExtras}</ControlFilters>
       {body}
     </PageContainer>
   )

@@ -312,6 +312,33 @@ describe("auth bootstrap service", () => {
     await inMemoryDb.delete(schema.rolePermissions).where(and(eq(schema.rolePermissions.roleId, "rol-prev"), eq(schema.rolePermissions.permissionId, "p-flot-view")))
   })
 
+  it("cada espejo copia entre permisos que existen y tiene clave propia", async () => {
+    const { SYSTEM_PERMISSIONS } = await import("@/lib/auth/system-rbac")
+    const ids = new Set(SYSTEM_PERMISSIONS.map((permission) => permission.id))
+    for (const mirror of PERMISSION_MIRRORS) {
+      expect(ids.has(mirror.from), mirror.key).toBe(true)
+      expect(ids.has(mirror.to), mirror.key).toBe(true)
+    }
+    expect(new Set(PERMISSION_MIRRORS.map((mirror) => mirror.key)).size).toBe(PERMISSION_MIRRORS.length)
+  })
+
+  /*
+   * Decisión 2026-11-16: el Excel del stock de Bodega pasa a `warehouse:export`. Quien hoy lo
+   * descarga con `warehouse:view_stock` (siete roles, entre ellos solicitante de faena) no lo pierde.
+   */
+  it("warehouse:export llega a los roles que veían el stock", async () => {
+    const mirror = PERMISSION_MIRRORS.find((item) => item.to === "p-wh-export")!
+    const marker = `rbac:permission-mirror:${mirror.key}`
+    await ensureSystemRbac()
+    await inMemoryDb.delete(schema.rolePermissions).where(eq(schema.rolePermissions.permissionId, "p-wh-export"))
+    await inMemoryDb.delete(schema.permissions).where(eq(schema.permissions.id, "p-wh-export"))
+    await inMemoryDb.delete(schema.systemSettings).where(eq(schema.systemSettings.key, marker))
+
+    await ensureSystemRbac()
+    const holders = async (permissionId: string) => (await inMemoryDb.select().from(schema.rolePermissions).where(eq(schema.rolePermissions.permissionId, permissionId))).map((row) => row.roleId).sort()
+    expect(await holders("p-wh-export")).toEqual(expect.arrayContaining(await holders("p-wh-stock")))
+  })
+
   it("getUserCount returns user count accurately", async () => {
     // Initial user count on empty db (since we haven't added users yet)
     await inMemoryDb.delete(schema.users)

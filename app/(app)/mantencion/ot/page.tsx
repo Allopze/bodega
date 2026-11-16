@@ -15,7 +15,9 @@ import { OtListFilters } from "@/components/mantencion/jefatura/ot/ot-list-filte
 import { OtTable } from "@/components/mantencion/jefatura/ot/ot-table"
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
+import { workOrderVisibility } from "@/lib/services/mantencion/work-orders/access"
 import {
   listAssignableMechanics, listWorkOrderEquipmentOptions, listWorkOrders, listWorksiteMechanics, loadWorkOrderFilterOptions, type WorkOrderTab,
 } from "@/lib/services/mantencion/work-orders/query"
@@ -130,6 +132,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
       )}
 
       <OtListFilters
+        allWorksitesLabel={allWorksitesLabel(workOrderVisibility(viewer).kind === "all")}
         options={options}
         equipment={equipment.map((item) => ({
           id: item.id,

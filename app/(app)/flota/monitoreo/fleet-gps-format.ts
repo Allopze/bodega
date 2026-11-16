@@ -7,6 +7,24 @@ export function formatGpsMeter(position: Pick<FleetGpsPosition, "odometer" | "ho
   return "Sin medidor"
 }
 
+/**
+ * Los vehículos que calzan con la búsqueda de la barra superior. La comparten la tabla y la lista
+ * lateral del mapa, para que las dos muestren el mismo subconjunto.
+ */
+export function filterGpsPositions<T extends Pick<FleetGpsPosition, "plate" | "code" | "brand" | "model" | "typeName" | "worksiteName" | "providers">>(positions: T[], searchQuery: string): T[] {
+  const query = searchQuery.trim().toLocaleLowerCase("es-CL")
+  if (!query) return positions
+  return positions.filter((position) => [
+    position.plate,
+    position.code,
+    position.brand,
+    position.model,
+    position.typeName,
+    position.worksiteName,
+    position.providers.join(" "),
+  ].some((value) => value?.toLocaleLowerCase("es-CL").includes(query)))
+}
+
 const HEADINGS = ["norte", "noreste", "este", "sureste", "sur", "suroeste", "oeste", "noroeste"] as const
 
 /** Rumbo en grados (0 = norte, sentido horario) como punto cardinal. */

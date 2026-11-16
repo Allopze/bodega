@@ -36,14 +36,15 @@ vi.mock("@/components/ui/page-header", () => ({
 }))
 // La cabecera del tablero: la faena (si la hay) va antes de las acciones y el «Exportar Excel» después.
 vi.mock("@/components/combustibles/fuel-header-actions", () => ({
-  FuelHeaderActions: ({ children, worksites, worksiteId, exportButton }: {
+  FuelHeaderActions: ({ children, worksites, worksiteId, allWorksitesLabel, exportButton }: {
     children?: ReactNode
     worksites?: ReadonlyArray<{ id: string }>
     worksiteId?: string | null
+    allWorksitesLabel?: string
     exportButton?: ReactNode
   }) => (
     <div>
-      {worksites ? <div data-testid="filtro-faena" data-faenas={worksites.length} data-value={worksiteId ?? ""} /> : null}
+      {worksites ? <div data-testid="filtro-faena" data-faenas={worksites.length} data-value={worksiteId ?? ""} data-todas={allWorksitesLabel ?? ""} /> : null}
       {children}
       {exportButton}
     </div>
@@ -212,6 +213,17 @@ describe("página del Panel de combustible", () => {
     expect(filter).toHaveAttribute("data-faenas", "2")
     // Los pasos no la siguen, y lo dicen.
     expect(screen.getByText(/Los pasos del cierre no se filtran por faena: Cholguán acota sólo los gráficos/)).toBeInTheDocument()
+  })
+
+  it("el rótulo de «todas» sigue el alcance: «Todas las faenas» si es global, «Todas tus faenas» si es limitado", async () => {
+    requirePermission.mockResolvedValue(session(["combustibles:view"], false))
+    await renderPage()
+    expect(screen.getByTestId("filtro-faena")).toHaveAttribute("data-todas", "Todas tus faenas")
+    cleanup()
+
+    requirePermission.mockResolvedValue(session(["combustibles:view"], true))
+    await renderPage()
+    expect(screen.getByTestId("filtro-faena")).toHaveAttribute("data-todas", "Todas las faenas")
   })
 
   it("una faena fuera del alcance (o inventada) se ignora, como en los otros tableros", async () => {

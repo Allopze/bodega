@@ -9,6 +9,7 @@ import { BoardExportButton } from "@/components/dashboard/board-export-button"
 import { BoardHeaderActions } from "@/components/dashboard/board-scope"
 import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import { chartWindowCaption, DEFAULT_RANGE_LABEL, defaultIndicatorRange, indicatorPeriodLabel, resolveIndicatorPeriod } from "@/lib/indicators/period"
 import { logger } from "@/lib/logger"
 import {
@@ -64,7 +65,8 @@ export default async function GpsIndicatorsPage({ searchParams }: { searchParams
   const canViewHistory = can(session, "flota:view_gps_history")
   // Exportar es opt-in con el permiso de exportar de Flota: ver una cifra no da la descarga.
   const canExport = can(session, "flota:export")
-  const scopeName = worksites.find((worksite) => worksite.id === worksiteId)?.name ?? (worksites.length === 1 ? worksites[0]!.name : "Todas las faenas")
+  const allLabel = allWorksitesLabel(resolveWorksiteScope(session))
+  const scopeName = worksites.find((worksite) => worksite.id === worksiteId)?.name ?? (worksites.length === 1 ? worksites[0]!.name : allLabel)
   const excel: GpsExcel | undefined = canExport
     ? {
         scope: { permission: "flota:export", notes: [`${rangeText(period)} · ${scopeName}`] },
@@ -106,6 +108,7 @@ export default async function GpsIndicatorsPage({ searchParams }: { searchParams
           <BoardHeaderActions
             worksites={worksites}
             worksiteId={worksiteId}
+            allLabel={allLabel}
             period={<PeriodControl mode="range" from={period.requested.from} to={period.requested.to} defaultRange={{ ...defaultIndicatorRange(), label: DEFAULT_RANGE_LABEL }} />}
           >
             {canExport ? (

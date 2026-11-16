@@ -1,3 +1,4 @@
+import type { ChartDataExcel } from "@/components/charts/chart-data-table"
 import { ChartSection } from "@/components/charts/chart-section"
 import { balanceSummary, balanceTable, type BalanceSeries } from "@/lib/bodega/balance-series"
 import { StockBalanceChart } from "./stock-balance-chart-lazy"
@@ -17,6 +18,7 @@ export function StockBalanceSection({
   unit,
   truncated,
   empty,
+  excel,
 }: {
   series: BalanceSeries | null
   productName: string
@@ -26,6 +28,8 @@ export function StockBalanceSection({
   truncated: boolean
   /** CTA del estado vacío: ampliar la ventana o quitar las fechas. */
   empty: { label: string; hint: string; ctaLabel: string; ctaHref: string }
+  /** «Exportar Excel» de «Ver datos»: la pantalla lo pasa sólo a quien tiene `warehouse:export`. */
+  excel?: ChartDataExcel
 }) {
   if (!series) {
     return <ChartSection title="Saldo en el tiempo" empty={empty} />
@@ -39,7 +43,7 @@ export function StockBalanceSection({
     <ChartSection
       title="Saldo en el tiempo"
       summary={summary}
-      data={{ caption: `Saldo de ${productName} en ${worksiteName}`, headers: table.headers, rows: table.rows }}
+      data={{ caption: `Saldo de ${productName} en ${worksiteName}`, headers: table.headers, rows: table.rows, ...(excel ? { excel } : {}) }}
     >
       <StockBalanceChart series={series} />
     </ChartSection>

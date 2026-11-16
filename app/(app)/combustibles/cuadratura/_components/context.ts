@@ -4,11 +4,14 @@ import { and, asc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelMandantes, worksites } from "@/db/schema"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import { settle } from "@/lib/async-settle"
 
 export interface CuadraturaContext {
   worksites: Array<{ id: string; name: string }>
   mandantes: Array<{ id: string; name: string }>
+  /** «Todas las faenas» con alcance global, «Todas tus faenas» con uno limitado. */
+  allWorksitesLabel: string
 }
 
 /**
@@ -33,5 +36,5 @@ export async function loadCuadraturaContext(session: Session): Promise<Cuadratur
       "cuadratura-mandantes",
     ),
   ])
-  return { worksites: worksiteRows, mandantes: mandanteRows }
+  return { worksites: worksiteRows, mandantes: mandanteRows, allWorksitesLabel: allWorksitesLabel(scope) }
 }

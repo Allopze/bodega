@@ -205,6 +205,7 @@ export default async function DteListPage({
           dte={dteShape}
           periodo={periodo}
           syncHref={can(session, "admin:dte_sync") ? "/admin/dte" : undefined}
+          excelPermission={can(session, "purchasing:export") ? "purchasing:export" : undefined}
         />
       )}
       {chartsFailed && (

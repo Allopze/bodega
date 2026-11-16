@@ -22,7 +22,11 @@ vi.mock("@/lib/auth/can", () => ({
   requireAnyPermission: async () => ({ user: { id: "u-1", permissions: session.permissions } }),
   can: (current: { user?: { permissions?: string[] } } | null, permission: string) => Boolean(current?.user?.permissions?.includes(permission)),
 }))
-vi.mock("@/lib/services/mantencion/access", () => ({ viewerFromSession: () => ({ userId: "u-1" }) }))
+// El alcance de equipos sale de los permisos, como en el servicio real: `view_all` abre todas las faenas.
+vi.mock("@/lib/services/mantencion/access", () => ({
+  viewerFromSession: () => ({ userId: "u-1" }),
+  equipmentScope: () => (session.permissions.includes("mant:records:view_all") ? "all" : ["ws-1"]),
+}))
 vi.mock("@/lib/services/mantencion/panel", () => ({
   loadPanelWorksites: async () => [{ id: "ws-1", name: "Biodiversa" }, { id: "ws-2", name: "Cholguán" }],
   countPendingReview: async () => 4,
@@ -126,6 +130,17 @@ describe("/mantencion/panel · Excel", () => {
     const actions = findElement(await page({ faena: "ws-1" }), PageHeader)!.props.actions as ReactNode
     expect(findElement(actions, BoardHeaderActions)!.props).toMatchObject({ worksiteId: "ws-1" })
     expect(findElement(actions, BoardExportButton)!.props).toMatchObject({ title: "Panel de mantención", scope: { faena: "Biodiversa" } })
+  })
+})
+
+describe("/mantencion/panel · rótulo de «todas las faenas»", () => {
+  it("quien ve todas las faenas lee «Todas las faenas»; con alcance limitado, «Todas tus faenas»", async () => {
+    session.permissions = ["mant:records:view_all", "mant:export"]
+    const global = findElement(await page(), PageHeader)!.props.actions as ReactNode
+    expect(findElement(global, BoardHeaderActions)!.props.allLabel).toBe("Todas las faenas")
+    session.permissions = ["mant:records:view_worksite", "mant:export"]
+    const limited = findElement(await page(), PageHeader)!.props.actions as ReactNode
+    expect(findElement(limited, BoardHeaderActions)!.props.allLabel).toBe("Todas tus faenas")
   })
 })
 

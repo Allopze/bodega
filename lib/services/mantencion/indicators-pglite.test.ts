@@ -29,7 +29,7 @@ const {
   loadOpenWorkOrdersByStatus, loadOutOfService, loadPautaState, loadRecordIndicators,
   loadTopRepairEquipment, loadWorkOrderPeriodStats, loadWorkOrderSeries,
 } = await import("@/lib/services/mantencion/indicators")
-const { countPendingReview, loadPanel } = await import("@/lib/services/mantencion/panel")
+const { countPendingReview, loadRecordSeries } = await import("@/lib/services/mantencion/panel")
 
 const TODAY = "2026-11-13"
 const NOW = new Date("2026-11-13T15:00:00Z")
@@ -256,13 +256,18 @@ describe("pautas, registros y disponibilidad", () => {
     expect(records.preventivePrevious).toBe(1)
   })
 
-  it("el Panel conserva su serie de 8 semanas (misma consulta, extraída)", async () => {
-    const panel = await loadPanel(GLOBAL, { period: "todo" }, TODAY)
-    expect(panel.weeks).toHaveLength(8)
-    const sum = (kind: "preventive" | "corrective") => panel.weeks.reduce((total, week) => total + week[kind], 0)
+  it("la serie semanal de registros (`loadRecordSeries`): baldes que son lunes, sin anulados", async () => {
     // 8 semanas hacia atrás desde el lunes 9-11: desde el 21-09. p2, pb (octubre) y c1.
-    expect(sum("preventive")).toBe(2)
-    expect(sum("corrective")).toBe(1)
+    const rows = await loadRecordSeries(GLOBAL, { from: "2026-09-21", granularity: "week" })
+    expect(rows.every((row) => new Date(`${row.bucket}T00:00:00Z`).getUTCDay() === 1)).toBe(true)
+    const sum = (kind: "P" | "C") => rows.filter((row) => row.kind === kind).reduce((total, row) => total + row.n, 0)
+    expect(sum("P")).toBe(2)
+    expect(sum("C")).toBe(1)
+    // `to` acota por arriba (el 12-10 queda fuera) y el alcance de faenas recorta la serie (pb es de la faena B).
+    const upTo = await loadRecordSeries(GLOBAL, { from: "2026-09-21", to: "2026-10-11", granularity: "week" })
+    expect(upTo.map((row) => [row.kind, row.n])).toEqual([["P", 1]])
+    const scoped = await loadRecordSeries(SCOPED_A, { from: "2026-09-21", granularity: "week" })
+    expect(scoped.filter((row) => row.kind === "P").reduce((total, row) => total + row.n, 0)).toBe(1)
   })
 
   it("días fuera de servicio por mes: sólo mantención y fuera de servicio, el abierto hasta `now`", async () => {

@@ -25,6 +25,8 @@ const state = vi.hoisted(() => ({
   calls: [] as Array<{ table: string; keys: string[]; where: unknown }>,
   data: {} as Record<string, Array<Record<string, unknown>>>,
   scope: { global: true, ids: [] as string[] },
+  /** Permisos que la sesión simulada tiene además del de ver; `reports:export` es el del Excel de «Ver datos». */
+  granted: new Set<string>(),
 }))
 
 /**
@@ -76,8 +78,10 @@ vi.mock("@/lib/auth/can", () => ({
   requirePermission: () => Promise.resolve({ user: { id: "u-1" } }),
   isGlobalRole: () => state.scope.global,
   visibleWorksiteIds: () => state.scope.ids,
-  can: () => true,
+  can: (_session: unknown, permission: string) => permission === "reports:export" ? state.granted.has(permission) : true,
 }))
+// El botón de «Exportar Excel» es de cliente y llama una acción de servidor: acá sólo importa si se ofrece.
+vi.mock("@/app/(app)/chart-data-export-action", () => ({ exportChartDataAction: vi.fn() }))
 vi.mock("@/components/ui/page-header", () => ({ PageHeader: () => null, Breadcrumbs: () => null }))
 vi.mock("@/components/ui/page-container", () => ({
   PageContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -117,6 +121,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-11-03T15:00:00Z"))
   state.calls.length = 0
   state.scope = { global: true, ids: [] }
+  state.granted = new Set()
   state.data = {
     worksites: [
       { id: "ws-activa", name: "Faena Norte", isActive: true },
@@ -380,3 +385,19 @@ function findWorksitesProps(node: unknown, found: Array<Array<{ id: string }>> =
   for (const value of Object.values(props)) findWorksitesProps(value, found)
   return found
 }
+
+describe("Reportes · «Ver datos» → Excel", () => {
+  // Es opt-in con `reports:export`: quien ve el gráfico de pendientes no recibe por eso la descarga.
+  it("sin `reports:export` el gráfico de pendientes por faena no ofrece Exportar Excel", async () => {
+    await renderPage()
+    expect(screen.queryByText("Exportar Excel", { exact: false })).toBeNull()
+  })
+
+  it("con `reports:export` ofrece Exportar Excel de la tabla de pendientes por faena", async () => {
+    state.granted = new Set(["reports:export"])
+    await renderPage()
+    const button = screen.getByText("Exportar Excel", { exact: false }).closest("button")!
+    expect(button.getAttribute("aria-label")).toBe("Exportar Excel: Ítems sin OC y OC por recibir, por faena")
+  })
+})
+

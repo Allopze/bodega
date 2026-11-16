@@ -71,14 +71,14 @@ export default async function PdtpPeriodClosureDetailPage({ params }: PageProps)
             { label: monthLabel },
           ]} />
         }
-        actions={
+        actions={can(session, "prevention:pdtp:export") ? (
           <Button asChild size="sm">
             <a href={`/api/prevencion/pdtp/cierres/${closure.id}/export`} download className="flex items-center gap-2">
               <DownloadSimple size={14} />
               Descargar el Excel del cierre
             </a>
           </Button>
-        }
+        ) : undefined}
       />
 
       {closure.driftedSinceClose && (

@@ -9,6 +9,7 @@ import {
   isOpenAnomalyCaseStatus,
   OPEN_ANOMALY_CASE_STATUSES,
 } from "@/lib/combustibles/anomaly-labels"
+import { ALL_WORKSITES_LABEL } from "@/lib/auth/worksite-label"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 
 const ALL = "_all"
@@ -26,8 +27,11 @@ export function InboxFilterBar({
   showSeverity,
   showState,
   chips,
+  allWorksitesLabel = ALL_WORKSITES_LABEL,
 }: {
   worksites: { id: string; name: string }[]
+  /** Rótulo de «todas» según el alcance de quien mira (`allWorksitesLabel`); sin él, el global. */
+  allWorksitesLabel?: string
   showSeverity: boolean
   /** El estado del caso sólo existe para los casos que esperan a una persona (`tipo=caso` en «Pendientes»). */
   showState: boolean
@@ -53,10 +57,10 @@ export function InboxFilterBar({
       {showWorksites ? (
         <Select value={faena || ALL} onValueChange={(value) => setFilter("faena", value)}>
           <SelectTrigger className="h-11 w-full text-xs sm:h-8 sm:w-auto sm:min-w-[10rem]" aria-label="Filtrar por faena">
-            <SelectValue placeholder="Todas tus faenas" />
+            <SelectValue placeholder={allWorksitesLabel} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL}>Todas tus faenas</SelectItem>
+            <SelectItem value={ALL}>{allWorksitesLabel}</SelectItem>
             {worksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>)}
           </SelectContent>
         </Select>

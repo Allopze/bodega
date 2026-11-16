@@ -199,7 +199,56 @@ describe("buildXlsxBuffer", () => {
     expect(safeWorksheetName("/'Faena A", new Set())).toBe("Faena A")
     const largo = safeWorksheetName("Faena Central Sector Norte Sur'B", new Set())
     expect(largo.endsWith("'")).toBe(false)
-    expect(largo).toBe("Faena Central Sector Norte Sur")
+    // Ya no parte «Sur'B» a mitad de palabra: se queda con la última palabra completa que cabe.
+    expect(largo).toBe("Faena Central Sector Norte")
+  })
+
+  it("safeWorksheetName corta en palabra completa y no deja signos colgando", () => {
+    // Los títulos reales de los tableros que se cortaban a mitad de palabra.
+    expect(safeWorksheetName("Viajes y km por viaje por período", new Set())).toBe("Viajes y km por viaje por")
+    expect(safeWorksheetName("Litros cargados - por equipo y faena del mes", new Set())).toBe("Litros cargados - por equipo y")
+    expect(safeWorksheetName("Equipos en taller, por antigüedad (días) y faena", new Set())).toBe("Equipos en taller")
+    // Sin frontera de palabra no hay dónde cortar: corte en seco.
+    expect(safeWorksheetName("a".repeat(50), new Set())).toBe("a".repeat(31))
+    // Un tope exacto de 31 no se toca.
+    const exacto = "Abcdefghi Abcdefghi Abcdefghi "
+    expect(safeWorksheetName(`${exacto}x`, new Set())).toBe(`${exacto}x`)
+  })
+
+  it("safeWorksheetName prefiere lo que va antes de «:» o «,» cuando eso cabe", () => {
+    expect(safeWorksheetName("Órdenes de trabajo: creadas, cerradas y vencidas", new Set())).toBe("Órdenes de trabajo")
+    expect(safeWorksheetName("Órdenes de trabajo creadas, cerradas y vencidas", new Set())).toBe("Órdenes de trabajo creadas")
+    expect(safeWorksheetName("Consumo mensual: litros por equipo y por faena", new Set())).toBe("Consumo mensual")
+    // Si lo de antes tampoco cabe, corta en palabra completa.
+    const largo = "Rendimiento promedio de los equipos de carga, por mes"
+    expect(safeWorksheetName(largo, new Set())).toBe("Rendimiento promedio de los")
+  })
+
+  it("safeWorksheetName no cambia los nombres que ya caben", () => {
+    expect(safeWorksheetName("Órdenes de trabajo, 2026", new Set())).toBe("Órdenes de trabajo, 2026")
+    expect(safeWorksheetName("Faena Norte", new Set())).toBe("Faena Norte")
+    // Un «:» en un nombre que cabe sigue siendo el carácter prohibido de siempre, vuelto espacio.
+    expect(safeWorksheetName("Plan: 2026", new Set())).toBe("Plan 2026")
+  })
+
+  it("safeWorksheetName desambigua los nombres que quedan iguales al acortarse, con tope de 31", () => {
+    const used = new Set<string>()
+    const a = safeWorksheetName("Órdenes de trabajo, creadas, cerradas y vencidas", used)
+    const b = safeWorksheetName("Órdenes de trabajo: creadas por faena", used)
+    const c = safeWorksheetName("ÓRDENES DE TRABAJO: otras categorías", used)
+    expect([a, b, c]).toEqual(["Órdenes de trabajo", "Órdenes de trabajo (2)", "ÓRDENES DE TRABAJO (3)"])
+    // El sufijo también respeta el tope cuando la base llena los 31 caracteres.
+    const llenos = new Set<string>()
+    const base = "Viajes y km por viaje por perío"
+    const primero = safeWorksheetName("Viajes y km por viaje por período", llenos)
+    const segundo = safeWorksheetName("Viajes y km por viaje por período (otro)", llenos)
+    expect(primero).toBe("Viajes y km por viaje por")
+    expect(segundo).toBe("Viajes y km por viaje por (2)")
+    expect(segundo.length).toBeLessThanOrEqual(31)
+    const larga = safeWorksheetName("x".repeat(31), new Set(["x".repeat(31)]))
+    expect(larga).toHaveLength(31)
+    expect(larga.endsWith(" (2)")).toBe(true)
+    expect(base).toHaveLength(31)
   })
 })
 

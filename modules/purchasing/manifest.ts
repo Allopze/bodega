@@ -16,6 +16,7 @@ export const purchasingModule = {
     "purchasing:accept_invoice_exception",
     "purchasing:manage_suppliers",
     "purchasing:delete_order",
+    "purchasing:export",
   ] as const,
 
   permissionMeta: {
@@ -25,6 +26,9 @@ export const purchasingModule = {
     "purchasing:accept_invoice_exception": { id: "p-pur-acc-exc", description: "Aceptar una diferencia de conciliación de factura de compra" },
     "purchasing:manage_suppliers": { id: "p-pur-sup",  description: "Administrar proveedores" },
     "purchasing:delete_order":    { id: "p-pur-delete", description: "Eliminar órdenes de compra no recibidas" },
+    // Decisión 2026-11-16: el Excel de «Ver datos» de los gráficos de conciliación y DTE es opt-in y no se
+    // copia de `purchasing:view`.
+    "purchasing:export":          { id: "p-pur-export", description: "Exportar a Excel los datos de los gráficos de conciliación de OC y DTE" },
   },
   nav: [
     {
@@ -58,5 +62,7 @@ export const purchasingModule = {
     { roleSlug: "secretaria",     permission: "purchasing:manage_suppliers" },
     { roleSlug: "secretaria",     permission: "purchasing:delete_order" },
     { roleSlug: "jefe_mantencion", permission: "purchasing:view" },
+    { roleSlug: "administrador",  permission: "purchasing:export" },
+    { roleSlug: "jefa_chome",     permission: "purchasing:export" },
   ],
 } as const satisfies ModuleManifest

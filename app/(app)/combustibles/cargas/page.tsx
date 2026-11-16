@@ -6,6 +6,7 @@ import { fuelAnomalyCases, fuelAnomalyRules, fuelEquipmentTypes, fuelProducts, f
 import { settle } from "@/lib/async-settle"
 import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
+import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import { logger } from "@/lib/logger"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { PageContainer } from "@/components/ui/page-container"
@@ -160,6 +161,7 @@ export default async function CargasPage({ searchParams }: { searchParams: Promi
           loadingPoints: options(loadingPointsList),
           anomalyRules: anomalyRulesList.map((rule) => ({ value: rule.code, label: rule.name })),
           anomalyAssignees: options(anomalyAssigneesList),
+          allWorksitesLabel: allWorksitesLabel(scope),
           equipmentLabel: equipmentRow ? [equipmentRow.code, equipmentRow.plate].filter(Boolean).join(" · ") : null,
         }}
         canViewPersonal={canViewPersonal}

@@ -54,7 +54,8 @@ export async function GET(
     }
   }
 
-  if (!can(session, "prevention:pdtp:view")) {
+  // Exportar es opt-in con `prevention:pdtp:export` (decisión 2026-11-16), copiado de `prevention:pdtp:view` al estrenarse.
+  if (!can(session, "prevention:pdtp:view") || !can(session, "prevention:pdtp:export")) {
     await auditOutcome("denied", "Descarga del cierre PDTP denegada por falta de permiso")
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }

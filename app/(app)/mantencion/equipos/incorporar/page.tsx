@@ -4,6 +4,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { FleetIncorporationPanel } from "@/components/mantencion/jefatura/equipos/fleet-incorporation-panel"
 import { db } from "@/db"
 import { requirePermission } from "@/lib/auth/can"
+import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import { equipmentScope, viewerFromSession } from "@/lib/services/mantencion/access"
 import { loadEquipmentCatalogs } from "@/lib/services/mantencion/equipment-resolve"
 import { listIncorporationCandidates } from "@/lib/services/mantencion/fleet-incorporation"
@@ -36,6 +37,7 @@ export default async function IncorporateFleetPage() {
         today={todayInChile()}
         // Crear una marca nueva desde aquí: sólo quien ve todas las faenas (igual que en la importación).
         canCreateBrands={scope === "all"}
+        allWorksitesLabel={allWorksitesLabel(scope === "all")}
       />
     </PageContainer>
   )

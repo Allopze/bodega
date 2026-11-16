@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { WorksiteSelect } from "@/components/ui/worksite-select"
+import { ALL_WORKSITES_LABEL } from "@/lib/auth/worksite-label"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 
 const ALL = "_all"
@@ -14,6 +15,8 @@ interface Option { id: string; name: string }
 
 export interface ControlFiltersProps {
   worksites: Option[]
+  /** Rótulo de «todas» del selector de faena según el alcance (`ctx.allWorksitesLabel`); sin él, el global. */
+  allWorksitesLabel?: string
   /** Si se pasa, aparece el selector de mandante (vistas C). */
   mandantes?: Option[]
   /** Parámetros propios de la vista que también deben borrarse al quitar los filtros. */
@@ -39,6 +42,7 @@ export interface ControlFiltersProps {
  */
 export function ControlFilters({
   worksites,
+  allWorksitesLabel = ALL_WORKSITES_LABEL,
   mandantes,
   extraKeys = [],
   children,
@@ -78,6 +82,8 @@ export function ControlFilters({
       >
         <WorksiteSelect
           worksites={worksites}
+          allLabel={allWorksitesLabel}
+          placeholder={allWorksitesLabel}
           value={worksiteId}
           onChange={(value) => setFilter("faena", value || null)}
           triggerClassName="w-56"

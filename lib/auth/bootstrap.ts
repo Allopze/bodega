@@ -153,6 +153,10 @@ export const GRANT_ADDITIONS = [
 export const PERMISSION_MIRRORS = [
   // Exportar Vehículos e Indicadores GPS (decisión 2026-11-15): el Excel de /flota colgaba de `flota:view`.
   { key: "2026-11-15-flota-export-desde-flota-view", from: "p-flot-view", to: "p-flot-export" },
+  // El Excel del stock y del kárdex de Bodega colgaba de `warehouse:view_stock` (decisión 2026-11-16).
+  { key: "2026-11-16-warehouse-export-desde-view-stock", from: "p-wh-stock", to: "p-wh-export" },
+  // El Excel de cada cierre mensual del PDTP colgaba de `prevention:pdtp:view` (decisión 2026-11-16).
+  { key: "2026-11-16-pdtp-export-desde-pdtp-view", from: "p-prev-pdtp-view", to: "p-prev-pdtp-export" },
 ] as const
 
 async function applyPermissionMirrors(executor: typeof db | Tx) {

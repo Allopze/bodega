@@ -247,7 +247,9 @@ describe("lecturas del detalle de proveedor (fuel_meter_readings)", () => {
     const found = cases.find((c) => c.referenceEntityType === "fuel_meter_reading" && c.vehicleId === vehRegId)
     expect(found).toBeDefined()
     // La estación va en el texto: es por donde el operador persigue la boleta.
-    expect(found!.description).toContain("RUTA 5 KM 786")
+    // La estación que Copec manda en mayúsculas se escribe legible y la lectura lleva miles y unidad (crítica 2026-11-15).
+    expect(found!.description).toContain("Ruta 5 Km 786")
+    expect(found!.description).toContain("72.000 km")
     expect(found!.observedValue).toBe("72000")
   })
 

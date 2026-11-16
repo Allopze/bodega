@@ -122,7 +122,7 @@ export default async function FamilyPerformancePage({ params, searchParams }: Pa
       <DegradedDataBanner degraded={degraded} total={total()} />
       <ConsumoNav activeKey="rendimiento" />
       <FamilySwitch active={family} searchParams={contextForFamily} />
-      <FamilyFilters worksites={ctx.worksites} mandantes={ctx.mandantes} media={media.data} vehicles={vehicles.data} />
+      <FamilyFilters worksites={ctx.worksites} allWorksitesLabel={ctx.allWorksitesLabel} mandantes={ctx.mandantes} media={media.data} vehicles={vehicles.data} />
 
       {anyLoads.data === false ? (
         <EmptyState

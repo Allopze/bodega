@@ -5,7 +5,8 @@ import { z } from "zod"
 import { guardPermission } from "@/lib/auth/can"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
 import { exportRecords, type ExportOutcome } from "@/lib/services/mantencion/export-records"
-import { markRecordReviewed, observeRecord, voidRecord } from "@/lib/services/mantencion/record-lifecycle"
+import { MAX_REVIEW_BATCH } from "@/lib/mantencion/record-review-batch"
+import { markRecordReviewed, markRecordsReviewed, observeRecord, voidRecord, type MarkRecordsReviewedResult } from "@/lib/services/mantencion/record-lifecycle"
 import type { MantActionResult } from "@/lib/services/mantencion/result"
 import { parseRecordFilters } from "@/lib/services/mantencion/records-filters"
 import { reasonSchema } from "@/lib/validation/reason-thresholds"
@@ -49,6 +50,25 @@ export async function markRecordReviewedAction(input: { recordId: string }): Pro
   if (!parsed.success) return { ok: false, message: "No se reconoce el registro." }
   const result = await markRecordReviewed({ recordId: parsed.data.recordId, viewer: viewerFromSession(guard.session) })
   if (result.ok) revalidateRecord(parsed.data.recordId)
+  return result
+}
+
+/**
+ * Marcar como revisados varios registros de la lista a la vez. Es el mismo permiso y las mismas
+ * reglas que de a uno (las vuelve a exigir el servicio, registro por registro); observar y anular
+ * no tienen versión en lote. Devuelve cuántos se marcaron y cuáles se saltaron, con su motivo.
+ */
+export async function markRecordsReviewedAction(input: { recordIds: string[] }): Promise<MarkRecordsReviewedResult> {
+  const guard = await guardPermission("mant:records:review", "/mantencion/registros")
+  if (guard.error) return guard.error
+  const parsed = z.object({ recordIds: z.array(recordId).min(1, "Elige al menos un registro.").max(MAX_REVIEW_BATCH, `Elige hasta ${MAX_REVIEW_BATCH} registros por vez.`) }).safeParse(input)
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "No se reconocen los registros." }
+  const result = await markRecordsReviewed({ recordIds: parsed.data.recordIds, viewer: viewerFromSession(guard.session) })
+  if (result.ok) {
+    for (const id of result.data.markedIds) revalidatePath(`/mantencion/registros/${id}`)
+    revalidatePath("/mantencion/registros")
+    revalidatePath("/mantencion/panel")
+  }
   return result
 }
 

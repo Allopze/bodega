@@ -1,3 +1,4 @@
+import type { ChartDataExcel } from "@/components/charts/chart-data-table"
 import { ChartSection } from "@/components/charts/chart-section"
 import { MonthlyTrendChart, type MonthlyTrendPoint } from "@/components/charts/monthly-trend-chart"
 import { RankedList, type RankedListItem } from "@/components/ui/ranked-list"
@@ -28,7 +29,8 @@ import {
  * - `PpaCountRankingSection`: los rankings de conteo (motivos de alerta, tareas).
  */
 
-export function PpaTrendSection({ points, className }: { points: PpaMonthPoint[]; className?: string }) {
+/** `excel`: «Exportar Excel» de «Ver datos»; la pantalla lo pasa sólo a quien tiene el permiso de exportar del PPA (`ppa:manage`). */
+export function PpaTrendSection({ points, className, excel }: { points: PpaMonthPoint[]; className?: string; excel?: ChartDataExcel }) {
   if (!points.some((point) => point.total > 0)) return null
 
   const data: MonthlyTrendPoint[] = points.map((point) => ({
@@ -43,7 +45,7 @@ export function PpaTrendSection({ points, className }: { points: PpaMonthPoint[]
     <ChartSection
       title="Tasa de detención por mes"
       summary={summarizePpaTrend(points)}
-      data={{ caption: "PPA y tasa de detención por mes", ...ppaTrendDataTable(points) }}
+      data={{ caption: "PPA y tasa de detención por mes", ...ppaTrendDataTable(points), ...(excel ? { excel } : {}) }}
       className={className}
     >
       <MonthlyTrendChart
@@ -56,7 +58,7 @@ export function PpaTrendSection({ points, className }: { points: PpaMonthPoint[]
   )
 }
 
-export function PpaWorksiteRateSection({ ranking, className }: { ranking: PpaWorksiteRanking; className?: string }) {
+export function PpaWorksiteRateSection({ ranking, className, excel }: { ranking: PpaWorksiteRanking; className?: string; excel?: ChartDataExcel }) {
   if (ranking.items.length === 0 && ranking.insufficient.length === 0) return null
 
   const insufficientNote = ranking.insufficient.length > 0 && (
@@ -92,6 +94,7 @@ export function PpaWorksiteRateSection({ ranking, className }: { ranking: PpaWor
           ...ranking.items.map((item) => [item.label, formatPercent(item.value, 1), item.detail] as Array<string | number>),
           ...ranking.insufficient.map((worksite) => [worksite.label, insufficientCell(worksite.n), worksite.basis] as Array<string | number>),
         ],
+        ...(excel ? { excel } : {}),
       }}
       className={className}
     >

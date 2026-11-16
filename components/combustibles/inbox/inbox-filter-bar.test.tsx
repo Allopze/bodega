@@ -38,6 +38,22 @@ beforeEach(() => {
 })
 afterEach(() => cleanup())
 
+describe("rótulo de «todas» en el selector de faena", () => {
+  const TWO = [{ id: "ws-1", name: "Faena Norte" }, { id: "ws-2", name: "Faena Sur" }]
+
+  it("por omisión (alcance global) lee «Todas las faenas»", () => {
+    renderBar({ worksites: TWO, showSeverity: false, showState: false })
+    expect(screen.getByRole("combobox", { name: "Filtrar por faena" })).toHaveTextContent("Todas las faenas")
+  })
+
+  it("con el rótulo del servidor para un alcance limitado lee «Todas tus faenas»", () => {
+    renderBar({ worksites: TWO, showSeverity: false, showState: false, allWorksitesLabel: "Todas tus faenas" })
+    expect(screen.getByRole("combobox", { name: "Filtrar por faena" })).toHaveTextContent("Todas tus faenas")
+    fireEvent.click(screen.getByRole("combobox", { name: "Filtrar por faena" }))
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Todas tus faenas", "Faena Norte", "Faena Sur"])
+  })
+})
+
 describe("selector del estado del caso", () => {
   it("se ofrece junto al de gravedad, con «Cualquier estado» de partida", () => {
     renderBar()

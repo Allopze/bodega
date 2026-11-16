@@ -65,6 +65,8 @@ export default async function PdtpPeriodClosuresPage({ params }: PageProps) {
     closedMonths: calendarData?.closedMonths ?? new Map(),
   })
   const canClose = can(session, "prevention:pdtp:close_period")
+  // El Excel de cada cierre y el de «Ver datos» piden `prevention:pdtp:export` (decisión 2026-11-16).
+  const canExport = can(session, "prevention:pdtp:export")
 
   return (
     <PageContainer>
@@ -97,6 +99,11 @@ export default async function PdtpPeriodClosuresPage({ params }: PageProps) {
         // lleva allí (es navegación a otra página, no un filtro de ésta).
         hrefFor={(worksiteId) => buildPdtpProgramHref(programId, { faena: worksiteId })}
         linkNavigation={{}}
+        // «Exportar Excel» de «Ver datos»: permiso propio, no el de ver (decisión 2026-11-16).
+        excel={canExport ? {
+          permission: "prevention:pdtp:export",
+          notes: [`Cierres mensuales del programa ${program.year} de las faenas del alcance de quien exporta.`],
+        } : undefined}
         className="mb-4"
       />
 
@@ -150,12 +157,14 @@ export default async function PdtpPeriodClosuresPage({ params }: PageProps) {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1">
-                        <Button asChild size="sm" variant="ghost">
-                          <a href={`/api/prevencion/pdtp/cierres/${closure.id}/export`} download className="flex items-center gap-1">
-                            <DownloadSimple size={14} />
-                            Descargar
-                          </a>
-                        </Button>
+                        {canExport && (
+                          <Button asChild size="sm" variant="ghost">
+                            <a href={`/api/prevencion/pdtp/cierres/${closure.id}/export`} download className="flex items-center gap-1">
+                              <DownloadSimple size={14} />
+                              Descargar
+                            </a>
+                          </Button>
+                        )}
                         {canClose && <PdtpClosureResendButton closureId={closure.id} />}
                         {canClose && closure.status === "closed" && (
                           <PdtpClosureReopenButton closureId={closure.id} monthLabel={monthLabel} />

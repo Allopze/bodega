@@ -1,8 +1,9 @@
-import { and, eq, isNull, sql } from "drizzle-orm"
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { mantRecordObservations, mantRecords, mantRecordVoids, mantWorkOrders } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
+import { MAX_REVIEW_BATCH, reviewBatchMessage, type ReviewSkipReason } from "@/lib/mantencion/record-review-batch"
 import { createMantencionFilePath, resolveMantencionFile } from "@/lib/storage/config"
 import { removeFile } from "@/lib/storage/helpers"
 import { REASON_MAX_LENGTH, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
@@ -190,6 +191,87 @@ export async function markRecordReviewed(input: { recordId: string; viewer: Mant
       newState: { review: "revisado" },
     }, tx)
     return { ok: true, message: `Registro ${label(record)} marcado como revisado.` }
+  })
+}
+
+/** Resultado de revisar varios registros a la vez: cuántos se marcaron y cuáles se saltaron, con su motivo. */
+export type MarkRecordsReviewedResult =
+  | {
+    ok: true
+    message: string
+    data: {
+      marked: number
+      markedIds: string[]
+      skipped: Array<{ recordId: string; folio: string | null; reason: ReviewSkipReason; message: string }>
+    }
+  }
+  | { ok: false; message: string }
+
+/**
+ * Revisar varios registros a la vez (regla 14), con las MISMAS reglas que `markRecordReviewed`:
+ * el permiso `mant:records:review`, el alcance del que mira (un registro fuera de él es «no
+ * encontrado», no «sin permiso»), un anulado no se revisa y uno ya revisado no se vuelve a tocar.
+ * Cada registro marcado deja su propia fila en la bitácora, igual que de a uno.
+ *
+ * Todo ocurre en una transacción: si algo falla a medias, no queda ningún registro marcado. Los
+ * registros que no admiten la revisión no abortan el lote: se saltan y se informan con su motivo.
+ * Los bloqueos se toman en orden de id para que dos lotes cruzados no se esperen entre sí.
+ * Observar y anular NO van en lote: piden un texto por registro y anular es destructivo.
+ */
+export async function markRecordsReviewed(input: { recordIds: readonly string[]; viewer: MantViewer }): Promise<MarkRecordsReviewedResult> {
+  const { viewer } = input
+  if (!hasMantPermission(viewer, "mant:records:review")) return { ok: false, message: "No tienes permiso para marcar registros como revisados." }
+  const recordIds = [...new Set(input.recordIds.map((id) => id.trim()).filter(Boolean))].sort()
+  if (recordIds.length === 0) return { ok: false, message: "Elige al menos un registro." }
+  if (recordIds.length > MAX_REVIEW_BATCH) return { ok: false, message: `Elige hasta ${MAX_REVIEW_BATCH} registros por vez.` }
+
+  return db.transaction(async (tx): Promise<MarkRecordsReviewedResult> => {
+    const found = await tx
+      .select({
+        id: mantRecords.id,
+        folio: mantRecords.folio,
+        status: mantRecords.status,
+        review: mantRecords.review,
+        worksiteId: mantRecords.worksiteId,
+        registeredBy: mantRecords.registeredBy,
+        executorUserId: mantRecords.executorUserId,
+      })
+      .from(mantRecords)
+      .where(inArray(mantRecords.id, recordIds))
+      .orderBy(asc(mantRecords.id))
+      .for("update")
+    const byId = new Map(found.map((row) => [row.id, row]))
+    const visibility = recordVisibility(viewer)
+    const folioOf = (row: { folio: string | null }) => row.folio ?? "sin folio"
+
+    const skipped: Array<{ recordId: string; folio: string | null; reason: ReviewSkipReason; message: string }> = []
+    const toMark: typeof found = []
+    for (const id of recordIds) {
+      const record = byId.get(id)
+      if (!record || !canSeeRecord(visibility, record)) skipped.push({ recordId: id, folio: null, reason: "no_encontrado", message: NOT_FOUND })
+      else if (record.status === "anulado") skipped.push({ recordId: id, folio: record.folio, reason: "anulado", message: `El registro ${folioOf(record)} está anulado.` })
+      else if (record.review === "revisado") skipped.push({ recordId: id, folio: record.folio, reason: "ya_revisado", message: `El registro ${folioOf(record)} ya estaba revisado.` })
+      else toMark.push(record)
+    }
+
+    if (toMark.length > 0) {
+      await tx.update(mantRecords).set({ review: "revisado", updatedAt: sql`now()` }).where(inArray(mantRecords.id, toMark.map((record) => record.id)))
+      for (const record of toMark) {
+        await recordAudit({
+          userId: viewer.userId,
+          userEmail: viewer.email ?? undefined,
+          action: "update",
+          entityType: "mant_record",
+          entityId: record.id,
+          entityCode: record.folio ?? undefined,
+          worksiteId: record.worksiteId,
+          oldState: { review: record.review },
+          newState: { review: "revisado" },
+        }, tx)
+      }
+    }
+    const markedIds = toMark.map((record) => record.id)
+    return { ok: true, message: reviewBatchMessage({ marked: markedIds.length, skipped }), data: { marked: markedIds.length, markedIds, skipped } }
   })
 }
 

@@ -5,6 +5,7 @@ export const preventionModule = {
 
   permissions: [
     "prevention:pdtp:view",
+    "prevention:pdtp:export",
     "prevention:pdtp:execute",
     "prevention:pdtp:program:manage",
     "prevention:pdtp:override:manage",
@@ -24,6 +25,7 @@ export const preventionModule = {
     "prevention:alcotest:register",
     "prevention:alcotest:dispatch",
     "prevention:cgrd:view",
+    "prevention:cgrd:export",
     "prevention:cgrd:committee:manage",
     "prevention:cgrd:matrix:edit",
     "prevention:cgrd:matrix:publish",
@@ -109,6 +111,7 @@ export const preventionModule = {
     "prevention:cphs:view",
     "prevention:cphs:manage",
     "prevention:cphs:certify",
+    "prevention:cphs:export",
     "prevention:governance:review",
     "prevention:hygiene:view",
     "prevention:hygiene:manage",
@@ -118,6 +121,7 @@ export const preventionModule = {
     "prevention:emergency:manage",
     "prevention:emergency:approve",
     "prevention:emergency:drill_execute",
+    "prevention:emergency:export",
     "prevention:epp:view",
     "prevention:epp:manage",
     "prevention:sign_own_work",
@@ -125,6 +129,7 @@ export const preventionModule = {
 
   permissionMeta: {
     "prevention:pdtp:view":       { id: "p-prev-pdtp-view",       description: "Ver programa de trabajo preventivo SG-SST" },
+    "prevention:pdtp:export":     { id: "p-prev-pdtp-export",     description: "Exportar a Excel el calendario de cierres mensuales del programa de trabajo" },
     "prevention:pdtp:execute":    { id: "p-prev-pdtp-execute",    description: "Registrar ejecuciones y evidencias del programa de trabajo preventivo en faenas autorizadas" },
     "prevention:pdtp:program:manage": { id: "p-prev-pdtp-program-manage", description: "Administrar catálogo, cronograma y metas por faena del programa de trabajo preventivo" },
     "prevention:pdtp:override:manage": { id: "p-prev-pdtp-override-manage", description: "Crear, modificar o eliminar excepciones de meta por faena con motivo auditable" },
@@ -155,6 +160,7 @@ export const preventionModule = {
     // (N°80) es evidencia oponible ante fiscalizador — mismas cuatro firmas
     // segregadas que la MIPER (edit/review/approve/publish).
     "prevention:cgrd:view":             { id: "p-prev-cgrd-view",             description: "Ver el Comité de Gestión de Riesgos de Desastres, su matriz y sus actas" },
+    "prevention:cgrd:export":           { id: "p-prev-cgrd-export",           description: "Exportar a Excel el calendario de sesiones del CGRD" },
     "prevention:cgrd:committee:manage": { id: "p-prev-cgrd-committee-manage", description: "Constituir o disolver el CGRD y gestionar sus integrantes" },
     "prevention:cgrd:matrix:edit":      { id: "p-prev-cgrd-matrix-edit",      description: "Crear versiones de la matriz GRD y gestionar sus amenazas" },
     "prevention:cgrd:matrix:publish":   { id: "p-prev-cgrd-matrix-publish",   description: "Publicar una versión de la matriz GRD" },
@@ -249,6 +255,9 @@ export const preventionModule = {
     "prevention:cphs:view": { id: "p-prev-cphs-view", description: "Ver comités paritarios, integrantes, sesiones y acuerdos de la faena autorizada" },
     "prevention:cphs:manage": { id: "p-prev-cphs-manage", description: "Constituir comités, designar integrantes, convocar sesiones y cerrar actas" },
     "prevention:cphs:certify": { id: "p-prev-cphs-certify", description: "Gestionar el expediente de certificación CPHS de Mutual y registrar su resultado" },
+    // Decisión 2026-11-16: el Excel de «Ver datos» de los calendarios de cumplimiento (CPHS, CGRD, PDTP y
+    // emergencias) es opt-in, como el de capacitación e inspecciones, y no se copia del permiso de ver.
+    "prevention:cphs:export": { id: "p-prev-cphs-export", description: "Exportar a Excel el calendario de sesiones de los comités paritarios" },
     "prevention:governance:review": { id: "p-prev-gov-review", description: "Registrar y cerrar la revisión por la dirección del SG-SST" },
     "prevention:hygiene:view": { id: "p-prev-hyg-view", description: "Ver agentes, grupos de exposición, mediciones y cobertura de vigilancia" },
     "prevention:hygiene:manage": { id: "p-prev-hyg-manage", description: "Administrar el catálogo normativo de agentes de exposición, que es global y no tiene faena" },
@@ -258,6 +267,7 @@ export const preventionModule = {
     "prevention:emergency:manage": { id: "p-prev-emg-manage", description: "Crear planes de emergencia y administrar escenarios, organigrama, recursos y contactos" },
     "prevention:emergency:approve": { id: "p-prev-emg-approve", description: "Aprobar el plan de emergencia de forma segregada de quien lo creó" },
     "prevention:emergency:drill_execute": { id: "p-prev-emg-drill", description: "Programar y completar simulacros del plan de emergencia" },
+    "prevention:emergency:export": { id: "p-prev-emg-export", description: "Exportar a Excel el calendario de simulacros de emergencia" },
     "prevention:epp:view": { id: "p-prev-epp-view", description: "Ver requisitos de EPP obligatorio y brechas de cobertura" },
     "prevention:epp:manage": { id: "p-prev-epp-manage", description: "Crear requisitos de EPP obligatorio y escalar brechas bloqueantes a CAPA" },
     /**
@@ -1254,6 +1264,20 @@ export const preventionModule = {
      * `administrador` lo recibe por ser quien recibe todos. Ensancharla es una
      * decisión de gobernanza, no un grant más; `prevention-rbac.test.ts` la
      * fija con una lista cerrada para que tenga que ser deliberada. */
+    // Excel de «Ver datos» de los calendarios de cumplimiento (decisión 2026-11-16): sólo administración y
+    // prevención, sin copiarlo del permiso de ver.
+    { roleSlug: "administrador", permission: "prevention:cphs:export" },
+    { roleSlug: "jefa_chome", permission: "prevention:cphs:export" },
+    { roleSlug: "prevencionista", permission: "prevention:cphs:export" },
+    { roleSlug: "administrador", permission: "prevention:cgrd:export" },
+    { roleSlug: "jefa_chome", permission: "prevention:cgrd:export" },
+    { roleSlug: "prevencionista", permission: "prevention:cgrd:export" },
+    { roleSlug: "administrador", permission: "prevention:pdtp:export" },
+    { roleSlug: "jefa_chome", permission: "prevention:pdtp:export" },
+    { roleSlug: "prevencionista", permission: "prevention:pdtp:export" },
+    { roleSlug: "administrador", permission: "prevention:emergency:export" },
+    { roleSlug: "jefa_chome", permission: "prevention:emergency:export" },
+    { roleSlug: "prevencionista", permission: "prevention:emergency:export" },
     { roleSlug: "prevencionista",       permission: "prevention:sign_own_work" },
   ],
 } as const satisfies ModuleManifest

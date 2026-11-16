@@ -18,6 +18,7 @@ export const FUEL_GLOSSARY: readonly FuelGlossaryEntry[] = [
   { term: "De dónde salió", formerly: "medio de suministro", definition: "Por dónde llegó el combustible: tarjeta en una estación, surtidor del mandante, camión surtidor, estanque propio u otro." },
   { term: "Tarjeta Copec de equipos", formerly: "TCT", definition: "Cada equipo tiene su tarjeta Copec y carga directo en una estación de servicio. Copec informa después cuántos litros cargó cada patente en el mes." },
   { term: "Tarjeta Copec de abastecimiento", formerly: "TAE", definition: "La tarjeta Copec de un estanque móvil de la empresa (camión surtidor o camioneta): carga en la estación y después reparte el combustible en faena." },
+  { term: "Vasija (carga Copec)", formerly: "TAE como medio", definition: "La carga de un equipo que salió de una vasija de la empresa. Copec llena la vasija con la tarjeta de abastecimiento y la vasija reparte en faena; cada reparto se registra con el formulario en terreno." },
   { term: "Formulario en terreno", formerly: "TAE (PWA)", definition: "El formulario por QR que llena el operador al cargar: equipo, medidor, litros, sellos, fotos y personas." },
   { term: "Planilla de cargas", formerly: "log operacional", definition: "La planilla con una fila por carga (CONSOLIDADO COMBUSTIBLES) que se importa a la plataforma." },
   { term: "Sello", definition: "Precinto numerado de la tapa del estanque. En cada carga se retira uno y se pone otro nuevo." },

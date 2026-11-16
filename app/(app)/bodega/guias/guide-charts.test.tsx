@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { shapeGuideTransit, type GuideTransitRow } from "@/lib/bodega/guide-transit"
 import { GuideCharts } from "./guide-charts"
+
+vi.mock("@/app/(app)/chart-data-export-action", () => ({ exportChartDataAction: vi.fn() }))
 
 afterEach(cleanup)
 
@@ -70,5 +72,20 @@ describe("GuideCharts", () => {
   it("sin nada confirmado ni pendiente no dibuja nada: la página ya explica su vacío", () => {
     const { container } = render(<GuideCharts {...base} transit={shapeGuideTransit([])} ageCounts={{ "0-1": 0, "2-3": 0, "4-7": 0, "mas-de-7": 0 }} />)
     expect(container.firstChild).toBeNull()
+  })
+
+  // «Ver datos» → Excel es opt-in con `warehouse:export`: quien ve los gráficos no recibe por eso la descarga.
+  it("«Ver datos» no ofrece Excel sin el permiso de exportar de Bodega", () => {
+    render(<GuideCharts {...base} transit={shapeGuideTransit([row("a", "Cholguán", 12, 6, 14)])} />)
+    expect(screen.queryByText("Exportar Excel", { exact: false })).toBeNull()
+  })
+
+  it("con `warehouse:export` cada gráfico ofrece su Exportar Excel", () => {
+    render(<GuideCharts {...base} transit={shapeGuideTransit([row("a", "Cholguán", 12, 6, 14)])} excelPermission="warehouse:export" />)
+    const labels = screen.getAllByText("Exportar Excel", { exact: false }).map((node) => node.closest("button")!.getAttribute("aria-label"))
+    expect(labels).toEqual([
+      "Exportar Excel: Días entre el despacho y la confirmación, por destino",
+      "Exportar Excel: Guías despachadas sin confirmar, por antigüedad",
+    ])
   })
 })
