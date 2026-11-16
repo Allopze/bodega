@@ -8,7 +8,7 @@ vi.mock("@/db", () => ({ db: {} }))
 vi.mock("@/lib/auth/can", () => ({ requirePermission: mockRequirePermission }))
 vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
 
-import { exportChartDataAction } from "./chart-data-export-action"
+import { exportBoardDataAction, exportChartDataAction } from "./chart-data-export-action"
 
 const session = { user: { id: "u1", email: "gerencia@chome.cl", isGlobal: true, worksiteIds: [], permissions: ["combustibles:export"] } }
 const input = { permission: "combustibles:export" as const, title: "Litros por mes", headers: ["Mes", "Litros"], rows: [["Agosto 2026", 1000], ["Septiembre 2026", null]] }
@@ -80,5 +80,76 @@ describe("exportChartDataAction", () => {
     const result = await exportChartDataAction(input)
 
     expect(result).toEqual({ ok: false, message: "No se pudo exportar la tabla. Intenta nuevamente." })
+  })
+})
+
+/**
+ * «Exportar Excel» de la cabecera de un tablero: las tablas «Ver datos» de la pantalla, una hoja por
+ * gráfico. Rige lo mismo que para una tabla sola, y con varias tablas, cada permiso.
+ */
+describe("exportBoardDataAction", () => {
+  const board = {
+    title: "Panel de combustible",
+    scope: { periodo: "Noviembre 2026", faena: "Biodiversa" },
+    range: { from: "2026-11-01", to: "2026-11-15" },
+    tables: [
+      { ...input, notes: ["Sin datos del proveedor en sep-2026."] },
+      { permission: "combustibles:export" as const, title: "Litros por faena en el período", headers: ["Faena", "Litros"], rows: [["Biodiversa", 500]] },
+    ],
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(session)
+  })
+
+  it("arma un libro con una hoja por gráfico, en el orden de la pantalla, y el alcance en «Metadatos»", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-11-15T15:00:00.000Z"))
+    try {
+      const result = await exportBoardDataAction(board)
+
+      if (!result.ok || !result.data) throw new Error("la exportación debió resolverse")
+      expect(result.data.filename).toBe("panel_de_combustible_2026-11-15.xlsx")
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(Buffer.from(result.data.base64, "base64") as unknown as ArrayBuffer)
+      const names = workbook.worksheets.map((sheet) => sheet.name)
+      expect(names.slice(0, 2)).toEqual(["Litros por mes", "Litros por faena en el período"])
+      expect(workbook.getWorksheet("Litros por faena en el período")!.getRow(2).getCell(2).value).toBe(500)
+      const metadata = workbook.worksheets.find((sheet) => /metadatos/i.test(sheet.name))!
+      const text = JSON.stringify(metadata.getSheetValues())
+      expect(text).toContain("Noviembre 2026")
+      // Las fechas que mide el período, no «Sin filtro».
+      expect(text).not.toContain("Sin filtro")
+      expect(text).toContain("Biodiversa")
+      // La salvedad de un gráfico viaja con su título, para saber a qué hoja se refiere.
+      expect(text).toContain("«Litros por mes»: Sin datos del proveedor en sep-2026.")
+      expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+        entityType: "board_data_export",
+        newState: expect.objectContaining({ title: "Panel de combustible", permissions: ["combustibles:export"] }),
+      }))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("exige cada permiso de exportar que declaran sus tablas, y sin uno no arma nada", async () => {
+    const mixed = { ...board, tables: [board.tables[0]!, { ...board.tables[1]!, permission: "mant:export" as const }] }
+    mockRequirePermission.mockImplementation(async (permission: string) => {
+      if (permission === "mant:export") throw new Error("Forbidden")
+      return session
+    })
+
+    expect(await exportBoardDataAction(mixed)).toEqual({ ok: false, message: "Sin permisos" })
+    expect(mockRequirePermission).toHaveBeenCalledWith("combustibles:export")
+    expect(mockRequirePermission).toHaveBeenCalledWith("mant:export")
+    expect(mockRecordAudit).not.toHaveBeenCalled()
+  })
+
+  it("rechaza un tablero sin tablas, con un permiso de «ver» o con más hojas que el tope, antes de mirar la sesión", async () => {
+    expect((await exportBoardDataAction({ ...board, tables: [] })).ok).toBe(false)
+    expect((await exportBoardDataAction({ ...board, tables: [{ ...input, permission: "combustibles:view" as never }] })).ok).toBe(false)
+    expect((await exportBoardDataAction({ ...board, tables: Array.from({ length: 25 }, () => input) })).ok).toBe(false)
+    expect(mockRequirePermission).not.toHaveBeenCalled()
   })
 })

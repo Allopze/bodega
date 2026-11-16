@@ -51,7 +51,7 @@ describe("PatenteRankingChart", () => {
 
     fireEvent.click(screen.getByTestId("chart-bar"))
 
-    expect(mockPush).toHaveBeenCalledWith("/combustibles/consumo/equipos/veh-1?desde=2026-06-01&hasta=2026-06-30&faena=f1")
+    expect(mockPush).toHaveBeenCalledWith("/flota/veh-1/combustible?desde=2026-06-01&hasta=2026-06-30&faena=f1")
   })
 
   it("una patente que no es un equipo filtra el análisis de tarjetas, sin arrastrar la página ni la patente anterior", () => {

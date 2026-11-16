@@ -6,7 +6,7 @@ import { db } from "@/db"
 import { fuelEquipmentTypes, fuelProducts, fuelVehicleOperationalIntervals, fuelVehicleProducts, fuelVehicles } from "@/db/schema"
 import { and, eq, inArray, ne } from "drizzle-orm"
 import { recordAudit } from "@/lib/audit"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite, worksiteScopeSql } from "@/lib/auth/scope"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { nanoid } from "@/lib/id"
@@ -22,6 +22,9 @@ import {
   updateFuelVehicleSchema,
 } from "@/lib/combustibles/validation"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
+import { equipmentScope, isWorksiteInScope, viewerFromSession } from "@/lib/services/mantencion/access"
+import { applyFleetIdentity, recordFleetActivation, resolveFleetIdentity, type FieldErrors as EquipmentFieldErrors } from "@/lib/services/mantencion/equipment"
+import { revalidateVehicleFicha } from "@/lib/routing/revalidate-vehicle-ficha"
 import type { ActionState } from "@/lib/validation/masters"
 import { pluralize } from "@/lib/utils"
 import { dbErrMsg } from "./loads"
@@ -43,6 +46,37 @@ function worksiteMatchKey(value: string) {
 
 function canManageFuelVehicleWorksite(session: Session, worksiteId: string): boolean {
   return canAccessWorksite(session, worksiteId)
+}
+
+/**
+ * ¿Puede cambiar lo que es del perfil de Mantención (marca de la lista cerrada, «Sin patente»)
+ * de un equipo de esta faena? Es lo mismo que pedía «Editar ficha» de Mantención: el padrón no
+ * amplía quién decide la marca, de la que dependen las reglas de las pautas (crítica
+ * 2026-11-15, paso 4b).
+ */
+function canChangeMaintenanceProfile(session: Session, worksiteId: string): boolean {
+  return can(session, "mant:equipment:manage") && isWorksiteInScope(equipmentScope(viewerFromSession(session)), worksiteId)
+}
+
+/**
+ * Un equipo de Mantención que no pasó sus reglas: corta la transacción del padrón y vuelve
+ * como errores por campo. La resolución va DENTRO de la transacción para que el bloqueo de
+ * unidad mire los registros que hay al guardar, no los de un momento antes.
+ */
+class MaintenanceIdentityRejected extends Error {
+  constructor(readonly fieldErrors: EquipmentFieldErrors) {
+    super("La identidad no cumple las reglas de Mantención")
+  }
+}
+
+/** Columna de la planilla del padrón de cada campo que resuelve Mantención. */
+const IMPORT_COLUMN_BY_FIELD: Record<string, string> = {
+  code: "CODIGO", plate: "PATENTE", noPlate: "PATENTE", equipmentTypeId: "TIPO", brandId: "MARCA", model: "MODELO", year: "AÑO", worksiteId: "FAENA",
+}
+
+function maintenanceRejection(error: MaintenanceIdentityRejected): ActionState {
+  const fieldErrors = Object.fromEntries(Object.entries(error.fieldErrors).map(([key, message]) => [key, [message]]))
+  return { ok: false, message: Object.values(error.fieldErrors)[0] ?? "Revisa los datos", fieldErrors }
 }
 
 /**
@@ -229,6 +263,8 @@ export async function updateFuelVehicleAction(
   }
   const serialTaken = await serialNumberTaken(parsed.data.serialNumber, id)
   if (serialTaken) return serialTaken
+  const canChangeProfile = canChangeMaintenanceProfile(session, existing.worksiteId)
+  let inMaintenance = false
 
   try {
     const equipmentTypeId = parsed.data.equipmentTypeId ?? existing.equipmentTypeId
@@ -245,9 +281,27 @@ export async function updateFuelVehicleAction(
       return { ok: false, message: "Revisa los datos", fieldErrors: { compatibleProductIds: ["Selecciona al menos un producto compatible"] } }
     }
     if (!(await compatibleProductsAreValid(compatibleProductIds))) return { ok: false, message: "Hay productos compatibles inexistentes o inactivos" }
-    const nextState = { ...data, updatedAt: new Date().toISOString() }
+    let nextState = { ...data, updatedAt: new Date().toISOString() }
     const recalcSeries = seriesInputsChanged(existing, data)
     await db.transaction(async (tx) => {
+      // Un equipo de Mantención se rige además por sus reglas: lo que el padrón dice de su
+      // identidad se resuelve como en el alta y se guarda normalizado (crítica 2026-11-15, 4b).
+      const identity = await resolveFleetIdentity(tx, id, {
+        code: data.code === undefined ? (existing.code ?? "") : (data.code ?? ""),
+        plate: formData.has("plate") ? String(formData.get("plate")) : existing.plate,
+        noPlate: formData.has("noPlate") ? formData.get("noPlate") === "1" : undefined,
+        equipmentTypeId,
+        brandId: formData.has("brandId") ? String(formData.get("brandId")) : undefined,
+        model: data.model === undefined ? (existing.model ?? "") : (data.model ?? ""),
+        year: data.year ?? existing.year ?? null,
+        worksiteId: data.worksiteId ?? existing.worksiteId,
+      }, { canChangeProfile })
+      if (identity && !identity.ok) throw new MaintenanceIdentityRejected(identity.fieldErrors)
+      if (identity) {
+        const { resolved } = identity
+        nextState = { ...nextState, code: resolved.code, plate: resolved.plate, brand: resolved.brand.name, model: resolved.model, year: resolved.year ?? undefined }
+        inMaintenance = true
+      }
       await tx.update(fuelVehicles).set(nextState).where(eq(fuelVehicles.id, id))
       if (recalcSeries) {
         // Sin esto, las cargas siguen con el rendimiento de la unidad vieja y las
@@ -289,10 +343,18 @@ export async function updateFuelVehicleAction(
         oldState: existing,
         newState: { ...nextState, compatibleProductIds, operationalStatusReason },
       }, tx)
+      if (identity?.ok) {
+        await applyFleetIdentity(tx, { userId: session.user.id, email: session.user.email ?? null }, identity.current, identity.resolved, "padron")
+      }
     })
     revalidatePath(FLEET_CATALOG_PATH)
+    // Se edita también desde la cabecera de la ficha del vehículo.
+    revalidatePath("/flota")
+    revalidateVehicleFicha(id)
+    if (inMaintenance) revalidatePath("/mantencion/equipos")
     return { ok: true, message: "Vehículo actualizado" }
   } catch (e) {
+    if (e instanceof MaintenanceIdentityRejected) return maintenanceRejection(e)
     return { ok: false, message: await dbErrMsg(e, "Error al actualizar") }
   }
 }
@@ -340,12 +402,19 @@ export async function toggleFuelVehicleActiveAction(id: string, activate: boolea
         oldState: { isActive: existing.isActive },
         newState: { isActive: activate, reason: trimmedReason },
       }, tx)
-      return row
+      // Si está en Mantención, es su baja o su reactivación: motivo en el perfil y fila en su historial.
+      const inMaintenance = existing.isActive !== activate
+        ? await recordFleetActivation(tx, { userId: session.user.id }, id, activate, trimmedReason)
+        : false
+      return { ...row, inMaintenance }
     })
     if (!updated) {
       return { ok: false, message: "El vehículo cambió en otra sesión. Recarga antes de continuar." }
     }
     revalidatePath(FLEET_CATALOG_PATH)
+    revalidatePath("/flota")
+    revalidateVehicleFicha(id)
+    if (updated.inMaintenance) revalidatePath("/mantencion/equipos")
     return { ok: true, message: activate ? "Vehículo activado" : "Vehículo desactivado" }
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, activate ? "Error al activar" : "Error al desactivar") }
@@ -382,7 +451,9 @@ export async function bulkToggleFuelVehicleActiveAction(_prev: ActionState, form
         .returning({ id: fuelVehicles.id })
       // Una fila de auditoría por vehículo: un resumen agregado no dice cuál
       // cambió ni desde qué estado (CO-025/CO-028).
+      let inMaintenance = 0
       for (const vehicle of visible) {
+        if (vehicle.isActive !== activate && await recordFleetActivation(tx, { userId: session.user.id }, vehicle.id, activate, reason)) inMaintenance++
         await recordAudit({
           userId: session.user.id,
           userEmail: session.user.email ?? undefined,
@@ -393,11 +464,13 @@ export async function bulkToggleFuelVehicleActiveAction(_prev: ActionState, form
           newState: { isActive: activate, reason },
         }, tx)
       }
-      return rows
+      return { rows, inMaintenance }
     })
 
     revalidatePath(FLEET_CATALOG_PATH)
-    return { ok: true, message: `${pluralize(updated.length, "vehículo")} ${pluralize(updated.length, activate ? "activado" : "desactivado", activate ? "activados" : "desactivados")}` }
+    revalidatePath("/flota")
+    if (updated.inMaintenance > 0) revalidatePath("/mantencion/equipos")
+    return { ok: true, message: `${updated.rows.length} ${pluralize(updated.rows.length, "vehículo")} ${pluralize(updated.rows.length, activate ? "activado" : "desactivado", activate ? "activados" : "desactivados")}` }
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, activate ? "Error al activar" : "Error al desactivar") }
   }
@@ -450,6 +523,7 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
 
   let created = 0
   let updated = 0
+  let maintenanceUpdated = false
   try {
     await db.transaction(async (tx) => {
       const equipmentTypeBySlug = new Map(equipmentTypes.map((item) => [item.slug, item]))
@@ -493,10 +567,34 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
           performanceUnit: equipmentType.defaultPerformanceUnit,
         }
         if (row.existing) {
+          // Un equipo de Mantención pasa por sus reglas también aquí: sin esto, la planilla
+          // podía pasar a un tipo de otra unidad (o sin medidor) un equipo con registros, y
+          // dejaba su marca en texto libre (crítica 2026-11-15, paso 4b). La marca y «Sin
+          // patente» del perfil se conservan: la planilla trae texto, no la lista cerrada.
+          const identity = await resolveFleetIdentity(tx, row.existing.id, {
+            code: row.code ?? "",
+            plate: row.plate,
+            equipmentTypeId: equipmentType.id,
+            model: row.model ?? "",
+            year: row.year ?? null,
+            worksiteId: row.worksiteId,
+          }, { canChangeProfile: false })
+          if (identity && !identity.ok) {
+            const [field, message] = Object.entries(identity.fieldErrors)[0] ?? ["code", "No cumple las reglas de Mantención"]
+            errors.push({ rowIndex: row.rowIndex, field: IMPORT_COLUMN_BY_FIELD[field] ?? "CODIGO", message: `Equipo de Mantención: ${message}` })
+            continue
+          }
+          const rowValues = identity
+            ? { ...values, code: identity.resolved.code, plate: identity.resolved.plate, brand: identity.resolved.brand.name, model: identity.resolved.model, year: identity.resolved.year }
+            : values
           updated++
-          await tx.update(fuelVehicles).set({ ...values, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, row.existing.id))
+          await tx.update(fuelVehicles).set({ ...rowValues, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, row.existing.id))
           if (row.existing.worksiteId !== row.worksiteId) {
             await moveProviderMappingsWithVehicleTx(tx, { vehicleId: row.existing.id, worksiteId: row.worksiteId, actorUserId: session.user.id, actorEmail: session.user.email })
+          }
+          if (identity) {
+            maintenanceUpdated = true
+            await applyFleetIdentity(tx, { userId: session.user.id, email: session.user.email ?? null }, identity.current, identity.resolved, "padron_import")
           }
         } else {
           created++
@@ -528,6 +626,8 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
     newState: { fileName: file.name, created, updated, skipped },
   })
   revalidatePath(FLEET_CATALOG_PATH)
+  revalidatePath("/flota")
+  if (maintenanceUpdated) revalidatePath("/mantencion/equipos")
   return {
     ok: true,
     message: `Importados: ${created} creados, ${updated} actualizados, ${skipped} omitidos`,

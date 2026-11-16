@@ -10,6 +10,7 @@ import { equipmentScope, viewerFromSession } from "@/lib/services/mantencion/acc
 import { loadFleet } from "@/lib/services/mantencion/fleet"
 import { getHistoricalRecord, historicalLinkOptions } from "@/lib/services/mantencion/historical-import"
 import { formatDate } from "@/lib/utils"
+import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 export const metadata: Metadata = { title: "Trabajo del historial anterior" }
 export const dynamic = "force-dynamic"
@@ -57,8 +58,8 @@ export default async function HistoricalRecordPage({ params }: { params: Promise
         <SectionCard title="Origen" description={`Archivo «${row.sourceFile}»`}>
           <p className="text-sm">
             Este trabajo viene de un formulario anterior. Está en la hoja «{row.sourceSheet}», fila {row.sourceRow}, por si hay que revisarlo en el Excel original.{" "}
-            {equipment.length
-              ? <Link className={TEXT_LINK} href={`/mantencion/equipos/${row.vehicleId}`}>Ver ficha del equipo</Link>
+            {equipment.length && row.vehicleId
+              ? <Link className={TEXT_LINK} href={vehicleFichaHref(row.vehicleId, "mantencion")}>Ver ficha del equipo</Link>
               : row.vehicleId ? "El equipo está asociado a la flota." : "El equipo aún no está identificado."}
           </p>
         </SectionCard>

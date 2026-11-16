@@ -64,7 +64,7 @@ describe("tira de pasos", () => {
       period: october, today: TODAY,
       visible: { fuentes: false, cuadratura: false, pagos: false },
       sources: null,
-      inbox: { total: 2, byKind: { carga: 2, caso: 0, patente: 0, pedido: 0 }, oldestWaitingSince: null },
+      inbox: { total: 2, byKind: { carga: 2, caso: 0, patente: 0, pedido: 0 }, oldestWaitingSince: null, oldestByKind: { carga: null, caso: null, patente: null, pedido: null } },
       reconciliation: null,
       worse: { count: 0, examples: [] },
       hasPerformanceData: true,
@@ -179,7 +179,7 @@ describe("panel de terreno y de contrato", () => {
     panel(base)
     const ranking = screen.getByRole("list", { name: "Litros por equipo en octubre" })
     expect(within(ranking).getAllByRole("link").map((anchor) => anchor.getAttribute("href"))).toEqual([
-      "/combustibles/consumo/equipos/v1", "/combustibles/consumo/equipos/v2", "/combustibles/consumo/equipos/v3",
+      "/flota/v1/combustible", "/flota/v2/combustible", "/flota/v3/combustible",
     ])
     expect(within(ranking).getByText("1.840 L")).toBeInTheDocument()
   })

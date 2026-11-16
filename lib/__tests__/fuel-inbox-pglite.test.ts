@@ -37,15 +37,16 @@ vi.mock("@/app/(app)/combustibles/actions-consumos", () => ({ linkConsumptionPla
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import type { Tx } from "@/db"
-import { getAnomalyCases, takeAnomalyCase } from "@/lib/combustibles/anomaly-cases"
+import { closeAnomalyCases, getAnomalyCases, takeAnomalyCase, takeAnomalyCases } from "@/lib/combustibles/anomaly-cases"
 import { projectTaeSubmissions } from "@/lib/combustibles/control/projection"
 import { resolveReviewRequest } from "@/lib/combustibles/control/review"
-import { linkInboxPlateAction, resolveReviewRequestAction, takeAnomalyCaseAction } from "@/app/(app)/combustibles/revisar/actions"
+import { closeAnomalyCasesAction, linkInboxPlateAction, resolveReviewRequestAction, takeAnomalyCaseAction, takeAnomalyCasesAction } from "@/app/(app)/combustibles/revisar/actions"
 import { decideFlaggedLoad } from "@/lib/combustibles/control/review"
-import { countFuelInboxDecided, countFuelInboxPending, getFuelInbox, getFuelInboxItem, getFuelInboxPendingByKind, getFuelInboxPendingForSession, getLastDetectionRun, summarizeFuelInbox } from "@/lib/combustibles/inbox/queries"
+import { countFuelInboxDecided, countFuelInboxPending, getFuelInbox, getFuelInboxCaseGroups, getFuelInboxItem, getFuelInboxPendingByKind, getFuelInboxPendingForSession, getLastDetectionRun, summarizeFuelInbox } from "@/lib/combustibles/inbox/queries"
 import { describeFuelPeriod, resolveFuelPeriod } from "@/lib/combustibles/period/parse"
 import { fuelReviewTile } from "@/app/(app)/control-operacional/attention-tiles"
 import type { FuelInboxQueryFilters } from "@/lib/combustibles/inbox/detail-types"
+import { FUEL_INBOX_ACTION_KINDS, fuelInboxToDecide } from "@/lib/combustibles/inbox/types"
 
 const tx = inMemoryDb as unknown as Tx
 const MARCH = resolveFuelPeriod({ searchParams: { periodo: "2026-03" }, fallback: { kind: "month", year: 2026, month: 3 }, today: "2026-10-31" })
@@ -301,8 +302,23 @@ describe("bandeja Por revisar", () => {
       expect(summary.byKind[kind]).toBe(list.rows.filter((row) => row.kind === kind).length)
     }
     expect(summary.oldestWaitingSince).toBe([...list.rows].map((row) => row.waitingSince).sort()[0])
+    for (const kind of ["carga", "caso", "patente", "pedido"] as const) {
+      expect(summary.oldestByKind[kind]).toBe(list.rows.filter((row) => row.kind === kind).map((row) => row.waitingSince).sort()[0] ?? null)
+    }
     const onlyB = await summarizeFuelInbox(globalSession(), MARCH, { worksiteId: "ws-b" })
     expect(onlyB.byKind).toEqual({ carga: 1, caso: 1, patente: 1, pedido: 1 })
+  })
+
+  it("«Por decidir» lista cargas, patentes y pedidos, sin casos, y su total es la cifra del tile y del menú", async () => {
+    const summary = await summarizeFuelInbox(globalSession(), MARCH)
+    const toDecide = await getFuelInbox(globalSession(), MARCH, pending({ kinds: FUEL_INBOX_ACTION_KINDS, pageSize: 100 }))
+    expect(toDecide.total).toBe(fuelInboxToDecide(summary.byKind))
+    expect(toDecide.rows.length).toBe(toDecide.total)
+    expect(toDecide.rows.some((row) => row.kind === "caso")).toBe(false)
+    // Un `kind` explícito manda sobre `kinds`: el chip «Cargas por decidir» dentro de la pestaña.
+    const onlyLoads = await getFuelInbox(globalSession(), MARCH, pending({ kind: "carga", kinds: FUEL_INBOX_ACTION_KINDS, pageSize: 100 }))
+    expect(onlyLoads.rows.every((row) => row.kind === "carga")).toBe(true)
+    expect(onlyLoads.total).toBe(summary.byKind.carga)
   })
 
   it("filtra por tipo y pagina sin perder ni repetir filas", async () => {
@@ -376,15 +392,18 @@ describe("bandeja Por revisar", () => {
     expect(page.rows.every((row) => row.canAct === false)).toBe(true)
   })
 
-  it("el contador del menú cuenta todo lo pendiente dentro del alcance, sin período", async () => {
+  it("el contador del menú cuenta lo que se decide ahora dentro del alcance, sin período y sin los casos", async () => {
     const all = await countFuelInboxPending("all")
     const inA = await countFuelInboxPending(["ws-a"])
     const inB = await countFuelInboxPending(["ws-b"])
     expect(await countFuelInboxPending([])).toBe(0)
     expect(inA).toBeGreaterThan(0)
-    // Incluye lo de abril y mayo, que la bandeja de marzo todavía no muestra.
-    expect(inA).toBeGreaterThan((await summarizeFuelInbox(scopedSession(["ws-a"]), MARCH)).total!)
-    // Lo que no tiene faena sólo lo cuentan los roles globales.
+    // Sin tope de mes: nunca menos que lo por decidir de la bandeja de marzo.
+    expect(inA).toBeGreaterThanOrEqual(fuelInboxToDecide((await summarizeFuelInbox(scopedSession(["ws-a"]), MARCH)).byKind)!)
+    // Los casos abiertos no entran: son seguimiento (crítica 2026-11-15).
+    const byKindA = await getFuelInboxPendingByKind(["ws-a"])
+    expect(inA).toBe(byKindA.carga! + byKindA.patente! + byKindA.pedido!)
+    // Lo que no tiene faena sólo lo cuentan los roles globales (el pedido de la marca antigua).
     expect(all).toBe(inA + inB + 1)
   })
 
@@ -392,14 +411,16 @@ describe("bandeja Por revisar", () => {
     const sum = (counts: Record<string, number | null>) => Object.values(counts).reduce<number>((total, n) => total + (n ?? 0), 0)
     const NONE = { carga: 0, caso: 0, patente: 0, pedido: 0 }
 
-    it("por tipo es lo que cuenta la bandeja sin tope de mes, y su suma es el contador del menú en cada alcance", async () => {
+    it("por tipo es lo que cuenta la bandeja sin tope de mes, y lo por decidir es el contador del menú en cada alcance", async () => {
       // Un período que termina en 2030: «Pendientes» sin un tope de mes que recorte algo.
       const far = describeFuelPeriod({ kind: "year", year: 2030 }, "url", "2026-10-31")
       const all = await getFuelInboxPendingByKind("all")
       expect(all).toEqual((await summarizeFuelInbox(globalSession(), far)).byKind)
       const scopes: Array<string[] | "all"> = ["all", ["ws-a"], ["ws-b"], []]
       for (const scope of scopes) {
-        expect(sum(await getFuelInboxPendingByKind(scope))).toBe(await countFuelInboxPending(scope))
+        const byKind = await getFuelInboxPendingByKind(scope)
+        expect(fuelInboxToDecide(byKind)).toBe(await countFuelInboxPending(scope))
+        expect(sum(byKind) - (byKind.caso ?? 0)).toBe(await countFuelInboxPending(scope))
       }
     })
 
@@ -436,8 +457,8 @@ describe("bandeja Por revisar", () => {
       for (const [session, scope] of sessions) {
         const counts = await getFuelInboxPendingForSession(session)
         const tile = fuelReviewTile(counts)
-        // Lo que cuenta el tile es el total pendiente sin los casos (van en el detalle).
-        const actionable = (await countFuelInboxPending(scope)) - (counts.caso ?? 0)
+        // El tile y el menú cuentan lo mismo: lo que se decide ahora, sin los casos (van en el detalle).
+        const actionable = await countFuelInboxPending(scope)
         // `value` es `string | number` desde que KpiCard formatea cifras (UX-06).
         if (tile.valueKind === "number") expect(Number(String(tile.value).replace(/\./g, ""))).toBe(actionable)
         else expect(actionable).toBe(0)
@@ -456,7 +477,7 @@ describe("bandeja Por revisar", () => {
         const broken = await getFuelInboxPendingByKind("all")
         expect(broken).toEqual({ ...healthy, pedido: null })
         expect(logged.mock.calls.some(([line]) => String(line).includes("conteo de «pedido» falló"))).toBe(true)
-        expect(await countFuelInboxPending("all")).toBe(healthy.carga! + healthy.caso! + healthy.patente!)
+        expect(await countFuelInboxPending("all")).toBe(healthy.carga! + healthy.patente!)
         expect(fuelReviewTile(broken)).toMatchObject({ value: "Sin dato", tone: "neutral" })
         expect(fuelReviewTile(broken).detail).toContain("Pedidos de revisión: no se pudo calcular")
       } finally {
@@ -716,5 +737,139 @@ describe("escrituras de la bandeja", () => {
     const form = linkConsumptionPlateAction.mock.calls.at(-1)![1] as FormData
     expect([form.get("batchId"), form.get("patente"), form.get("vehicleId")]).toEqual(["batch-a", "ZZZZ99", "veh-1"])
     expect((await linkInboxPlateAction({ batchId: "batch-a", plate: "ZZZZ99" } as never)).ok).toBe(false)
+  })
+})
+
+/*
+ * «En seguimiento» por equipo y causa, y tomar, resolver y descartar en lote (crítica UI/UX de
+ * Control operacional, 2026-11-15, paso 4c). Una faena propia (ws-c) para no mover los conteos
+ * de las suites de arriba.
+ */
+describe("casos en lote", () => {
+  const CASES = { kind: "caso" as const, worksiteId: "ws-c" }
+  const base = { ruleId: "rule-1", severity: "medium", worksiteId: "ws-c", description: "Lectura fuera de lo esperado" }
+  beforeAll(async () => {
+    await inMemoryDb.insert(schema.worksites).values({ id: "ws-c", name: "Faena C", code: "FN-C" })
+    await inMemoryDb.insert(schema.fuelVehicles).values([
+      { id: "veh-c1", plate: "KKKK11", code: "KA-11", type: "camion", equipmentTypeId: "fet-test", worksiteId: "ws-c", meterType: "odometer", performanceUnit: "km_per_liter" },
+      { id: "veh-c2", plate: "LLLL22", code: "KA-22", type: "camion", equipmentTypeId: "fet-test", worksiteId: "ws-c", meterType: "odometer", performanceUnit: "km_per_liter" },
+    ])
+    await inMemoryDb.insert(schema.fuelAnomalyCases).values([
+      // KA-11 por salto de medidor: tres casos de enero a marzo, uno ya en manos de otra persona.
+      { ...base, id: "lot-11-a", vehicleId: "veh-c1", ruleCode: "salto_medidor_implausible", status: "open", detectedAt: "2026-01-20T12:00:00.000Z" },
+      { ...base, id: "lot-11-b", vehicleId: "veh-c1", ruleCode: "salto_medidor_implausible", status: "open", severity: "high", detectedAt: "2026-02-20T12:00:00.000Z" },
+      { ...base, id: "lot-11-c", vehicleId: "veh-c1", ruleCode: "salto_medidor_implausible", status: "in_review", assigneeId: "asker", detectedAt: "2026-03-10T12:00:00.000Z" },
+      // Uno cerrado del mismo grupo no cuenta.
+      { ...base, id: "lot-11-closed", vehicleId: "veh-c1", ruleCode: "salto_medidor_implausible", status: "resolved", resolution: "Listo", resolvedAt: "2026-03-11T12:00:00.000Z", detectedAt: "2026-01-05T12:00:00.000Z" },
+      // KA-11 por otra causa, y KA-22 por la misma.
+      { ...base, id: "lot-11-var", vehicleId: "veh-c1", ruleCode: "variacion_brusca_consumo", status: "open", detectedAt: "2026-03-15T12:00:00.000Z" },
+      { ...base, id: "lot-22-a", vehicleId: "veh-c2", ruleCode: "salto_medidor_implausible", status: "open", detectedAt: "2026-02-01T12:00:00.000Z" },
+      { ...base, id: "lot-22-b", vehicleId: "veh-c2", ruleCode: "salto_medidor_implausible", status: "reopened", detectedAt: "2026-02-03T12:00:00.000Z" },
+      // KA-22 con medidor regresivo: en lote sólo se cierra como lectura corregida.
+      { ...base, id: "lot-22-km-a", vehicleId: "veh-c2", ruleCode: "kilometraje_regresivo", status: "open", detectedAt: "2026-03-01T12:00:00.000Z" },
+      { ...base, id: "lot-22-km-b", vehicleId: "veh-c2", ruleCode: "kilometraje_regresivo", status: "open", detectedAt: "2026-03-02T12:00:00.000Z" },
+    ])
+  })
+
+  const status = async (id: string) => (await getAnomalyCases({ ids: [id] }, globalSession())).cases[0]!
+  const expected = async (ids: string[]) => Promise.all(ids.map(async (id) => {
+    const row = await status(id)
+    return { id, status: row.status, assigneeId: row.assigneeId }
+  }))
+  const audits = (id: string) => inMemoryDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, id))
+
+  it("agrupa por equipo y causa, con los mismos filtros de la lista; la página es de grupos", async () => {
+    const page = await getFuelInboxCaseGroups(globalSession(), MARCH, pending(CASES))
+    expect(page).toMatchObject({ totalGroups: 4, totalCases: 8, page: 1 })
+    // Por la fecha límite más próxima: los de enero vencen antes.
+    expect(page.groups.map((group) => [group.equipmentLabel.split(" ")[0], group.ruleCode, group.members.length])).toEqual([
+      ["KA-11", "salto_medidor_implausible", 3],
+      ["KA-22", "salto_medidor_implausible", 2],
+      ["KA-22", "kilometraje_regresivo", 2],
+      ["KA-11", "variacion_brusca_consumo", 1],
+    ])
+    const [ka11] = page.groups
+    expect(ka11).toMatchObject({ firstMonth: "2026-01", lastMonth: "2026-03", severity: "high", worksiteName: "Faena C", dueDate: "2026-01-31" })
+    expect(ka11!.members.map((member) => [member.row.id, member.status, member.assigneeId])).toEqual([
+      ["lot-11-a", "open", null], ["lot-11-b", "open", null], ["lot-11-c", "in_review", "asker"],
+    ])
+
+    const second = await getFuelInboxCaseGroups(globalSession(), MARCH, pending({ ...CASES, page: 2, pageSize: 3 }))
+    expect(second).toMatchObject({ totalGroups: 4, page: 2 })
+    expect(second.groups.map((group) => group.ruleCode)).toEqual(["variacion_brusca_consumo"])
+    const byRule = await getFuelInboxCaseGroups(globalSession(), MARCH, pending({ ...CASES, caseRuleCode: "kilometraje_regresivo" }))
+    expect(byRule).toMatchObject({ totalGroups: 1, totalCases: 2 })
+    // Febrero: los de marzo todavía no se cuentan (mismo tope que la lista).
+    expect((await getFuelInboxCaseGroups(globalSession(), FEBRUARY, pending(CASES))).totalCases).toBe(4)
+    // Otra faena no ve estos grupos.
+    expect((await getFuelInboxCaseGroups(scopedSession(["ws-a"]), MARCH, pending(CASES))).totalGroups).toBe(0)
+  })
+
+  it("tomar un lote: los sin responsable pasan a ser tuyos, con auditoría e historial por caso; el de otra persona se deja", async () => {
+    const result = await takeAnomalyCases(globalSession(), await expected(["lot-11-a", "lot-11-b", "lot-11-c"]))
+    expect(result).toEqual({ taken: 2, alreadyYours: 0, heldByOthers: 1 })
+    expect(await status("lot-11-a")).toMatchObject({ status: "in_review", assigneeId: "reviewer" })
+    expect(await status("lot-11-c")).toMatchObject({ status: "in_review", assigneeId: "asker" })
+    expect(await audits("lot-11-a")).toHaveLength(1)
+    expect(await audits("lot-11-c")).toHaveLength(0)
+    const history = await inMemoryDb.select().from(schema.statusHistory).where(eq(schema.statusHistory.entityId, "lot-11-b"))
+    expect(history.map((row) => [row.fromStatus, row.toStatus])).toEqual([["open", "in_review"]])
+    // Volver a tomarlos no hace nada nuevo.
+    expect(await takeAnomalyCases(globalSession(), await expected(["lot-11-a", "lot-11-b"]))).toEqual({ taken: 0, alreadyYours: 2, heldByOthers: 0 })
+  })
+
+  it("o todos o ninguno: un caso que cambió o que está fuera de la faena anula el lote", async () => {
+    const stale = [{ id: "lot-22-a", status: "open" as const, assigneeId: null }, { id: "lot-22-b", status: "open" as const, assigneeId: null }]
+    await expect(takeAnomalyCases(globalSession(), stale)).rejects.toThrow(/cambiaron/)
+    expect(await status("lot-22-a")).toMatchObject({ status: "open", assigneeId: null })
+    await expect(takeAnomalyCases(scopedSession(["ws-a"]), await expected(["lot-22-a"]))).rejects.toThrow(/no están en tus faenas/)
+    await expect(takeAnomalyCases(globalSession(), [...(await expected(["lot-22-a"])), ...(await expected(["lot-22-a"]))])).rejects.toThrow(/repetidos/)
+    expect(await status("lot-22-a")).toMatchObject({ status: "open", assigneeId: null })
+  })
+
+  it("resolver en lote: una causa, todos tomados y un motivo común, que queda en cada caso", async () => {
+    // Con casos de dos causas, nada.
+    await expect(closeAnomalyCases(globalSession(), { cases: await expected(["lot-11-a", "lot-11-var"]), status: "dismissed", resolution: "Revisado" }))
+      .rejects.toThrow(/misma causa/)
+    // Sin tomar, no se resuelve.
+    await expect(closeAnomalyCases(globalSession(), { cases: await expected(["lot-22-a", "lot-22-b"]), status: "resolved", resolution: "Revisado" }))
+      .rejects.toThrow(/Toma primero los 2 casos sin tomar/)
+    await expect(closeAnomalyCases(globalSession(), { cases: await expected(["lot-11-a"]), status: "resolved", resolution: "   " })).rejects.toThrow(/motivo/)
+
+    // Los tomados se resuelven, también el que tiene otra persona (como de a uno).
+    const result = await closeAnomalyCases(globalSession(), { cases: await expected(["lot-11-a", "lot-11-b", "lot-11-c"]), status: "resolved", resolution: "Odómetro cambiado en taller" })
+    expect(result).toEqual({ closed: 3, ruleCode: "salto_medidor_implausible" })
+    for (const id of ["lot-11-a", "lot-11-b", "lot-11-c"]) {
+      expect(await status(id)).toMatchObject({ status: "resolved", resolution: "Odómetro cambiado en taller", resolvedById: "reviewer", resolutionKind: null })
+    }
+    const trail = await audits("lot-11-c")
+    expect(trail).toHaveLength(1)
+    expect(trail[0]).toMatchObject({ action: "status_change", reason: "Odómetro cambiado en taller", worksiteId: "ws-c" })
+  })
+
+  it("descartar en lote; un medidor regresivo se cierra sólo como lectura corregida", async () => {
+    expect(await closeAnomalyCases(globalSession(), { cases: await expected(["lot-22-a", "lot-22-b"]), status: "dismissed", resolution: "Ruido de la importación" }))
+      .toEqual({ closed: 2, ruleCode: "salto_medidor_implausible" })
+    expect(await status("lot-22-b")).toMatchObject({ status: "dismissed", resolution: "Ruido de la importación" })
+    await closeAnomalyCases(globalSession(), { cases: await expected(["lot-22-km-a", "lot-22-km-b"]), status: "dismissed", resolution: "Digitación corregida en la planilla" })
+    expect(await status("lot-22-km-a")).toMatchObject({ status: "dismissed", resolutionKind: "lectura_corregida" })
+    expect(await status("lot-22-km-b")).toMatchObject({ status: "dismissed", resolutionKind: "lectura_corregida" })
+  })
+
+  it("las acciones piden los permisos de siempre y validan la selección", async () => {
+    const one = await expected(["lot-11-var"])
+    mockAuth.mockResolvedValue(globalSession(["combustibles:view"]))
+    expect((await takeAnomalyCasesAction({ cases: one })).ok).toBe(false)
+    mockAuth.mockResolvedValue(globalSession(["combustibles:view", "combustibles:review_anomalies"]))
+    expect((await closeAnomalyCasesAction({ cases: one, status: "dismissed", resolution: "Sin permiso de cerrar" })).ok).toBe(false)
+    expect(await takeAnomalyCasesAction({ cases: [] })).toEqual({ ok: false, message: "Elige entre 1 y 200 casos" })
+    expect((await takeAnomalyCasesAction({ cases: [{ id: "lot-11-var", status: "inventado" as never, assigneeId: null }] })).ok).toBe(false)
+    expect(await takeAnomalyCasesAction({ cases: one })).toEqual({ ok: true, taken: 1, message: "Tomaste 1 caso: eres su responsable" })
+
+    mockAuth.mockResolvedValue(globalSession())
+    expect((await closeAnomalyCasesAction({ cases: await expected(["lot-11-var"]), status: "resolved", resolution: "" })).ok).toBe(false)
+    expect(await closeAnomalyCasesAction({ cases: await expected(["lot-11-var"]), status: "resolved", resolution: "Consumo explicado por faena de invierno" }))
+      .toEqual({ ok: true, closed: 1, message: "Caso resuelto" })
+    expect((await getFuelInboxCaseGroups(globalSession(), MARCH, pending(CASES))).totalGroups).toBe(0)
   })
 })

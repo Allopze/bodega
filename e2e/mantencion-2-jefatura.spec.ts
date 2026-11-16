@@ -213,19 +213,21 @@ test("el panel abre con la franja «Hoy» y cada cifra lleva a su subconjunto", 
 
   // Debajo de la franja van los gráficos del período.
   await page.goto("/mantencion/panel")
-  await expect(page.getByRole("img", { name: /Equipos por estado de pauta hoy/ })).toBeVisible()
+  // Imagen con nombre, o grupo con nombre si sus barras enlazan (paso 6).
+  await expect(page.getByRole("img", { name: /Equipos por estado de pauta hoy/ }).or(page.getByRole("group", { name: /Equipos por estado de pauta hoy/ }))).toBeVisible()
   expect(consoleErrors, `errores de consola: ${consoleErrors.join(" | ")}`).toEqual([])
 })
 
-test("el panel exporta un Excel con los indicadores y las semanas como fecha", async ({ page }) => {
+// El libro viejo del panel (30 días fijos, siete hojas) se retiró el 2026-11-15: «Exportar Excel» es el
+// del tablero, una hoja por gráfico con el período de la pantalla, y «Metadatos» al final.
+test("el panel exporta las tablas de sus gráficos, una hoja por gráfico", async ({ page }) => {
   await login(page, JEFE)
   await page.goto("/mantencion/panel")
-  const { workbook, filename } = await download(page, "Exportar Excel")
-  expect(filename).toMatch(/^panel-mantencion-\d{4}-\d{2}-\d{2}\.xlsx$/)
-  expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(expect.arrayContaining(["Indicadores", "Registros por semana", "Estado de la flota", "Metadatos"]))
-  const weeks = workbook.getWorksheet("Registros por semana")!
-  expect(weeks.getRow(2).getCell(1).value).toBeInstanceOf(Date)
-  expect(weeks.getRow(2).getCell(1).type).toBe(ExcelJS.ValueType.Date)
+  const { workbook, filename } = await download(page, "Exportar Excel: Panel de mantención, una hoja por gráfico")
+  expect(filename).toMatch(/^panel_de_mantencion_\d{4}-\d{2}-\d{2}\.xlsx$/)
+  const names = workbook.worksheets.map((sheet) => sheet.name)
+  expect(names.length).toBeGreaterThan(1)
+  expect(names.at(-1)).toBe("Metadatos")
 })
 
 test("registros: indicadores con su rango, filtros en la URL y orden por columna", async ({ page }) => {

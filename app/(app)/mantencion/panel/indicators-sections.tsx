@@ -6,7 +6,7 @@ import { DashboardSection } from "@/components/dashboard/dashboard-section"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
-import type { IndicatorGranularity } from "@/lib/indicators/period"
+import type { ChartWindow, IndicatorGranularity } from "@/lib/indicators/period"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { EQUIPMENT_STATE_LABEL, formatHours, plural } from "@/lib/mantencion/format"
 import type { MantEquipmentState } from "@/lib/mantencion/types"
@@ -29,6 +29,7 @@ import {
   WorkOrderFlowChart,
   WorkOrderMixChart,
 } from "./indicators-charts-lazy"
+import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 /**
  * Las dos secciones de los Indicadores de mantención. Reciben los datos ya cargados: un bloque
@@ -40,9 +41,16 @@ interface Common {
   from: string
   to: string
   granularity: IndicatorGranularity
+  /**
+   * Ventana de los gráficos de evolución (`period.chart`): el período, o los seis meses que terminan en él.
+   * Las cifras de la tira, los rankings y lo de «hoy» siguen al período (`from`/`to`); las series, a ésta.
+   */
+  chart: ChartWindow
+  /** «Últimos 6 meses, hasta noviembre de 2026 · todas las faenas»: va bajo el título de los gráficos de evolución. */
+  chartNote: string
   /** Faena elegida (ya validada contra el alcance), o `null` = todas. */
   worksiteId: string | null
-  /** «01-09-2026 al 13-11-2026 · todas las faenas»: va bajo el título de cada gráfico. */
+  /** «01-09-2026 al 13-11-2026 · todas las faenas»: el período; va bajo el título de los rankings y listas. */
   scopeNote: string
   canExport: boolean
 }
@@ -83,21 +91,20 @@ function trendHint(change: number | null): string | undefined {
   return `${rounded > 0 ? "+" : ""}${formatQty(rounded)} % ${PERIOD_VS}`
 }
 
-function excelFor(common: Common): ChartDataExcel | undefined {
-  return common.canExport ? { permission: "mant:export", notes: [common.scopeNote] } : undefined
+/** `note`: el del período (`scopeNote`) o el de la ventana de un gráfico de evolución (`chartNote`). */
+function excelFor(common: Common, note: string): ChartDataExcel | undefined {
+  return common.canExport ? { permission: "mant:export", notes: [note] } : undefined
 }
 
 // ── Sección 1: Órdenes de trabajo ──────────────────────────────────────────
 
-const OT_STATUS_COLOR: Record<OtStatus, string> = {
-  solicitada: CHART_COLORS.signal,
-  asignada: CHART_COLORS.neutral,
-  en_ejecucion: "var(--color-warning)",
-  trabajo_terminado: CHART_COLORS.blue,
-  recepcionada: CHART_COLORS.brand,
-  cerrada: CHART_COLORS.brand,
-  anulada: CHART_COLORS.danger,
-}
+/**
+ * Las OT abiertas, por etapa, van en un solo tono: el de lo pendiente, porque toda OT abierta
+ * espera a alguien. Antes cada etapa tenía su color y «Por conformidad» salía en el verde de lo
+ * terminado, y «En taller» en un ocre casi igual al naranja de «Por asignar» (crítica 2026-11-15,
+ * paso 5). Las barras ya dicen su etapa con palabras.
+ */
+const OPEN_OT_COLOR = CHART_COLORS.signal
 
 export function WorkOrdersSection({
   series,
@@ -144,12 +151,23 @@ export function WorkOrdersSection({
   const otHref = (params: Record<string, string | null | undefined>) => withParams("/mantencion/ot", { faena, ...params })
   const closedTrend = stats ? percentChange(stats.closed, stats.closedPrevious) : null
   const closedList = otHref({ estado: "cerrada" })
+  const segments = (byStatus ?? []).map((item) => ({
+    key: item.status,
+    label: OT_STATUS_LABELS[item.status],
+    value: item.count,
+    color: OPEN_OT_COLOR,
+    href: otHref({ estado: item.status }),
+  }))
+  const top = [...segments].sort((a, b) => b.value - a.value)[0]
+  // Con el gráfico «OT abiertas hoy, por estado» a la vista, su total va en su titular y no se
+  // repite en la tira (A5): eran la misma cifra en dos lugares. Sin gráfico, la tira la dice.
+  const showStateChart = !!top && open !== null
 
   const summary = (
     <SummaryBar
       numerals="sans"
       stats={[
-        {
+        ...(showStateChart ? [] : [{
           key: "ot-abiertas",
           label: "OT abiertas",
           value: open === null ? "Sin dato" : open === 0 ? "Ninguna" : open,
@@ -157,7 +175,7 @@ export function WorkOrdersSection({
           // Las órdenes por asignar ya están en la franja «Hoy» de arriba: no se repiten acá (A5).
           secondary: open === null ? "No se pudo calcular" : open === 0 ? "Sin órdenes abiertas · hoy" : "Hoy",
           href: otHref({ estado: "abiertas" }),
-        },
+        } satisfies SummaryStat]),
         stats
           ? {
               key: "ot-cerradas",
@@ -172,7 +190,8 @@ export function WorkOrdersSection({
           ? {
               key: "mttr",
               label: "Tiempo medio de reparación",
-              value: stats.mttrHours === null ? "Sin dato" : formatDuration(stats.mttrHours),
+              // «Sin dato» queda para una consulta que falló; aquí la cifra existe y dice qué falta (crítica 2026-11-15).
+              value: stats.mttrHours === null ? "Sin reparaciones" : formatDuration(stats.mttrHours),
               valueKind: stats.mttrHours === null ? "text" : "number",
               secondary: stats.mttrHours === null ? "Aún no hay reparaciones cerradas con su paso por taller" : `Promedio de ${plural(stats.repairClosed, "reparación cerrada", "reparaciones cerradas")}`,
               href: closedList,
@@ -182,9 +201,13 @@ export function WorkOrdersSection({
           ? {
               key: "ot-costo",
               label: "Mano de obra y taller (OT)",
-              value: stats.cost === null ? "Sin dato" : formatCLP(stats.cost),
+              value: stats.cost !== null ? formatCLP(stats.cost) : stats.closed === 0 ? "Sin OT cerradas" : "Sin costo cargado",
               valueKind: stats.cost === null ? "text" : "number",
-              secondary: stats.cost === null ? "Las OT cerradas no traen costo cargado" : "OT cerradas del período, sin repuestos por OC",
+              secondary: stats.cost !== null
+                ? "OT cerradas del período, sin repuestos por OC"
+                : stats.closed === 0
+                  ? "El costo sale de las OT que se cierran en el período"
+                  : stats.closed === 1 ? "La OT cerrada no trae costo: se carga al cerrarla" : `Ninguna de las ${formatQty(stats.closed)} OT cerradas trae costo: se carga al cerrarlas`,
               href: closedList,
             }
           : { key: "ot-costo", label: "Mano de obra y taller (OT)", value: "Sin dato", valueKind: "text", secondary: "No se pudo calcular", href: closedList },
@@ -192,17 +215,10 @@ export function WorkOrdersSection({
     />
   )
 
-  const excel = excelFor(common)
-  const segments = (byStatus ?? []).map((item) => ({
-    key: item.status,
-    label: OT_STATUS_LABELS[item.status],
-    value: item.count,
-    color: OT_STATUS_COLOR[item.status],
-    href: otHref({ estado: item.status }),
-  }))
-  const top = [...segments].sort((a, b) => b.value - a.value)[0]
+  const excel = excelFor(common, common.scopeNote)
+  const chartExcel = excelFor(common, common.chartNote)
   const spans = spansFor([
-    { id: "state", visible: !!top && open !== null },
+    { id: "state", visible: showStateChart },
     { id: "flow", visible: !!series && series.some((point) => point.created + point.closed + point.backlog > 0) },
     { id: "mix", visible: !!series && series.some((point) => point.created > 0) },
   ])
@@ -217,7 +233,7 @@ export function WorkOrdersSection({
         <>
           {/* Los anchos salen de `spansFor`: con los gráficos que de verdad se pintan, la grilla de 2 y de 3
               columnas cierra sin celdas huérfanas (ver `lib/indicators/chart-layout.ts`). */}
-          {top && open !== null && (
+          {showStateChart && top && open !== null && (
             <ChartSlot span={spans.state}>
               <ChartFrame
                 title="OT abiertas hoy, por estado"
@@ -225,7 +241,11 @@ export function WorkOrdersSection({
                 headline={
                   <>
                     <ChartHeadlineValue>{formatQty(top.value)}</ChartHeadlineValue>
-                    <ChartHeadlineCaption>OT en «{top.label}», la etapa con más órdenes abiertas</ChartHeadlineCaption>
+                    <ChartHeadlineCaption>
+                      {open === top.value
+                        ? `${open === 1 ? "OT abierta, en" : "OT abiertas, todas en"} «${top.label}»`
+                        : `de ${formatQty(open)} OT abiertas están en «${top.label}», la etapa con más`}
+                    </ChartHeadlineCaption>
                   </>
                 }
               >
@@ -243,9 +263,9 @@ export function WorkOrdersSection({
             <ChartSlot span={spans.flow}>
               <WorkOrderFlowChart
                 data={series.map((point) => ({ key: point.key, partial: point.partial, created: point.created, closed: point.closed, backlog: point.backlog }))}
-                granularity={common.granularity}
-                scopeNote={common.scopeNote}
-                excel={excel}
+                granularity={common.chart.granularity}
+                scopeNote={common.chartNote}
+                excel={chartExcel}
               />
             </ChartSlot>
           )}
@@ -253,9 +273,9 @@ export function WorkOrdersSection({
             <ChartSlot span={spans.mix}>
               <WorkOrderMixChart
                 data={series.map((point) => ({ key: point.key, partial: point.partial, repairOnly: point.repairOnly, maintenanceOnly: point.maintenanceOnly, both: point.both }))}
-                granularity={common.granularity}
-                scopeNote={common.scopeNote}
-                excel={excel}
+                granularity={common.chart.granularity}
+                scopeNote={common.chartNote}
+                excel={chartExcel}
               />
             </ChartSlot>
           )}
@@ -298,8 +318,10 @@ export function PautasSection({
   const faena = worksiteId ?? undefined
   const noData =
     pautas !== null && records !== null && outOfService !== null &&
+    // Con la ventana de seis meses, «sin nada» se mide sobre ella: un mes sin registros con historia detrás
+    // no es una sección vacía (los gráficos de evolución tienen qué mostrar).
     pautas.total === 0 && records.points.every((point) => point.preventive + point.corrective === 0) &&
-    outOfService.total === 0
+    outOfService.total === 0 && outOfService.points.every((point) => point.days === 0)
 
   const links = [
     { label: "Equipos", href: withParams("/mantencion/equipos", { faena }) },
@@ -381,7 +403,8 @@ export function PautasSection({
     />
   )
 
-  const excel = excelFor(common)
+  const excel = excelFor(common, common.scopeNote)
+  const chartExcel = excelFor(common, common.chartNote)
   const barCounts = pautas ? PAUTA_BAR_STATES.map((state) => ({ state, count: pautas.counts[state] })) : []
   const barTotal = barCounts.reduce((sum, item) => sum + item.count, 0)
   const pautaSegments = barCounts.map((item) => ({
@@ -415,9 +438,9 @@ export function PautasSection({
             <ChartSlot span={spans.records}>
               <RecordsKindChart
                 data={records.points}
-                granularity={common.granularity}
-                scopeNote={common.scopeNote}
-                excel={excel}
+                granularity={common.chart.granularity}
+                scopeNote={common.chartNote}
+                excel={chartExcel}
               />
             </ChartSlot>
           )}
@@ -470,7 +493,7 @@ export function PautasSection({
                     key: row.vehicleId,
                     label: row.code === row.plate ? row.plate : `${row.code} · ${row.plate}`,
                     value: row.count,
-                    href: `/mantencion/equipos/${row.vehicleId}`,
+                    href: vehicleFichaHref(row.vehicleId, "mantencion"),
                   }))}
                 />
                 <ChartDataTable
@@ -486,9 +509,9 @@ export function PautasSection({
             <ChartSlot span={spans.days}>
               <OutOfServiceChart
                 data={outOfService.points}
-                granularity={common.granularity}
-                scopeNote={common.scopeNote}
-                excel={excel}
+                granularity={common.chart.granularity}
+                scopeNote={common.chartNote}
+                excel={chartExcel}
               />
             </ChartSlot>
           )}

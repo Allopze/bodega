@@ -21,6 +21,8 @@ import {
   FUEL_VEHICLE_STATUSES,
   FUEL_VEHICLE_STATUS_LABELS,
 } from "@/lib/combustibles/validation"
+import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
+import { maintenanceTypeBlock, type PadronBrandOption, type PadronMaintenance } from "@/lib/mantencion/padron-identity"
 
 export type VehicleForEdit = {
   id: string
@@ -48,6 +50,8 @@ export type VehicleForEdit = {
   insurancePolicyNumber: string | null
   insuranceExpiresAt: string | null
   notes: string | null
+  /** Si está en Mantención: sus reglas de identidad (crítica 2026-11-15, paso 4b). `null` u omitido = no está. */
+  maintenance?: PadronMaintenance | null
 }
 
 interface VehicleFormProps {
@@ -59,6 +63,8 @@ interface VehicleFormProps {
   suppliers: Array<{ id: string; name: string }>
   products: Array<{ id: string; name: string; unit: string; isActive: boolean }>
   editVehicle?: VehicleForEdit | null
+  /** Marcas de la lista de Mantención; sólo hacen falta si el vehículo editado está en Mantención. */
+  maintenanceBrands?: PadronBrandOption[]
 }
 
 const DAYS = [
@@ -108,8 +114,194 @@ function VehicleExpiryFields({ vehicle, errors }: { vehicle?: VehicleForEdit | n
   )
 }
 
-export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, suppliers, products, editVehicle }: VehicleFormProps) {
+type VehicleFormTab = "general" | "combustible" | "estado" | "documentos"
+
+/** Qué campos viven en cada pestaña: un error se busca en la suya. */
+const TAB_FIELDS: Record<Exclude<VehicleFormTab, "documentos">, readonly string[]> = {
+  general: ["plate", "code", "noPlate", "equipmentTypeId", "brand", "brandId", "model", "year", "serialNumber", "worksiteId"],
+  combustible: ["meterType", "performanceUnit", "tankCapacityLiters", "comparisonGroup", "usualFuelSupplierId", "compatibleProductIds", "operatingDays", "operatingStart", "operatingEnd"],
+  estado: ["operationalStatus", "operationalStatusReason", "responsibleUserId", "soapExpiresAt", "technicalReviewExpiresAt", "circulationPermitExpiresAt", "insurancePolicyNumber", "insuranceExpiresAt", "notes"],
+}
+const TAB_ORDER = ["general", "combustible", "estado"] as const
+
+function tabsWithErrors(errors?: Record<string, string[] | undefined>): Set<VehicleFormTab> {
+  const withErrors = new Set<VehicleFormTab>()
+  for (const tab of TAB_ORDER) if (TAB_FIELDS[tab].some((field) => errors?.[field]?.length)) withErrors.add(tab)
+  return withErrors
+}
+
+/**
+ * Las pestañas del formulario. Un error no queda escondido en otra pestaña: al volver el
+ * guardado con errores, se abre la primera pestaña que los tiene y las que tienen alguno lo
+ * marcan. Pasaba al editar desde la ficha (crítica 2026-11-15, paso 4b): quien corregía un modelo
+ * en «General» sólo leía «Revisa los datos», y lo que faltaba eran los productos compatibles, en
+ * «Combustible».
+ */
+function VehicleFormTabs({ errors, isEdit, children }: { errors?: Record<string, string[] | undefined>; isEdit: boolean; children: React.ReactNode }) {
+  const [tab, setTab] = React.useState<VehicleFormTab>("general")
+  const [seenErrors, setSeenErrors] = React.useState(errors)
+  const withErrors = tabsWithErrors(errors)
+  // Ajuste durante el render (no en un efecto): sólo cuando llega un resultado nuevo, así que
+  // después la persona puede moverse entre pestañas sin que la devuelvan.
+  if (errors !== seenErrors) {
+    setSeenErrors(errors)
+    const first = TAB_ORDER.find((item) => withErrors.has(item))
+    if (first && !withErrors.has(tab)) setTab(first)
+  }
+  const labels: Record<VehicleFormTab, string> = { general: "General", combustible: "Combustible", estado: "Estado y vigencias", documentos: "Documentos" }
+  const tabs: VehicleFormTab[] = isEdit ? [...TAB_ORDER, "documentos"] : [...TAB_ORDER]
+  return (
+    <Tabs value={tab} onValueChange={(value) => setTab(value as VehicleFormTab)} className="flex min-h-0 flex-1 flex-col">
+      <TabsList className="mb-4 w-full shrink-0">
+        {tabs.map((item) => (
+          <TabsTrigger key={item} value={item}>
+            {labels[item]}
+            {withErrors.has(item) ? (
+              <>
+                <span aria-hidden className="ml-1.5 inline-block size-1.5 rounded-full bg-[var(--color-danger)]" />
+                <span className="sr-only"> (con errores)</span>
+              </>
+            ) : null}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+      {children}
+    </Tabs>
+  )
+}
+
+/** N.º de serie (PIN): vincula la telemetría de VisionLink. Igual con o sin Mantención. */
+function SerialField({ vehicle, error }: { vehicle?: VehicleForEdit | null; error?: string }) {
+  return (
+    <Field label="N.º de serie (PIN)" htmlFor="v-serial" hint="Vincula la telemetría de VisionLink" error={error}>
+      <Input id="v-serial" name="serialNumber" defaultValue={vehicle?.serialNumber ?? ""} placeholder="Ej. DKJ30153" autoCapitalize="characters" error={!!error} />
+    </Field>
+  )
+}
+
+/**
+ * La pestaña «General» de un vehículo que está en Mantención (crítica 2026-11-15, paso 4b). La
+ * identidad se edita sólo aquí, con las reglas de Mantención: código obligatorio, patente o «Sin
+ * patente» (la patente pasa a ser el código), tipo medido en km u horas que no cambia de unidad
+ * si ya tiene registros o pauta, y marca de la lista cerrada, de la que dependen las reglas de
+ * las pautas. La marca y «Sin patente» son del perfil: sin `mant:equipment:manage` se ven, no se
+ * cambian (el servidor conserva las actuales). Cada cambio queda en el historial del equipo.
+ */
+function MaintenanceIdentityFields({
+  vehicle,
+  maintenance,
+  brands,
+  equipmentTypes,
+  equipmentTypeId,
+  onEquipmentTypeChange,
+  worksites,
+  errors,
+}: {
+  vehicle: VehicleForEdit
+  maintenance: PadronMaintenance
+  brands: PadronBrandOption[]
+  equipmentTypes: VehicleFormProps["equipmentTypes"]
+  equipmentTypeId: string
+  onEquipmentTypeChange: (id: string) => void
+  worksites: VehicleFormProps["worksites"]
+  errors?: Record<string, string[] | undefined>
+}) {
+  const [noPlate, setNoPlate] = React.useState(maintenance.noPlate)
+  const [code, setCode] = React.useState(vehicle.code ?? "")
+  const brandOptions = brands.filter((brand) => brand.isActive || brand.id === maintenance.brandId)
+  const typeHelper = maintenance.unitFixedBy?.kind === "registros"
+    ? `Se mide en ${maintenance.unit === "km" ? "kilómetros" : "horas"}: no puede pasar a un tipo de otra unidad porque ya tiene registros de mantención.`
+    : maintenance.unitFixedBy?.kind === "pauta"
+      ? `Se mide en ${maintenance.unit === "km" ? "kilómetros" : "horas"}: para pasarlo a otra unidad, quita primero su pauta «${maintenance.unitFixedBy.scheduleName}» en la pestaña Mantención.`
+      : "Sólo tipos que se miden en kilómetros u horas: los demás no pueden estar en Mantención."
+  const profileHint = maintenance.canChangeProfile ? undefined : "La cambia quien administra los equipos de Mantención."
+  return (
+    <FieldGroup className="gap-4">
+      <p className="text-sm text-[var(--color-text-muted)]">
+        Está en Mantención: estos datos siguen sus reglas y cada cambio queda en el historial del equipo.
+      </p>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Código interno" htmlFor="v-code" required error={errors?.code?.[0]} hint="Así lo nombran la ficha y la app del mecánico.">
+          <Input id="v-code" name="code" className="font-mono" value={code} onChange={(event) => setCode(event.target.value)} placeholder="Ej. KA-63" autoComplete="off" error={!!errors?.code} />
+        </Field>
+        <div>
+          <Field
+            label="Patente"
+            htmlFor="v-plate"
+            required={!noPlate}
+            error={errors?.plate?.[0]}
+            hint={noPlate ? "Sin patente: la patente es el código interno." : "Formato ABCD-12 o AB-1234."}
+          >
+            {noPlate
+              ? <Input id="v-plate" className="font-mono" value={code.toUpperCase().replace(/\s+/g, "")} disabled readOnly />
+              : <Input id="v-plate" name="plate" className="font-mono" defaultValue={maintenance.noPlate ? "" : vehicle.plate} placeholder="ABCD-12" autoComplete="off" error={!!errors?.plate} />}
+          </Field>
+          <div className="mt-2">
+            <Checkbox
+              id="v-no-plate"
+              label="Sin patente"
+              checked={noPlate}
+              disabled={!maintenance.canChangeProfile}
+              onChange={(event) => setNoPlate(event.target.checked)}
+            />
+            <input type="hidden" name="noPlate" value={noPlate ? "1" : "0"} />
+          </div>
+        </div>
+      </div>
+
+      <Field label="Tipo de equipo" htmlFor="v-equipment-type" required error={errors?.equipmentTypeId?.[0]} hint={typeHelper}>
+        <Select name="equipmentTypeId" value={equipmentTypeId} onValueChange={onEquipmentTypeChange}>
+          <SelectTrigger id="v-equipment-type" error={!!errors?.equipmentTypeId}><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+          <SelectContent>
+            {equipmentTypes.map((item) => {
+              const block = item.id === vehicle.equipmentTypeId ? null : maintenanceTypeBlock(maintenance, item.defaultMeterType)
+              return (
+                <SelectItem key={item.id} value={item.id} disabled={(!item.isActive && item.id !== vehicle.equipmentTypeId) || !!block}>
+                  {item.name} · {FUEL_EQUIPMENT_CATEGORY_LABELS[item.category as keyof typeof FUEL_EQUIPMENT_CATEGORY_LABELS] ?? item.category}
+                  {!item.isActive ? " (inactivo)" : block ? ` (${block})` : ""}
+                </SelectItem>
+              )
+            })}
+          </SelectContent>
+        </Select>
+      </Field>
+
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Marca" htmlFor="v-brand" required error={errors?.brandId?.[0]} hint={profileHint ?? "De la lista de Mantención: las reglas de las pautas dependen de ella."}>
+          <Select name="brandId" defaultValue={maintenance.brandId} disabled={!maintenance.canChangeProfile}>
+            <SelectTrigger id="v-brand" error={!!errors?.brandId}><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+            <SelectContent>
+              {brandOptions.map((brand) => <SelectItem key={brand.id} value={brand.id}>{brand.name}{brand.isActive ? "" : " (inactiva)"}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Modelo" htmlFor="v-model" error={errors?.model?.[0]}>
+          <Input id="v-model" name="model" defaultValue={vehicle.model ?? ""} error={!!errors?.model} />
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Año" htmlFor="v-year" error={errors?.year?.[0]}>
+          <Input id="v-year" name="year" type="number" min="1990" max="2030" defaultValue={vehicle.year?.toString() ?? ""} error={!!errors?.year} />
+        </Field>
+        <SerialField vehicle={vehicle} error={errors?.serialNumber?.[0]} />
+      </div>
+
+      <Field label="Faena asignada" htmlFor="v-worksite" required error={errors?.worksiteId?.[0]}>
+        <Select name="worksiteId" defaultValue={vehicle.worksiteId ?? undefined}>
+          <SelectTrigger id="v-worksite" error={!!errors?.worksiteId}><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+          <SelectContent>
+            {worksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </Field>
+    </FieldGroup>
+  )
+}
+
+export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, suppliers, products, editVehicle, maintenanceBrands = [] }: VehicleFormProps) {
   const isEdit = !!editVehicle
+  const maintenance = editVehicle?.maintenance ?? null
   const initialType = equipmentTypes.find((item) => item.id === editVehicle?.equipmentTypeId)
     ?? equipmentTypes.find((item) => item.isActive)
   const [equipmentTypeId, setEquipmentTypeId] = React.useState(initialType?.id ?? "")
@@ -132,7 +324,8 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
       isEdit={isEdit}
       entityId={editVehicle?.id}
       title={isEdit ? "Editar vehículo" : "Nuevo vehículo"}
-      description={isEdit ? `Modificar ${editVehicle.plate}` : "Registra un nuevo vehículo en el catálogo"}
+      // Se nombra como en la ficha: por su código y, sin él, por la patente.
+      description={isEdit ? `Modificar ${editVehicle.code?.trim() || editVehicle.plate}` : "Registra un nuevo vehículo en el catálogo"}
       create={createFuelVehicleAction}
       update={updateFuelVehicleAction}
       submitLabel={isEdit ? "Guardar cambios" : "Crear vehículo"}
@@ -145,26 +338,32 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
       bodyClassName="flex min-h-0 flex-col overflow-hidden"
     >
       {(state) => (
-            <Tabs defaultValue="general" className="flex min-h-0 flex-1 flex-col">
-              <TabsList className="mb-4 w-full shrink-0">
-                <TabsTrigger value="general">General</TabsTrigger>
-                <TabsTrigger value="combustible">Combustible</TabsTrigger>
-                <TabsTrigger value="estado">Estado y vigencias</TabsTrigger>
-                {isEdit && <TabsTrigger value="documentos">Documentos</TabsTrigger>}
-              </TabsList>
+            <VehicleFormTabs errors={state.fieldErrors} isEdit={isEdit}>
 
               {/* Sólo el panel scrollea: con el `SheetBody` en `overflow-hidden`,
                   la tira queda siempre a la vista mientras se recorre el formulario. */}
               <div className="min-h-0 flex-1 overflow-y-auto">
               {/* ── General tab ── */}
               <TabsContent value="general" forceMount>
+                {maintenance ? (
+                  <MaintenanceIdentityFields
+                    vehicle={editVehicle!}
+                    maintenance={maintenance}
+                    brands={maintenanceBrands}
+                    equipmentTypes={equipmentTypes}
+                    equipmentTypeId={equipmentTypeId}
+                    onEquipmentTypeChange={changeEquipmentType}
+                    worksites={worksites}
+                    errors={state.fieldErrors}
+                  />
+                ) : (
                 <FieldGroup className="gap-4">
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Patente" htmlFor="v-plate" required error={state.fieldErrors?.plate?.[0]}>
                       <Input id="v-plate" name="plate" defaultValue={editVehicle?.plate ?? ""} placeholder="XX-XX-00" error={!!state.fieldErrors?.plate} />
                     </Field>
-                    <Field label="Código interno" htmlFor="v-code">
-                      <Input id="v-code" name="code" defaultValue={editVehicle?.code ?? ""} placeholder="Ej. KA-63" />
+                    <Field label="Código interno" htmlFor="v-code" error={state.fieldErrors?.code?.[0]}>
+                      <Input id="v-code" name="code" defaultValue={editVehicle?.code ?? ""} placeholder="Ej. KA-63" error={!!state.fieldErrors?.code} />
                     </Field>
                   </div>
 
@@ -185,18 +384,16 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
                     <Field label="Marca" htmlFor="v-brand">
                       <Input id="v-brand" name="brand" defaultValue={editVehicle?.brand ?? ""} />
                     </Field>
-                    <Field label="Modelo" htmlFor="v-model">
-                      <Input id="v-model" name="model" defaultValue={editVehicle?.model ?? ""} />
+                    <Field label="Modelo" htmlFor="v-model" error={state.fieldErrors?.model?.[0]}>
+                      <Input id="v-model" name="model" defaultValue={editVehicle?.model ?? ""} error={!!state.fieldErrors?.model} />
                     </Field>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <Field label="Año" htmlFor="v-year">
-                      <Input id="v-year" name="year" type="number" min="1990" max="2030" defaultValue={editVehicle?.year?.toString() ?? ""} />
+                    <Field label="Año" htmlFor="v-year" error={state.fieldErrors?.year?.[0]}>
+                      <Input id="v-year" name="year" type="number" min="1990" max="2030" defaultValue={editVehicle?.year?.toString() ?? ""} error={!!state.fieldErrors?.year} />
                     </Field>
-                    <Field label="N.º de serie (PIN)" htmlFor="v-serial" hint="Vincula la telemetría de VisionLink" error={state.fieldErrors?.serialNumber?.[0]}>
-                      <Input id="v-serial" name="serialNumber" defaultValue={editVehicle?.serialNumber ?? ""} placeholder="Ej. DKJ30153" autoCapitalize="characters" error={!!state.fieldErrors?.serialNumber} />
-                    </Field>
+                    <SerialField vehicle={editVehicle} error={state.fieldErrors?.serialNumber?.[0]} />
                   </div>
 
                   <Field label="Faena asignada" htmlFor="v-worksite" required error={state.fieldErrors?.worksiteId?.[0]}>
@@ -208,6 +405,7 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
                     </Select>
                   </Field>
                 </FieldGroup>
+                )}
               </TabsContent>
 
               <TabsContent value="combustible" forceMount>
@@ -335,12 +533,12 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
                     ficha operacional en Flota, para no duplicar ese flujo aquí.
                   </p>
                   <Button asChild variant="secondary" size="sm">
-                    <Link href={`/flota/${editVehicle.id}`}>Ir a la ficha del vehículo</Link>
+                    <Link href={vehicleFichaHref(editVehicle.id)}>Ir a la ficha del vehículo</Link>
                   </Button>
                 </TabsContent>
               )}
               </div>
-            </Tabs>
+            </VehicleFormTabs>
       )}
     </CatalogFormSheet>
   )

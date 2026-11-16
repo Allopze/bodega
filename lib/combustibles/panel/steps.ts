@@ -1,6 +1,6 @@
 import type { MandanteReconciliationSummary } from "@/lib/combustibles/control/queries/reconciliation-summary"
 import type { WorseThanModelSummary } from "@/lib/combustibles/control/queries/worse-than-model"
-import type { FuelInboxSummary } from "@/lib/combustibles/inbox/types"
+import { FUEL_INBOX_ACTION_KINDS, fuelInboxToDecide, type FuelInboxKind, type FuelInboxSummary } from "@/lib/combustibles/inbox/types"
 import type { PayablesSummary } from "@/lib/combustibles/payables-summary"
 import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
@@ -153,20 +153,36 @@ function sourcesStep(input: PanelStepsInput, link: (href: string) => string, pas
 
 /* ── 2 · Por revisar ──────────────────────────────────────────────────────── */
 
-function inboxParts(summary: FuelInboxSummary): string[] {
-  const { carga, patente, caso, pedido } = summary.byKind
+/*
+ * La cifra del paso es lo que se decide ahora (`FUEL_INBOX_ACTION_KINDS`): la
+ * misma que el tile del Panel operacional, el contador del menú y la pestaña
+ * «Por decidir». Los casos abiertos se nombran aparte, «en seguimiento»; sumarlos
+ * daba 418 aquí contra 88 en el Panel operacional (crítica 2026-11-15). El paso
+ * sigue «listo» sólo cuando no queda nada, casos incluidos.
+ */
+
+function toDecideParts(summary: FuelInboxSummary): string[] {
+  const { carga, patente, pedido } = summary.byKind
   const parts: string[] = []
   if (carga) parts.push(`${count(carga)} ${pluralize(carga, "carga")} por decidir`)
   if (patente) parts.push(`${count(patente)} ${pluralize(patente, "patente")} sin vincular`)
-  if (caso) parts.push(`${count(caso)} ${pluralize(caso, "caso")}`)
   if (pedido) parts.push(`${count(pedido)} ${pluralize(pedido, "pedido")} de revisión`)
   return parts
+}
+
+/** «espera hace 12 días» del más antiguo de esos tipos; nada si llegó hoy o no hay fecha. */
+function oldestWaiting(summary: FuelInboxSummary, kinds: readonly FuelInboxKind[], today: string): string | null {
+  const since = kinds.map((kind) => summary.oldestByKind?.[kind]).filter((value): value is string => Boolean(value)).sort()[0]
+  if (!since) return null
+  const phrase = waitingPhrase(since, today)
+  return phrase === "Llegó hoy" ? null : `${phrase.charAt(0).toLowerCase()}${phrase.slice(1)}`
 }
 
 function reviewStep(input: PanelStepsInput, link: (href: string) => string, past: boolean, today: string): Omit<PanelStep, "number"> {
   const base = { key: "revisar", label: "Por revisar", heading: "Falta decidir" } as const
   const { inbox } = input
-  if (inbox === null || inbox.total === null) {
+  const toDecide = inbox ? fuelInboxToDecide(inbox.byKind) : null
+  if (inbox === null || inbox.total === null || toDecide === null) {
     return finish({
       ...base,
       status: "sin_datos",
@@ -186,19 +202,34 @@ function reviewStep(input: PanelStepsInput, link: (href: string) => string, past
       href: link(`${FUEL_PATHS.revisar}?vista=decididas`),
     })
   }
-  const parts = inboxParts(inbox)
-  const onlyCases = inbox.byKind.caso === inbox.total && inbox.byKind.carga === 0 && inbox.byKind.patente === 0 && inbox.byKind.pedido === 0
-  // Una sola frase con lo más antiguo; el desglose por regla vive en la bandeja («Pendientes por regla»).
-  const oldest = inbox.oldestWaitingSince ? waitingPhrase(inbox.oldestWaitingSince, today) : null
-  const oldestText = oldest && oldest !== "Llegó hoy"
-    ? ` ${onlyCases ? "El caso más antiguo" : "Lo más antiguo"} ${oldest.charAt(0).toLowerCase()}${oldest.slice(1)}.`
-    : ""
+  const cases = inbox.byKind.caso ?? 0
+  const followUp = cases > 0 ? `${count(cases)} ${pluralize(cases, "caso")} en seguimiento` : null
+  if (toDecide === 0) {
+    // Sólo quedan casos: nada espera una decisión, pero el período no está limpio (mismo «Nada por decidir» del Panel operacional).
+    const oldestCase = oldestWaiting(inbox, ["caso"], today)
+    return finish({
+      ...base,
+      status: "pendiente",
+      figure: "Nada",
+      figureNote: "por decidir",
+      phrase: `${past ? "Quedaron " : ""}${followUp}.${oldestCase ? ` El más antiguo ${oldestCase}.` : ""}`,
+      cta: "Ver los casos",
+      href: link(`${FUEL_PATHS.revisar}?tipo=caso`),
+    })
+  }
+  // Una sola frase con lo más antiguo por decidir; el desglose por regla vive en la pestaña «En seguimiento».
+  const oldest = oldestWaiting(inbox, FUEL_INBOX_ACTION_KINDS, today)
+  const sentences = [
+    `${past ? "Quedaron sin decidir: " : ""}${listOf(toDecideParts(inbox))}.`,
+    oldest ? `Lo más antiguo ${oldest}.` : null,
+    followUp ? `${followUp}.` : null,
+  ]
   return finish({
     ...base,
     status: "pendiente",
-    figure: count(inbox.total),
-    figureNote: onlyCases ? "casos por revisar" : "por decidir",
-    phrase: `${past ? "Quedaron sin decidir: " : ""}${parts.length > 0 ? `${listOf(parts)}.` : ""}${oldestText}`.trim(),
+    figure: count(toDecide),
+    figureNote: "por decidir",
+    phrase: sentences.filter(Boolean).join(" "),
     cta: "Revisar",
     href: link(FUEL_PATHS.revisar),
   })

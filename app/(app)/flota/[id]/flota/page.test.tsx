@@ -2,26 +2,44 @@
 import { cleanup, render, screen, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-const mocks = vi.hoisted(() => ({ detail: vi.fn(), can: vi.fn((..._args: unknown[]) => false) }))
+const mocks = vi.hoisted(() => ({
+  detail: vi.fn(),
+  can: vi.fn((..._args: unknown[]) => false),
+  // Áreas que quien mira ve en la ficha. Por defecto sólo Flota: así la pestaña muestra también lo que,
+  // con Mantención o Combustible visibles, vive en esas pestañas (OT, compras, cómo carga).
+  areas: ["flota"] as string[],
+}))
 vi.mock("next/navigation", () => ({
   redirect: (href: string) => { throw new Error(href) },
   notFound: () => { throw new Error("not found") },
 }))
 vi.mock("@/lib/auth/can", () => ({
-  // `isGlobal` y `worksiteIds` los lee `canAccessWorksite` (alcance de la faena del equipo).
-  requirePermission: async () => ({ user: { id: "u1", isGlobal: false, worksiteIds: ["ws-1"] } }),
   can: (...args: unknown[]) => mocks.can(...args),
 }))
+// La puerta de la pestaña (permiso, módulo y faena) tiene su propia prueba; aquí entra siempre.
+vi.mock("../_ficha/access", () => ({
+  openVehicleFichaArea: async () => ({
+    // `isGlobal` y `worksiteIds` los lee `canAccessWorksite` (alcance de la faena del equipo).
+    session: { user: { id: "u1", isGlobal: false, worksiteIds: ["ws-1"] } },
+    // La marca de la ficha es la de la lista de Mantención si está en ella; si no, la del padrón.
+    ctx: { label: "KA-115", vehicle: { id: "veh-1", brand: "Volvo" }, areas: mocks.areas, permittedAreas: mocks.areas, tabs: [], hasMaintenanceProfile: false },
+  }),
+}))
+vi.mock("../_ficha/ficha-chrome", () => ({
+  vehicleFichaDescription: () => "Camión tolva · RBYD-98 · Biodiversa · Operativo",
+  vehicleFichaBreadcrumb: () => [],
+  VehicleFichaTabs: () => <nav aria-label="Ficha de KA-115" />,
+  VehicleFichaEditAction: () => null,
+}))
 vi.mock("@/lib/services/fleet", () => ({ getFleetVehicleDetail: mocks.detail }))
-vi.mock("@/lib/services/mantencion/equipment", () => ({ hasMaintenanceProfile: async () => false }))
 vi.mock("@/lib/services/system-settings", () => ({ getFleetAdminSettings: async () => ({ warningDays: 30, defaultVehicleStatus: "operativo" }) }))
 // La hoja «Actualizar vencimientos» importa la acción; su lógica tiene su propia prueba.
-vi.mock("../actions", () => ({ updateVehicleExpiriesAction: vi.fn() }))
+vi.mock("../../actions", () => ({ updateVehicleExpiriesAction: vi.fn() }))
 vi.mock("@/components/ui/page-header", () => ({
   PageHeader: ({ title, actions }: { title: string; actions?: React.ReactNode }) => <header><h1>{title}</h1>{actions}</header>,
   Breadcrumbs: () => null,
 }))
-vi.mock("./fleet-documents-panel", () => ({ FleetDocumentsPanel: () => null, FleetDocumentUpload: () => <button type="button">Subir documento</button> }))
+vi.mock("../fleet-documents-panel", () => ({ FleetDocumentsPanel: () => null, FleetDocumentUpload: () => <button type="button">Subir documento</button> }))
 
 import FlotaVehiclePage from "./page"
 
@@ -54,7 +72,7 @@ async function factValue(performanceUnit: string, label: string) {
   return screen.getByText(label).nextElementSibling?.textContent
 }
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); mocks.can.mockReturnValue(false); vi.useRealTimers() })
+afterEach(() => { cleanup(); vi.clearAllMocks(); mocks.can.mockReturnValue(false); mocks.areas = ["flota"]; vi.useRealTimers() })
 
 describe("ficha de vehículo: unidad de rendimiento", () => {
   // El dato es la unidad con que se mide el rendimiento del equipo (catálogo), no una medición:
@@ -228,14 +246,14 @@ describe("ficha de vehículo: documentos y encabezado", () => {
     render(await FlotaVehiclePage({ params: Promise.resolve({ id: "veh-1" }) }))
   }
 
-  it("el encabezado nombra el vehículo por su código interno y su patente", async () => {
+  it("la cabecera y las pestañas son las de la ficha única: el nombre sale del contexto, no de la pestaña", async () => {
     await renderFicha({ vehicle: { code: "KA-115" } })
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("KA-115 · RBYD-98")
-  })
-
-  it("sin código interno el encabezado es la patente", async () => {
-    await renderFicha()
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("RBYD-98")
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("KA-115")
+    expect(screen.getByRole("navigation", { name: "Ficha de KA-115" })).toBeInTheDocument()
+    // Los botones «Combustible», «Ficha de mantención» y «Ver órdenes de trabajo» eran la navegación entre
+    // fichas: ahora son pestañas.
+    expect(screen.queryByRole("link", { name: "Ficha de mantención" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Combustible" })).toBeNull()
   })
 
   it("vencimientos, seguro y archivos son una sola tarjeta «Documentos», sin «Próximo vencimiento» repetido", async () => {
@@ -248,17 +266,33 @@ describe("ficha de vehículo: documentos y encabezado", () => {
     expect(screen.getByText("Póliza del seguro").nextElementSibling?.textContent).toBe("POL-123")
   })
 
-  it("estado y notas viven en «Operación»; el estado usa el vocabulario de flota", async () => {
+  it("marca, modelo, año y notas viven en «Datos del vehículo»; el estado va en la cabecera y no se repite", async () => {
     await renderFicha({ vehicle: { operationalStatus: "mantencion", notes: "Revisar frenos" } })
 
-    expect(screen.getByText("Estado").nextElementSibling?.textContent).toBe("En mantención")
+    expect(screen.getByRole("heading", { name: "Datos del vehículo", level: 2 })).toBeInTheDocument()
+    expect(screen.getByText("Marca y modelo").nextElementSibling?.textContent).toBe("Volvo FMX")
+    expect(screen.getByText("Año").nextElementSibling?.textContent).toBe("2020")
     expect(screen.getByText("Notas").nextElementSibling?.textContent).toBe("Revisar frenos")
-    expect(screen.queryByText("Estado catálogo")).toBeNull()
+    expect(screen.queryByText("Estado")).toBeNull()
+    expect(screen.queryByText("Faena")).toBeNull()
   })
 
-  it("un vehículo dado de baja figura «Inactivo»", async () => {
-    await renderFicha({ vehicle: { isActive: false } })
-    expect(screen.getByText("Estado").nextElementSibling?.textContent).toBe("Inactivo")
+  it("con la pestaña Combustible visible, cómo carga (unidad, capacidad, proveedor) queda allá", async () => {
+    mocks.areas = ["flota", "combustible"]
+    await renderFicha()
+    expect(screen.queryByText("Unidad de rendimiento")).toBeNull()
+    expect(screen.queryByText("Capacidad")).toBeNull()
+    expect(screen.queryByText("Proveedor habitual")).toBeNull()
+  })
+
+  it("con la pestaña Mantención visible no carga ni muestra las OT ni las compras: viven allá", async () => {
+    mocks.areas = ["flota", "mantencion"]
+    await renderFicha()
+    expect(mocks.detail).toHaveBeenCalledWith(expect.anything(), "veh-1", { includeMaintenance: false })
+    cleanup()
+    mocks.areas = ["flota"]
+    await renderFicha()
+    expect(mocks.detail).toHaveBeenLastCalledWith(expect.anything(), "veh-1", { includeMaintenance: true })
   })
 
   it("sólo quien gestiona documentos ve «Subir documento»", async () => {

@@ -30,7 +30,7 @@ export const FUEL_GLOSSARY: readonly FuelGlossaryEntry[] = [
   { term: "Parejo / irregular", formerly: "desviación estándar, CV", definition: "Cuánto varía el rendimiento de una carga a otra. «Irregular» significa que varía más de un 25 %." },
   { term: "Motor en vacío", formerly: "ralentí", definition: "Horas con el motor encendido sin trabajar, lo que antes se llamaba ralentí. Se mide con la telemetría de los equipos (VisionLink)." },
   { term: "Carga por decidir", formerly: "carga marcada", definition: "Una carga que la plataforma no puede juzgar sola. Mientras nadie decide, sus litros cuentan, pero no entra a los promedios." },
-  { term: "Caso", formerly: "anomalía", definition: "Un problema que detectó una regla y que alguien debe investigar y cerrar." },
+  { term: "Caso", formerly: "anomalía", definition: "Un problema que detectó una regla y que alguien debe investigar y cerrar. Mientras sigue abierto está «en seguimiento»: no suma a lo por decidir, que cuenta sólo cargas, patentes y pedidos." },
   { term: "Estado de cuenta", formerly: "cuenta corriente, cartola", definition: "El resumen mensual de un proveedor, con lo que se debe y lo pagado." },
   { term: "IEC", definition: "Impuesto específico al combustible. Se cobra por cada litro y se suma al neto de la factura." },
   { term: "IVA", definition: "Impuesto al valor agregado, 19 % sobre el neto." },

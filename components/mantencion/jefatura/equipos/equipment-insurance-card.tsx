@@ -8,6 +8,7 @@ import { EXPIRY_STATE_LABEL, EXPIRY_STATE_VARIANT, expiryRelativeText } from "@/
 import type { EquipmentInsurance } from "@/lib/services/mantencion/equipment-life"
 import { formatDate } from "@/lib/utils"
 import { SectionCard } from "../shared/section-card"
+import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 /**
  * Con texto, no sólo color: «vence en 12 días» / «venció hace 3 días». Las frases salen de
@@ -62,7 +63,7 @@ export function EquipmentInsuranceCard({
             ? "La póliza y su vencimiento se cargan en la ficha del vehículo de la flota."
             : "La póliza y su vencimiento se cargan en la ficha del vehículo de la flota; pídeselo a quien la administra."}
           action={canViewFleet
-            ? <Button asChild variant="secondary" size="sm"><Link href={`/flota/${vehicleId}`}>Cargar en la ficha de flota</Link></Button>
+            ? <Button asChild variant="secondary" size="sm"><Link href={`${vehicleFichaHref(vehicleId, "flota")}#documentos`}>Cargar en Flota</Link></Button>
             : undefined}
         />
       </SectionCard>
@@ -77,7 +78,7 @@ export function EquipmentInsuranceCard({
   return (
     <SectionCard
       title="Seguro"
-      action={canViewFleet ? <Link href={`/flota/${vehicleId}`} className="inline-flex min-h-11 items-center text-xs font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-0">Ficha de flota</Link> : undefined}
+      action={canViewFleet ? <Link href={`${vehicleFichaHref(vehicleId, "flota")}#documentos`} className="inline-flex min-h-11 items-center text-xs font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-0">Ficha de flota</Link> : undefined}
     >
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
         <DetailItem layout="stacked" mono label="Póliza" value={insurance.policyNumber} />

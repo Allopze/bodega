@@ -303,7 +303,8 @@ const PESTANAS_POR_SECCION = [
     seccion: "Por revisar",
     barra: BARRAS.revisar,
     pantallas: [
-      { ruta: "/combustibles/revisar", activa: "Pendientes" },
+      { ruta: "/combustibles/revisar", activa: "Por decidir" },
+      { ruta: "/combustibles/revisar?tipo=caso", activa: "En seguimiento" },
       { ruta: "/combustibles/revisar?vista=decididas", activa: "Decididas" },
     ],
   },
@@ -464,11 +465,12 @@ async function abrirSelectorAgregarDatos(page: Page): Promise<Locator> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * «Por revisar» es una sola bandeja con dos vistas (Pendientes y Decididas): ya
- * no hay dos colas entre las que elegir según dónde haya trabajo. Verifica que
- * la pantalla tenga su pestaña activa y devuelve a dónde se llegó.
+ * «Por revisar» es una sola bandeja con tres pestañas: «Por decidir» (cargas,
+ * patentes y pedidos: la cifra del tile y del menú), «En seguimiento» (los
+ * casos abiertos) y «Decididas». Verifica que la pantalla tenga su pestaña
+ * activa y devuelve a dónde se llegó.
  */
-async function expectPorRevisar(page: Page, vista: "Pendientes" | "Decididas" = "Pendientes") {
+async function expectPorRevisar(page: Page, vista: "Por decidir" | "En seguimiento" | "Decididas" = "Por decidir") {
   await expect(page).toHaveURL((url) => url.pathname === "/combustibles/revisar")
   const activa = barraDe(page, BARRAS.revisar).locator('[aria-current="page"]')
   await expect(activa).toHaveCount(1)
@@ -492,9 +494,19 @@ test.describe("Control operacional — Por revisar", () => {
     const destino = await expectPorRevisar(page)
     expect(destino.searchParams.get("faena")).toBe("ws-e2e")
 
-    // `carryParams={FUEL_CARRY_PARAMS}`: la pestaña vecina conserva la faena.
-    await expect(barraDe(page, BARRAS.revisar).locator('a:not([aria-current="page"])'))
-      .toHaveAttribute("href", /faena=ws-e2e/)
+    // `carryParams={FUEL_CARRY_PARAMS}`: las pestañas vecinas conservan la faena.
+    const vecinas = barraDe(page, BARRAS.revisar).locator('a:not([aria-current="page"])')
+    await expect(vecinas).toHaveCount(2)
+    for (const i of [0, 1]) await expect(vecinas.nth(i)).toHaveAttribute("href", /faena=ws-e2e/)
+  })
+
+  test("«En seguimiento» trae los casos abiertos y nada más", async ({ page }) => {
+    await page.goto("/combustibles/revisar")
+    await barraDe(page, BARRAS.revisar).getByRole("link", { name: /^En seguimiento/ }).click()
+    const destino = await expectPorRevisar(page, "En seguimiento")
+    expect(destino.searchParams.get("tipo")).toBe("caso")
+    // Un solo tipo: sin el control «Tipo de pendiente» de «Por decidir».
+    await expect(page.getByRole("group", { name: "Tipo de pendiente" })).toHaveCount(0)
   })
 
   test("«Decididas» es la otra vista y trae su pestaña activa", async ({ page }) => {
@@ -641,7 +653,7 @@ test.describe("Control operacional — tiles del panel", () => {
     await expectPorRevisar(page)
   })
 
-  test("«Combustible por revisar» cuenta las cuatro colas, la misma cifra que dice la bandeja", async ({ page }) => {
+  test("«Combustible por revisar», la pestaña «Por decidir» y el contador del menú dicen la misma cifra", async ({ page }) => {
     // Un pedido de revisión abierto: el tile anterior (sólo cargas marcadas y casos) no lo veía y quedaba por debajo.
     const pedidoId = "qa-e2e-tile-pedido"
     await withSql(async (sql) => {
@@ -661,10 +673,16 @@ test.describe("Control operacional — tiles del panel", () => {
 
       await tile.click()
       await expectPorRevisar(page)
-      // El total vive sólo en la pestaña «Pendientes N» (A5); incluye los casos en
-      // seguimiento, que el tile del panel cuenta aparte.
-      const pendientes = Number((await barraDe(page, BARRAS.revisar).getByRole("link", { name: /^Pendientes/ }).innerText()).replace(/\D/g, ""))
-      expect(pendientes).toBeGreaterThanOrEqual(total)
+      // Una sola definición en toda el área (crítica 2026-11-15): lo que se decide ahora, sin los casos en
+      // seguimiento. Antes la pestaña sumaba los casos (418) mientras el tile decía 88.
+      const porDecidir = Number((await barraDe(page, BARRAS.revisar).getByRole("link", { name: /^Por decidir/ }).innerText()).replace(/\D/g, ""))
+      expect(porDecidir).toBe(total)
+      // El contador del menú se guarda 30 s por usuario (`badgeCountsLoader` en app/(app)/layout.tsx) y el pedido
+      // entró por SQL, sin invalidar ese caché: se recarga hasta que vence, en vez de leerlo de inmediato.
+      await expect.poll(async () => {
+        await page.reload()
+        return (await itemDelMenu(page, "/combustibles/revisar").innerText()).replace(/\D/g, "")
+      }, { timeout: 75_000, intervals: [2_000, 10_000] }).toBe(total > 99 ? "99" : String(total))
     } finally {
       await withSql(async (sql) => { await sql`delete from fuel_review_marks where id = ${pedidoId}` })
     }

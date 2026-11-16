@@ -84,7 +84,7 @@ function PendingCell({ row }: { row: EnrichedRow }) {
         const short = item.kind === "decide" && flagReason ? FLAG_REASON_SHORT_LABELS[flagReason] : item.label
         const full = item.kind === "decide" && flagReason ? FLAG_REASON_LABELS[flagReason] : undefined
         const badge = <MetaBadge meta={{ label: short, variant: "signal" }} size="sm" title={full ?? short} className="max-w-full whitespace-nowrap" />
-        return href ? <Link key={item.kind} href={href} className="max-w-full rounded-full focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]">{badge}</Link> : <span key={item.kind} className="max-w-full">{badge}</span>
+        return href ? <Link key={item.kind} href={href} className="inline-flex min-h-11 max-w-full items-center rounded-full focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] sm:min-h-0">{badge}</Link> : <span key={item.kind} className="max-w-full">{badge}</span>
       })}
     </span>
   )
@@ -269,6 +269,8 @@ export function BitacoraTable({
         {rows.length === 0 && <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">Sin cargas para este filtro.</p>}
         {rows.map((row) => (
           <ResponsiveDataListCard
+            // La lista es el contenido de la página: sus tarjetas cuelgan del h1 (paso 6).
+            headingLevel={2}
             key={`card:${rowKey(row)}`}
             title={<Link href={row.hrefs.detail}>{row.equipmentCode ?? row.plate ?? "Equipo sin identificar"}</Link>}
             description={`${formatDateTime(row.occurredAt)} · ${row.worksiteName ?? "Sin faena"}`}

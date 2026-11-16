@@ -1,6 +1,7 @@
 import type { Session } from "next-auth"
 import { and, asc, eq, sql, type AnyColumn, type SQL } from "drizzle-orm"
 import { db } from "@/db"
+import { supplyMediumNameSql } from "@/lib/combustibles/control/queries/supply-medium-name"
 import { fuelMandanteWorksites, fuelMandantes, fuelProviderTransactions, fuelSupplyInputs, fuelSupplyMedia, fuelTaeLoadingPoints, fuelTaeSubmissions, worksites } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { reconcile } from "../calc/reconciliation"
@@ -216,7 +217,7 @@ const NO_MEDIUM_LABEL = "Sin medio asignado"
 export async function getMediumCross(session: Session | null, filters: ControlFilters): Promise<MediumCrossRow[]> {
   const t = fuelProviderTransactions
   const [media, fieldRows, inputRows, providerRows] = await Promise.all([
-    db.select({ id: fuelSupplyMedia.id, name: fuelSupplyMedia.name }).from(fuelSupplyMedia).orderBy(asc(fuelSupplyMedia.sortOrder), asc(fuelSupplyMedia.name)),
+    db.select({ id: fuelSupplyMedia.id, name: supplyMediumNameSql() }).from(fuelSupplyMedia).orderBy(asc(fuelSupplyMedia.sortOrder), asc(fuelSupplyMedia.name)),
     db.select({ mediumId: fuelTaeSubmissions.supplyMediumId, liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)::float8`, loads: sql<number>`count(*)::int` })
       .from(fuelTaeSubmissions).where(submissionWhere(session, filters)).groupBy(fuelTaeSubmissions.supplyMediumId),
     db.select({ mediumId: fuelSupplyInputs.supplyMediumId, liters: sql<number>`coalesce(sum(${fuelSupplyInputs.liters}), 0)::float8`, records: sql<number>`count(*)::int` })

@@ -20,6 +20,20 @@ vi.mock("next/cache", () => ({
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: (...args: unknown[]) => mockRequirePermission(...args),
+  can: () => false,
+}))
+
+// Los vehículos de esta prueba no están en Mantención: el padrón sigue con sus propias reglas.
+// La resolución con las reglas de Mantención la cubre `padron-identidad-mantencion-pglite.test.ts`.
+vi.mock("@/lib/services/mantencion/equipment", () => ({
+  resolveFleetIdentity: vi.fn(async () => null),
+  applyFleetIdentity: vi.fn(),
+  recordFleetActivation: vi.fn(async () => false),
+}))
+vi.mock("@/lib/services/mantencion/access", () => ({
+  equipmentScope: () => ({ kind: "all" }),
+  isWorksiteInScope: () => true,
+  viewerFromSession: () => ({}),
 }))
 
 vi.mock("@/lib/auth/scope", () => ({

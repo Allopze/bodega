@@ -8,12 +8,14 @@ import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { guardPermission } from "@/lib/auth/can"
 import type { ExportActionResult } from "@/components/ui/export-button"
 import { equipmentScope, viewerFromSession } from "@/lib/services/mantencion/access"
-import { createEquipment, updateEquipment, type EquipmentInput, type EquipmentResult } from "@/lib/services/mantencion/equipment"
+import { createEquipment, updateEquipmentPlan, type EquipmentInput, type EquipmentResult } from "@/lib/services/mantencion/equipment"
 import { buildEquipmentTemplate, commitEquipmentImport, IMPORT_MAX_BYTES, previewEquipmentImport, type ImportPreview, type ImportSummary } from "@/lib/services/mantencion/equipment-import"
 import { exportEquipment } from "@/lib/services/mantencion/export-equipment"
 import { INCORPORATE_MAX_ROWS, incorporateFleetVehicles, type IncorporationResult } from "@/lib/services/mantencion/fleet-incorporation"
 import type { MantActionResult } from "@/lib/services/mantencion/result"
 import type { ActionState } from "@/lib/validation/operations"
+import { revalidateVehicleFicha } from "@/lib/routing/revalidate-vehicle-ficha"
+import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 /**
  * Acciones de «Equipos». Cada una pide su permiso del §6 EN el servidor
@@ -36,7 +38,7 @@ function equipmentActor(session: Session) {
 /** Después de un cambio de equipos se refrescan la lista, la ficha, el panel y las pautas (cuentan equipos). */
 function revalidateEquipment(vehicleId?: string) {
   revalidatePath(PATH)
-  if (vehicleId) revalidatePath(`${PATH}/${vehicleId}`)
+  if (vehicleId) revalidateVehicleFicha(vehicleId)
   revalidatePath("/mantencion/panel")
   revalidatePath("/mantencion/pautas")
 }
@@ -88,20 +90,29 @@ export async function createEquipmentAction(_prev: ActionState, formData: FormDa
   }
   revalidateEquipment(vehicleId)
   // Cae en la ficha del equipo recién creado, ya en modo lectura.
-  redirect(`${PATH}/${vehicleId}?creado=1`)
+  redirect(`${vehicleFichaHref(vehicleId, "mantencion")}?creado=1`)
 }
 
-export async function updateEquipmentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+/**
+ * «Editar mantención» de la pestaña Mantención: pauta, lectura inicial y baja. La identidad
+ * del equipo (código, patente, tipo, marca, modelo, año y faena) se edita en el padrón, con las
+ * reglas de Mantención (crítica 2026-11-15, paso 4b); aquí no viaja.
+ */
+export async function updateEquipmentPlanAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const guard = await guardPermission("mant:equipment:manage", PATH)
   if (guard.error) return guard.error
   const vehicleId = text(formData, "vehicleId", 64)
   if (!vehicleId) return { ok: false, message: "No se reconoce el equipo." }
   const retired = formData.get("status") === "baja"
   try {
-    const result = await updateEquipment(
+    const result = await updateEquipmentPlan(
       equipmentActor(guard.session),
       vehicleId,
-      readEquipmentForm(formData),
+      {
+        scheduleId: text(formData, "scheduleId", 64) || null,
+        initialReading: numberOrNull(text(formData, "initialReading", 20)),
+        initialReadingDate: text(formData, "initialReadingDate", 10) || null,
+      },
       { active: !retired, retiredReason: text(formData, "retiredReason", 1000) },
     )
     if (result.ok) revalidateEquipment(vehicleId)

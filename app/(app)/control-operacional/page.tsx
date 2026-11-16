@@ -250,8 +250,9 @@ export default async function OperationalControlPage({
         )}
 
         {glossary.length > 0 && (
-          <details className="rounded-[var(--radius-lg)] border border-[var(--color-border)] px-3.5 py-2.5">
-            <summary className="cursor-pointer list-none text-sm font-medium text-[var(--color-text)] [&::-webkit-details-marker]:hidden">
+          <details className="rounded-[var(--radius-lg)] border border-[var(--color-border)] px-3.5 open:pb-2.5 sm:py-2.5">
+            {/* 44 px de alto en móvil: el resumen es lo que se toca (crítica 2026-11-15, paso 6). */}
+            <summary className="flex min-h-11 cursor-pointer list-none items-center text-sm font-medium text-[var(--color-text)] sm:min-h-0 [&::-webkit-details-marker]:hidden">
               Cómo se calculan estas cifras
             </summary>
             <p className="mt-3 text-xs leading-relaxed text-[var(--color-text-muted)]">
@@ -405,14 +406,14 @@ export default async function OperationalControlPage({
 
               <div className="flex flex-wrap gap-x-4 gap-y-1">
                 {canViewFuelSources && (
-                  <Button asChild variant="link" size="sm" className="h-auto p-0 text-xs">
+                  <Button asChild variant="link" size="sm" className="h-auto min-h-11 p-0 text-xs sm:min-h-0">
                     <Link href={`/combustibles/fuentes?desde=${period.from}&hasta=${period.to}`}>
                       Ver todas las fuentes
                       <ArrowRight size={12} className="ml-1" />
                     </Link>
                   </Button>
                 )}
-                <Button asChild variant="link" size="sm" className="h-auto p-0 text-xs">
+                <Button asChild variant="link" size="sm" className="h-auto min-h-11 p-0 text-xs sm:min-h-0">
                   <Link href={`/combustibles/cuadratura?desde=${period.from}&hasta=${period.to}`}>
                     Ver conciliación
                     <ArrowRight size={12} className="ml-1" />

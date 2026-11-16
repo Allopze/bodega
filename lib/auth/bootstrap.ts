@@ -142,6 +142,45 @@ export const GRANT_ADDITIONS = [
   })),
 ] as const
 
+/**
+ * Un permiso que nace de otro más amplio: la primera vez que corre, todo rol y todo usuario que
+ * tiene `from` recibe también `to`. Es para cuando una capacidad que colgaba de un permiso general
+ * pasa a tener el suyo: los `defaultGrants` sólo conocen los roles del manifiesto, y en producción
+ * un administrador pudo haber dado `from` a otros roles o personas desde `/admin/roles`; sin esto,
+ * esos perderían la capacidad en silencio. Corre una sola vez (marca en `system_settings`):
+ * después manda lo que se ajuste en la UI.
+ */
+export const PERMISSION_MIRRORS = [
+  // Exportar Vehículos e Indicadores GPS (decisión 2026-11-15): el Excel de /flota colgaba de `flota:view`.
+  { key: "2026-11-15-flota-export-desde-flota-view", from: "p-flot-view", to: "p-flot-export" },
+] as const
+
+async function applyPermissionMirrors(executor: typeof db | Tx) {
+  for (const mirror of PERMISSION_MIRRORS) {
+    const marker = `rbac:permission-mirror:${mirror.key}`
+    const [done] = await executor.select({ key: systemSettings.key }).from(systemSettings)
+      .where(eq(systemSettings.key, marker)).limit(1)
+    if (done) continue
+    const roleHolders = await executor.select({ roleId: rolePermissions.roleId }).from(rolePermissions)
+      .where(eq(rolePermissions.permissionId, mirror.from))
+    if (roleHolders.length > 0) {
+      await executor.insert(rolePermissions)
+        .values(roleHolders.map((holder) => ({ roleId: holder.roleId, permissionId: mirror.to })))
+        .onConflictDoNothing()
+    }
+    const userHolders = await executor.select({ userId: userPermissions.userId }).from(userPermissions)
+      .where(eq(userPermissions.permissionId, mirror.from))
+    if (userHolders.length > 0) {
+      await executor.insert(userPermissions)
+        .values(userHolders.map((holder) => ({ userId: holder.userId, permissionId: mirror.to })))
+        .onConflictDoNothing()
+    }
+    await executor.insert(systemSettings)
+      .values({ key: marker, value: new Date().toISOString() })
+      .onConflictDoNothing()
+  }
+}
+
 async function applyGrantAdditions(executor: typeof db | Tx) {
   for (const addition of GRANT_ADDITIONS) {
     const marker = `rbac:grant-addition:${addition.key}`
@@ -179,6 +218,8 @@ async function applyGrantAdditions(executor: typeof db | Tx) {
  *   `GRANT_ADDITIONS` para que el próximo deploy lo aplique una vez.
  * - Quitar un permiso del manifiesto sin listarlo en `RETIRED_PERMISSION_NAMES`
  *   deja sus grants vivos en la BD. Esa lista es la vía explícita para retirar.
+ * - Un permiso nuevo que parte una capacidad de otro existente se declara en
+ *   `PERMISSION_MIRRORS`, para que lo reciba quien ya tenía el general.
  */
 export async function ensureSystemRbac(executor: typeof db | Tx = db) {
   // Qué existía ANTES de este upsert: es lo que distingue "primera vez que
@@ -241,6 +282,7 @@ export async function ensureSystemRbac(executor: typeof db | Tx = db) {
   }
 
   await applyGrantAdditions(executor)
+  await applyPermissionMirrors(executor)
 }
 
 export async function getUserCount() {

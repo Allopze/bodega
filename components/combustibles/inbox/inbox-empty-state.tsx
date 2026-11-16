@@ -3,6 +3,7 @@ import { CheckCircle, ClipboardText, FunnelSimple } from "@phosphor-icons/react/
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import type { FuelInboxKind } from "@/lib/combustibles/inbox/types"
+import { formatQty } from "@/lib/utils"
 
 const KIND_COPY: Record<FuelInboxKind, { title: string; description: string }> = {
   carga: {
@@ -37,6 +38,7 @@ export function InboxEmptyState({
   allHref,
   otherViewHref,
   cargasHref,
+  followUp,
 }: {
   view: "pendientes" | "decididas"
   kind?: FuelInboxKind
@@ -48,6 +50,8 @@ export function InboxEmptyState({
   /** La otra pestaña, con el mismo período. */
   otherViewHref: string
   cargasHref: string
+  /** En «Por decidir» vacía: los casos abiertos, que viven en «En seguimiento». */
+  followUp?: { count: number; href: string }
 }) {
   if (filtered) {
     return (
@@ -81,13 +85,17 @@ export function InboxEmptyState({
       />
     )
   }
+  // «Por decidir» sin nada: los casos abiertos no cuentan aquí, pero si existen son el siguiente lugar a mirar.
+  const cases = followUp && followUp.count > 0 ? followUp : null
   return (
     <EmptyState
       icon={<CheckCircle size={24} />}
       tone="success"
-      title="No queda nada esperando a una persona"
-      description="Aquí aparece lo que la plataforma no puede decidir sola: cargas dudosas, casos de las reglas de control, patentes sin vincular y pedidos de revisión. Lo ya decidido está en «Decididas»."
-      action={<Button asChild variant="secondary" size="sm"><Link href={cargasHref}>Ver las cargas del período</Link></Button>}
+      title="Nada espera una decisión"
+      description="Aquí aparece lo que la plataforma no puede decidir sola: cargas dudosas, patentes sin vincular y pedidos de revisión. Los casos de las reglas de control están en «En seguimiento» y lo ya decidido, en «Decididas»."
+      action={cases
+        ? <Button asChild variant="secondary" size="sm"><Link href={cases.href}>{cases.count === 1 ? "Ver el caso en seguimiento" : `Ver los ${formatQty(cases.count, undefined, { maximumFractionDigits: 0 })} casos en seguimiento`}</Link></Button>
+        : <Button asChild variant="secondary" size="sm"><Link href={cargasHref}>Ver las cargas del período</Link></Button>}
       secondaryAction={<Button asChild variant="ghost" size="sm"><Link href={otherViewHref}>Ver lo decidido</Link></Button>}
     />
   )

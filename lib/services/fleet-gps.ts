@@ -1,7 +1,7 @@
 import type { Session } from "next-auth"
 import { and, desc, eq, gte, isNull, lte, notExists, or, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fleetGpsAlerts, fleetGpsDeviceLinks, fleetGpsDriverMappings, fleetGpsLatestPositions, fleetGpsPositionHistory, fleetGpsSyncRuns, fleetGpsTrips, fuelVehicles, workers, worksites } from "@/db/schema"
+import { fleetGpsAlerts, fleetGpsDeviceLinks, fleetGpsDriverMappings, fleetGpsLatestPositions, fleetGpsPositionHistory, fleetGpsSyncRuns, fleetGpsTrips, fuelEquipmentTypes, fuelVehicles, workers, worksites } from "@/db/schema"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { mergeLatestGpsByVehicle, type LatestGpsRow } from "@/lib/integrations/fleet-gps/merge-latest"
@@ -19,6 +19,8 @@ export interface FleetGpsPosition {
   code: string | null
   brand: string | null
   model: string | null
+  /** Tipo de equipo (`Camión`): con la patente, la segunda línea de `VehicleIdentity`. */
+  typeName: string | null
   worksiteName: string
   latitude: number
   longitude: number
@@ -83,6 +85,7 @@ async function loadRawPositions(session: Session) {
     code: fuelVehicles.code,
     brand: fuelVehicles.brand,
     model: fuelVehicles.model,
+    typeName: fuelEquipmentTypes.name,
     worksiteName: worksites.name,
     latitude: fleetGpsLatestPositions.latitude,
     longitude: fleetGpsLatestPositions.longitude,
@@ -106,6 +109,7 @@ async function loadRawPositions(session: Session) {
     observedAt: fleetGpsLatestPositions.observedAt,
   }).from(fleetGpsLatestPositions)
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, fleetGpsLatestPositions.vehicleId))
+    .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
     .innerJoin(worksites, eq(worksites.id, fleetGpsLatestPositions.worksiteId))
     .leftJoin(fleetGpsDriverMappings, eq(fleetGpsDriverMappings.id, fleetGpsLatestPositions.driverMappingId))
     .leftJoin(workers, eq(workers.id, fleetGpsDriverMappings.workerId))
@@ -171,7 +175,7 @@ export async function getFleetGpsMonitoring(session: Session) {
   const staleBefore = new Date(Date.now() - 15 * 60_000).toISOString()
   const rawPositions = await loadRawPositions(session)
 
-  const vehicleInfo = new Map<string, Pick<RawPositionRow, "plate" | "code" | "brand" | "model" | "worksiteName">>()
+  const vehicleInfo = new Map<string, Pick<RawPositionRow, "plate" | "code" | "brand" | "model" | "typeName" | "worksiteName">>()
   const driverByMappingId = new Map<string, Pick<RawPositionRow, "driverFirstName" | "driverLastName" | "driverWorksiteId">>()
   const providerLatestAt: Record<"onway" | "wialon", string | null> = { onway: null, wialon: null }
   for (const row of rawPositions) {
@@ -181,6 +185,7 @@ export async function getFleetGpsMonitoring(session: Session) {
         code: row.code,
         brand: row.brand,
         model: row.model,
+        typeName: row.typeName,
         worksiteName: row.worksiteName,
       })
     }

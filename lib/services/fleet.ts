@@ -605,7 +605,41 @@ export async function getFleetProviderGapMonths(session: Session, worksiteId?: s
 /** Ventana (días) del antes/después del rendimiento alrededor de la salida de taller. */
 export const WORK_ORDER_IMPACT_WINDOW_DAYS = 30
 
-export async function getFleetVehicleDetail(session: Session, id: string) {
+/**
+ * Rendimiento promedio del log operacional ±30 días alrededor de la salida de taller de cada OT
+ * cerrada. Una sola agregación para todas (sin una consulta por fila, CO-042). La fecha de salida
+ * se lee en hora de Chile: `fecha` del log es un día civil chileno. Lo pide quien muestra las OT
+ * del equipo (la pestaña Mantención de la ficha; Flota, sólo para quien no ve Mantención) y
+ * sólo con `combustibles:view`: es un dato del log de combustible.
+ */
+export async function getWorkOrderConsumptionImpact(
+  workOrders: ReadonlyArray<{ id: string; status: string; workshopExitAt: string | null }>,
+): Promise<Array<{ workOrderId: string; avgBefore: number | null; avgAfter: number | null }>> {
+  const closedWithExit = workOrders.filter((workOrder) => workOrder.status === "cerrada" && workOrder.workshopExitAt)
+  if (closedWithExit.length === 0) return []
+  const exitDate = sql`(${mantWorkOrders.workshopExitAt} AT TIME ZONE 'America/Santiago')::date`
+  const rows = await db.select({
+    workOrderId: mantWorkOrders.id,
+    avgBefore: sql<number | null>`avg(${fuelOperationRecords.rendimiento}) filter (where ${fuelOperationRecords.fecha} < to_char(${exitDate}, 'YYYY-MM-DD'))`,
+    avgAfter: sql<number | null>`avg(${fuelOperationRecords.rendimiento}) filter (where ${fuelOperationRecords.fecha} > to_char(${exitDate}, 'YYYY-MM-DD'))`,
+  }).from(mantWorkOrders).leftJoin(fuelOperationRecords, and(
+    eq(fuelOperationRecords.vehicleId, mantWorkOrders.vehicleId),
+    isNotNull(fuelOperationRecords.rendimiento),
+    // `fecha` es texto «YYYY-MM-DD»: se compara contra `to_char`, que
+    // devuelve el mismo formato, para que ambos extremos queden inclusivos.
+    sql`${fuelOperationRecords.fecha} >= to_char(${exitDate} - (${WORK_ORDER_IMPACT_WINDOW_DAYS} * INTERVAL '1 day'), 'YYYY-MM-DD')`,
+    sql`${fuelOperationRecords.fecha} <= to_char(${exitDate} + (${WORK_ORDER_IMPACT_WINDOW_DAYS} * INTERVAL '1 day'), 'YYYY-MM-DD')`,
+  )).where(inArray(mantWorkOrders.id, closedWithExit.map((workOrder) => workOrder.id)))
+    .groupBy(mantWorkOrders.id)
+  return rows.map((row) => ({ ...row, avgBefore: row.avgBefore == null ? null : Number(row.avgBefore), avgAfter: row.avgAfter == null ? null : Number(row.avgAfter) }))
+}
+
+/**
+ * La pestaña Flota de la ficha. `includeMaintenance: false` no carga las OT ni las compras: las
+ * muestra la pestaña Mantención y no se repiten (sólo las pide quien no ve esa pestaña).
+ */
+export async function getFleetVehicleDetail(session: Session, id: string, options: { includeMaintenance?: boolean } = {}) {
+  const includeMaintenance = options.includeMaintenance ?? true
   const canViewFuel = can(session, "combustibles:view")
   const workOrderScope = workOrderMetricsScope(session)
   const scopedWorksites = isGlobalRole(session) ? null : visibleWorksiteIds(session)
@@ -684,35 +718,14 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     }),
     // Últimas 10 OT del equipo; `null` (no `[]`) sin la capacidad, para que la
     // ficha no pinte «sin órdenes de trabajo» a quien no puede verlas.
-    workOrderScope ? listRecentVehicleWorkOrders(workOrderScope, id, 10) : Promise.resolve(null),
+    includeMaintenance && workOrderScope ? listRecentVehicleWorkOrders(workOrderScope, id, 10) : Promise.resolve(null),
     // Repuestos y servicios comprados para el equipo (solicitud → OC → costo). El costo de una
     // compra es información de compras: `purchasing:view`. `null` (no `[]`) sin ella, para que la
     // ficha no pinte «sin compras» a quien no puede verlas.
-    can(session, "purchasing:view") ? getVehiclePurchaseHistory(id) : Promise.resolve(null),
+    includeMaintenance && can(session, "purchasing:view") ? getVehiclePurchaseHistory(id) : Promise.resolve(null),
   ])
 
-  // Rendimiento promedio del log operacional ±30 días alrededor de la salida de
-  // taller de cada OT cerrada de la lista. Una sola agregación para todas (sin
-  // una consulta por fila, CO-042). La fecha de salida se lee en hora de Chile:
-  // `fecha` del log es un día civil chileno.
-  const closedWithExit = (recentWorkOrders ?? []).filter((workOrder) => workOrder.status === "cerrada" && workOrder.workshopExitAt)
-  const exitDate = sql`(${mantWorkOrders.workshopExitAt} AT TIME ZONE 'America/Santiago')::date`
-  const workOrderConsumptionImpact = canViewFuel && closedWithExit.length > 0
-    ? (await db.select({
-        workOrderId: mantWorkOrders.id,
-        avgBefore: sql<number | null>`avg(${fuelOperationRecords.rendimiento}) filter (where ${fuelOperationRecords.fecha} < to_char(${exitDate}, 'YYYY-MM-DD'))`,
-        avgAfter: sql<number | null>`avg(${fuelOperationRecords.rendimiento}) filter (where ${fuelOperationRecords.fecha} > to_char(${exitDate}, 'YYYY-MM-DD'))`,
-      }).from(mantWorkOrders).leftJoin(fuelOperationRecords, and(
-        eq(fuelOperationRecords.vehicleId, mantWorkOrders.vehicleId),
-        isNotNull(fuelOperationRecords.rendimiento),
-        // `fecha` es texto «YYYY-MM-DD»: se compara contra `to_char`, que
-        // devuelve el mismo formato, para que ambos extremos queden inclusivos.
-        sql`${fuelOperationRecords.fecha} >= to_char(${exitDate} - (${WORK_ORDER_IMPACT_WINDOW_DAYS} * INTERVAL '1 day'), 'YYYY-MM-DD')`,
-        sql`${fuelOperationRecords.fecha} <= to_char(${exitDate} + (${WORK_ORDER_IMPACT_WINDOW_DAYS} * INTERVAL '1 day'), 'YYYY-MM-DD')`,
-      )).where(inArray(mantWorkOrders.id, closedWithExit.map((workOrder) => workOrder.id)))
-      .groupBy(mantWorkOrders.id))
-      .map((row) => ({ ...row, avgBefore: row.avgBefore == null ? null : Number(row.avgBefore), avgAfter: row.avgAfter == null ? null : Number(row.avgAfter) }))
-    : []
+  const workOrderConsumptionImpact = canViewFuel ? await getWorkOrderConsumptionImpact(recentWorkOrders ?? []) : []
 
   return {
     vehicle,

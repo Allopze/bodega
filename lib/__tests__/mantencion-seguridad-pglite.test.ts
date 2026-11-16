@@ -41,7 +41,7 @@ const { equipmentScope } = await import("@/lib/services/mantencion/access")
 const { createRecord } = await import("@/lib/services/mantencion/records-create")
 const { applyWorkshopUpdate } = await import("@/lib/services/mantencion/workshop-updates")
 const {
-  createEquipment, updateEquipment, reactivateEquipment, retireEquipment,
+  createEquipment, updateEquipmentPlan, reactivateEquipment, retireEquipment,
 } = await import("@/lib/services/mantencion/equipment")
 const { commitEquipmentImport } = await import("@/lib/services/mantencion/equipment-import")
 const { assignEquipment } = await import("@/lib/services/mantencion/schedule-assign")
@@ -333,22 +333,21 @@ describe("A4: administrar equipos no alcanza a las faenas que no se ven", () => 
 
   it("no edita ni da de baja un equipo de otra faena, y sí el de la suya", async () => {
     const encargado = await equipmentActor(IDS.supBio)
-    const input = {
-      code: "KA-941", plate: "ZXCV-11", noPlate: false, equipmentTypeId: "fet-test-km", brandId: IDS.brandScania,
-      model: "R500", year: 2021, worksiteId: IDS.wsCho, newWorksiteName: "", scheduleId: null, initialReading: null, initialReadingDate: null,
-    }
-    const edit = await updateEquipment(encargado, choVehicleId, input, { active: true, retiredReason: "" })
+    // «Editar mantención»: pauta, lectura inicial y baja (la identidad se edita en el padrón, paso 4b).
+    const plan = { scheduleId: null, initialReading: null, initialReadingDate: null }
+    const edit = await updateEquipmentPlan(encargado, choVehicleId, plan, { active: true, retiredReason: "" })
     expect(edit).toMatchObject({ ok: false, message: expect.stringContaining("no administras") })
+    const retireByEdit = await updateEquipmentPlan(encargado, choVehicleId, plan, { active: false, retiredReason: "Equipo vendido a tercero" })
+    expect(retireByEdit).toMatchObject({ ok: false, message: expect.stringContaining("no administras") })
     const retire = await retireEquipment(encargado, choVehicleId, "Equipo vendido a tercero")
     expect(retire).toMatchObject({ ok: false, message: expect.stringContaining("no administras") })
     const [cho] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, choVehicleId))
     expect(cho).toMatchObject({ isActive: true, model: "R450" })
 
     // La jefatura global sí puede, y el encargado también con su propia faena.
-    const jefeEdit = await updateEquipment(await equipmentActor(IDS.jefe), choVehicleId, input, { active: true, retiredReason: "" })
+    const jefeEdit = await updateEquipmentPlan(await equipmentActor(IDS.jefe), choVehicleId, plan, { active: true, retiredReason: "" })
     expect(jefeEdit.ok).toBe(true)
-    const bioInput = { ...input, code: "KA-940", plate: "ZXCV-10", model: "R460", worksiteId: IDS.wsBio }
-    expect((await updateEquipment(encargado, bioVehicleId, bioInput, { active: true, retiredReason: "" })).ok).toBe(true)
+    expect((await updateEquipmentPlan(encargado, bioVehicleId, plan, { active: true, retiredReason: "" })).ok).toBe(true)
     expect((await retireEquipment(encargado, bioVehicleId, "Equipo vendido a tercero")).ok).toBe(true)
     expect((await reactivateEquipment(encargado, bioVehicleId)).ok).toBe(true)
   })

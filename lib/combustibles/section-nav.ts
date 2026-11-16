@@ -18,7 +18,7 @@ export { FUEL_CARRY_PARAMS }
 export const FIRST_PERFORMANCE_HREF = fuelPerformanceHref(PERFORMANCE_FAMILY_SLUGS[PERFORMANCE_FAMILIES[0]])
 
 export type CargasTab = "cargas" | "tarjetas"
-export type RevisarTab = "pendientes" | "decididas"
+export type RevisarTab = "por-decidir" | "seguimiento" | "decididas"
 export type CuadraturaTab = "mandante" | "estanques" | "proveedor" | "tarjeta-y-terreno" | "sellos"
 export type ConsumoTab = "rendimiento" | "litros" | "motor-en-vacio"
 export type PagosTab = "facturas" | "estados"
@@ -31,12 +31,25 @@ export function cargasNavItems(): SectionNavItem[] {
   ]
 }
 
-/** Los contadores son `null` cuando la consulta falló: la pestaña se muestra sin número en vez de afirmar un cero falso. */
-export function revisarNavItems(counts: { pendientes: number | null }): SectionNavItem[] {
+/**
+ * Lo pendiente se parte en lo que se decide ahora («Por decidir», la misma
+ * cifra que el tile del Panel operacional y el menú) y los casos abiertos («En
+ * seguimiento», `?tipo=caso`, que siguen llegando por enlaces viejos). Los
+ * contadores son `null` cuando la consulta falló: la pestaña se muestra sin
+ * número en vez de afirmar un cero falso.
+ */
+export function revisarNavItems(counts: { porDecidir: number | null; seguimiento: number | null }): SectionNavItem[] {
   return [
-    { key: "pendientes", href: FUEL_PATHS.revisar, label: "Pendientes", count: counts.pendientes ?? undefined },
+    { key: "por-decidir", href: FUEL_PATHS.revisar, label: "Por decidir", count: counts.porDecidir ?? undefined },
+    { key: "seguimiento", href: `${FUEL_PATHS.revisar}?tipo=caso`, label: "En seguimiento", count: counts.seguimiento ?? undefined },
     { key: "decididas", href: `${FUEL_PATHS.revisar}?vista=decididas`, label: "Decididas" },
   ]
+}
+
+/** Pestaña de la bandeja según la URL: un `?tipo=caso` en pendientes es «En seguimiento». */
+export function revisarTabOf(view: "pendientes" | "decididas", kind: string | undefined): RevisarTab {
+  if (view === "decididas") return "decididas"
+  return kind === "caso" ? "seguimiento" : "por-decidir"
 }
 
 /** Por mandante, proveedor y tarjeta y terreno exigen `tae_view`; estanques y sellos, sólo `view`. */

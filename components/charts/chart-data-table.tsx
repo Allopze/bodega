@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { CaretDown } from "@phosphor-icons/react/dist/ssr"
 import { chartRowsValues } from "@/components/charts/chart-cell-text"
 import { ChartDataExport } from "@/components/charts/chart-data-export"
 import type { ChartExportPermission } from "@/lib/reports/chart-data-export"
@@ -34,12 +35,18 @@ export function ChartDataTable({
   excel?: ChartDataExcel
 }) {
   return (
-    <details className="mt-3 text-xs">
-      <summary className="inline-flex min-h-11 cursor-pointer items-center font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-8">
-        Ver datos
+    <details className="group/data mt-3 text-xs">
+      {/* El chevrón dice que se abre, como «Ver gráfico» de `ChartSection`: `inline-flex` le quita al
+          `summary` el triángulo del navegador (crítica 2026-11-15). */}
+      <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 font-semibold text-[var(--color-primary-ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 sm:min-h-8 [&::-webkit-details-marker]:hidden">
+        <span className="group-open/data:hidden">Ver datos</span>
+        <span className="hidden group-open/data:inline">Ocultar datos</span>
+        <CaretDown className="size-3.5 transition-transform group-open/data:rotate-180 motion-reduce:transition-none" aria-hidden />
       </summary>
       {excel && rows.length > 0 && (
-        <div className="mt-1 flex justify-end">
+        // En la fila del rótulo, a la derecha: en una fila propia dejaba un hueco entre el rótulo y la
+        // tabla. La fila no atrapa el clic sobre el rótulo; sólo el botón lo recibe.
+        <div className="pointer-events-none -mt-11 flex justify-end sm:-mt-8 [&>*]:pointer-events-auto">
           {/* A Excel va el texto de cada celda (un enlace exporta su texto), las mismas filas que la tabla. */}
           <ChartDataExport title={caption} headers={headers} rows={chartRowsValues(rows)} permission={excel.permission} notes={excel.notes} />
         </div>

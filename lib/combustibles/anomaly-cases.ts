@@ -8,14 +8,14 @@
  */
 
 import type { Session } from "next-auth"
-import { and, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import { fuelAnomalyCases, fuelAnomalyComments, fuelAnomalyRules, fuelVehicles, worksites, users } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { AnomalyCaseStatus, AnomalySeverity } from "./anomaly-labels"
-import { METER_RESOLUTION_KINDS, requiresMeterResolutionKind, type MeterResolutionKind } from "./anomaly-labels"
+import { MAX_CASE_BATCH, METER_RESOLUTION_KINDS, requiresMeterResolutionKind, type MeterResolutionKind } from "./anomaly-labels"
 import { ANOMALY_RULE_CATALOG } from "./anomaly-rule-catalog"
 
 // Compatibilidad para consumidores server-side que todavía importan el
@@ -204,6 +204,8 @@ export async function getAnomalyCases(filters: AnomalyCasesFilters, session: Ses
   return { cases, total: totalResult[0]?.count ?? 0 }
 }
 
+type CaseRecord = typeof fuelAnomalyCases.$inferSelect
+
 /** Cambiar estado de un caso, con actor y motivo.
  *  Resolver o descartar es una corrección sensible (cierra la investigación de una
  *  posible pérdida de combustible): exige motivo, a diferencia de iniciar revisión o reabrir. */
@@ -226,53 +228,70 @@ export async function updateAnomalyCaseStatus(
     if (current.status !== expectedStatus) {
       throw new Error("El caso cambió de estado; actualiza la página antes de continuar")
     }
-    if (current.status === status) return current
-    if (!canTransitionAnomalyCase(current.status as AnomalyCaseStatus, status)) {
-      throw new Error(`No se puede cambiar el caso de ${current.status} a ${status}`)
-    }
-
-    const isResolved = status === "resolved" || status === "dismissed"
-    if (isResolved && !(resolution ?? "").trim()) {
-      throw new Error("Debes indicar el motivo para resolver o descartar un caso")
-    }
-    // Cerrar un caso de medidor decide si la serie del equipo se corta acá.
-    // Sin esta elección explícita, un error de tipeo corregido cortaría la serie.
-    const needsKind = isResolved && requiresMeterResolutionKind(current.ruleCode)
-    if (needsKind && !METER_RESOLUTION_KINDS.includes(resolutionKind as MeterResolutionKind)) {
-      throw new Error("Indica si la lectura se corrigió o si el medidor fue reemplazado")
-    }
-    const now = new Date().toISOString()
-    const resolutionFields = isResolved
-      ? { resolution: resolution!.trim(), resolutionKind: needsKind ? resolutionKind! : null, resolvedById: session.user.id, resolvedAt: now }
-      : status === "reopened"
-        ? { resolution: null, resolutionKind: null, resolvedById: null, resolvedAt: null }
-        : {}
-    const [next] = await tx.update(fuelAnomalyCases).set({ status, updatedAt: now, ...resolutionFields })
-      .where(and(eq(fuelAnomalyCases.id, caseId), eq(fuelAnomalyCases.status, expectedStatus)))
-      .returning()
-    if (!next) throw new Error("El caso cambió de estado; actualiza la página antes de continuar")
-
-    await recordStatusChange({
-      entityType: "fuel_anomaly_case",
-      entityId: caseId,
-      fromStatus: current.status,
-      toStatus: status,
-      changedBy: session.user.id,
-      reason: resolution?.trim() || undefined,
-    }, tx)
-    await recordAudit({
-      userId: session.user.id,
-      userEmail: session.user.email ?? undefined,
-      action: "status_change",
-      entityType: "fuel_anomaly_case",
-      entityId: caseId,
-      oldState: { status: current.status, resolution: current.resolution, resolutionKind: current.resolutionKind },
-      newState: { status, resolution: next.resolution, resolutionKind: next.resolutionKind },
-      reason: resolution?.trim() || undefined,
-    }, tx)
-    return next
+    return transitionLockedCase(tx, session, current, status, resolution, resolutionKind)
   })
   return await enrichAnomalyCase(updated)
+}
+
+/**
+ * El cambio de estado de un caso ya bloqueado (`for update`) y cuyo estado esperado ya se
+ * comprobó: transición válida, motivo al cerrar, qué pasó con el medidor en una regla de medidor,
+ * historial de estados y auditoría. Lo comparten el cambio de un caso y el de un lote.
+ */
+async function transitionLockedCase(
+  tx: Tx,
+  session: Session,
+  current: CaseRecord,
+  status: AnomalyCaseStatus,
+  resolution?: string,
+  resolutionKind?: MeterResolutionKind,
+): Promise<CaseRecord> {
+  if (current.status === status) return current
+  if (!canTransitionAnomalyCase(current.status as AnomalyCaseStatus, status)) {
+    throw new Error(`No se puede cambiar el caso de ${current.status} a ${status}`)
+  }
+
+  const isResolved = status === "resolved" || status === "dismissed"
+  if (isResolved && !(resolution ?? "").trim()) {
+    throw new Error("Debes indicar el motivo para resolver o descartar un caso")
+  }
+  // Cerrar un caso de medidor decide si la serie del equipo se corta acá.
+  // Sin esta elección explícita, un error de tipeo corregido cortaría la serie.
+  const needsKind = isResolved && requiresMeterResolutionKind(current.ruleCode)
+  if (needsKind && !METER_RESOLUTION_KINDS.includes(resolutionKind as MeterResolutionKind)) {
+    throw new Error("Indica si la lectura se corrigió o si el medidor fue reemplazado")
+  }
+  const now = new Date().toISOString()
+  const resolutionFields = isResolved
+    ? { resolution: resolution!.trim(), resolutionKind: needsKind ? resolutionKind! : null, resolvedById: session.user.id, resolvedAt: now }
+    : status === "reopened"
+      ? { resolution: null, resolutionKind: null, resolvedById: null, resolvedAt: null }
+      : {}
+  const [next] = await tx.update(fuelAnomalyCases).set({ status, updatedAt: now, ...resolutionFields })
+    .where(and(eq(fuelAnomalyCases.id, current.id), eq(fuelAnomalyCases.status, current.status)))
+    .returning()
+  if (!next) throw new Error("El caso cambió de estado; actualiza la página antes de continuar")
+
+  await recordStatusChange({
+    entityType: "fuel_anomaly_case",
+    entityId: current.id,
+    fromStatus: current.status,
+    toStatus: status,
+    changedBy: session.user.id,
+    reason: resolution?.trim() || undefined,
+  }, tx)
+  await recordAudit({
+    userId: session.user.id,
+    userEmail: session.user.email ?? undefined,
+    action: "status_change",
+    entityType: "fuel_anomaly_case",
+    entityId: current.id,
+    oldState: { status: current.status, resolution: current.resolution, resolutionKind: current.resolutionKind },
+    newState: { status, resolution: next.resolution, resolutionKind: next.resolutionKind },
+    reason: resolution?.trim() || undefined,
+    worksiteId: current.worksiteId,
+  }, tx)
+  return next
 }
 
 /** Asignar responsable. */
@@ -342,44 +361,149 @@ export async function takeAnomalyCase(
     if (current.status !== expected.status || current.assigneeId !== expected.assigneeId) {
       throw new Error("El caso cambió; actualiza la página antes de continuar")
     }
-    const from = current.status as AnomalyCaseStatus
-    if (from !== "in_review" && !canTransitionAnomalyCase(from, "in_review")) {
-      throw new Error("Un caso cerrado no se puede tomar: reábrelo primero")
-    }
-    if (current.assigneeId && current.assigneeId !== session.user.id) {
-      throw new Error("Otra persona ya es responsable de este caso")
-    }
-    const now = new Date().toISOString()
-    const [next] = await tx.update(fuelAnomalyCases)
-      .set({ status: "in_review", assigneeId: session.user.id, updatedAt: now })
-      .where(and(eq(fuelAnomalyCases.id, caseId), eq(fuelAnomalyCases.status, expected.status)))
-      .returning()
-    if (!next) throw new Error("El caso cambió; actualiza la página antes de continuar")
-
-    if (from !== "in_review") {
-      await recordStatusChange({
-        entityType: "fuel_anomaly_case",
-        entityId: caseId,
-        fromStatus: from,
-        toStatus: "in_review",
-        changedBy: session.user.id,
-        reason: "Caso tomado",
-      }, tx)
-    }
-    await recordAudit({
-      userId: session.user.id,
-      userEmail: session.user.email ?? undefined,
-      action: "status_change",
-      entityType: "fuel_anomaly_case",
-      entityId: caseId,
-      oldState: { status: from, assigneeId: current.assigneeId },
-      newState: { status: "in_review", assigneeId: session.user.id },
-      reason: "Caso tomado",
-      worksiteId: current.worksiteId,
-    }, tx)
-    return next
+    return takeLockedCase(tx, session, current)
   })
   return await enrichAnomalyCase(updated)
+}
+
+/**
+ * Tomar un caso ya bloqueado y comprobado: pasa a «Tomada» con quien lo toma como responsable,
+ * con historial y auditoría. Lo comparten tomar un caso y tomar un lote.
+ */
+async function takeLockedCase(tx: Tx, session: Session, current: CaseRecord): Promise<CaseRecord> {
+  const from = current.status as AnomalyCaseStatus
+  if (from !== "in_review" && !canTransitionAnomalyCase(from, "in_review")) {
+    throw new Error("Un caso cerrado no se puede tomar: reábrelo primero")
+  }
+  if (current.assigneeId && current.assigneeId !== session.user.id) {
+    throw new Error("Otra persona ya es responsable de este caso")
+  }
+  const now = new Date().toISOString()
+  const [next] = await tx.update(fuelAnomalyCases)
+    .set({ status: "in_review", assigneeId: session.user.id, updatedAt: now })
+    .where(and(eq(fuelAnomalyCases.id, current.id), eq(fuelAnomalyCases.status, current.status)))
+    .returning()
+  if (!next) throw new Error("El caso cambió; actualiza la página antes de continuar")
+
+  if (from !== "in_review") {
+    await recordStatusChange({
+      entityType: "fuel_anomaly_case",
+      entityId: current.id,
+      fromStatus: from,
+      toStatus: "in_review",
+      changedBy: session.user.id,
+      reason: "Caso tomado",
+    }, tx)
+  }
+  await recordAudit({
+    userId: session.user.id,
+    userEmail: session.user.email ?? undefined,
+    action: "status_change",
+    entityType: "fuel_anomaly_case",
+    entityId: current.id,
+    oldState: { status: from, assigneeId: current.assigneeId },
+    newState: { status: "in_review", assigneeId: session.user.id },
+    reason: "Caso tomado",
+    worksiteId: current.worksiteId,
+  }, tx)
+  return next
+}
+
+/* ───────────────────────── Casos en lote (crítica 2026-11-15, paso 4c) ───────────────────────── */
+
+export { MAX_CASE_BATCH }
+
+/** Un caso de la selección con el estado y el responsable que la persona vio al elegirlo. */
+export interface ExpectedAnomalyCase {
+  id: string
+  status: AnomalyCaseStatus
+  assigneeId: string | null
+}
+
+const CASES_CHANGED = "Algunos casos cambiaron desde que abriste la página (otra persona los tomó o los cerró). Actualiza la página y vuelve a elegirlos."
+
+/**
+ * Bloquea los casos de un lote en orden de id (dos lotes que se cruzan no se esperan en círculo),
+ * dentro del alcance de faenas de la sesión, y exige que cada uno siga como la persona lo vio. Un
+ * caso que falta (fuera de su alcance o borrado) o que cambió anula el lote entero: o se aplica
+ * a todos o a ninguno.
+ */
+async function lockExpectedCases(tx: Tx, session: Session, expected: readonly ExpectedAnomalyCase[]): Promise<CaseRecord[]> {
+  const ids = [...new Set(expected.map((item) => item.id))]
+  if (ids.length === 0) throw new Error("Elige al menos un caso")
+  if (ids.length !== expected.length) throw new Error("La selección tiene casos repetidos. Actualiza la página y vuelve a elegirlos.")
+  if (ids.length > MAX_CASE_BATCH) throw new Error(`Puedes cambiar hasta ${MAX_CASE_BATCH} casos por vez`)
+  const scope = worksiteScopeSql(session, fuelAnomalyCases.worksiteId)
+  const rows = await tx.select().from(fuelAnomalyCases)
+    .where(and(inArray(fuelAnomalyCases.id, ids), scope))
+    .orderBy(asc(fuelAnomalyCases.id))
+    .for("update")
+  if (rows.length !== ids.length) {
+    throw new Error("Algunos casos ya no existen o no están en tus faenas. Actualiza la página y vuelve a elegirlos.")
+  }
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  for (const item of expected) {
+    const row = byId.get(item.id)!
+    if (row.status !== item.status || row.assigneeId !== item.assigneeId) throw new Error(CASES_CHANGED)
+  }
+  return rows
+}
+
+/**
+ * «Tomar» un lote: cada caso sin responsable (o ya tuyo pero sin tomar) pasa a «Tomada» contigo
+ * como responsable, con su historial y su auditoría, en una sola transacción. Los que ya tenías
+ * tomados y los que tiene otra persona se dejan como estaban y se cuentan: tomar en lote no le
+ * quita un caso a nadie (para eso está «Asignar» en el caso).
+ */
+export async function takeAnomalyCases(
+  session: Session,
+  expected: readonly ExpectedAnomalyCase[],
+): Promise<{ taken: number; alreadyYours: number; heldByOthers: number }> {
+  return db.transaction(async (tx) => {
+    const rows = await lockExpectedCases(tx, session, expected)
+    let taken = 0
+    let alreadyYours = 0
+    let heldByOthers = 0
+    for (const row of rows) {
+      if (row.assigneeId && row.assigneeId !== session.user.id) { heldByOthers++; continue }
+      if (row.status === "in_review" && row.assigneeId === session.user.id) { alreadyYours++; continue }
+      await takeLockedCase(tx, session, row)
+      taken++
+    }
+    return { taken, alreadyYours, heldByOthers }
+  })
+}
+
+/**
+ * «Resolver» o «Descartar» un lote con un solo motivo, en una sola transacción y con una
+ * auditoría por caso. Todos los casos tienen que ser de la misma causa (regla): el motivo explica
+ * una causa, no varias. Resolver exige que cada caso esté tomado, como cuando se resuelve de a uno.
+ *
+ * Un caso de medidor regresivo se cierra en lote sólo como «lectura corregida»: «medidor
+ * reemplazado» corta la serie del equipo en esa lectura y se decide caso por caso, mirando la
+ * lectura (cortar varias series de un golpe con un motivo común sería un error difícil de ver).
+ */
+export async function closeAnomalyCases(
+  session: Session,
+  input: { cases: readonly ExpectedAnomalyCase[]; status: "resolved" | "dismissed"; resolution: string },
+): Promise<{ closed: number; ruleCode: string }> {
+  const resolution = input.resolution.trim()
+  if (!resolution) throw new Error("Debes indicar el motivo para resolver o descartar los casos")
+  return db.transaction(async (tx) => {
+    const rows = await lockExpectedCases(tx, session, input.cases)
+    const ruleCodes = new Set(rows.map((row) => row.ruleCode))
+    if (ruleCodes.size !== 1) throw new Error("Para resolver o descartar en lote, elige casos de una misma causa")
+    const [ruleCode] = [...ruleCodes] as [string]
+    if (input.status === "resolved") {
+      const notTaken = rows.filter((row) => row.status !== "in_review").length
+      if (notTaken > 0) {
+        throw new Error(notTaken === 1 ? "Toma primero el caso sin tomar: sólo un caso tomado se puede resolver" : `Toma primero los ${notTaken} casos sin tomar: sólo un caso tomado se puede resolver`)
+      }
+    }
+    const kind: MeterResolutionKind | undefined = requiresMeterResolutionKind(ruleCode) ? "lectura_corregida" : undefined
+    for (const row of rows) await transitionLockedCase(tx, session, row, input.status, resolution, kind)
+    return { closed: rows.length, ruleCode }
+  })
 }
 
 /** Inserción interna para flujos que ya bloquearon y autorizaron el caso. */

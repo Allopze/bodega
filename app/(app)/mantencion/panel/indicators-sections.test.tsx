@@ -20,22 +20,30 @@ vi.mock("@/components/charts/bar-ranking-chart-lazy", () => ({
     </div>
   ),
 }))
+// Cada gráfico de evolución expone la granularidad y el pie (`scopeNote`) y la nota del Excel que recibe.
+type SeriesChartProps = { granularity: string; scopeNote: string; excel?: { notes?: string[] } }
+const seriesChart = (testId: string, props: SeriesChartProps) => (
+  <div data-testid={testId} data-granularity={props.granularity} data-note={props.scopeNote} data-excel-note={props.excel?.notes?.[0] ?? ""} />
+)
 vi.mock("./indicators-charts-lazy", () => ({
-  WorkOrderFlowChart: () => <div data-testid="chart-flow" />,
-  WorkOrderMixChart: () => <div data-testid="chart-mix" />,
-  RecordsKindChart: () => <div data-testid="chart-records" />,
-  OutOfServiceChart: () => <div data-testid="chart-days" />,
+  WorkOrderFlowChart: (props: SeriesChartProps) => seriesChart("chart-flow", props),
+  WorkOrderMixChart: (props: SeriesChartProps) => seriesChart("chart-mix", props),
+  RecordsKindChart: (props: SeriesChartProps) => seriesChart("chart-records", props),
+  OutOfServiceChart: (props: SeriesChartProps) => seriesChart("chart-days", props),
 }))
 vi.mock("@/components/charts/chart-data-export", () => ({ ChartDataExport: () => null }))
 
 import { PautasSection, WorkOrdersSection } from "./indicators-sections"
 
+// Un mes (1–13 nov) con la ventana de los gráficos de seis meses: las series usan `chart`, lo demás el período.
 const common = {
-  from: "2026-09-01",
+  from: "2026-11-01",
   to: "2026-11-13",
-  granularity: "month" as const,
+  granularity: "day" as const,
+  chart: { from: "2026-06-01", to: "2026-11-13", granularity: "month" as const, isHistory: true },
+  chartNote: "Últimos 6 meses, hasta noviembre de 2026 · todas las faenas",
   worksiteId: null,
-  scopeNote: "01-09-2026 al 13-11-2026 · todas las faenas",
+  scopeNote: "01-11-2026 al 13-11-2026 · todas las faenas",
   canExport: false,
 }
 
@@ -46,10 +54,44 @@ const counts = (over: Partial<Record<MantEquipmentState, number>> = {}): Record<
   vencida: 0, proxima: 0, al_dia: 0, sin_lecturas: 0, sin_pauta: 0, baja: 0, ...over,
 })
 
+describe("ventana de los gráficos de evolución", () => {
+  it("las series usan la granularidad y el pie de la ventana (también en la nota del Excel); lo de hoy y los rankings, el período", () => {
+    const { container } = render(
+      <>
+        <WorkOrdersSection
+          {...common}
+          canExport
+          series={[point("2026-10", { created: 3, closed: 1, backlog: 2 }), point("2026-11", { created: 2, repairOnly: 2, partial: true })]}
+          stats={{ closed: 4, closedPrevious: 2, mttrHours: 27, repairClosed: 3, cost: 150_000 }}
+          byStatus={[{ status: "solicitada", count: 2 }]}
+        />
+        <PautasSection
+          {...common}
+          canExport
+          pautas={{ counts: counts({ al_dia: 2 }), total: 2, inWorkshop: 0, inWorkshopByOrder: 0 }}
+          records={{ points: [{ key: "2026-11", preventive: 1, corrective: 0, partial: true }], preventive: 1, preventivePrevious: 0 }}
+          outOfService={{ points: [{ key: "2026-11", days: 1, partial: true }], total: 1, totalPrevious: 0 }}
+          ranking={[{ vehicleId: "v1", code: "KA-1", plate: "AAAA-01", count: 3 }]}
+          showRanking
+        />
+      </>,
+    )
+    for (const id of ["chart-flow", "chart-mix", "chart-records", "chart-days"]) {
+      const chart = screen.getByTestId(id)
+      expect(chart.getAttribute("data-granularity")).toBe("month")
+      expect(chart.getAttribute("data-note")).toBe(common.chartNote)
+      expect(chart.getAttribute("data-excel-note")).toBe(common.chartNote)
+    }
+    // El ranking sigue diciendo el período, no la ventana (su descripción y su tabla «Ver datos» van con `scopeNote`).
+    expect(container.textContent).toContain(common.scopeNote)
+    expect(container.textContent).not.toContain("Últimos 6 meses")
+  })
+})
+
 describe("WorkOrdersSection", () => {
   const stats = { closed: 4, closedPrevious: 2, mttrHours: 27, repairClosed: 3, cost: 150_000 }
 
-  it("una tira de cuatro cifras con enlace a /mantencion/ot, variación en texto y sin tiles ni enums crudos", () => {
+  it("una tira de cifras con enlace a /mantencion/ot, variación en texto y sin tiles ni enums crudos", () => {
     const { container } = render(
       <WorkOrdersSection
         {...common}
@@ -61,20 +103,21 @@ describe("WorkOrdersSection", () => {
     const region = screen.getByRole("region", { name: "Órdenes de trabajo" })
     expect(container.querySelectorAll("[data-kpi-card]")).toHaveLength(0)
     const strip = within(region).getAllByRole("link").filter((link) => (link.getAttribute("href") ?? "").startsWith("/mantencion/ot?") && /OT abiertas|OT cerradas|Tiempo medio|Mano de obra/.test(link.textContent ?? ""))
-    expect(strip).toHaveLength(4)
-    const abiertas = within(region).getByRole("link", { name: /^OT abiertas/ })
-    expect(abiertas.getAttribute("href")).toBe("/mantencion/ot?estado=abiertas")
-    // Las órdenes por asignar van en la franja «Hoy» del Panel, no repetidas en esta cifra (A5).
-    expect(abiertas.textContent).not.toContain("por asignar")
+    // Las OT abiertas son el total del gráfico por estado: su cifra va en el titular del gráfico, no repetida en la tira (A5).
+    expect(strip).toHaveLength(3)
+    expect(within(region).queryByRole("link", { name: /^OT abiertas/ })).toBeNull()
+    expect(within(region).getByText("de 3 OT abiertas están en «Por asignar», la etapa con más")).toBeTruthy()
+    expect(within(region).getByRole("link", { name: /^Órdenes de trabajo/ }).getAttribute("href")).toBe("/mantencion/ot?estado=abiertas")
     // 4 vs 2 cerradas: +100 %, como texto junto a la cifra.
     expect(within(region).getByRole("link", { name: /^OT cerradas en el período/ }).textContent).toContain("+100 % vs. período anterior")
     expect(within(region).getByText("27 h")).toBeTruthy()
-    // Los estados son un gráfico de barras en el orden del flujo, con su color y su enlace; en español, no el enum.
+    // Los estados son un gráfico de barras en el orden del flujo, con su enlace; en español, no el enum.
     const chart = within(region).getByRole("img", { name: /^OT abiertas hoy por estado/ })
     expect(chart.getAttribute("data-order")).toBe("input")
     expect(within(chart).getByRole("link", { name: "Por asignar" }).getAttribute("href")).toBe("/mantencion/ot?estado=solicitada")
     expect(within(chart).getByText(/En taller/)).toBeTruthy()
-    expect(chart.querySelector("li")?.getAttribute("data-color")).toBeTruthy()
+    // Un solo tono, el de lo pendiente: ninguna etapa abierta sale en el verde de lo terminado (paso 5).
+    expect([...chart.querySelectorAll("li")].map((item) => item.getAttribute("data-color"))).toEqual(["var(--color-signal)", "var(--color-signal)"])
     expect(region.textContent).not.toMatch(/solicitada|en_ejecucion/)
     expect(screen.getByTestId("chart-flow")).toBeTruthy()
     expect(screen.getByTestId("chart-mix")).toBeTruthy()
@@ -85,7 +128,7 @@ describe("WorkOrdersSection", () => {
       <WorkOrdersSection {...common} worksiteId="ws-1" series={[point("2026-11", { created: 1 })]} stats={stats} byStatus={[{ status: "solicitada", count: 1 }]} />,
     )
     const region = screen.getByRole("region", { name: "Órdenes de trabajo" })
-    for (const name of [/^OT abiertas/, /^OT cerradas en el período/, /^Tiempo medio/, /^Mano de obra/]) {
+    for (const name of [/^OT cerradas en el período/, /^Tiempo medio/, /^Mano de obra/]) {
       expect(within(region).getByRole("link", { name }).getAttribute("href")).toContain("faena=ws-1")
     }
     expect(within(region).getByRole("link", { name: "Por asignar" }).getAttribute("href")).toContain("faena=ws-1")
@@ -107,9 +150,17 @@ describe("WorkOrdersSection", () => {
       <WorkOrdersSection {...common} series={null} stats={null} byStatus={[{ status: "asignada", count: 2 }]} />,
     )
     expect(screen.getAllByText("Sin dato")).toHaveLength(3)
-    expect(screen.getByRole("link", { name: /^OT abiertas/ }).textContent).toContain("2")
+    expect(screen.getByText("OT abiertas, todas en «Asignada»")).toBeTruthy()
     expect(screen.queryByTestId("chart-flow")).toBeNull()
     expect(within(screen.getByRole("img", { name: /^OT abiertas hoy por estado/ })).getByText(/Asignada/)).toBeTruthy()
+  })
+
+  it("sin el gráfico por estado, la cifra de OT abiertas vuelve a la tira", () => {
+    render(<WorkOrdersSection {...common} series={[point("2026-11", { created: 1 })]} stats={stats} byStatus={null} />)
+    const abiertas = screen.getByRole("link", { name: /^OT abiertas/ })
+    expect(abiertas.textContent).toContain("Sin dato")
+    expect(abiertas.getAttribute("href")).toBe("/mantencion/ot?estado=abiertas")
+    expect(screen.queryByRole("img", { name: /^OT abiertas hoy por estado/ })).toBeNull()
   })
 
   it("sin cierres en el período la cifra dice qué falta en vez de un cero", () => {
@@ -117,13 +168,26 @@ describe("WorkOrdersSection", () => {
       <WorkOrdersSection {...common} series={[point("2026-11", { created: 1, backlog: 1 })] } stats={{ closed: 0, closedPrevious: 0, mttrHours: null, repairClosed: 0, cost: null }} byStatus={[{ status: "solicitada", count: 1 }]} />,
     )
     expect(screen.getByText("Ninguna OT se cerró en el período")).toBeTruthy()
-    expect(screen.getByText("Las OT cerradas no traen costo cargado")).toBeTruthy()
+    // «Sin dato» es una consulta que falló; sin cierres, el costo dice por qué no hay cifra (crítica 2026-11-15).
+    const costo = screen.getByRole("link", { name: /^Mano de obra y taller/ })
+    expect(costo.textContent).toContain("Sin OT cerradas")
+    expect(costo.textContent).not.toContain("Sin dato")
+    expect(screen.getByRole("link", { name: /^Tiempo medio de reparación/ }).textContent).toContain("Sin reparaciones")
+  })
+
+  it("con OT cerradas sin costo cargado, la cifra dice cuántas y dónde se carga", () => {
+    render(
+      <WorkOrdersSection {...common} series={[point("2026-11", { created: 1, closed: 3 })]} stats={{ closed: 3, closedPrevious: 0, mttrHours: 12, repairClosed: 3, cost: null }} byStatus={[{ status: "solicitada", count: 1 }]} />,
+    )
+    const costo = screen.getByRole("link", { name: /^Mano de obra y taller/ })
+    expect(costo.textContent).toContain("Sin costo cargado")
+    expect(costo.textContent).toContain("Ninguna de las 3 OT cerradas trae costo")
   })
 })
 
 describe("PautasSection", () => {
   const base = {
-    pautas: { counts: counts({ vencida: 2, proxima: 1, al_dia: 5, sin_lecturas: 2, sin_pauta: 3, baja: 1 }), total: 14, inWorkshop: 1 },
+    pautas: { counts: counts({ vencida: 2, proxima: 1, al_dia: 5, sin_lecturas: 2, sin_pauta: 3, baja: 1 }), total: 14, inWorkshop: 1, inWorkshopByOrder: 1 },
     records: { points: [{ key: "2026-11", preventive: 3, corrective: 1, partial: true }], preventive: 3, preventivePrevious: 2 },
     outOfService: { points: [{ key: "2026-11", days: 4.5, partial: true }], total: 4.5, totalPrevious: 3 },
     ranking: [{ vehicleId: "v1", code: "KA-1", plate: "AAAA-01", count: 3 }],
@@ -151,7 +215,7 @@ describe("PautasSection", () => {
     expect(within(pautas).getByRole("link", { name: "Vencida" }).getAttribute("href")).toBe("/mantencion/equipos?estado=vencida")
     const ranking = within(region).getByRole("img", { name: /^Equipos con más órdenes de trabajo de reparación/ })
     expect(ranking.getAttribute("data-order")).toBe("desc")
-    expect(within(ranking).getByRole("link", { name: "KA-1 · AAAA-01" }).getAttribute("href")).toBe("/mantencion/equipos/v1")
+    expect(within(ranking).getByRole("link", { name: "KA-1 · AAAA-01" }).getAttribute("href")).toBe("/flota/v1/mantencion")
     expect(region.textContent).toContain("Sin pauta")
     expect(region.textContent).not.toMatch(/sin_pauta|sin_lecturas/)
   })
@@ -192,7 +256,7 @@ describe("PautasSection", () => {
     const { container } = render(
       <PautasSection
         {...common}
-        pautas={{ counts: counts(), total: 0, inWorkshop: 0 }}
+        pautas={{ counts: counts(), total: 0, inWorkshop: 0, inWorkshopByOrder: 0 }}
         records={{ points: [{ key: "2026-11", preventive: 0, corrective: 0, partial: true }], preventive: 0, preventivePrevious: 0 }}
         outOfService={{ points: [{ key: "2026-11", days: 0, partial: true }], total: 0, totalPrevious: 0 }}
         ranking={[]}
@@ -206,7 +270,7 @@ describe("PautasSection", () => {
   })
 
   it("sin equipos con pauta el porcentaje no se inventa: la cifra dice qué falta", () => {
-    render(<PautasSection {...common} {...base} pautas={{ counts: counts({ sin_pauta: 4 }), total: 4, inWorkshop: 0 }} showRanking />)
+    render(<PautasSection {...common} {...base} pautas={{ counts: counts({ sin_pauta: 4 }), total: 4, inWorkshop: 0, inWorkshopByOrder: 0 }} showRanking />)
     expect(screen.getByText("Aún no hay equipos con pauta")).toBeTruthy()
   })
 })

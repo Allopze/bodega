@@ -1,4 +1,5 @@
 import { FUEL_CARRY_PARAMS } from "@/lib/combustibles/period/types"
+import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 /**
  * URL del módulo de Combustible. Una sola fuente para el menú, los enlaces, las
@@ -64,9 +65,12 @@ export function fuelLoadHrefFromEquipmentLoad(load: {
   return load.taeSubmissionId ? fuelLoadHref({ origen: "terreno", id: load.taeSubmissionId }) : null
 }
 
-/** Ficha de equipo; `vehicleId` es el id de `fuel_vehicles`. */
+/**
+ * Pestaña «Combustible» de la ficha única del vehículo (`vehicleId` es el id de `fuel_vehicles`).
+ * Era `/combustibles/consumo/equipos/[id]`, que ahora redirige ahí (crítica 2026-11-15, paso 4a).
+ */
 export function fuelEquipmentHref(vehicleId: string): string {
-  return `${FUEL_PATHS.consumo}/equipos/${encodeURIComponent(vehicleId)}`
+  return vehicleFichaHref(vehicleId, "combustible")
 }
 
 export function fuelStatementHref(statementId: string): string {

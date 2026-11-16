@@ -23,6 +23,10 @@ import { formatCompactQty, formatQty } from "@/lib/utils"
  *   teclado) y la barra navega al hacer clic.
  * - Bajo 360 px de pantalla se reemplaza por el mismo ranking como `RankedList`
  *   (`DenseChart`), que conserva los enlaces.
+ * - Con enlaces, el gráfico es un grupo con nombre y no una imagen: `role="img"` oculta
+ *   sus hijos a los lectores de pantalla y un enlace adentro es un control anidado (axe
+ *   `nested-interactive`; crítica de Control operacional 2026-11-15, paso 6). Sin enlaces
+ *   sigue siendo una imagen con nombre, y «Ver datos» trae las cifras.
  */
 
 export interface BarRankingItem {
@@ -103,9 +107,11 @@ export function BarRankingChart({
       <ChartContainer
         config={config}
         className="aspect-auto w-full"
-        style={{ height: Math.max(120, data.length * ROW_HEIGHT + 24) }}
-        role="img"
-        aria-label={`${ariaLabel}; «Ver datos» trae las cifras exactas`}
+        // El mínimo cubre un ranking de una fila; con 120 px, uno de dos filas separaba sus barras más que
+        // el de cuatro de al lado (crítica 2026-11-15, «Uso por faena» en km y en horas).
+        style={{ height: Math.max(72, data.length * ROW_HEIGHT + 24) }}
+        role={clickable ? "group" : "img"}
+        aria-label={clickable ? ariaLabel : `${ariaLabel}; «Ver datos» trae las cifras exactas`}
       >
         <BarChart data={data} layout="vertical" margin={{ top: 0, right: 88, left: 0, bottom: 0 }}>
           <CartesianGrid horizontal={false} strokeDasharray="2 5" />
@@ -125,9 +131,12 @@ export function BarRankingChart({
                   {value}
                 </text>
               )
+              // El enlace cubre la fila entera del rótulo (su ancho y el alto de la fila), no sólo los
+              // 12 px del texto: es el objetivo que se toca en móvil (crítica 2026-11-15, paso 6).
               return row?.href ? (
                 <a href={row.href} onClick={go(row.href)} className="cursor-pointer hover:underline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]">
                   <title>{row.label}</title>
+                  <rect x={Number(x ?? 0) - labelWidth} y={Number(y ?? 0) - ROW_HEIGHT / 2} width={labelWidth} height={ROW_HEIGHT} fill="transparent" />
                   {text}
                 </a>
               ) : (

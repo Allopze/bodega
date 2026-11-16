@@ -14,6 +14,7 @@ import { brandAndModel, EQUIPMENT_STATE_LABEL, formatNumber, formatReading, plur
 import { matchesEquipmentSearch, type EquipmentListRow } from "@/lib/services/mantencion/equipment-list"
 import { formatDate } from "@/lib/utils"
 import { EquipmentStateBadge } from "../shared/equipment-state-badge"
+import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 /** Cuántos equipos se agregan cada vez que se pide «Mostrar … más» (§10). */
 export const EQUIPMENT_PAGE = 50
@@ -152,7 +153,7 @@ export function EquipmentTable({ rows, canManage, canViewGps = true, filtered, p
         {shown.map((row) => (
           <li key={row.id}>
             <Link
-              href={`/mantencion/equipos/${row.id}`}
+              href={vehicleFichaHref(row.id, "mantencion")}
               className="flex min-h-11 flex-col gap-1.5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors duration-(--duration-fast) hover:bg-[var(--color-surface-2)]"
             >
               <span className="flex items-baseline justify-between gap-3">
@@ -197,7 +198,7 @@ export function EquipmentTable({ rows, canManage, canViewGps = true, filtered, p
               <TableRow key={row.id} className={row.state === "baja" ? "bg-[var(--color-surface-2)]/60" : undefined}>
                 <TableCell className="whitespace-nowrap">
                   {/* El mismo «código, y debajo tipo · patente» de todo el área; el enlace conserva el código como nombre. */}
-                  <VehicleIdentity code={row.code} plate={row.showPlate ? row.plate : row.noPlate ? "Sin patente" : null} type={row.typeName} href={`/mantencion/equipos/${row.id}`} linkLabel={row.code} />
+                  <VehicleIdentity code={row.code} plate={row.showPlate ? row.plate : row.noPlate ? "Sin patente" : null} type={row.typeName} href={vehicleFichaHref(row.id, "mantencion")} linkLabel={row.code} />
                 </TableCell>
                 <TableCell>
                   {[brandAndModel(row.brandName, row.model), row.year].filter(Boolean).join(" · ") || <span className="text-[var(--color-text-subtle)]">—</span>}

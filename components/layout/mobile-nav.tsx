@@ -133,7 +133,7 @@ function AreaAccordion({
   if (area.items.length === 1) {
     return (
       <div className={cn(!first && "mt-4")}>
-        <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} onNavigate={onNavigate} />
+        <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} onNavigate={onNavigate} collapseInactiveGroups />
       </div>
     )
   }
@@ -154,7 +154,7 @@ function AreaAccordion({
       </Collapsible.Trigger>
       <Collapsible.Content className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
         <div className="pb-1 pl-1">
-          <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} onNavigate={onNavigate} />
+          <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} onNavigate={onNavigate} collapseInactiveGroups />
         </div>
       </Collapsible.Content>
     </Collapsible.Root>

@@ -14,6 +14,30 @@ import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 export const FUEL_INBOX_KINDS = ["carga", "caso", "patente", "pedido"] as const
 export type FuelInboxKind = (typeof FUEL_INBOX_KINDS)[number]
 
+/**
+ * Lo que una persona decide ahora: una carga cuenta o no, una patente se
+ * vincula, un pedido se revisa. Los casos abiertos son **seguimiento**: en prod
+ * son mayormente de meses cerrados, y sumarlos escondía las cargas del mes
+ * detrás de un total casi todo histórico (auditoría 2026-11-13, P2).
+ *
+ * Es la definición de «por revisar» en toda el área (decisión del usuario,
+ * crítica 2026-11-15): el tile del Panel operacional, el contador del menú, el
+ * paso 2 del Panel de combustible y la pestaña «Por decidir» de la bandeja
+ * cuentan exactamente estos tipos.
+ */
+export const FUEL_INBOX_ACTION_KINDS = ["carga", "patente", "pedido"] as const satisfies readonly FuelInboxKind[]
+
+/** Suma de lo que se decide ahora; `null` si la consulta de uno de esos tipos falló (nunca un total parcial). */
+export function fuelInboxToDecide(byKind: Record<FuelInboxKind, number | null>): number | null {
+  let sum = 0
+  for (const kind of FUEL_INBOX_ACTION_KINDS) {
+    const n = byKind[kind]
+    if (n === null) return null
+    sum += n
+  }
+  return sum
+}
+
 export const FUEL_INBOX_KIND_LABELS: Record<FuelInboxKind, string> = {
   carga: "Cargas por decidir",
   caso: "Casos",
@@ -60,11 +84,60 @@ export interface FuelInboxRow {
   canAct: boolean
 }
 
+/** Estado de un caso que todavía espera a una persona. */
+export type FuelInboxOpenCaseStatus = "open" | "in_review" | "reopened"
+
+/** Un caso dentro de un grupo de «En seguimiento»: su fila de siempre y lo que el lote necesita para no pisar un cambio ajeno. */
+export interface FuelInboxCaseMember {
+  row: FuelInboxRow
+  status: FuelInboxOpenCaseStatus
+  assigneeId: string | null
+}
+
+/**
+ * «En seguimiento» por equipo y causa (crítica 2026-11-15, paso 4c): los casos abiertos de un
+ * equipo por una misma regla, en una faena. En bodega_dev eran 330 casos en 123 grupos, con
+ * hasta 14 casos del mismo equipo por la misma causa: decidirlos de a uno era repetir lo mismo.
+ */
+export interface FuelInboxCaseGroup {
+  /** `caseGroupKey(faena, equipo, regla)`. */
+  key: string
+  ruleCode: string
+  ruleLabel: string
+  equipmentLabel: string
+  vehicleId: string | null
+  worksiteName: string | null
+  /** La más alta del grupo. */
+  severity: "low" | "medium" | "high" | "critical" | null
+  /** La fecha límite más próxima del grupo y desde cuándo espera el más antiguo. */
+  dueDate: string
+  waitingSince: string
+  /** Primer y último mes ("YYYY-MM") de los datos del grupo. */
+  firstMonth: string
+  lastMonth: string
+  /** Ordenados como la lista de siempre: fecha límite y, a igual fecha, lo que más espera. */
+  members: FuelInboxCaseMember[]
+}
+
+export interface FuelInboxCaseGroupPage {
+  groups: FuelInboxCaseGroup[]
+  totalGroups: number
+  totalCases: number
+  page: number
+  pageSize: number
+}
+
+export function caseGroupKey(worksiteId: string | null, vehicleId: string | null, ruleCode: string): string {
+  return `${worksiteId ?? "-"}|${vehicleId ?? "-"}|${ruleCode}`
+}
+
 export type FuelInboxView = "pendientes" | "decididas"
 
 export interface FuelInboxFilters {
   view: FuelInboxView
   kind?: FuelInboxKind
+  /** Sin `kind`, los tipos que entran (la pestaña «Por decidir» pasa `FUEL_INBOX_ACTION_KINDS`); sin ninguno de los dos, todos. */
+  kinds?: readonly FuelInboxKind[]
   worksiteId?: string
   /** En «Decididas»: `cuenta` / `no-cuenta` para cargas. */
   decision?: string
@@ -85,6 +158,8 @@ export interface FuelInboxSummary {
   byKind: Record<FuelInboxKind, number | null>
   /** Instante ISO del pendiente más antiguo. */
   oldestWaitingSince: string | null
+  /** Lo mismo por tipo: «lo más antiguo por decidir» no debe ser un caso de hace tres meses. */
+  oldestByKind: Record<FuelInboxKind, string | null>
   /** Conteo por regla y producto; `null` indica que no se pudo calcular. */
   caseBreakdown?: FuelInboxCaseBreakdownItem[] | null
 }

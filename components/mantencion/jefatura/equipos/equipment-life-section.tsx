@@ -5,7 +5,7 @@ import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { executorText, formatHours, formatNumber, formatReading, plural, recordKindText } from "@/lib/mantencion/format"
 import type { LifeRow, LifeTotals, LifeWorkOrders } from "@/lib/services/mantencion/equipment-life"
-import { formatDate, formatDateTime } from "@/lib/utils"
+import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { MetaBadge } from "@/components/states/state-badge"
 import { OT_STATE_META, workOrderTypeText } from "../ot/ot-labels"
 import { RecordStatusBadges } from "../shared/record-badges"
@@ -20,6 +20,13 @@ export interface EquipmentLifeData {
   /** Órdenes de trabajo del equipo. `null` (o ausente) = sin permiso de OT: la sección no se dibuja. */
   workOrders?: LifeWorkOrders | null
   historical?: { total: number; vehicleId: string }
+  /**
+   * Rendimiento del log de combustible 30 días antes y después de la salida de taller de cada OT
+   * cerrada (`getWorkOrderConsumptionImpact`). Ausente sin `combustibles:view` o si el equipo no
+   * mide rendimiento: la columna no se dibuja. Antes vivía en la ficha de Flota, con su propia
+   * lista de OT; ahora la lista es una sola.
+   */
+  workOrderImpact?: { unit: string; byWorkOrder: Record<string, { before: number | null; after: number | null }> } | null
 }
 
 export const LIFE_PAGE_SIZE = 20
@@ -160,9 +167,19 @@ function stayText(row: LifeWorkOrders["rows"][number]): string {
  * historia del taller; aquélla, de lo que se firmó. Sólo se dibuja para quien
  * tiene permiso de OT (`null` = sin permiso).
  */
-function EquipmentWorkOrdersSection({ workOrders, code }: { workOrders: LifeWorkOrders | null; code: string }) {
+/** «2,41 → 2,63 km/L»; `null` si la OT no tiene datos de antes ni de después. */
+function impactText(impact: EquipmentLifeData["workOrderImpact"], workOrderId: string): string | null {
+  const entry = impact?.byWorkOrder[workOrderId]
+  if (!entry || (entry.before == null && entry.after == null)) return null
+  const value = (n: number | null) => (n == null ? "—" : formatQty(n, undefined, { maximumFractionDigits: 2 }))
+  return `${value(entry.before)} → ${value(entry.after)} ${impact!.unit}`
+}
+
+function EquipmentWorkOrdersSection({ workOrders, code, impact }: { workOrders: LifeWorkOrders | null; code: string; impact?: EquipmentLifeData["workOrderImpact"] }) {
   if (!workOrders) return null
   const { rows, total } = workOrders
+  // La columna sólo existe si alguna OT cerrada tiene rendimiento que comparar.
+  const showImpact = rows.some((row) => impactText(impact, row.id) !== null)
   return (
     <SectionCard
       title="Órdenes de trabajo"
@@ -201,6 +218,11 @@ function EquipmentWorkOrdersSection({ workOrders, code }: { workOrders: LifeWork
                   </span>
                 </ResponsiveDataListField>
                 <ResponsiveDataListField label="Días en taller">{stayText(row)}</ResponsiveDataListField>
+                {showImpact && impactText(impact, row.id) ? (
+                  <ResponsiveDataListField label="Rendimiento antes → después">
+                    <span className="font-mono tabular-nums">{impactText(impact, row.id)}</span>
+                  </ResponsiveDataListField>
+                ) : null}
               </ResponsiveDataListCard>
             </li>
           ))}
@@ -214,6 +236,7 @@ function EquipmentWorkOrdersSection({ workOrders, code }: { workOrders: LifeWork
                 <TableHead>Estado</TableHead>
                 <TableHead>Ingreso → salida</TableHead>
                 <TableHead>Días en taller</TableHead>
+                {showImpact ? <TableHead title="Rendimiento promedio del log de combustible 30 días antes y 30 días después de la salida de taller">Rendimiento antes → después</TableHead> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -232,6 +255,11 @@ function EquipmentWorkOrdersSection({ workOrders, code }: { workOrders: LifeWork
                       : <span className="text-[var(--color-text-muted)]">Pedida el {formatDate(row.requestDate)}</span>}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-xs">{stayText(row)}</TableCell>
+                  {showImpact ? (
+                    <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">
+                      {impactText(impact, row.id) ?? <span className="text-[var(--color-text-muted)]">—</span>}
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               ))}
             </TableBody>
@@ -254,7 +282,7 @@ export function EquipmentLifeSection({ life, code }: { life: EquipmentLifeData; 
       {!!life.historical?.total && <SectionCard title="Historial anterior" description={`${plural(life.historical.total, "trabajo registrado", "trabajos registrados")} en formularios anteriores`}>
         <Link href={`/mantencion/registros/historicos?equipo=${encodeURIComponent(life.historical.vehicleId)}`} className="text-sm font-semibold text-[var(--color-primary-ink)] hover:underline">Ver el historial anterior de este equipo</Link>
       </SectionCard>}
-      <EquipmentWorkOrdersSection workOrders={life.workOrders ?? null} code={code} />
+      <EquipmentWorkOrdersSection workOrders={life.workOrders ?? null} code={code} impact={life.workOrderImpact} />
     </div>
   )
 }

@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { can, requirePermission } from "@/lib/auth/can"
 import { getSparePartDetail } from "@/lib/services/spare-parts-catalog"
 import { loadSparePartUnits } from "../unit-options"
+import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 export const metadata: Metadata = { title: "Ficha de repuesto" }
 export const dynamic = "force-dynamic"
@@ -34,14 +35,14 @@ export default async function SparePartDetailPage({ params }: { params: Promise<
   if (!detail) notFound()
   const { part, suppliers, priceHistory, purchasedFor, recentLines } = detail
 
-  // Cada enlace sólo se ofrece a quien puede abrir su destino. El equipo se abre en Flota o, a falta de ese
-  // permiso, en la ficha de Mantención; sin ninguno de los dos va como texto.
+  // Cada enlace sólo se ofrece a quien puede abrir su destino. El equipo se abre en la ficha del vehículo: en
+  // su Resumen con Flota o, a falta de ese permiso, en su pestaña Mantención; sin ninguno de los dos va como texto.
   const canOpenFleet = can(session, "flota:view")
   const canOpenMaintenanceEquipment = can(session, "mant:records:view_worksite") || can(session, "mant:records:view_all") || can(session, "mant:equipment:manage")
   const access: SparePartLinkAccess = {
     vehicleHref: canOpenFleet
-      ? (vehicleId) => `/flota/${vehicleId}`
-      : canOpenMaintenanceEquipment ? (vehicleId) => `/mantencion/equipos/${vehicleId}` : null,
+      ? (vehicleId) => vehicleFichaHref(vehicleId)
+      : canOpenMaintenanceEquipment ? (vehicleId) => vehicleFichaHref(vehicleId, "mantencion") : null,
     canOpenRequests: can(session, "repuestos:view_all"),
     canOpenOrders: can(session, "purchasing:view"),
     // Con el repuesto ya elegido en el pedido; uno inactivo no se ofrece al pedir.

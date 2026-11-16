@@ -4,10 +4,12 @@ import { Callout } from "@/components/ui/callout"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { IndicatorFilters } from "@/components/dashboard/indicator-filters"
+import { PeriodControl } from "@/components/ui/period-control"
+import { BoardExportButton } from "@/components/dashboard/board-export-button"
+import { BoardHeaderActions } from "@/components/dashboard/board-scope"
 import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { DEFAULT_RANGE_LABEL, defaultIndicatorRange, resolveIndicatorPeriod } from "@/lib/indicators/period"
+import { chartWindowCaption, DEFAULT_RANGE_LABEL, defaultIndicatorRange, indicatorPeriodLabel, resolveIndicatorPeriod } from "@/lib/indicators/period"
 import { logger } from "@/lib/logger"
 import {
   getGpsDrivingIndicators,
@@ -16,7 +18,8 @@ import {
   type GpsIndicatorsInput,
 } from "@/lib/services/fleet-gps-indicators"
 import { listVisibleWorksites } from "@/lib/services/prevention-indicadores"
-import { DrivingSection, UsageSection } from "./gps-sections"
+import { rangeText } from "./gps-format"
+import { DrivingSection, UsageSection, type GpsExcel } from "./gps-sections"
 
 export const metadata: Metadata = { title: "Indicadores GPS" }
 
@@ -28,13 +31,13 @@ function first(value: string | string[] | undefined): string | undefined {
 
 /**
  * Indicadores GPS: cómo se usó la flota en el período (km y horas de motor) y
- * cómo se condujo (ralentí, viajes, alertas). El Monitoreo GPS sigue siendo la
+ * cómo se condujo (motor en vacío, viajes, alertas). El Monitoreo GPS sigue siendo la
  * pantalla de «qué pasa ahora»; ésta contesta «cómo nos fue».
  *
  * Cada consulta degrada sola: si una falla, su bloque no se pinta y el aviso de
  * arriba lo dice, en vez de tumbar la página o mostrar ceros que parecen datos.
- * «Ralentí y conducción» es historial de recorridos y exige
- * `flota:view_gps_history`; su gráfico de ralentí, además, `combustibles:view`
+ * «Motor en vacío y conducción» es historial de recorridos y exige
+ * `flota:view_gps_history`; su gráfico de motor en vacío, además, `combustibles:view`
  * (el permiso de la pantalla a la que remite).
  */
 export default async function GpsIndicatorsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
@@ -54,9 +57,20 @@ export default async function GpsIndicatorsPage({ searchParams }: { searchParams
     to: period.to,
     previous: period.previous,
     granularity: period.granularity,
+    // Los gráficos de evolución miran los seis meses que terminan en el período cuando éste es corto.
+    chart: period.chart,
     ...(worksiteId ? { worksiteId } : {}),
   }
   const canViewHistory = can(session, "flota:view_gps_history")
+  // Exportar es opt-in con el permiso de exportar de Flota: ver una cifra no da la descarga.
+  const canExport = can(session, "flota:export")
+  const scopeName = worksites.find((worksite) => worksite.id === worksiteId)?.name ?? (worksites.length === 1 ? worksites[0]!.name : "Todas las faenas")
+  const excel: GpsExcel | undefined = canExport
+    ? {
+        scope: { permission: "flota:export", notes: [`${rangeText(period)} · ${scopeName}`] },
+        chart: { permission: "flota:export", notes: [`${chartWindowCaption(period.chart, rangeText)} · ${scopeName}`] },
+      }
+    : undefined
   const canViewIdle = canViewHistory && can(session, "combustibles:view")
 
   const degraded: string[] = []
@@ -72,7 +86,7 @@ export default async function GpsIndicatorsPage({ searchParams }: { searchParams
 
   const [usage, idle, driving] = await Promise.all([
     track(getGpsUsageIndicators(session, input), "uso de la flota"),
-    canViewIdle ? track(getGpsIdleIndicators(session, input), "ralentí") : Promise.resolve(null),
+    canViewIdle ? track(getGpsIdleIndicators(session, input), "el motor en vacío") : Promise.resolve(null),
     canViewHistory ? track(getGpsDrivingIndicators(session, input), "viajes y alertas") : Promise.resolve(null),
   ])
 
@@ -80,33 +94,36 @@ export default async function GpsIndicatorsPage({ searchParams }: { searchParams
     <PageContainer>
       <PageHeader
         title="Indicadores GPS"
-        description="Uso de la flota, ralentí y conducción en el período."
+        description="Uso de la flota, motor en vacío y conducción en el período."
         breadcrumb={<Breadcrumbs items={[
           { label: "Control operacional", href: "/control-operacional" },
           { label: "Flota", href: "/flota" },
           { label: "Indicadores" },
         ]} />}
+        // Esqueleto común de los tableros: faena y período primero, después «Exportar Excel» (todas las
+        // tablas «Ver datos» de la pantalla, una hoja por gráfico), con `flota:export`.
+        actions={
+          <BoardHeaderActions
+            worksites={worksites}
+            worksiteId={worksiteId}
+            period={<PeriodControl mode="range" from={period.requested.from} to={period.requested.to} defaultRange={{ ...defaultIndicatorRange(), label: DEFAULT_RANGE_LABEL }} />}
+          >
+            {canExport ? (
+              <BoardExportButton title="Indicadores GPS" range={{ from: period.from, to: period.to }} scope={{ periodo: indicatorPeriodLabel(period.requested, rangeText), faena: scopeName }} />
+            ) : null}
+          </BoardHeaderActions>
+        }
       />
 
-      <div className="mb-4">
-        <IndicatorFilters
-          from={period.from}
-          to={period.to}
-          defaultRange={{ ...defaultIndicatorRange(), label: DEFAULT_RANGE_LABEL }}
-          worksites={worksites}
-          worksiteId={worksiteId}
-        />
-      </div>
-
       {period.invalid && (
-        <Callout tone="warning" className="mb-4">El rango de fechas de la dirección no es válido: se muestran {DEFAULT_RANGE_LABEL}.</Callout>
+        <Callout tone="warning" className="mb-4">El rango de fechas de la dirección no es válido: se muestra {DEFAULT_RANGE_LABEL}.</Callout>
       )}
       <DegradedDataBanner degraded={degraded} total={tracked} />
 
       <div className="space-y-8">
-        {usage && <UsageSection usage={usage} period={period} />}
+        {usage && <UsageSection usage={usage} period={period} excel={excel} />}
         {canViewHistory && (driving || (canViewIdle && idle)) && (
-          <DrivingSection idle={idle} driving={driving} period={period} canViewIdle={canViewIdle} />
+          <DrivingSection idle={idle} driving={driving} period={period} canViewIdle={canViewIdle} excel={excel} />
         )}
       </div>
     </PageContainer>

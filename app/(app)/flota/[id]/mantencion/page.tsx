@@ -1,8 +1,17 @@
 import type { Metadata } from "next"
-import { notFound, redirect } from "next/navigation"
+import { eq } from "drizzle-orm"
+import { db } from "@/db"
+import { fuelVehicles } from "@/db/schema"
+import Link from "next/link"
+import { notFound } from "next/navigation"
 import { EquipmentDetailView } from "@/components/mantencion/jefatura/equipos/equipment-detail-view"
 import type { EquipmentDetailData, EquipmentEditData } from "@/components/mantencion/jefatura/equipos/equipment-detail-types"
-import { can, requireAnyPermission } from "@/lib/auth/can"
+import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
+import { PageContainer } from "@/components/ui/page-container"
+import { PageHeader } from "@/components/ui/page-header"
+import { can } from "@/lib/auth/can"
+import { getWorkOrderConsumptionImpact } from "@/lib/services/fleet"
 import { formatNumber } from "@/lib/mantencion/format"
 import { equipmentScope, recordVisibility, recordVisibilitySql, viewerFromSession } from "@/lib/services/mantencion/access"
 import { countEquipmentRecords } from "@/lib/services/mantencion/equipment"
@@ -15,11 +24,19 @@ import { todayInChile } from "@/lib/utils"
 import { getVehiclePurchaseHistory } from "@/lib/services/vehicle-purchase-history"
 import type { NewOtSheetProps } from "@/components/mantencion/jefatura/ot/new-ot-sheet"
 import { LIFE_PAGE_SIZE } from "@/components/mantencion/jefatura/equipos/equipment-life-section"
-import { loadEquipmentFormCatalogs } from "../form-catalogs"
+import { listSchedules } from "@/lib/services/mantencion/schedules"
+import { PERFORMANCE_UNIT_LABELS } from "@/lib/combustibles/control/contracts"
+import { openVehicleFichaArea } from "../_ficha/access"
+import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaTabs } from "../_ficha/ficha-chrome"
 
-export const metadata: Metadata = { title: "Ficha de equipo" }
+export const metadata: Metadata = { title: "Vehículo · Mantención" }
 export const dynamic = "force-dynamic"
 
+/**
+ * Pestaña «Mantención» de la ficha única del vehículo (crítica 2026-11-15, paso 4a). Era la
+ * ficha de `/mantencion/equipos/[id]`, que ahora redirige aquí. Pide los mismos permisos y el
+ * mismo alcance de faenas que pedía ella (`openVehicleFichaArea`).
+ */
 export default async function EquipmentDetailPage({
   params,
   searchParams,
@@ -27,14 +44,29 @@ export default async function EquipmentDetailPage({
   params: Promise<{ id: string }>
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  let session
-  try {
-    session = await requireAnyPermission(["mant:records:view_worksite", "mant:records:view_all", "mant:equipment:manage"])
-  } catch {
-    redirect("/forbidden")
-  }
-  const viewer = viewerFromSession(session)
   const { id } = await params
+  const { session, ctx } = await openVehicleFichaArea(id, "mantencion")
+  const viewer = viewerFromSession(session)
+  const header = { title: ctx.label, description: vehicleFichaDescription(ctx), breadcrumb: vehicleFichaBreadcrumb(ctx, "mantencion") }
+  const tabs = <VehicleFichaTabs ctx={ctx} active="mantencion" />
+
+  // Un vehículo de la flota que todavía no está en el plan de mantención: la pestaña dice qué
+  // falta y, a quien puede, cómo incorporarlo. Antes la ficha de Flota escondía el botón.
+  if (!ctx.hasMaintenanceProfile) {
+    return (
+      <PageContainer width="workbench">
+        <PageHeader {...header} actions={<VehicleFichaEditAction ctx={ctx} />} />
+        {tabs}
+        <EmptyState
+          title="Este vehículo no está en el plan de mantención"
+          description="Mientras no se incorpore, no tiene pauta, hoja de vida ni aparece en la app del mecánico. Al incorporarlo se elige su pauta y su lectura inicial."
+          action={can(session, "mant:equipment:manage")
+            ? <Button asChild variant="primary" size="sm"><Link href="/mantencion/equipos/incorporar">Incorporar a Mantención</Link></Button>
+            : undefined}
+        />
+      </PageContainer>
+    )
+  }
   const query = await searchParams
   const justCreated = query.creado === "1"
   // «Mostrar más» sube `?vida=`; se acota para que la URL no pida el mundo.
@@ -52,18 +84,24 @@ export default async function EquipmentDetailPage({
   // Las compras vinculadas se ven con `purchasing:view` (cualquier OC) o `repuestos:view_all` (cualquier solicitud);
   // sin ninguna, `null` y la tarjeta no se dibuja, en vez de decir «sin compras».
   const canSeePurchases = can(session, "purchasing:view") || can(session, "repuestos:view_all")
-  const [history, life, totals, insurance, recordCount, catalogs, workOrders, historical, purchases] = await Promise.all([
+  const [history, life, totals, insurance, recordCount, schedules, workOrders, historical, purchases] = await Promise.all([
     listEquipmentHistory(id),
     loadLifeRows(id, visibility, { limit: lifeLimit }),
     loadLifeTotals(id, visibility),
     loadEquipmentInsurance(id),
     countEquipmentRecords(id),
-    canManage ? loadEquipmentFormCatalogs() : Promise.resolve(null),
+    canManage ? listSchedules() : Promise.resolve(null),
     // Las OT tienen su propio alcance (`mant:ot:view_*`); sin permiso, `null` y la sección no se dibuja.
     loadEquipmentWorkOrders(id, viewer),
     listHistoricalRecords(viewer, { vehicleId: id }),
     canSeePurchases ? getVehiclePurchaseHistory(id) : Promise.resolve(null),
   ])
+
+  // El efecto de cada OT cerrada en el rendimiento: dato del log de combustible, con su permiso.
+  const performanceUnit = await vehiclePerformanceUnit(id)
+  const impact = workOrders && can(session, "combustibles:view") && performanceUnit
+    ? await getWorkOrderConsumptionImpact(workOrders.rows.map((row) => ({ id: row.id, status: row.status, workshopExitAt: row.workshopExitAt })))
+    : []
 
   // «Crear orden de trabajo» con este equipo elegido: sólo con permiso de crear y mientras el equipo siga activo.
   // Las mismas reglas que el alta de la lista de órdenes (la jefatura asigna a cualquier mecánico; el administrador
@@ -112,7 +150,17 @@ export default async function EquipmentDetailPage({
     gpsReadingAt: row.gpsReadingAt,
     gpsReadingSource: row.gpsReadingSource,
     recordCount,
-    life: { rows: life.rows, totals, hasMore: life.hasMore, limit: lifeLimit, workOrders, historical: { total: historical.total, vehicleId: id } },
+    life: {
+      rows: life.rows,
+      totals,
+      hasMore: life.hasMore,
+      limit: lifeLimit,
+      workOrders,
+      historical: { total: historical.total, vehicleId: id },
+      workOrderImpact: performanceUnit && impact.length > 0
+        ? { unit: PERFORMANCE_UNIT_LABELS[performanceUnit], byWorkOrder: Object.fromEntries(impact.map((item) => [item.workOrderId, { before: item.avgBefore, after: item.avgAfter }])) }
+        : null,
+    },
     insurance,
     canViewFleet,
     history,
@@ -126,18 +174,11 @@ export default async function EquipmentDetailPage({
     },
   }
 
-  const edit: EquipmentEditData | null = catalogs
+  // «Editar mantención»: pauta, lectura inicial y baja. La identidad se edita en «Editar vehículo».
+  const edit: EquipmentEditData | null = schedules
     ? {
-        catalogs,
+        schedules: schedules.map((item) => ({ id: item.id, name: item.name, unit: item.unit, intervalCount: item.intervals.length })),
         initial: {
-          code: row.code,
-          plate: row.noPlate ? "" : row.plate,
-          noPlate: row.noPlate,
-          equipmentTypeId: row.typeId,
-          brandId: row.brandId,
-          model: row.model ?? "",
-          year: row.year != null ? String(row.year) : "",
-          worksiteId: row.worksiteId,
           scheduleId: row.scheduleId ?? "",
           initialReading: row.initialReading ? formatNumber(row.initialReading.value) : "",
           initialReadingDate: row.initialReading?.date ?? "",
@@ -147,5 +188,25 @@ export default async function EquipmentDetailPage({
       }
     : null
 
-  return <EquipmentDetailView data={data} edit={edit} canSeeSchedules={can(session, "mant:schedules:manage")} canExport={can(session, "mant:export")} justCreated={justCreated} newOrder={newOrder} />
+  return (
+    <EquipmentDetailView
+      data={data}
+      edit={edit}
+      canSeeSchedules={can(session, "mant:schedules:manage")}
+      canExport={can(session, "mant:export")}
+      justCreated={justCreated}
+      newOrder={newOrder}
+      header={header}
+      tabs={tabs}
+      fichaActions={<VehicleFichaEditAction ctx={ctx} />}
+      showInsurance={!ctx.areas.includes("flota")}
+      showIdentity={!ctx.areas.includes("flota")}
+    />
+  )
+}
+
+/** Unidad de rendimiento del vehículo en el padrón (`km/L`, `L/h`); `null` si no mide. */
+async function vehiclePerformanceUnit(vehicleId: string): Promise<"km_per_liter" | "liters_per_hour" | null> {
+  const [row] = await db.select({ unit: fuelVehicles.performanceUnit }).from(fuelVehicles).where(eq(fuelVehicles.id, vehicleId)).limit(1)
+  return row?.unit === "km_per_liter" || row?.unit === "liters_per_hour" ? row.unit : null
 }

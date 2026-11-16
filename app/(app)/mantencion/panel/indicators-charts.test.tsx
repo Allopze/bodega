@@ -30,6 +30,29 @@ describe("gráficos de los Indicadores de mantención", () => {
     expect(screen.getByRole("table", { hidden: true, name: "Órdenes de trabajo: creadas, cerradas y en cola" })).toBeTruthy()
   })
 
+  it("el mes en curso que ya supera a los cerrados se dice, en vez de coronar a uno cerrado más bajo (crítica 2026-11-15, paso 5)", () => {
+    render(
+      <>
+        <OutOfServiceChart
+          {...common}
+          data={[{ key: "2026-09", partial: false, days: 12 }, { key: "2026-10", partial: false, days: 23.8 }, { key: "2026-11", partial: true, days: 58 }]}
+        />
+        <WorkOrderFlowChart
+          {...common}
+          data={[
+            { key: "2026-10", created: 4, closed: 1, backlog: 3, partial: false },
+            { key: "2026-11", created: 9, closed: 0, backlog: 12, partial: true },
+          ]}
+        />
+      </>,
+    )
+    expect(screen.getByText(/días-equipo fuera de servicio en nov 2026, que sigue en curso y ya supera a todos los meses anteriores del gráfico/)).toBeTruthy()
+    expect(screen.queryByText(/el período con más/)).toBeNull()
+    // La cifra del titular es la del mes en curso (también está en «Ver datos»).
+    expect(screen.getAllByText("58").length).toBeGreaterThan(0)
+    expect(screen.getByText(/OT creadas en nov 2026, que sigue en curso y ya supera/)).toBeTruthy()
+  })
+
   it("sin ningún dato cada gráfico devuelve null (su celda se oculta)", () => {
     const empty = [{ key: "2026-11", partial: true }]
     const { container } = render(

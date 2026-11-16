@@ -45,7 +45,8 @@ interface Props {
   total: number
   pagination: PaginationState
   hrefForPage: (page: number) => string
-  clearHref: string
+  /** Sólo con un número de sello o una patente buscados: sin filtro no hay nada que quitar. */
+  clearHref?: string
 }
 
 /** Historial de movimientos de sellos: cada carga validada que retiró o instaló un sello. */
@@ -54,9 +55,11 @@ export function SealHistorySection({ rows, total, pagination, hrefForPage, clear
     return (
       <EmptyState
         compact
-        title="Sin movimientos de sello para estos filtros"
-        description="Sólo aparecen las cargas ya validadas que retiraron o instalaron un sello. Prueba con otro período, faena, patente o número de sello."
-        action={<Button asChild variant="secondary" size="sm"><Link href={clearHref}>Quitar filtros</Link></Button>}
+        title={clearHref ? "Sin movimientos de sello para estos filtros" : "Sin movimientos de sello en el período"}
+        description={clearHref
+          ? "Sólo aparecen las cargas ya validadas que retiraron o instalaron un sello. Prueba con otro período, faena, patente o número de sello."
+          : "Sólo aparecen las cargas ya validadas que retiraron o instalaron un sello. Prueba con otro período o con otra faena."}
+        action={clearHref ? <Button asChild variant="secondary" size="sm"><Link href={clearHref}>Quitar filtros</Link></Button> : undefined}
       />
     )
   }

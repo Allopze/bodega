@@ -26,7 +26,7 @@ export interface InvoiceRow {
   ivaAmount: number
   totalAmount: number
   status: string
-  vehicle: { code: string | null; plate: string } | null
+  vehicle: { code: string | null; plate: string; type?: string | null } | null
   supplierName: string | null
   worksiteName: string | null
 }
@@ -68,6 +68,8 @@ export function InvoicesTable({
           return (
             <ResponsiveDataListCard
               key={row.id}
+              // La lista es el contenido de la página: sus tarjetas cuelgan del h1 (paso 6).
+              headingLevel={2}
               title={<Link href={href}>{invoiceEquipmentLabel(row.vehicle)}</Link>}
               description={`${formatDate(row.loadDate)} · ${row.supplierName ?? "—"} · ${row.worksiteName ?? "—"}`}
               status={<MetaBadge meta={status} />}
@@ -116,8 +118,14 @@ export function InvoicesTable({
                 <TableRow key={row.id}>
                   <TableCell className="whitespace-nowrap font-mono text-sm">{formatDate(row.loadDate)}</TableCell>
                   <TableCell>
-                    {/* El medidor al cargar viaja donde otras tablas ponen el tipo: «120.300 km · AA-BB-11». */}
-                    {row.vehicle ? <VehicleIdentity code={row.vehicle.code} plate={row.vehicle.plate} type={meter} /> : "—"}
+                    {/* La identidad es la de toda el área (código; tipo · patente). El medidor al cargar va en su
+                        propia línea, rotulado: en el lugar del tipo se leía como otro dato del equipo. */}
+                    {row.vehicle ? (
+                      <>
+                        <VehicleIdentity code={row.vehicle.code} plate={row.vehicle.plate} type={row.vehicle.type} />
+                        {meter ? <span className="block whitespace-nowrap text-xs text-[var(--color-text-subtle)]">Medidor: <span className="font-mono tabular-nums">{meter}</span></span> : null}
+                      </>
+                    ) : "—"}
                   </TableCell>
                   <TableCell className="max-w-44 whitespace-nowrap">
                     <span className="block truncate" title={row.supplierName ?? undefined}>{row.supplierName ?? "—"}</span>

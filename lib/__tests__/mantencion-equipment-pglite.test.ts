@@ -27,9 +27,10 @@ vi.mock("@/db", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 
 const {
-  createEquipment, updateEquipment, retireEquipment, reactivateEquipment, NEW_WORKSITE,
+  createEquipment, updateEquipmentPlan, resolveFleetIdentity, applyFleetIdentity, retireEquipment, reactivateEquipment, NEW_WORKSITE,
 } = await import("@/lib/services/mantencion/equipment")
 type EquipmentInput = import("@/lib/services/mantencion/equipment").EquipmentInput
+type FleetIdentityInput = import("@/lib/services/mantencion/equipment").FleetIdentityInput
 const { listEquipmentHistory } = await import("@/lib/services/mantencion/equipment-history")
 const { previewEquipmentImport, commitEquipmentImport, buildEquipmentTemplate, similarName } = await import("@/lib/services/mantencion/equipment-import")
 
@@ -66,6 +67,33 @@ async function createdId(result: Awaited<ReturnType<typeof createEquipment>>): P
 
 let scheduleKm = ""
 let scheduleH = ""
+
+/**
+ * Lo que hace el padrón al guardar un equipo de Mantención (crítica 2026-11-15, paso 4b):
+ * resolver la identidad con las reglas de Mantención, escribir las columnas del vehículo ya
+ * resueltas y dejar el rastro en el perfil. El recorrido completo, con la acción del padrón, lo
+ * cubre `padron-identidad-mantencion-pglite.test.ts`.
+ */
+async function editIdentity(vehicleId: string, overrides: Partial<FleetIdentityInput>, canChangeProfile = true) {
+  return testDb.transaction(async (tx) => {
+    const [vehicle] = await tx.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, vehicleId))
+    if (!vehicle) throw new Error("vehículo de prueba inexistente")
+    const identity: FleetIdentityInput = {
+      code: vehicle.code ?? "", plate: vehicle.plate, equipmentTypeId: vehicle.equipmentTypeId, model: vehicle.model ?? "",
+      year: vehicle.year, worksiteId: vehicle.worksiteId, ...overrides,
+    }
+    const result = await resolveFleetIdentity(tx, vehicleId, identity, { canChangeProfile })
+    if (!result || !result.ok) return result
+    const { resolved } = result
+    await tx.update(schema.fuelVehicles).set({
+      code: resolved.code, plate: resolved.plate, brand: resolved.brand.name, model: resolved.model, year: resolved.year,
+      equipmentTypeId: resolved.type.id, type: resolved.type.slug, worksiteId: resolved.worksite.id!,
+    }).where(eq(schema.fuelVehicles.id, vehicleId))
+    await applyFleetIdentity(tx, actor, result.current, resolved, "padron")
+    return result
+  })
+}
+
 
 beforeAll(async () => {
   await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
@@ -177,37 +205,78 @@ describe("alta", () => {
     expect(await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.code, "KA-504"))).toHaveLength(0)
   })
 
-  it("editar un equipo tampoco crea faenas", async () => {
+  it("editar la identidad desde el padrón tampoco crea faenas", async () => {
     const vehicleId = await createdId(await createEquipment(actor, input({ code: "KA-505", plate: "KLPR-12" })))
     const before = (await testDb.select().from(schema.worksites)).length
-    const result = await updateEquipment(actor, vehicleId, input({ code: "KA-505", plate: "KLPR-12", worksiteId: NEW_WORKSITE, newWorksiteName: "Flor del Laja" }), { active: true, retiredReason: "" })
-    expect(!result.ok && result.fieldErrors.worksiteId).toMatch(/No puedes crear faenas nuevas desde un equipo/)
+    const result = await editIdentity(vehicleId, { worksiteId: NEW_WORKSITE })
+    expect(result && !result.ok && result.fieldErrors.worksiteId).toMatch(/No puedes crear faenas nuevas desde un equipo/)
     expect((await testDb.select().from(schema.worksites)).length).toBe(before)
   })
 })
 
-describe("edición, unidad fija y baja", () => {
+describe("identidad desde el padrón (crítica 2026-11-15, paso 4b)", () => {
   let vehicleId = ""
-  it("registra los cambios con etiquetas en español y una sola fila de historial", async () => {
+  it("registra los cambios con etiquetas en español y una sola fila de historial, dicha como del padrón", async () => {
     vehicleId = await createdId(await createEquipment(actor, input({ code: "KA-600", plate: "RSTV-12", scheduleId: scheduleKm })))
-    const result = await updateEquipment(actor, vehicleId, input({ code: "KA-600", plate: "RSTV-12", model: "R500", year: 2022, scheduleId: scheduleKm, worksiteId: WS.cholguan }), { active: true, retiredReason: "" })
-    expect(result).toMatchObject({ ok: true, data: { changed: true } })
+    const result = await editIdentity(vehicleId, { model: "R500", year: 2022, worksiteId: WS.cholguan })
+    expect(result?.ok).toBe(true)
     const [latest] = await listEquipmentHistory(vehicleId)
     expect(latest?.action).toBe("update")
+    expect(latest?.summary).toMatch(/^Editado en Vehículos · /)
     expect(latest?.summary).toContain("Modelo: R450 → R500")
     expect(latest?.summary).toContain("Faena: Arauco → Cholguan")
     // jsonb no conserva el orden de las llaves: se compara el conjunto.
     expect(Object.keys(latest?.changes ?? {}).sort()).toEqual(["Año", "Faena", "Modelo"])
+    // La pauta y la lectura inicial no las toca el padrón.
+    expect(await profileOf(vehicleId)).toMatchObject({ scheduleId: scheduleKm, brandId: B.scania })
     // Sin cambios no escribe nada.
-    const again = await updateEquipment(actor, vehicleId, input({ code: "KA-600", plate: "RSTV-12", model: "R500", year: 2022, scheduleId: scheduleKm, worksiteId: WS.cholguan }), { active: true, retiredReason: "" })
-    expect(again).toMatchObject({ ok: true, data: { changed: false } })
+    await editIdentity(vehicleId, {})
     expect(await listEquipmentHistory(vehicleId)).toHaveLength(2)
   })
 
-  it("cambiar sólo la pauta queda como schedule_change", async () => {
-    await updateEquipment(actor, vehicleId, input({ code: "KA-600", plate: "RSTV-12", model: "R500", year: 2022, scheduleId: null, worksiteId: WS.cholguan }), { active: true, retiredReason: "" })
+  it("normaliza como el alta: la patente con guion y el código en mayúsculas", async () => {
+    const result = await editIdentity(vehicleId, { code: " ka-600 ", plate: "rstv 12" })
+    expect(result?.ok && result.resolved).toMatchObject({ code: "KA-600", plate: "RSTV-12" })
+    expect(await listEquipmentHistory(vehicleId)).toHaveLength(2)
+  })
+
+  it("la marca y «Sin patente» son del perfil: sin permiso de Mantención se conservan; con él, se cambian con historial", async () => {
+    const kept = await editIdentity(vehicleId, { brandId: B.volvo, noPlate: true }, false)
+    expect(kept?.ok && kept.resolved).toMatchObject({ brand: { id: B.scania }, noPlate: false, plate: "RSTV-12" })
+    expect(await profileOf(vehicleId)).toMatchObject({ brandId: B.scania, noPlate: false })
+
+    const changed = await editIdentity(vehicleId, { brandId: B.volvo }, true)
+    expect(changed?.ok).toBe(true)
+    expect(await profileOf(vehicleId)).toMatchObject({ brandId: B.volvo })
+    const [vehicle] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, vehicleId))
+    expect(vehicle?.brand).toBe("Volvo")
     const [latest] = await listEquipmentHistory(vehicleId)
-    expect(latest).toMatchObject({ action: "schedule_change", summary: "Pauta quitada: «Camiones prueba»" })
+    expect(latest?.summary).toContain("Marca: Scania → Volvo")
+  })
+
+  it("la marca desactivada que ya tiene se conserva: quien corrige otra cosa no queda trabado", async () => {
+    await testDb.update(schema.mantBrands).set({ isActive: false }).where(eq(schema.mantBrands.id, B.volvo))
+    try {
+      expect((await editIdentity(vehicleId, { model: "R510" }, false))?.ok).toBe(true)
+      // Elegirla de nuevo para otro equipo sí se rechaza.
+      const other = await createdId(await createEquipment(actor, input({ code: "KA-602", plate: "TVWX-34" })))
+      const rejected = await editIdentity(other, { brandId: B.volvo }, true)
+      expect(rejected && !rejected.ok && rejected.fieldErrors.brandId).toBe("Esa marca no está en la lista.")
+    } finally {
+      await testDb.update(schema.mantBrands).set({ isActive: true }).where(eq(schema.mantBrands.id, B.volvo))
+    }
+  })
+
+  it("un tipo que no se mide en km ni en horas no se acepta", async () => {
+    const result = await editIdentity(vehicleId, { equipmentTypeId: T.none })
+    expect(result && !result.ok && result.fieldErrors.equipmentTypeId).toMatch(/no se mide en kilómetros ni en horas/)
+  })
+
+  it("con una pauta asignada, el tipo de otra unidad dice dónde quitarla", async () => {
+    const free = await createdId(await createEquipment(actor, input({ code: "KA-603", plate: "VWXY-56", scheduleId: scheduleKm })))
+    const result = await editIdentity(free, { equipmentTypeId: T.h })
+    expect(result && !result.ok && result.fieldErrors.equipmentTypeId).toMatch(/Tiene la pauta «Camiones prueba».*pestaña Mantención/)
+    expect(result && !result.ok && result.fieldErrors).not.toHaveProperty("scheduleId")
   })
 
   it("no deja cambiar el tipo a otra unidad cuando el equipo ya tiene registros", async () => {
@@ -216,21 +285,55 @@ describe("edición, unidad fija y baja", () => {
       worksiteId: WS.cholguan, reading: 5000, unit: "km", workDate: "2026-10-10", registeredBy: actor.userId, executorKind: "yo", executorUserId: actor.userId,
       executorName: "Jefatura Equipos", signedAt: "2026-10-10T12:00:00.000Z",
     })
-    const blocked = await updateEquipment(actor, vehicleId, input({ code: "KA-600", plate: "RSTV-12", equipmentTypeId: T.h, model: "R500", year: 2022, worksiteId: WS.cholguan }), { active: true, retiredReason: "" })
-    expect(!blocked.ok && blocked.fieldErrors.equipmentTypeId).toBe("No se puede cambiar a otra unidad: el equipo ya tiene registros.")
+    const blocked = await editIdentity(vehicleId, { equipmentTypeId: T.h })
+    expect(blocked && !blocked.ok && blocked.fieldErrors.equipmentTypeId).toBe("No se puede cambiar a otra unidad: el equipo ya tiene registros.")
     const [vehicle] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, vehicleId))
     expect(vehicle?.equipmentTypeId).toBe(T.km)
-    // La lectura inicial también queda fija.
-    const locked = await updateEquipment(actor, vehicleId, input({ code: "KA-600", plate: "RSTV-12", model: "R500", year: 2022, worksiteId: WS.cholguan, initialReading: 100, initialReadingDate: "2026-10-01" }), { active: true, retiredReason: "" })
-    expect(!locked.ok && locked.fieldErrors.initialReading).toMatch(/ya tiene registros/)
   })
 
-  it("permite cambiar el tipo a otra unidad mientras no tenga registros, con el medidor del tipo nuevo", async () => {
+  it("permite cambiar el tipo a otra unidad mientras no tenga registros ni pauta", async () => {
     const free = await createdId(await createEquipment(actor, input({ code: "KA-601", plate: "STVW-12" })))
-    const changed = await updateEquipment(actor, free, input({ code: "KA-601", plate: "STVW-12", equipmentTypeId: T.h }), { active: true, retiredReason: "" })
-    expect(changed.ok).toBe(true)
-    const [vehicle] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, free))
-    expect(vehicle).toMatchObject({ equipmentTypeId: T.h, meterType: "hour_meter", type: "test-excavadora" })
+    const changed = await editIdentity(free, { equipmentTypeId: T.h })
+    expect(changed?.ok && changed.resolved.type).toMatchObject({ id: T.h, unit: "h" })
+  })
+
+  it("un vehículo que no está en Mantención no se resuelve aquí: el padrón sigue con sus reglas", async () => {
+    expect(await editIdentity("veh-inactivo", { model: "Lo que sea" })).toBeNull()
+  })
+})
+
+describe("«Editar mantención»: pauta, lectura inicial y baja", () => {
+  let vehicleId = ""
+  const plan = (overrides: Partial<{ scheduleId: string | null; initialReading: number | null; initialReadingDate: string | null }> = {}) => ({
+    scheduleId: scheduleKm, initialReading: null, initialReadingDate: null, ...overrides,
+  })
+  const active = { active: true, retiredReason: "" }
+
+  it("cambiar sólo la pauta queda como schedule_change; sin cambios no escribe nada", async () => {
+    vehicleId = await createdId(await createEquipment(actor, input({ code: "KA-610", plate: "WXYZ-12", scheduleId: scheduleKm })))
+    expect(await updateEquipmentPlan(actor, vehicleId, plan(), active)).toMatchObject({ ok: true, data: { changed: false } })
+    await updateEquipmentPlan(actor, vehicleId, plan({ scheduleId: null }), active)
+    const [latest] = await listEquipmentHistory(vehicleId)
+    expect(latest).toMatchObject({ action: "schedule_change", summary: "Pauta quitada: «Camiones prueba»" })
+    expect(await profileOf(vehicleId)).toMatchObject({ scheduleId: null })
+  })
+
+  it("no ofrece pautas de otra unidad", async () => {
+    const result = await updateEquipmentPlan(actor, vehicleId, plan({ scheduleId: scheduleH }), active)
+    expect(!result.ok && result.fieldErrors.scheduleId).toBe("Esa pauta se mide en horas y el equipo en kilómetros.")
+  })
+
+  it("la lectura inicial se fija sin registros y queda fija con ellos", async () => {
+    const set = await updateEquipmentPlan(actor, vehicleId, plan({ scheduleId: null, initialReading: 4_000, initialReadingDate: "2026-10-01" }), active)
+    expect(set.ok).toBe(true)
+    expect((await listEquipmentHistory(vehicleId))[0]?.action).toBe("initial_reading")
+    await testDb.insert(schema.mantRecords).values({
+      id: "rec-eq-2", kind: "C", vehicleId, equipmentSnapshot: { code: "KA-610", plate: "WXYZ-12", noPlate: false, type: "Camión", brand: "Scania", model: null, year: null, worksite: "Arauco", unit: "km" },
+      worksiteId: WS.arauco, reading: 5000, unit: "km", workDate: "2026-10-10", registeredBy: actor.userId, executorKind: "yo", executorUserId: actor.userId,
+      executorName: "Jefatura Equipos", signedAt: "2026-10-10T12:00:00.000Z",
+    })
+    const locked = await updateEquipmentPlan(actor, vehicleId, plan({ scheduleId: null, initialReading: 100, initialReadingDate: "2026-10-01" }), active)
+    expect(!locked.ok && locked.fieldErrors.initialReading).toMatch(/ya tiene registros/)
   })
 
   it("da de baja con motivo y reactiva, con historial y auditoría de cada paso", async () => {
@@ -252,12 +355,18 @@ describe("edición, unidad fija y baja", () => {
     expect(statusAudits).toHaveLength(2)
   })
 
-  it("la edición con baja es atómica: sin motivo no cambia nada", async () => {
-    const result = await updateEquipment(actor, vehicleId, input({ code: "KA-600", plate: "RSTV-12", model: "XXX", year: 2022, worksiteId: WS.cholguan }), { active: false, retiredReason: "" })
+  it("la baja desde «Editar mantención» es atómica: sin motivo no cambia nada", async () => {
+    const result = await updateEquipmentPlan(actor, vehicleId, plan({ scheduleId: scheduleKm, initialReading: 4_000, initialReadingDate: "2026-10-01" }), { active: false, retiredReason: "" })
     expect(!result.ok && result.fieldErrors.retiredReason).toBeTruthy()
+    expect(await profileOf(vehicleId)).toMatchObject({ scheduleId: null })
     const [vehicle] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, vehicleId))
-    expect(vehicle?.model).toBe("R500")
     expect(vehicle?.isActive).toBe(true)
+  })
+
+  it("con motivo da de baja y cambia la pauta en una sola operación", async () => {
+    const result = await updateEquipmentPlan(actor, vehicleId, plan({ scheduleId: scheduleKm, initialReading: 4_000, initialReadingDate: "2026-10-01" }), { active: false, retiredReason: "Equipo vendido a tercero" })
+    expect(result).toMatchObject({ ok: true, data: { changed: true } })
+    expect(await profileOf(vehicleId)).toMatchObject({ scheduleId: scheduleKm, retiredReason: "Equipo vendido a tercero" })
   })
 })
 
@@ -432,18 +541,5 @@ describe("las asignaciones de proveedor siguen al equipo cuando cambia de faena"
     const { active, closed } = await activeMapping("DFGH56")
     expect(active).toEqual([expect.objectContaining({ worksiteId: WS.arauco, vehicleId: "veh-flota-map", version: 2 })])
     expect(closed).toEqual([expect.objectContaining({ worksiteId: WS.cholguan, version: 1 })])
-  })
-
-  it("al editar la faena del equipo, y no al editar otra cosa", async () => {
-    const vehicleId = await createdId(await createEquipment(actor, input({ code: "KA-710", plate: "JKLP-71", worksiteId: WS.arauco })))
-    await mapPlate(vehicleId, "JKLP71", WS.arauco)
-
-    await updateEquipment(actor, vehicleId, input({ code: "KA-710", plate: "JKLP-71", model: "R460", worksiteId: WS.arauco }), { active: true, retiredReason: "" })
-    expect((await activeMapping("JKLP71")).closed).toHaveLength(0)
-
-    await updateEquipment(actor, vehicleId, input({ code: "KA-710", plate: "JKLP-71", model: "R460", worksiteId: WS.cholguan }), { active: true, retiredReason: "" })
-    const { active, closed } = await activeMapping("JKLP71")
-    expect(active).toEqual([expect.objectContaining({ worksiteId: WS.cholguan, version: 2 })])
-    expect(closed).toEqual([expect.objectContaining({ worksiteId: WS.arauco })])
   })
 })

@@ -54,6 +54,7 @@ import type {
   EquipmentFileSeals,
   EquipmentFileVehicle,
 } from "./types"
+import { readableCaseText } from "@/lib/combustibles/case-text"
 
 /** Cuántas cargas recientes muestra la ficha antes de mandar a «Cargas». */
 export const EQUIPMENT_FILE_LOAD_ROWS = 10
@@ -161,6 +162,31 @@ export async function getEquipmentFile(session: Session, vehicleId: string, peri
 
   return { vehicle, loads, performance, litersByMonth, idle, seals, cases, degraded, sourceCount }
 }
+
+/**
+ * Lo que dice de Combustible el «Resumen» de la ficha del vehículo: el rendimiento del período
+ * contra su rango normal y lo pendiente (cargas y pedidos por decidir, casos en seguimiento),
+ * sin los gráficos ni las tablas de la pestaña. `null` si el vehículo está fuera del alcance.
+ */
+export async function getEquipmentFuelSummary(session: Session, vehicleId: string, period: ResolvedFuelPeriod): Promise<{
+  vehicle: EquipmentFileVehicle
+  performance: EquipmentFilePerformance | null
+  /** Por tipo, sin el tope de la lista de la pestaña. */
+  pending: Record<EquipmentFileCaseItem["kind"], number>
+} | null> {
+  const vehicle = await getEquipmentVehicle(session, vehicleId)
+  if (!vehicle) return null
+  const [performance, items] = await Promise.all([
+    vehicle.unit ? getPerformance(session, vehicle, vehicle.unit, period) : Promise.resolve(null),
+    getCases(session, vehicle, period, SUMMARY_CASE_LIMIT),
+  ])
+  const pending: Record<EquipmentFileCaseItem["kind"], number> = { carga: 0, caso: 0, pedido: 0 }
+  for (const item of items) pending[item.kind] += 1
+  return { vehicle, performance, pending }
+}
+
+/** Tope del conteo del resumen: muy por encima de lo que acumula un equipo (14 casos de una causa en bodega_dev). */
+const SUMMARY_CASE_LIMIT = 1000
 
 function emptyLoads(): EquipmentFileLoads {
   return { count: 0, liters: 0, rows: [], hiddenCount: 0 }
@@ -409,7 +435,7 @@ async function getSeals(session: Session, vehicle: EquipmentFileVehicle, period:
 
 const ENTITY_FOR_MARK = { terreno: "fuel_tae_submission", planilla: "fuel_operation_record", factura: "fuel_load" } as const
 
-async function getCases(session: Session, vehicle: EquipmentFileVehicle, period: ResolvedFuelPeriod): Promise<EquipmentFileCaseItem[]> {
+async function getCases(session: Session, vehicle: EquipmentFileVehicle, period: ResolvedFuelPeriod, limit = CASE_LIMIT): Promise<EquipmentFileCaseItem[]> {
   // Igual que la bandeja: lo vencido sigue apareciendo, así que se mira hasta el fin del período.
   const lastMonth = period.monthKeys[period.monthKeys.length - 1] ?? period.to.slice(0, 7)
 
@@ -428,7 +454,7 @@ async function getCases(session: Session, vehicle: EquipmentFileVehicle, period:
         lte(fuelEquipmentLoads.month, lastMonth),
       ))
       .orderBy(asc(fuelEquipmentLoads.occurredAt))
-      .limit(CASE_LIMIT),
+      .limit(limit),
     db.select({
       id: fuelAnomalyCases.id,
       ruleCode: fuelAnomalyCases.ruleCode,
@@ -444,7 +470,7 @@ async function getCases(session: Session, vehicle: EquipmentFileVehicle, period:
         worksiteScopeSql(session, fuelAnomalyCases.worksiteId),
       ))
       .orderBy(asc(fuelAnomalyCases.detectedAt))
-      .limit(CASE_LIMIT),
+      .limit(limit),
     db.select({
       id: fuelReviewMarks.id,
       notes: fuelReviewMarks.notes,
@@ -469,7 +495,7 @@ async function getCases(session: Session, vehicle: EquipmentFileVehicle, period:
         ),
       ))
       .orderBy(asc(fuelReviewMarks.createdAt))
-      .limit(CASE_LIMIT),
+      .limit(limit),
   ])
 
   const items: EquipmentFileCaseItem[] = [
@@ -490,7 +516,7 @@ async function getCases(session: Session, vehicle: EquipmentFileVehicle, period:
       key: inboxRowKey("caso", anomaly.id),
       kind: "caso",
       title: anomaly.ruleName ?? RULE_NAMES[anomaly.ruleCode] ?? "Caso abierto",
-      detail: anomaly.description,
+      detail: anomaly.description ? readableCaseText(anomaly.description) : anomaly.description,
       severity: (["low", "medium", "high", "critical"].includes(anomaly.severity) ? anomaly.severity : "medium") as AnomalySeverity,
       since: anomaly.detectedAt,
       href: fuelInboxHref({ tipo: "caso", item: inboxRowKey("caso", anomaly.id) }),

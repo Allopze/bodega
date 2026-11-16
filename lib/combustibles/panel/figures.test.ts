@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { describeFuelPeriod } from "@/lib/combustibles/period/parse"
-import { buildPanelFigures, variationLabel, variationSentence, type PanelFigureBucket, type PanelFiguresRaw } from "./figures"
+import { buildPanelFigures, incompleteSourceNote, variationLabel, variationSentence, type PanelFigureBucket, type PanelFiguresRaw } from "./figures"
 
 const TODAY = "2026-10-31"
 
@@ -125,5 +125,31 @@ describe("la variación en palabras", () => {
     expect(variationLabel(partial)).toBe("vs. los mismos 14 días de septiembre")
     expect(variationSentence(partial)).toBe("6 % más que en los mismos 14 días de septiembre")
     expect(variationLabel({ ...partial, partialDays: 1 })).toBe("vs. el mismo día de septiembre")
+  })
+})
+
+describe("una fuente sin datos hasta el día que se compara (crítica 2026-11-15, paso 5)", () => {
+  // El 14 de noviembre: el mes lleva 14 días.
+  const NOV_14 = "2026-11-14"
+  const november = describeFuelPeriod({ kind: "month", year: 2026, month: 11 }, "url", NOV_14)
+  const october = describeFuelPeriod({ kind: "month", year: 2026, month: 10 }, "url", NOV_14)
+
+  it("en curso: Copec doce días atrasado anula la comparación y lo dice", () => {
+    expect(incompleteSourceNote({ name: "Copec", completeUntil: "2026-11-02" }, november, NOV_14)).toBe("No se compara: Copec trae datos hasta el 2 nov")
+  })
+
+  it("en curso: un día de atraso es lo normal de la sincronización", () => {
+    expect(incompleteSourceNote({ name: "Copec", completeUntil: "2026-11-13" }, november, NOV_14)).toBeNull()
+    expect(incompleteSourceNote({ name: "Copec", completeUntil: "2026-11-12" }, november, NOV_14)).not.toBeNull()
+  })
+
+  it("cerrado: tiene que llegar hasta el último día del período", () => {
+    expect(incompleteSourceNote({ name: "Copec", completeUntil: "2026-10-31" }, october, NOV_14)).toBeNull()
+    expect(incompleteSourceNote({ name: "Copec", completeUntil: "2026-10-30" }, october, NOV_14)).toBe("No se compara: Copec trae datos hasta el 30 oct")
+  })
+
+  it("sin saber hasta cuándo llega la fuente no se anula nada", () => {
+    expect(incompleteSourceNote({ name: "Copec", completeUntil: null }, november, NOV_14)).toBeNull()
+    expect(incompleteSourceNote(null, november, NOV_14)).toBeNull()
   })
 })

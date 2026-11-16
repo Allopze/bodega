@@ -118,6 +118,14 @@ describe("rendimiento por equipo (R-03, R-06)", () => {
     expect(out).toContain("Quitar filtros")
   })
 
+  it("sin filtros de la vista el vacío habla del período y no ofrece quitar filtros", () => {
+    const out = html(<EquipmentStatsTable rows={[]} />)
+    expect(out).toContain("Sin equipos con cargas")
+    expect(out).toContain("en el período")
+    expect(out).not.toContain("Quitar filtros")
+    expect(out).not.toContain("con estos filtros")
+  })
+
   it("el código del equipo abre su ficha cuando se le da el enlace", () => {
     const out = html(<EquipmentStatsTable rows={[row]} equipmentHref={(id) => `/combustibles/consumo/equipos/${id}?periodo=2026-03`} />)
     expect(out).toContain('href="/combustibles/consumo/equipos/v1?periodo=2026-03"')
@@ -170,7 +178,10 @@ describe("rendimiento por faena: ranking", () => {
   it("sin promedios explica qué hacer en vez de un ranking vacío", () => {
     const out = html(<WorksiteRanking rows={[]} />)
     expect(out).toContain("Sin rendimientos calculados")
-    expect(out).toContain("Amplía el período")
+    expect(out).toContain("período más amplio")
+    // Sin filtros de la vista no hay nada que quitar (crítica 2026-11-15).
+    expect(out).not.toContain("Quitar filtros")
+    expect(out).not.toContain("con estos filtros")
   })
 })
 

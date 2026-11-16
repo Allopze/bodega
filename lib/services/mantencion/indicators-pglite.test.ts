@@ -34,7 +34,14 @@ const { countPendingReview, loadPanel } = await import("@/lib/services/mantencio
 const TODAY = "2026-11-13"
 const NOW = new Date("2026-11-13T15:00:00Z")
 const period = resolveIndicatorPeriod({ desde: "2026-09-01", hasta: TODAY }, TODAY)
-const QUERY = { from: period.from, to: period.to, granularity: period.granularity, previous: period.previous, today: TODAY }
+// Tres meses o más: la ventana de los gráficos es el propio período (no hay historia que agregar).
+const QUERY = { from: period.from, to: period.to, granularity: period.granularity, previous: period.previous, chart: period.chart, today: TODAY }
+// Un solo mes (octubre completo): el período mide octubre y los gráficos miran los seis meses que terminan en él.
+const octPeriod = resolveIndicatorPeriod({ desde: "2026-10-01", hasta: "2026-10-31" }, TODAY)
+const OCT_QUERY = { from: octPeriod.from, to: octPeriod.to, granularity: octPeriod.granularity, previous: octPeriod.previous, chart: octPeriod.chart, today: TODAY }
+// Lo que va del mes en curso (1–13 nov): su último balde de la ventana es el parcial.
+const novPeriod = resolveIndicatorPeriod({}, TODAY)
+const NOV_QUERY = { from: novPeriod.from, to: novPeriod.to, granularity: novPeriod.granularity, previous: novPeriod.previous, chart: novPeriod.chart, today: TODAY }
 
 const WS = { a: "ws-ind-a", b: "ws-ind-b" } as const
 const V = { a1: "v-ind-a1", a2: "v-ind-a2", b1: "v-ind-b1" } as const
@@ -264,5 +271,60 @@ describe("pautas, registros y disponibilidad", () => {
     expect(result.total).toBe(6.5)
     expect(result.totalPrevious).toBe(3)
     expect(result.points.map((point) => point.partial)).toEqual([false, false, true])
+  })
+})
+
+describe("ventana de los gráficos de evolución vs período", () => {
+  it("un período de un mes se mide sobre el mes y la serie de OT abarca seis baldes mensuales", async () => {
+    expect(OCT_QUERY.chart).toMatchObject({ from: "2026-05-01", to: "2026-10-31", granularity: "month", isHistory: true })
+    const series = await loadWorkOrderSeries(GLOBAL, OCT_QUERY)
+    expect(series.map((point) => point.key)).toEqual(["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"])
+    expect(series.map((point) => point.created)).toEqual([0, 0, 1, 0, 1, 2])
+    expect(series.map((point) => point.closed)).toEqual([0, 0, 1, 0, 0, 1])
+    // a2 (pedida el 5-10) y a3 siguen abiertas al terminar octubre: a2 se cierra el 2-11, fuera de la ventana.
+    expect(series.map((point) => point.backlog)).toEqual([0, 0, 0, 0, 1, 2])
+    expect(series.some((point) => point.partial)).toBe(false)
+    // La cifra del período sigue siendo la de octubre (1 cierre), no la suma de la ventana (2).
+    const stats = await loadWorkOrderPeriodStats(GLOBAL, OCT_QUERY)
+    expect(stats.closed).toBe(1)
+    expect(series.reduce((sum, point) => sum + point.closed, 0)).toBe(2)
+    expect(await loadTopRepairEquipment(GLOBAL, OCT_QUERY, 50, 1)).toHaveLength(1) // sólo AAAA-01 (a2) pidió una reparación en octubre
+  })
+
+  it("registros: los baldes son los de la ventana y el total preventivo cuenta sólo el período", async () => {
+    const records = await loadRecordIndicators(SCOPED_A, OCT_QUERY)
+    expect(records.points.map((point) => [point.key, point.preventive, point.corrective])).toEqual([
+      ["2026-05", 0, 0], ["2026-06", 0, 0], ["2026-07", 1, 0], ["2026-08", 0, 0], ["2026-09", 1, 0], ["2026-10", 1, 1],
+    ])
+    // Octubre: p2 (p3 está anulado); la ventana suma 3 (p0, p1, p2). Septiembre, el anterior: p1.
+    expect(records.preventive).toBe(1)
+    expect(records.preventivePrevious).toBe(1)
+    expect(records.points.reduce((sum, point) => sum + point.preventive, 0)).toBe(3)
+  })
+
+  it("días fuera de servicio: los baldes son los de la ventana y el total y el anterior, los del período", async () => {
+    const result = await loadOutOfService(SCOPED_A, OCT_QUERY, NOW)
+    expect(result.points.map((point) => [point.key, point.days])).toEqual([
+      ["2026-05", 0], ["2026-06", 0], ["2026-07", 3], ["2026-08", 0], ["2026-09", 0], ["2026-10", 2],
+    ])
+    // Octubre: 2 días de a2 (30 y 31); los 3 de julio no entran en el total ni en el de septiembre.
+    expect(result.total).toBe(2)
+    expect(result.totalPrevious).toBe(0)
+  })
+
+  it("lo que va del mes en curso: seis baldes con el último parcial, y el total del mes sin la historia", async () => {
+    expect(NOV_QUERY.chart).toMatchObject({ from: "2026-06-01", to: TODAY, granularity: "month" })
+    const series = await loadWorkOrderSeries(GLOBAL, NOV_QUERY)
+    expect(series.map((point) => point.key)).toEqual(["2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11"])
+    expect(series.map((point) => point.partial)).toEqual([false, false, false, false, false, true])
+    const records = await loadRecordIndicators(SCOPED_A, NOV_QUERY)
+    expect(records.points).toHaveLength(6)
+    expect(records.points.at(-1)!.partial).toBe(true)
+    expect(records.preventive).toBe(0) // 1–13 nov no tiene preventivos; la ventana sí (p0, p1, p2)
+    expect(records.preventivePrevious).toBe(1) // 1–13 oct: p2
+    const oos = await loadOutOfService(SCOPED_A, NOV_QUERY, NOW)
+    expect(oos.points).toHaveLength(6)
+    expect(oos.total).toBe(4.5) // 1 día de a2 el 1-11 y 3,5 del abierto de a1; no los de octubre ni julio
+    expect(oos.totalPrevious).toBe(0) // 1–13 oct: ninguna detención de la faena A (la de a2 empieza el 30)
   })
 })

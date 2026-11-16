@@ -27,7 +27,8 @@ export const GPS_ALERT_CLASS_LABELS: Record<GpsAlertClass, string> = {
   speeding: "Exceso de velocidad",
   harsh_driving: "Conducción brusca",
   pothole: "Bache",
-  idle: "Ralentí",
+  // OnWay la titula «ralentí»; en pantalla se llama como en el glosario de combustible (crítica 2026-11-15).
+  idle: "Motor en vacío",
   operational: "Operación normal",
   other: "Otras",
 }

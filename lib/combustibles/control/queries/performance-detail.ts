@@ -1,6 +1,7 @@
 import type { Session } from "next-auth"
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
+import { supplyMediumNameSql } from "@/lib/combustibles/control/queries/supply-medium-name"
 import { fuelEquipmentLoads, fuelEquipmentTypes, fuelOperationRecords, fuelSupplyMedia, fuelVehicles, worksites } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { PerformanceFamily, PerformanceUnit } from "@/lib/combustibles/control/contracts"
@@ -85,7 +86,7 @@ export async function getLoadDetail(
     supervisor: options.includePersonal ? fuelEquipmentLoads.supervisorName : sql<string | null>`null`,
     reviewStatus: fuelEquipmentLoads.reviewStatus,
     source: fuelEquipmentLoads.source,
-    mediumName: fuelSupplyMedia.name,
+    mediumName: supplyMediumNameSql(),
   }).from(fuelEquipmentLoads)
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
     .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
@@ -147,7 +148,7 @@ export async function getFamilyVehicleOptions(session: Session, family: Performa
 }
 
 export async function getSupplyMediumOptions(): Promise<Array<{ id: string; name: string }>> {
-  return db.select({ id: fuelSupplyMedia.id, name: fuelSupplyMedia.name }).from(fuelSupplyMedia)
+  return db.select({ id: fuelSupplyMedia.id, name: supplyMediumNameSql() }).from(fuelSupplyMedia)
     .where(eq(fuelSupplyMedia.isActive, true))
     .orderBy(asc(fuelSupplyMedia.sortOrder), asc(fuelSupplyMedia.name))
 }

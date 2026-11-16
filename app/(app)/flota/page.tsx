@@ -108,7 +108,10 @@ export default async function FlotaPage({
           ]} />
         }
         actions={<div className="flex items-center gap-2">
-          <FleetExportButton filters={{ operationalStatus: filterEstado, responsibleName: filterResponsable, expiry: filterVencimiento as "vencidos" | "proximos" | "al-dia" | undefined, revision: filterRevision, q }} />
+          {/* Exportar es opt-in con `flota:export` (decisión 2026-11-15), como en el resto de la plataforma. */}
+          {can(session, "flota:export") && (
+            <FleetExportButton filters={{ operationalStatus: filterEstado, responsibleName: filterResponsable, expiry: filterVencimiento as "vencidos" | "proximos" | "al-dia" | undefined, revision: filterRevision, q }} />
+          )}
           {/* El botón lleva al padrón, así que se guarda con el permiso del
               padrón y no con el de la decisión operativa. */}
           {can(session, "admin:fleet_vehicles") && (

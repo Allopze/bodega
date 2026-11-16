@@ -12,6 +12,7 @@ import { EQUIPMENT_STATE_LABEL } from "@/lib/mantencion/format"
 import { meterSourceLabel } from "@/lib/combustibles/meter-source"
 import { fuelEquipmentHref } from "@/lib/combustibles/routes"
 import type { OperationalAsset } from "@/lib/services/operational-control"
+import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 /** «12,3 km/L» o «18,4 L/h»; `—` cuando el equipo no mide rendimiento o no tuvo cargas válidas. */
 function formatPerformance(asset: OperationalAsset): string | null {
@@ -152,7 +153,7 @@ const SEARCH_KEYS = ["code", "name", "worksiteName", "operationalStatusLabel"] a
 
 /** El panel sólo lista vehículos (los instrumentos de servicio se cuentan aparte, bajo la tabla). */
 function assetHref(asset: OperationalAsset): string {
-  return `/flota/${asset.id}`
+  return vehicleFichaHref(asset.id)
 }
 
 export function OperationalAssetsTable({

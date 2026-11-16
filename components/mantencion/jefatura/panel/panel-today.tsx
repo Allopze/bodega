@@ -1,4 +1,19 @@
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
+import { formatQty } from "@/lib/utils"
+
+/**
+ * «4 por una OT · 2 por una correctiva»: equipos, no órdenes. El gráfico de OT de al lado cuenta órdenes en
+ * la etapa «En taller»; sin este desglose, «Equipos en taller 6» sobre «En taller 4 OT» parecía un error.
+ */
+export function workshopBreakdown(total: number, byOrder: number | null): string | undefined {
+  if (byOrder === null || total === 0) return undefined
+  const byRecord = Math.max(0, total - byOrder)
+  const parts = [
+    byOrder > 0 ? `${formatQty(byOrder)} por una OT` : null,
+    byRecord > 0 ? `${formatQty(byRecord)} por una correctiva` : null,
+  ].filter((part): part is string => part !== null)
+  return parts.length > 0 ? parts.join(" · ") : undefined
+}
 
 /**
  * Franja «Hoy» del Panel de mantención: lo pendiente ahora, antes de los gráficos del período
@@ -12,11 +27,14 @@ import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 export function PanelToday({
   unassignedOrders,
   inWorkshop,
+  inWorkshopByOrder = null,
   pendingReview,
   worksiteId,
 }: {
   unassignedOrders: number | null
   inWorkshop: number | null
+  /** De los equipos en taller, los que están por una OT en ejecución; el resto, por una correctiva sin OT. */
+  inWorkshopByOrder?: number | null
   pendingReview: number | null
   worksiteId: string | null
 }) {
@@ -38,6 +56,7 @@ export function PanelToday({
       label: "Equipos en taller",
       value: inWorkshop === 0 ? "Ninguno" : inWorkshop,
       valueKind: inWorkshop === 0 ? "text" : "number",
+      secondary: workshopBreakdown(inWorkshop, inWorkshopByOrder),
       href: `/mantencion/equipos?taller=1${faena}`,
     })
   }

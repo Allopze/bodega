@@ -97,6 +97,13 @@ const nextConfig: NextConfig = {
       { source: "/prevencion/documentacion/nuevo", destination: "/prevencion/documentacion", permanent: true },
       { source: "/prevencion/documentacion/revisiones", destination: "/prevencion/documentacion", permanent: true },
       { source: "/prevencion/documentacion/vencimientos", destination: "/prevencion/documentacion", permanent: true },
+      // Ficha única del vehículo (crítica 2026-11-15): las fichas de equipo de Mantención y de Combustible son
+      // pestañas de /flota/[id]. Van de borde y no como página: el `loading.tsx` de Equipos envolvía la página que
+      // redirigía, y un `permanentRedirect` en pleno streaming se vuelve un meta refresh en el cliente (200 con el
+      // esqueleto de la lista y una segunda carga detrás). La query pasa tal cual (`?creado=1`, `?vida=`, período).
+      // `nuevo`, `importar` e `incorporar` son rutas hermanas de Equipos y no se redirigen.
+      { source: "/mantencion/equipos/:id((?!nuevo$|importar$|incorporar$)[^/]+)", destination: "/flota/:id/mantencion", permanent: true },
+      { source: "/combustibles/consumo/equipos/:id", destination: "/flota/:id/combustible", permanent: true },
     ];
   },
   // playwright-core ships non-JS assets (browsers.json, etc.) that NFT

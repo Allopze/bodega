@@ -29,6 +29,7 @@ export const CHART_EXPORT_PERMISSIONS = [
   "billing:export",
   "combustibles:export",
   "combustibles:tae_export",
+  "flota:export",
   "mant:export",
   "prevention:incidents:export",
   "prevention:inspections:export",
@@ -102,6 +103,64 @@ export async function buildChartDataWorkbookBase64(
       session,
       filters: { tabla: input.title },
       notes: [chartExportScreenNote(input.title), ...(input.notes ?? [])],
+    },
+  )
+  return Buffer.from(buffer).toString("base64")
+}
+
+/* ── El tablero entero: todas sus tablas «Ver datos» en un libro ─────────────────────────── */
+
+/** Tope de hojas de un libro de tablero: un tablero tiene 6–8 gráficos; el tope sólo frena abusos. */
+export const BOARD_EXPORT_MAX_TABLES = 24
+
+/**
+ * «Exportar Excel» de la cabecera de un tablero (crítica 2026-11-15, esqueleto común): las mismas
+ * tablas que cada gráfico exporta por separado, una hoja por gráfico, con el período y la faena en
+ * «Metadatos». Rige lo mismo que para una tabla sola —cada tabla trae el permiso de exportar de su
+ * módulo y la acción los exige todos—, y el libro dice que es una copia de la pantalla.
+ */
+export const boardDataExportSchema = z.object({
+  title: z.string().trim().min(1).max(CHART_EXPORT_LIMITS.title),
+  /** Período y faena tal como los nombra la pantalla («Noviembre 2026», «Todas las faenas»). */
+  scope: z.record(z.string().max(40), z.string().max(CHART_EXPORT_LIMITS.title)).refine((value) => Object.keys(value).length <= 4),
+  /** Fechas que mide el período (cortado en hoy): van a «Período (desde/hasta)» de «Metadatos». */
+  range: z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).optional(),
+  tables: z.array(chartDataExportSchema).min(1).max(BOARD_EXPORT_MAX_TABLES),
+})
+
+export type BoardDataExportInput = z.input<typeof boardDataExportSchema>
+
+/** Los permisos distintos que exige el libro: los de cada una de sus tablas. */
+export function boardExportPermissions(input: Pick<z.output<typeof boardDataExportSchema>, "tables">): ChartExportPermission[] {
+  return [...new Set(input.tables.map((table) => table.permission))]
+}
+
+/** Arma el libro del tablero: una hoja por tabla, en el orden de la pantalla, y «Metadatos». Devuelve base64. */
+export async function buildBoardDataWorkbookBase64(
+  session: Session,
+  input: z.output<typeof boardDataExportSchema>,
+): Promise<string> {
+  const [first, ...rest] = input.tables
+  if (!first) throw new Error("Un libro de tablero necesita al menos una tabla")
+  // Las salvedades de cada gráfico (avisos de cobertura) llevan su título: en «Metadatos» van todas juntas.
+  const tableNotes = input.tables.flatMap((table) => (table.notes ?? []).map((note) => `«${table.title}»: ${note}`))
+  const buffer = await buildXlsxBuffer(
+    {
+      filenameBase: input.title,
+      worksheetName: first.title,
+      headers: first.headers,
+      rows: squareRows(first.headers, first.rows),
+      sheets: rest.map((table) => ({ worksheetName: table.title, headers: table.headers, rows: squareRows(table.headers, table.rows) })),
+    },
+    {
+      session,
+      filters: { tablero: input.title, ...input.scope },
+      from: input.range?.from ?? null,
+      to: input.range?.to ?? null,
+      notes: [
+        `Copia de las tablas «Ver datos» de «${input.title}», una hoja por gráfico, tal como se mostraban en pantalla al exportar; el servidor no las recalcula.`,
+        ...tableNotes,
+      ].slice(0, CHART_EXPORT_LIMITS.notes * 4),
     },
   )
   return Buffer.from(buffer).toString("base64")

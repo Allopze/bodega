@@ -147,7 +147,7 @@ export function GpsCrossChecks({
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 <span className="text-sm font-medium tabular-nums text-[var(--color-text)]">{row.value}</span>
-                <Button asChild variant="link" size="sm" className="h-auto p-0 text-xs">
+                <Button asChild variant="link" size="sm" className="h-auto min-h-11 p-0 text-xs sm:min-h-0">
                   <Link href={row.href}>
                     {row.linkLabel}
                     <ArrowRight size={12} className="ml-1" />

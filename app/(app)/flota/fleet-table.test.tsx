@@ -158,10 +158,29 @@ describe("FleetTable · enlace, estado y columnas", () => {
   it("nombra las magnitudes con su unidad y no repite siglas que se leen como velocidad", () => {
     renderTable([LIMPIA])
 
-    for (const header of ["Gasto combustible (12 m)", "Costo por km u hora", "Lectura (km u h)"]) {
+    for (const header of ["Gasto combustible (12 m)", "Lectura (km u h)"]) {
       expect(screen.getByRole("columnheader", { name: header })).toBeInTheDocument()
     }
+    // El costo por km u hora va bajo el gasto, en la misma celda: en dos columnas la tabla no cabía a 1440 px.
+    expect(screen.queryByRole("columnheader", { name: "Costo por km u hora" })).toBeNull()
     expect(screen.queryByText(/Km\/Hr|km\/h$/)).toBeNull()
+  })
+
+  it("el costo por km u hora va bajo el gasto, con su unidad", () => {
+    renderTable([{ ...LIMPIA, fuelCostPerUnit: 412.36, fuelCostPerUnitLabel: "CLP/km" }])
+
+    const fila = screen.getAllByRole("row").find((row) => within(row).queryByText("AA-0001"))!
+    const celda = within(fila).getByText("$412,4/km").closest("td")!
+    expect(within(celda).getByText("$90.000")).toBeInTheDocument()
+  })
+
+  it("«Responsable» aparece sólo si algún vehículo lo tiene", () => {
+    const { unmount } = renderTable([{ ...LIMPIA, responsibleName: null }, { ...SIN_LECTURA, responsibleName: null }])
+    expect(screen.queryByRole("columnheader", { name: "Responsable" })).toBeNull()
+    unmount()
+
+    renderTable([LIMPIA, { ...SIN_LECTURA, responsibleName: null }])
+    expect(screen.getByRole("columnheader", { name: "Responsable" })).toBeInTheDocument()
   })
 
   it("sin movimientos de combustible el gasto dice «—», no $0", () => {

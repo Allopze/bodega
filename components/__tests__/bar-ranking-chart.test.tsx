@@ -54,10 +54,17 @@ describe("BarRankingChart", () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it("con la pantalla ancha es un gráfico con nombre", () => {
+  it("con la pantalla ancha y enlaces es un grupo con nombre, no una imagen (sus enlaces no quedan anidados en role=img)", () => {
     viewport(false)
     render(<BarRankingChart items={ITEMS} ariaLabel="Equipos con más km" unit=" km" />)
-    expect(screen.getByRole("img", { name: /Equipos con más km/ })).toBeInTheDocument()
+    expect(screen.getByRole("group", { name: "Equipos con más km" })).toBeInTheDocument()
+    expect(screen.queryByRole("img", { name: /Equipos con más km/ })).not.toBeInTheDocument()
+  })
+
+  it("sin enlaces sigue siendo una imagen con nombre que remite a «Ver datos»", () => {
+    viewport(false)
+    render(<BarRankingChart items={ITEMS.map(({ href: _href, ...item }) => item)} ariaLabel="Equipos con más km" unit=" km" />)
+    expect(screen.getByRole("img", { name: "Equipos con más km; «Ver datos» trae las cifras exactas" })).toBeInTheDocument()
   })
 
   it("bajo 360 px es la misma lista, de mayor a menor, con sus enlaces y sin pasar del límite", () => {

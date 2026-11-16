@@ -686,7 +686,11 @@ const routeTargets: RouteTarget[] = [
   { slug: "facturacion-duplicados", path: "/facturacion/duplicados", auth: true },
   { slug: "facturacion-sincronizacion", path: "/facturacion/sincronizacion", auth: true },
   { slug: "flota", path: "/flota", auth: true },
+  // Ficha única del vehículo (crítica 2026-11-15): el Resumen y una pestaña por área.
   { slug: "flota-detalle", path: "/flota/fuel-veh-audit-1", auth: true },
+  { slug: "flota-detalle-flota", path: "/flota/fuel-veh-audit-1/flota", auth: true },
+  { slug: "flota-detalle-mantencion", path: "/flota/fuel-veh-audit-1/mantencion", auth: true },
+  { slug: "flota-detalle-combustible", path: "/flota/fuel-veh-audit-1/combustible", auth: true },
   { slug: "flota-monitoreo", path: "/flota/monitoreo", auth: true, notes: "Monitoreo GPS Entel OnWay: vehículos vinculados, alertas, último run y dispositivos sin match." },
   { slug: "control-operacional", path: "/control-operacional", auth: true },
   // Mantención de equipos (módulo nuevo): fixtures propios para que las capturas
@@ -698,7 +702,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "mantencion-ot-detalle", path: "/mantencion/ot/mant-ot-audit-1", auth: true },
   { slug: "mantencion-ot-print", path: "/mantencion/ot/mant-ot-audit-1/print", auth: true },
   { slug: "mantencion-equipos", path: "/mantencion/equipos", auth: true },
-  { slug: "mantencion-equipo-detalle", path: "/mantencion/equipos/fuel-veh-audit-1", auth: true },
+  { slug: "mantencion-equipo-detalle-legacy", path: "/mantencion/equipos/fuel-veh-audit-1", auth: true, allowedPaths: ["/flota/fuel-veh-audit-1/mantencion"], captureView: false, notes: "Compatibilidad: redirige a la pestaña Mantención de la ficha del vehículo." },
   { slug: "mantencion-equipo-nuevo", path: "/mantencion/equipos/nuevo", auth: true },
   { slug: "mantencion-equipo-importar", path: "/mantencion/equipos/importar", auth: true },
   { slug: "mantencion-pautas", path: "/mantencion/pautas", auth: true },
@@ -756,7 +760,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "combustibles-consumo-litros-planilla", path: "/combustibles/consumo/litros?seccion=planilla", auth: true },
   { slug: "combustibles-consumo-litros-faena-medio", path: "/combustibles/consumo/litros?seccion=faena-medio", auth: true },
   { slug: "combustibles-consumo-motor-vacio", path: "/combustibles/consumo/motor-en-vacio", auth: true },
-  { slug: "combustibles-equipo", path: "/combustibles/consumo/equipos/fuel-veh-audit-1", auth: true },
+  { slug: "combustibles-equipo-legacy", path: "/combustibles/consumo/equipos/fuel-veh-audit-1", auth: true, allowedPaths: ["/flota/fuel-veh-audit-1/combustible"], captureView: false, notes: "Compatibilidad: redirige a la pestaña Combustible de la ficha del vehículo." },
   { slug: "combustibles-pagos", path: "/combustibles/pagos", auth: true },
   { slug: "combustibles-pagos-nueva", path: "/combustibles/pagos/nueva", auth: true },
   {

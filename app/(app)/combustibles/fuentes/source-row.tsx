@@ -90,7 +90,7 @@ export function SourceRow({
 
       {hasTechnical ? (
         <details className="group mt-3 border-t border-[var(--color-border)] pt-3">
-          <summary className="cursor-pointer text-xs font-medium text-[var(--color-text)] marker:text-[var(--color-text-muted)]">Detalle técnico</summary>
+          <summary className="cursor-pointer py-3.5 text-xs font-medium text-[var(--color-text)] marker:text-[var(--color-text-muted)] sm:py-0">Detalle técnico</summary>
           <div className="mt-2 flex flex-col gap-3">
             {source.technical.length > 0 ? (
               <ul className="list-disc space-y-1 pl-5 text-xs text-[var(--color-text-muted)]">

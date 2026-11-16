@@ -146,7 +146,9 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
   if (indicators.workshopEquipment > 0) {
     stats.push({
       key: "workshop",
-      label: "Equipos en taller",
+      // Sólo los de una correctiva de esta lista: «Equipos en taller» a secas es la cifra del Panel, que suma
+      // también los que están por una OT, y las dos se leían como el mismo número que no cuadraba.
+      label: "Equipos en taller por correctiva",
       value: indicators.workshopEquipment,
       icon: <Truck size={14} aria-hidden />,
       tone: indicators.workshopStale > 0 ? "signal" : undefined,

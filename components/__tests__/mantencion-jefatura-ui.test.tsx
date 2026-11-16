@@ -198,7 +198,7 @@ describe("EquipmentTable", () => {
   it("el equipo se nombra como en el resto del área: código y, debajo, «Tipo · patente»", () => {
     render(<EquipmentTable rows={[equipmentRow(1)]} canManage filtered={false} />)
     const row = screen.getByRole("row", { name: /KA-001/ })
-    expect(within(row).getByRole("link", { name: "KA-001" }).getAttribute("href")).toBe("/mantencion/equipos/v1")
+    expect(within(row).getByRole("link", { name: "KA-001" }).getAttribute("href")).toBe("/flota/v1/mantencion")
     expect(within(row).getByText("Camión · PL-1")).toBeDefined()
   })
 
@@ -282,8 +282,44 @@ describe("EquipmentForm", () => {
     await waitFor(() => expect(container.querySelector('input[name="scheduleId"]')?.getAttribute("value")).toBe(""))
   })
 
-  it("al editar aparece el estado; «Dado de baja» pide el motivo y con registros la lectura queda fija", () => {
-    renderForm({ retired: true, initialReading: "12.345" }, { vehicleId: "veh-1", lockedUnit: "km" })
+  it("envía los campos con los nombres que lee la acción", async () => {
+    const action = renderForm({ code: "KA-1", plate: "BCDF-12", equipmentTypeId: "t-km", brandId: "b1", worksiteId: "w1", model: "R450" })
+    await act(async () => { fireEvent.submit(screen.getByRole("button", { name: "Crear equipo" }).closest("form")!) })
+    expect(action).toHaveBeenCalledTimes(1)
+    const data = (action.mock.calls[0] as unknown as [unknown, FormData])[1]
+    const sent = Object.fromEntries([...data.entries()].filter(([, value]) => typeof value === "string"))
+    expect(sent).toMatchObject({ code: "KA-1", plate: "BCDF-12", equipmentTypeId: "t-km", brandId: "b1", worksiteId: "w1", model: "R450", scheduleId: "" })
+    // Es sólo el alta: un equipo que ya existe se edita en «Editar vehículo» y «Editar mantención».
+    expect(sent).not.toHaveProperty("vehicleId")
+    expect(sent).not.toHaveProperty("status")
+  })
+})
+
+const { EquipmentPlanForm } = await import("@/components/mantencion/jefatura/equipos/equipment-plan-form")
+
+describe("EquipmentPlanForm («Editar mantención», crítica 2026-11-15, paso 4b)", () => {
+  const INITIAL = { scheduleId: "s-km", initialReading: "", initialReadingDate: "", retired: false, retiredReason: "" }
+  const renderPlan = (overrides: Partial<typeof INITIAL> = {}, readingLocked = false) => {
+    const action = vi.fn(async () => ({ ok: false } as { ok: boolean }))
+    const view = render(
+      <EquipmentPlanForm action={action} vehicleId="veh-9" unit="km" schedules={CATALOGS.schedules} initial={{ ...INITIAL, ...overrides }} readingLocked={readingLocked} onCancel={vi.fn()} onSaved={vi.fn()} />,
+    )
+    return { action, ...view }
+  }
+
+  it("sólo pauta, lectura y estado: la identidad no está y dice dónde se edita", () => {
+    renderPlan()
+    expect(screen.getByRole("combobox", { name: /^Pauta de mantención/ })).toBeDefined()
+    expect(screen.getByLabelText(/^Lectura actual/)).toBeDefined()
+    expect(screen.getByRole("radio", { name: "Activo" })).toBeDefined()
+    for (const label of ["Código interno", "Patente", "Modelo", "Año"]) expect(screen.queryByLabelText(new RegExp(`^${label}`))).toBeNull()
+    for (const label of ["Tipo de equipo", "Marca", "Faena"]) expect(screen.queryByRole("combobox", { name: new RegExp(`^${label}`) })).toBeNull()
+    expect(screen.getByText(/se cambian en «Editar vehículo»/)).toBeDefined()
+    expect(screen.getByText(/Solo aparecen pautas en kilómetros/)).toBeDefined()
+  })
+
+  it("«Dado de baja» pide el motivo y con registros la lectura queda fija", () => {
+    renderPlan({ retired: true, initialReading: "12.345" }, true)
     expect((screen.getByRole("radio", { name: "Dado de baja" }) as HTMLInputElement).checked).toBe(true)
     expect(screen.getByLabelText(/^Motivo de la baja/)).toBeDefined()
     const reading = screen.getByLabelText(/^Lectura actual/) as HTMLInputElement
@@ -292,13 +328,12 @@ describe("EquipmentForm", () => {
     expect(screen.getByText(/ya tiene registros/)).toBeDefined()
   })
 
-  it("envía los campos con los nombres que lee la acción", async () => {
-    const action = renderForm({ code: "KA-1", plate: "BCDF-12", equipmentTypeId: "t-km", brandId: "b1", worksiteId: "w1", model: "R450" }, { vehicleId: "veh-9" })
-    await act(async () => { fireEvent.submit(screen.getByRole("button", { name: "Crear equipo" }).closest("form")!) })
-    expect(action).toHaveBeenCalledTimes(1)
+  it("envía lo que lee la acción, y nada de la identidad", async () => {
+    const { action } = renderPlan({ initialReading: "40.312" })
+    await act(async () => { fireEvent.submit(screen.getByRole("button", { name: "Guardar cambios" }).closest("form")!) })
     const data = (action.mock.calls[0] as unknown as [unknown, FormData])[1]
-    expect(Object.fromEntries([...data.entries()].filter(([, value]) => typeof value === "string"))).toMatchObject({
-      vehicleId: "veh-9", code: "KA-1", plate: "BCDF-12", equipmentTypeId: "t-km", brandId: "b1", worksiteId: "w1", model: "R450", scheduleId: "", status: "activo",
-    })
+    const sent = Object.fromEntries([...data.entries()].filter(([, value]) => typeof value === "string"))
+    expect(sent).toMatchObject({ vehicleId: "veh-9", scheduleId: "s-km", initialReading: "40.312", status: "activo" })
+    for (const key of ["code", "plate", "equipmentTypeId", "brandId", "worksiteId", "model", "year"]) expect(sent).not.toHaveProperty(key)
   })
 })

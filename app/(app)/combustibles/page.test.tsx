@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { ComponentProps, ReactElement, ReactNode } from "react"
-import { render, screen, within } from "@testing-library/react"
+import { cleanup, render, screen, within } from "@testing-library/react"
 import type { Session } from "next-auth"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { describeFuelPeriod } from "@/lib/combustibles/period/parse"
@@ -34,8 +34,25 @@ vi.mock("@/components/ui/page-header", () => ({
   ),
   Breadcrumbs: () => null,
 }))
+// La cabecera del tablero: la faena (si la hay) va antes de las acciones y el «Exportar Excel» después.
 vi.mock("@/components/combustibles/fuel-header-actions", () => ({
-  FuelHeaderActions: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  FuelHeaderActions: ({ children, worksites, worksiteId, exportButton }: {
+    children?: ReactNode
+    worksites?: ReadonlyArray<{ id: string }>
+    worksiteId?: string | null
+    exportButton?: ReactNode
+  }) => (
+    <div>
+      {worksites ? <div data-testid="filtro-faena" data-faenas={worksites.length} data-value={worksiteId ?? ""} /> : null}
+      {children}
+      {exportButton}
+    </div>
+  ),
+}))
+vi.mock("@/components/dashboard/board-export-button", () => ({
+  BoardExportButton: ({ title, scope }: { title: string; scope: Record<string, string> }) => (
+    <button type="button" data-scope={JSON.stringify(scope)}>Exportar Excel: {title}</button>
+  ),
 }))
 vi.mock("@/components/combustibles/add-fuel-data-button", () => ({
   AddFuelDataButton: () => <button type="button">Agregar datos</button>,
@@ -46,7 +63,6 @@ vi.mock("./_indicadores/consumo-section", () => ({
   ConsumoSection: ({ worksiteId }: { worksiteId?: string }) => <section aria-label="Consumo" data-faena={worksiteId ?? ""} />,
 }))
 vi.mock("./_indicadores/eficiencia-section", () => ({ EficienciaSection: () => <section aria-label="Eficiencia" /> }))
-vi.mock("./_shared/control-filters", () => ({ ControlFilters: () => <div data-testid="filtro-faena" /> }))
 const worksites = vi.hoisted(() => ({ list: [{ id: "ws-1", name: "Biodiversa" }, { id: "ws-2", name: "Cholguán" }] }))
 vi.mock("./consumo/_components/control-context", () => ({ loadControlContext: async () => ({ worksites: worksites.list }) }))
 
@@ -67,7 +83,7 @@ const jefatura: PanelData = {
   steps: buildPanelSteps({
     period, today: TODAY,
     visible: { fuentes: true, cuadratura: true, pagos: true },
-    sources: null, inbox: { total: 2, byKind: { carga: 2, caso: 0, patente: 0, pedido: 0 }, oldestWaitingSince: null },
+    sources: null, inbox: { total: 2, byKind: { carga: 2, caso: 0, patente: 0, pedido: 0 }, oldestWaitingSince: null, oldestByKind: { carga: null, caso: null, patente: null, pedido: null } },
     reconciliation: null, worse: { count: 0, examples: [] }, hasPerformanceData: true, payables: null,
   }),
 }
@@ -119,11 +135,11 @@ describe("página del Panel de combustible", () => {
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1)
   })
 
-  it("la cabecera lleva «Agregar datos» sólo si alguna opción está permitida y «Registrar carga» sólo con register_load", async () => {
+  it("la cabecera lleva «Agregar datos» como única entrada de alta: registrar una carga a mano es una de sus opciones", async () => {
     await renderPage()
     const actions = within(screen.getByTestId("actions"))
     expect(actions.getByRole("button", { name: "Agregar datos" })).toBeInTheDocument()
-    expect(actions.getByRole("link", { name: "Registrar carga" })).toHaveAttribute("href", "/combustibles/cargas/registrar")
+    expect(actions.queryByRole("link", { name: "Registrar carga" })).not.toBeInTheDocument()
   })
 
   it("sin permiso de importar ni de registrar, la cabecera no ofrece ni lo uno ni lo otro", async () => {
@@ -188,17 +204,42 @@ describe("página del Panel de combustible", () => {
     expect(within(screen.getByTestId("actions")).queryByRole("link", { name: "Registrar carga" })).not.toBeInTheDocument()
   })
 
-  it("la faena de la URL acota los gráficos; el filtro sólo se ofrece con más de una faena", async () => {
+  it("la faena va en la cabecera, como en los otros tableros, y acota los gráficos", async () => {
     await renderPage({ faena: "ws-2" })
     expect(screen.getByRole("region", { name: "Consumo" })).toHaveAttribute("data-faena", "ws-2")
-    expect(screen.getByTestId("filtro-faena")).toBeInTheDocument()
+    const filter = within(screen.getByTestId("actions")).getByTestId("filtro-faena")
+    expect(filter).toHaveAttribute("data-value", "ws-2")
+    expect(filter).toHaveAttribute("data-faenas", "2")
+    // Los pasos no la siguen, y lo dicen.
+    expect(screen.getByText(/Los pasos del cierre no se filtran por faena: Cholguán acota sólo los gráficos/)).toBeInTheDocument()
   })
 
-  it("con una sola faena no se ofrece el filtro", async () => {
-    worksites.list = [{ id: "ws-1", name: "Biodiversa" }]
+  it("una faena fuera del alcance (o inventada) se ignora, como en los otros tableros", async () => {
+    await renderPage({ faena: "ws-ajena" })
+    expect(screen.getByRole("region", { name: "Consumo" })).toHaveAttribute("data-faena", "")
+    expect(screen.getByTestId("filtro-faena")).toHaveAttribute("data-value", "")
+    expect(screen.queryByText(/no se filtran por faena/)).not.toBeInTheDocument()
+  })
+
+  it("«Exportar Excel» del tablero va en la cabecera sólo con el permiso de exportar, con el período y la faena", async () => {
+    await renderPage({ faena: "ws-1" })
+    expect(within(screen.getByTestId("actions")).queryByRole("button", { name: /Exportar Excel/ })).not.toBeInTheDocument()
+    cleanup()
+
+    requirePermission.mockResolvedValue(session(["combustibles:view", "combustibles:export"]))
+    await renderPage({ faena: "ws-1" })
+    const button = within(screen.getByTestId("actions")).getByRole("button", { name: "Exportar Excel: Panel de combustible" })
+    expect(JSON.parse(button.getAttribute("data-scope")!)).toEqual({ periodo: period.label, faena: "Biodiversa" })
+  })
+
+  it("terreno no recibe la faena ni la exportación del tablero: no tiene gráficos", async () => {
+    requirePermission.mockResolvedValue(session(["combustibles:view", "combustibles:register_load", "combustibles:export"]))
+    loadPanelData.mockResolvedValue({
+      variant: "terreno", degraded: [], total: 5, counts: { all: 0, toValidate: 0, withObservation: 0 }, recent: [], toFix: [], ranking: [], planilla: undefined,
+    })
     await renderPage()
     expect(screen.queryByTestId("filtro-faena")).not.toBeInTheDocument()
-    worksites.list = [{ id: "ws-1", name: "Biodiversa" }, { id: "ws-2", name: "Cholguán" }]
+    expect(screen.queryByRole("button", { name: /Exportar Excel/ })).not.toBeInTheDocument()
   })
 
   it("elige la variante por el permiso de la sesión y se la pasa a la carga de datos", async () => {

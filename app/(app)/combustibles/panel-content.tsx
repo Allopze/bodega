@@ -1,8 +1,6 @@
 import type { Session } from "next-auth"
-import Link from "next/link"
 import { Suspense } from "react"
 import { can } from "@/lib/auth/can"
-import { Button } from "@/components/ui/button"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
@@ -11,16 +9,15 @@ import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
 import { FieldPanel } from "@/components/combustibles/panel/panel-field"
 import { PanelProgress, PanelStepsStrip } from "@/components/combustibles/panel/panel-steps"
+import { BoardExportButton } from "@/components/dashboard/board-export-button"
 import { DashboardSectionFallback } from "@/components/dashboard/dashboard-section"
 import { loadPanelData, panelLinker } from "@/lib/combustibles/panel/data"
 import { panelVariantForSession, type PanelVariant } from "@/lib/combustibles/panel/role-variant"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
-import { FUEL_PATHS } from "@/lib/combustibles/routes"
 import { fuelAddDataOptions } from "@/lib/combustibles/section-nav"
 import { ConsumoSection } from "./_indicadores/consumo-section"
 import { EficienciaSection } from "./_indicadores/eficiencia-section"
-import { ControlFilters } from "./_shared/control-filters"
 import { loadControlContext } from "./consumo/_components/control-context"
 
 type SearchParams = Record<string, string | string[] | undefined>
@@ -54,20 +51,27 @@ export async function PanelContent({ session, searchParams: sp }: { session: Ses
   const canRegister = can(session, "combustibles:register_load")
   const addDataOptions = fuelAddDataOptions(session)
 
-  const header = (
+  // Jefatura y consulta ven el tablero: su cabecera sigue el esqueleto común (faena, período, acciones,
+  // «Exportar Excel»). Terreno y contrato trabajan sus cargas y no tienen gráficos que acotar ni exportar.
+  const header = (board?: { worksites: ReadonlyArray<{ id: string; name: string }>; worksiteId: string | null; worksiteName: string }) => (
     <PageHeader
       title="Panel de combustible"
       description={DESCRIPTIONS[variant]}
       breadcrumb={<FuelBreadcrumbs />}
       actions={
-        <FuelHeaderActions period={period}>
+        <FuelHeaderActions
+          period={period}
+          worksites={board?.worksites}
+          worksiteId={board?.worksiteId}
+          exportButton={board && can(session, "combustibles:export")
+            ? <BoardExportButton title="Panel de combustible" range={{ from: period.from, to: period.to }} scope={{ periodo: period.label, faena: board.worksiteName }} />
+            : null}
+        >
+          {/* Una sola entrada para dar de alta (A3): «Agregar datos» ya ofrece «Quiero registrar una carga a
+              mano». El botón «Registrar carga» aparte repetía ese flujo y no dejaba caber el esqueleto común
+              (faena, período, exportar) a 1280 px. En terreno y contrato el bloque «Registrar una carga» del
+              cuerpo sigue siendo la acción principal. */}
           {addDataOptions.some((option) => option.allowed) ? <AddFuelDataButton options={addDataOptions} /> : null}
-          {/* En terreno y contrato el bloque «Registrar una carga» ya es la acción principal. */}
-          {canRegister && variant === "jefatura" ? (
-            <Button asChild size="sm">
-              <Link href={FUEL_PATHS.registrar}>Registrar carga</Link>
-            </Button>
-          ) : null}
         </FuelHeaderActions>
       }
     />
@@ -77,7 +81,7 @@ export async function PanelContent({ session, searchParams: sp }: { session: Ses
     const data = await loadPanelData(session, period, variant)
     return (
       <PageContainer>
-        {header}
+        {header()}
         {data.degraded.length > 0 ? (
           <div className="mb-4">
             <DegradedDataBanner degraded={data.degraded} total={data.total} />
@@ -94,11 +98,15 @@ export async function PanelContent({ session, searchParams: sp }: { session: Ses
     variant === "jefatura" ? loadPanelData(session, period, "jefatura") : Promise.resolve(null),
     loadControlContext(session, { years: false }),
   ])
-  const worksiteId = first(sp.faena)
+  // Una faena fuera del alcance (o inventada en la URL) se ignora, como en los otros dos tableros.
+  const requested = first(sp.faena)
+  const worksite = requested ? ctx.worksites.find((item) => item.id === requested) : undefined
+  const worksiteId = worksite?.id
+  const worksiteName = worksite?.name ?? (ctx.worksites.length === 1 ? ctx.worksites[0]!.name : "Todas las faenas")
 
   return (
     <PageContainer>
-      {header}
+      {header({ worksites: ctx.worksites, worksiteId: worksiteId ?? null, worksiteName })}
 
       {data && data.degraded.length > 0 ? (
         <div className="mb-4">
@@ -108,13 +116,18 @@ export async function PanelContent({ session, searchParams: sp }: { session: Ses
 
       {data?.variant === "jefatura" ? (
         <div className="mb-8">
-          <PanelProgress label={period.label} status={period.status} ready={data.steps.readyCount} total={data.steps.total} />
+          <PanelProgress
+            label={period.label}
+            status={period.status}
+            ready={data.steps.readyCount}
+            total={data.steps.total}
+            // La faena de la cabecera acota los gráficos; el cierre del mes es de todo el alcance.
+            scopeNote={worksite ? `Los pasos del cierre no se filtran por faena: ${worksite.name} acota sólo los gráficos.` : undefined}
+          />
           <PanelStepsStrip steps={data.steps.steps} />
         </div>
       ) : null}
 
-      {/* La faena acota los gráficos, no la tira de pasos (el cierre es de todo el alcance): por eso va aquí. */}
-      {ctx.worksites.length > 1 || worksiteId ? <ControlFilters worksites={ctx.worksites} /> : null}
       <PanelCharts session={session} period={period} worksiteId={worksiteId} />
     </PageContainer>
   )

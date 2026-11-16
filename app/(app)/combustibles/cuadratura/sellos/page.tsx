@@ -146,7 +146,7 @@ export default async function CuadraturaSellosPage({ searchParams }: { searchPar
           total={history.data.length}
           pagination={pagination}
           hrefForPage={(page) => hrefWith(PATH, sp, { pagina: page > 1 ? String(page) : null })}
-          clearHref={hrefWith(PATH, sp, { sello: null, patente: null, pagina: null })}
+          clearHref={sealNumber || plate ? hrefWith(PATH, sp, { sello: null, patente: null, pagina: null }) : undefined}
         />
       )
   } else {

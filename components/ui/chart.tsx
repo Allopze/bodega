@@ -39,13 +39,16 @@ export const ChartContainer = React.forwardRef<
   const uniqueId = React.useId()
   const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`
 
+  // `recharts-legend-item-text`: la leyenda por defecto de recharts pinta cada rótulo con el color
+  // de su serie, y el ocre (`--color-chart-3`) queda a 4,4:1 como texto. El color de la serie va
+  // en la marca; el rótulo, en el texto secundario (crítica 2026-11-15, paso 6).
   return (
     <ChartContext.Provider value={{ config }}>
       <div
         data-chart={chartId}
         ref={ref}
         className={cn(
-          "flex aspect-video justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-[var(--color-text-muted)] [&_.recharts-cartesian-grid_line]:stroke-[var(--color-border)] [&_.recharts-curve.recharts-tooltip-cursor]:stroke-[var(--color-border-strong)] [&_.recharts-dot[aria-selected=true]]:stroke-transparent [&_.recharts-layer]:outline-hidden [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-[var(--color-border)] [&_.recharts-radial-bar-background-sector]:fill-[var(--color-surface-2)] [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-[var(--color-surface-2)] [&_.recharts-reference-line_[stroke='#ccc']]:stroke-[var(--color-border-strong)] [&_.recharts-sector[aria-selected=true]]:outline-hidden [&_.recharts-sector]:outline-hidden [&_.recharts-surface]:outline-hidden",
+          "flex aspect-video justify-center text-xs [&_.recharts-legend-item-text]:text-[var(--color-text-muted)]! [&_.recharts-cartesian-axis-tick_text]:fill-[var(--color-text-muted)] [&_.recharts-cartesian-grid_line]:stroke-[var(--color-border)] [&_.recharts-curve.recharts-tooltip-cursor]:stroke-[var(--color-border-strong)] [&_.recharts-dot[aria-selected=true]]:stroke-transparent [&_.recharts-layer]:outline-hidden [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-[var(--color-border)] [&_.recharts-radial-bar-background-sector]:fill-[var(--color-surface-2)] [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-[var(--color-surface-2)] [&_.recharts-reference-line_[stroke='#ccc']]:stroke-[var(--color-border-strong)] [&_.recharts-sector[aria-selected=true]]:outline-hidden [&_.recharts-sector]:outline-hidden [&_.recharts-surface]:outline-hidden",
           className
         )}
         {...props}

@@ -6,17 +6,14 @@ import { useActionState } from "react"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { Checkbox } from "@/components/ui/checkbox"
-import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { toast } from "@/lib/toast"
 import { unitName } from "@/lib/mantencion/format"
-import type { MantUnit } from "@/lib/mantencion/types"
-import { todayInChile } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
-import { EquipmentStatusFields } from "./equipment-status-fields"
+import { EquipmentPlanFields } from "./equipment-plan-fields"
 import type { EquipmentFormCatalogs, EquipmentFormValues } from "./equipment-form-types"
 
 const SELECT = "h-11 w-full sm:h-9"
@@ -24,32 +21,25 @@ const SELECT = "h-11 w-full sm:h-9"
 type FormAction = (prev: ActionState, formData: FormData) => Promise<ActionState>
 
 /**
- * Formulario del equipo: es el mismo para «Nuevo equipo» y «Editar ficha». Los
- * campos están controlados porque unos dependen de otros (el tipo fija la unidad
- * y con ella las pautas que se ofrecen; la baja pide su motivo). El servidor vuelve a validar todo y devuelve los errores por
- * campo; si hay registros, la unidad y la lectura inicial quedan fijas.
+ * Formulario de «Nuevo equipo». Los campos están controlados porque unos dependen de otros (el
+ * tipo fija la unidad y con ella las pautas que se ofrecen). El servidor vuelve a validar todo y
+ * devuelve los errores por campo.
+ *
+ * Un equipo que ya existe no se edita aquí (crítica 2026-11-15, paso 4b): su identidad se edita
+ * en «Editar vehículo» (el padrón, con estas mismas reglas) y su pauta, lectura inicial y baja en
+ * «Editar mantención» (`EquipmentPlanForm`, que comparte los campos de la pauta).
  */
 export function EquipmentForm({
   action,
   catalogs,
   initial,
-  vehicleId,
-  lockedUnit,
   cancelHref,
-  onCancel,
-  onSaved,
   submitLabel,
 }: {
   action: FormAction
   catalogs: EquipmentFormCatalogs
   initial: EquipmentFormValues
-  /** Sólo en la edición. */
-  vehicleId?: string
-  /** Unidad que ya no se puede cambiar porque el equipo tiene registros. */
-  lockedUnit?: MantUnit
   cancelHref?: string
-  onCancel?: () => void
-  onSaved?: () => void
   submitLabel: string
 }) {
   const [state, formAction] = useActionState(action, { ok: false } as ActionState)
@@ -59,8 +49,6 @@ export function EquipmentForm({
 
   const type = catalogs.types.find((item) => item.id === values.equipmentTypeId)
   const schedules = React.useMemo(() => (type ? catalogs.schedules.filter((item) => item.unit === type.unit) : []), [type, catalogs.schedules])
-  const readingLocked = lockedUnit !== undefined
-  const today = todayInChile()
 
   // Una pauta elegida antes de cambiar el tipo a otra unidad ya no sirve: se suelta, no se envía a escondidas.
   React.useEffect(() => {
@@ -72,12 +60,10 @@ export function EquipmentForm({
     if (!state.ok || reportedRef.current === state) return
     reportedRef.current = state
     toast.success(state.message ?? "Cambios guardados.")
-    onSaved?.()
-  }, [state, onSaved])
+  }, [state])
 
   return (
     <form action={formAction} noValidate className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:p-6">
-      {vehicleId && <input type="hidden" name="vehicleId" value={vehicleId} />}
       {!state.ok && state.message && !state.fieldErrors && <Callout tone="danger" role="alert" className="mb-4">{state.message}</Callout>}
       <p className="mb-4 text-sub">Los campos con * son obligatorios. El equipo aparece en la app del mecánico en su próxima sincronización.</p>
       <div className="grid gap-4 md:grid-cols-2">
@@ -95,12 +81,12 @@ export function EquipmentForm({
         </div>
         <Field
           label="Tipo de equipo" required htmlFor="eq-type" error={error("equipmentTypeId")}
-          helper={type ? `Se mide en ${unitName(type.unit)}.${readingLocked ? " No se puede cambiar a otra unidad porque ya tiene registros." : ""}` : undefined}
+          helper={type ? `Se mide en ${unitName(type.unit)}.` : undefined}
         >
           <OptionSelect
             id="eq-type" name="equipmentTypeId" className={SELECT} placeholder="Elige el tipo…" value={values.equipmentTypeId} error={!!error("equipmentTypeId")}
             onValueChange={(v) => set("equipmentTypeId", v)}
-            options={catalogs.types.map((item) => ({ value: item.id, label: `${item.name} · ${item.unit}`, textValue: item.name, disabled: readingLocked && item.unit !== lockedUnit }))}
+            options={catalogs.types.map((item) => ({ value: item.id, label: `${item.name} · ${item.unit}`, textValue: item.name }))}
           />
         </Field>
         <Field label="Marca" required htmlFor="eq-brand" error={error("brandId")} helper="Lista cerrada: las reglas por marca de las pautas dependen de ella.">
@@ -119,37 +105,18 @@ export function EquipmentForm({
             options={catalogs.worksites.map((item) => ({ value: item.id, label: item.name }))}
           />
         </Field>
-        <Field
-          label="Pauta de mantención" htmlFor="eq-schedule" error={error("scheduleId")}
-          helper={!type ? "Elige primero el tipo de equipo." : schedules.length ? `Solo aparecen pautas en ${unitName(type.unit)}.` : `No hay pautas en ${unitName(type.unit)}. Crea una en Pautas.`}
-        >
-          <OptionSelect
-            id="eq-schedule" name="scheduleId" className={SELECT} emptyLabel="Sin pauta" disabled={!type} value={values.scheduleId} error={!!error("scheduleId")} onValueChange={(v) => set("scheduleId", v)}
-            options={schedules.map((item) => ({ value: item.id, label: `${item.name} (${item.intervalCount} ${item.intervalCount === 1 ? "intervalo" : "intervalos"})`, textValue: item.name }))}
-          />
-        </Field>
-        <Field label={`Lectura actual${type ? ` (${type.unit})` : ""}`} htmlFor="eq-reading" error={error("initialReading")} helper={readingLocked ? "Fija: el equipo ya tiene registros." : "Opcional. Sirve para calcular la próxima mantención antes del primer registro."}>
-          <Input id="eq-reading" name="initialReading" inputMode="numeric" className="font-mono" readOnly={readingLocked} value={values.initialReading} onChange={(e) => set("initialReading", e.target.value)} error={!!error("initialReading")} />
-        </Field>
-        {!readingLocked && values.initialReading.trim() && (
-          <Field label="Fecha de la lectura" htmlFor="eq-readingDate" error={error("initialReadingDate")} helper="Si la dejas vacía, se usa hoy.">
-            <DatePicker id="eq-readingDate" name="initialReadingDate" max={today} value={values.initialReadingDate} onChange={(iso) => set("initialReadingDate", iso)} error={!!error("initialReadingDate")} />
-          </Field>
-        )}
-      </div>
-      {vehicleId && (
-        <EquipmentStatusFields
-          retired={values.retired}
-          reason={values.retiredReason}
-          error={error("retiredReason")}
+        <EquipmentPlanFields
+          unit={type?.unit ?? null}
+          schedules={catalogs.schedules}
+          values={values}
+          readingLocked={false}
+          error={error}
           onChange={(patch) => setValues((current) => ({ ...current, ...patch }))}
         />
-      )}
+      </div>
       <div className="mt-6 flex flex-wrap gap-2">
         <SubmitButton label={submitLabel} loadingLabel="Guardando…" />
-        {onCancel
-          ? <Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button>
-          : cancelHref && <Button asChild variant="secondary"><Link href={cancelHref}>Cancelar</Link></Button>}
+        {cancelHref && <Button asChild variant="secondary"><Link href={cancelHref}>Cancelar</Link></Button>}
       </div>
     </form>
   )

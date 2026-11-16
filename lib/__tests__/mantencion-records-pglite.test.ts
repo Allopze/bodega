@@ -48,7 +48,6 @@ const { filterFleet } = await import("@/lib/services/mantencion/equipment-list")
 const { loadPanel } = await import("@/lib/services/mantencion/panel")
 const { parsePanelFilters } = await import("@/lib/services/mantencion/panel-filters")
 const { exportRecords } = await import("@/lib/services/mantencion/export-records")
-const { exportPanel } = await import("@/lib/services/mantencion/export-panel")
 const { voidRecord } = await import("@/lib/services/mantencion/record-lifecycle")
 const { getRecordPdf, pdfMutableFingerprint, pdfRevision, pdfStorageName } = await import("@/lib/services/mantencion/record-pdf")
 const { createMantencionFilePath } = await import("@/lib/storage/config")
@@ -679,44 +678,5 @@ describe("panel", () => {
     const row = sheet.getRow(2)
     expect(row.getCell(headers.indexOf("Salió de taller") + 1).value || null).toBeNull()
     expect(row.getCell(headers.indexOf("Días detenido") + 1).value || null).toBeNull()
-  })
-
-  it("el libro del panel trae los indicadores con el período y la faena aplicados", async () => {
-    const outcome = await exportPanel({ session: await sessionOf(IDS.jefe), filters: parsePanelFilters({ periodo: "30", faena: IDS.wsBio }) })
-    expect(outcome.ok).toBe(true)
-    if (!outcome.ok) return
-    const workbook = new ExcelJS.Workbook()
-    await workbook.xlsx.load(Buffer.from(outcome.data.base64, "base64") as never)
-    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
-      "Indicadores", "Registros por semana", "Estado de la flota", "Próximas mantenciones", "En taller ahora", "Horas por faena", "Ítems sin hacer", "Metadatos",
-    ])
-    const indicators = workbook.getWorksheet("Indicadores")!
-    expect(indicators.getRow(3).getCell(1).value).toBe("Faena")
-    expect(indicators.getRow(3).getCell(2).value).toBe("Biodiversa")
-    expect(workbook.getWorksheet("Registros por semana")!.getRow(2).getCell(1).value).toBeInstanceOf(Date)
-  })
-
-  it("D4: la fecha de inicio sale con formatDate y la columna de horas lleva el mismo nombre que la pantalla", async () => {
-    const outcome = await exportPanel({ session: await sessionOf(IDS.jefe), filters: parsePanelFilters({ periodo: "30" }) })
-    if (!outcome.ok) throw new Error("exportación rechazada")
-    const workbook = new ExcelJS.Workbook()
-    await workbook.xlsx.load(Buffer.from(outcome.data.base64, "base64") as never)
-    expect(String(workbook.getWorksheet("Indicadores")!.getRow(2).getCell(3).value)).toMatch(/^Desde el \d{2}-\d{2}-\d{4}$/)
-    expect(workbook.getWorksheet("Horas por faena")!.getRow(1).getCell(2).value).toBe("Horas hombre (h)")
-    expect(workbook.getWorksheet("Indicadores")!.getRow(8).getCell(1).value).toBe("Horas hombre del período (h)")
-  })
-
-  it("D4: una faena fuera del alcance de quien exporta no se aplica ni se nombra en el libro", async () => {
-    // El supervisor de Biodiversa pide la faena de Cholguán por la URL: sale con su propio alcance.
-    const outcome = await exportPanel({ session: await sessionOf(IDS.supBio), filters: parsePanelFilters({ periodo: "30", faena: IDS.wsCho }) })
-    if (!outcome.ok) throw new Error("exportación rechazada")
-    const workbook = new ExcelJS.Workbook()
-    await workbook.xlsx.load(Buffer.from(outcome.data.base64, "base64") as never)
-    const indicators = workbook.getWorksheet("Indicadores")!
-    expect(indicators.getRow(3).getCell(2).value).toBe("Todas las faenas")
-    const metadata = JSON.stringify(workbook.getWorksheet("Metadatos")!.getSheetValues())
-    expect(metadata).not.toContain("Cholguán")
-    const audit = (await testDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityType, "mant_panel_export")))
-    expect(audit.every((row) => row.worksiteId === null || row.worksiteId !== IDS.wsCho)).toBe(true)
   })
 })

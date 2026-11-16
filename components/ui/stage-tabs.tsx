@@ -3,6 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
+import { useScrollEdges } from "@/lib/hooks/use-scroll-edges"
 import { cn } from "@/lib/utils"
 
 export interface StageTab {
@@ -40,6 +41,8 @@ export function StageTabs({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const current = searchParams.get(param) ?? ""
+  // En el móvil las pestañas se desplazan: el borde difuminado dice que hay más (paso 7).
+  const { attach, edges, style: scrollStyle } = useScrollEdges<HTMLElement>()
 
   function hrefFor(value: string) {
     const params = new URLSearchParams(Array.from(searchParams.entries()))
@@ -52,6 +55,10 @@ export function StageTabs({
 
   return (
     <nav
+      ref={attach}
+      style={scrollStyle}
+      data-scroll-start={edges.start || undefined}
+      data-scroll-end={edges.end || undefined}
       aria-label={ariaLabel}
       className="-mx-1 flex items-end gap-0 overflow-x-auto border-b border-[var(--color-border)] px-1"
     >

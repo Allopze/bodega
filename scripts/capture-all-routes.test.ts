@@ -183,14 +183,16 @@ describe("capture-all-routes route inventory", () => {
    */
   it("no conserva capturas de rutas que ya no existen", () => {
     const patterns = discoverRoutePatterns()
-    // `/repuestos` y `/servicios` viven en los redirects de next.config.ts, no
-    // en `app/`; la ruta inexistente y el subpath de investigación se declaran
-    // a propósito con su estado esperado.
+    // `/repuestos`, `/servicios` y las fichas viejas de equipo (Mantención y
+    // Combustible, hoy pestañas de `/flota/[id]`) viven en los redirects de
+    // next.config.ts, no en `app/`; la ruta inexistente y el subpath de
+    // investigación se declaran a propósito con su estado esperado.
     const intentional = [
       "/app-ruta-inexistente-auditoria",
       "/prevencion/incidentes/inc-audit-1/procedimiento",
       "/repuestos", "/repuestos/nueva", "/repuestos/rep-audit-1",
       "/servicios", "/servicios/nueva", "/servicios/srv-audit-1",
+      "/mantencion/equipos/fuel-veh-audit-1", "/combustibles/consumo/equipos/fuel-veh-audit-1",
     ]
     const orphans = declaredPathnames().filter(
       (pathname) => !intentional.includes(pathname)

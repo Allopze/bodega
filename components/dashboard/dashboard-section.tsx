@@ -77,7 +77,8 @@ export function DashboardSection({ id, title, kpis, kpiGroups, summary, charts, 
             <Link
               key={link.href}
               href={link.href}
-              className="inline-flex min-h-8 items-center gap-1 rounded-md px-1.5 text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+              // 44 px en móvil, 32 px desde `sm` (crítica 2026-11-15, paso 6).
+              className="inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 text-xs font-semibold sm:min-h-8 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
             >
               {link.label}
               <ArrowRight size={12} weight="bold" aria-hidden />

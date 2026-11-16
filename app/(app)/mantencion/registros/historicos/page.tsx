@@ -72,6 +72,8 @@ export default async function HistoricalRecordsPage({ searchParams }: { searchPa
             {list.rows.map((row) => (
               <li key={row.sourceKey}>
                 <ResponsiveDataListCard
+                  // La lista es el contenido de la página: sus tarjetas cuelgan del h1 (paso 6).
+                  headingLevel={2}
                   title={row.equipmentText || "Sin equipo"}
                   description={`${row.worksiteText || "Sin faena"} · ${row.entryDate ? formatDate(row.entryDate) : "Fecha no informada"}`}
                   actions={(
