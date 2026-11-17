@@ -37,7 +37,7 @@ import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
  * cero que se lea como «todo en orden». La página es quien envuelve cada consulta.
  */
 
-interface Common {
+export interface Common {
   from: string
   to: string
   granularity: IndicatorGranularity
@@ -57,7 +57,7 @@ interface Common {
 
 const PERIOD_VS = "vs. período anterior"
 
-function withParams(base: string, params: Record<string, string | null | undefined>): string {
+export function withParams(base: string, params: Record<string, string | null | undefined>): string {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) if (value) query.set(key, value)
   const text = query.toString()
@@ -75,7 +75,7 @@ function formatDuration(hours: number): string {
  * de tipo «one» (dos por fila en `xl`, tres en `2xl`) y el reparto sólo ensancha uno para cerrar
  * una fila; los que no se pintan no ocupan lugar.
  */
-function spansFor<T extends string>(cells: Array<{ id: T; visible: boolean }>): Record<T, SlotSpan> {
+export function spansFor<T extends string>(cells: Array<{ id: T; visible: boolean }>): Record<T, SlotSpan> {
   const shown = cells.filter((cell) => cell.visible)
   const spans = layoutChartSlots(shown.map(() => "one" as const))
   const result = {} as Record<T, SlotSpan>
@@ -92,7 +92,7 @@ function trendHint(change: number | null): string | undefined {
 }
 
 /** `note`: el del período (`scopeNote`) o el de la ventana de un gráfico de evolución (`chartNote`). */
-function excelFor(common: Common, note: string): ChartDataExcel | undefined {
+export function excelFor(common: Common, note: string): ChartDataExcel | undefined {
   return common.canExport ? { permission: "mant:export", notes: [note] } : undefined
 }
 

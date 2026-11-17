@@ -599,4 +599,7 @@ export const pgliteTestFiles = [
   // Gráficos del Panel de mantención (/mantencion/panel): OT creadas, cerradas y en
   // cola por balde, pautas, días fuera de servicio y alcance por faena.
   "lib/services/mantencion/indicators-pglite.test.ts",
+  // Sección «Reportes de equipos» del Panel de mantención: esperados y recibidos por fecha de
+  // turno, firmas, horas, fallas abiertas con su antigüedad y alcance por faena.
+  "lib/services/mantencion/reporte-equipos-pglite.test.ts",
 ]

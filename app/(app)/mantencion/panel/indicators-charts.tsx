@@ -93,7 +93,7 @@ interface StackSeries<K extends string> {
   color: string
 }
 
-function StackedBucketsChart<K extends string>({
+export function StackedBucketsChart<K extends string>({
   title,
   source,
   ariaLabel,
