@@ -37,12 +37,11 @@ describe("«Nueva orden»", () => {
     expect((sheet.getByRole("button", { name: "Crear orden" }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it("el campo de costo dice mano de obra / taller externo y aclara que lo comprado con orden de compra se suma solo", async () => {
+  it("la OT no pide costo: ni mano de obra ni costo total (decisión 2026-11-17)", async () => {
     render(<NewWorkOrderCta {...BASE} />)
     const sheet = await openSheet()
-    expect(sheet.getByLabelText("Costo mano de obra / taller externo (CLP, opcional)")).toBeTruthy()
-    expect(sheet.getByText("Sólo mano de obra o taller externo. Los repuestos y servicios comprados con orden de compra se suman solos desde la solicitud vinculada.")).toBeTruthy()
-    expect(sheet.queryByText(/Costo total/)).toBeNull()
+    expect(sheet.queryByLabelText(/Costo/)).toBeNull()
+    expect(sheet.queryByText(/mano de obra|Costo total/i)).toBeNull()
   })
 
   it("el selector de mecánico sólo existe para quien administra las OT", async () => {
@@ -114,8 +113,9 @@ describe("«Nueva orden»", () => {
     const payload = JSON.parse(String(formData.get("payload")))
     expect(payload).toMatchObject({
       vehicleId: "veh-1", repair: true, maintenance: false, requestDate: "2026-11-02", requesterName: "Ana Pérez",
-      repairDescription: "Pierde aceite por el cárter", observations: null, totalCost: null, annexItems: ["Cambiar pastillas de freno"], maintenanceItems: [], assignedToUserId: null,
+      repairDescription: "Pierde aceite por el cárter", observations: null, annexItems: ["Cambiar pastillas de freno"], maintenanceItems: [], assignedToUserId: null,
     })
+    expect(payload).not.toHaveProperty("totalCost")
     expect(payload.clientRequestId).toMatch(/^[0-9a-f-]{36}$/)
     await waitFor(() => expect(push).toHaveBeenCalledWith("/mantencion/ot/ot-3"))
   })
@@ -135,17 +135,12 @@ describe("«Nueva orden»", () => {
 describe("buildCreatePayload", () => {
   const values = {
     vehicleId: "veh-1", repair: false, maintenance: true, requestDate: "2026-11-02", requesterName: "  Ana  ", repairDescription: "ignorada", observations: "  ",
-    totalCost: "125000",
     annexItems: ["x"], maintenanceItems: [" Cambio de aceite ", "", "  "], assignedToUserId: "",
   }
   it("descarta la reparación si no se marcó, recorta textos y quita líneas vacías", () => {
     expect(buildCreatePayload(values, "cid")).toEqual({
       clientRequestId: "cid", vehicleId: "veh-1", repair: false, maintenance: true, requestDate: "2026-11-02", requesterName: "Ana", repairDescription: null,
-      observations: null, totalCost: 125000, annexItems: ["x"], maintenanceItems: ["Cambio de aceite"], assignedToUserId: null,
+      observations: null, annexItems: ["x"], maintenanceItems: ["Cambio de aceite"], assignedToUserId: null,
     })
-  })
-
-  it("un costo vacío viaja como null, no como 0", () => {
-    expect(buildCreatePayload({ ...values, totalCost: "" }, "cid").totalCost).toBeNull()
   })
 })

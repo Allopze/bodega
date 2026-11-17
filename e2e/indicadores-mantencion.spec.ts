@@ -57,20 +57,20 @@ test.beforeAll(async () => {
       insert into mant_work_orders (id, folio, vehicle_id, worksite_id, equipment_snapshot, repair, maintenance, request_date, requested_by_user_id, requester_name, repair_description, status)
       values (${randomUUID()}, ${`${FOLIO}0001`}, ${vehicle.id}, ${vehicle.worksite_id}, ${snapshot}, true, false, ${chileDay(-3)}, ${admin.id}, 'QA_Indicadores', 'QA_ Reparación abierta de prueba', 'solicitada')`
 
-    // Cerrada: pedida hace 12 días, 30 h en taller, cerrada hace 5, con costo cargado.
+    // Cerrada: pedida hace 12 días, 30 h en taller, cerrada hace 5.
     const entry = hace(10)
     const exit = new Date(Date.parse(entry) + 30 * 3_600_000).toISOString()
     await sql`
       insert into mant_work_orders (
         id, folio, vehicle_id, worksite_id, equipment_snapshot, repair, maintenance, request_date, requested_by_user_id, requester_name, repair_description,
-        total_cost, status, assigned_to_user_id, assigned_by_user_id, assigned_at,
+        status, assigned_to_user_id, assigned_by_user_id, assigned_at,
         workshop_kind, workshop_entry_at, estimated_delivery_date, started_at, started_by_user_id,
         workshop_exit_at, finished_at, finished_by_user_id,
         received_at, receiver_name, received_by_user_id, received_recorded_at,
         faena_received_at, faena_receiver_name, faena_received_by_user_id, closed_at
       ) values (
         ${randomUUID()}, ${`${FOLIO}0002`}, ${vehicle.id}, ${vehicle.worksite_id}, ${snapshot}, true, false, ${chileDay(-12)}, ${admin.id}, 'QA_Indicadores', 'QA_ Reparación cerrada de prueba',
-        125000, 'cerrada', ${admin.id}, ${admin.id}, ${entry},
+        'cerrada', ${admin.id}, ${admin.id}, ${entry},
         'interno', ${entry}, ${chileDay(-8)}, ${entry}, ${admin.id},
         ${exit}, ${exit}, ${admin.id},
         ${exit}, 'QA_ Recibe Taller', ${admin.id}, ${exit},
@@ -121,7 +121,8 @@ test.describe("Panel de mantención: gráficos", () => {
     await expect(ordenes.getByText(/OT abiertas?(,| están)/).first()).toBeVisible()
     await expect(ordenes.getByRole("link", { name: /OT cerradas en el período/ })).toBeVisible()
     await expect(ordenes.getByRole("link", { name: /Tiempo medio de reparación/ })).toBeVisible()
-    await expect(ordenes.getByRole("link", { name: /Mano de obra y taller/ })).toBeVisible()
+    // La OT no lleva costo (decisión 2026-11-17): la tira no publica mano de obra.
+    await expect(ordenes.getByRole("link", { name: /Mano de obra/ })).toHaveCount(0)
     // Las OT abiertas por estado son un gráfico de barras (la sembrada «Por asignar» cuenta una).
     // Con enlaces por estado el ranking es un grupo con nombre, no una imagen (paso 6: nada interactivo dentro de role=img).
     const porEstado = ordenes.getByRole("group", { name: /^OT abiertas hoy por estado/ })

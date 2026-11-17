@@ -61,8 +61,6 @@ export interface VehicleWorkOrderMetrics {
   /** OT de reparación cerradas en el período, y las horas en taller de ellas (ingreso → salida completos): base del MTTR. */
   repairClosedInPeriod: number
   repairClosedWorkshopHours: number
-  /** Suma del costo cargado en las OT cerradas del período; null si ninguna lo trae. */
-  maintenanceCostInPeriod: number | null
   /** Última salida de taller registrada (cualquier OT vigente del equipo). */
   lastExitAt: string | null
   /** La OT cerrada más reciente del equipo (por fecha de cierre). */
@@ -149,9 +147,6 @@ export async function getVehicleWorkOrderMetrics(
     workshopHoursInPeriod: sql<number>`${hoursInPeriod}::float8`,
     repairClosedInPeriod: sql<number>`(COUNT(*) FILTER (WHERE ${closedInRange} AND ${mantWorkOrders.repair}))::int`,
     repairClosedWorkshopHours: sql<number>`${repairClosedHours}::float8`,
-    maintenanceCostInPeriod: period
-      ? sql<number | null>`SUM(${mantWorkOrders.totalCost}) FILTER (WHERE ${closedInRange})`
-      : sql<null>`null`,
     lastExitAt: sql<string | null>`MAX(${mantWorkOrders.workshopExitAt})`,
     lastClosedWorkOrderId: sql<string | null>`(ARRAY_AGG(${mantWorkOrders.id} ORDER BY ${mantWorkOrders.closedAt} DESC) FILTER (WHERE ${mantWorkOrders.status} = 'cerrada'))[1]`,
   })
@@ -175,7 +170,6 @@ export async function getVehicleWorkOrderMetrics(
     workshopHoursInPeriod: Number(row.workshopHoursInPeriod),
     repairClosedInPeriod: Number(row.repairClosedInPeriod),
     repairClosedWorkshopHours: Number(row.repairClosedWorkshopHours),
-    maintenanceCostInPeriod: row.maintenanceCostInPeriod == null ? null : Number(row.maintenanceCostInPeriod),
     lastExitAt: isoOrNull(row.lastExitAt),
     lastClosedWorkOrderId: row.lastClosedWorkOrderId ?? null,
   }]))

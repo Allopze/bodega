@@ -259,7 +259,7 @@ describe("getOperationalControlHub · atención", () => {
       const asset = (id: string) => hub.assets.find((a) => a.id === id)!
       expect(asset("en-mantencion").purchaseAmount).toBe(123_000)
       expect(asset("operativo").purchaseAmount).toBe(0)
-      // Falta combustible y mano de obra: con una sola serie no hay «total».
+      // Falta el combustible: con una sola serie no hay «total».
       expect(asset("en-mantencion").totalCost).toBeNull()
       expect(hub.degradedSources).toEqual([])
     })

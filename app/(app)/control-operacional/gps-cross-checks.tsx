@@ -22,7 +22,6 @@ export function GpsCrossChecks({
   canViewMaintenance,
   canViewPurchaseCosts,
   canViewCosts,
-  canViewWorkOrders,
   canViewCapa,
   canViewInspections,
   degradedSources,
@@ -34,7 +33,6 @@ export function GpsCrossChecks({
   canViewMaintenance: boolean
   canViewPurchaseCosts: boolean
   canViewCosts: boolean
-  canViewWorkOrders: boolean
   canViewCapa: boolean
   canViewInspections: boolean
   degradedSources: string[]
@@ -72,11 +70,11 @@ export function GpsCrossChecks({
     })
   }
 
-  // El costo por km u hora divide el costo total (combustible + compras + OT)
-  // por el avance GPS. Sin las tres series no hay cifra honesta que publicar. La
+  // El costo por km u hora divide el costo total (combustible + compras) por el
+  // avance GPS. Sin las dos series no hay cifra honesta que publicar. La
   // fila lleva el nombre de la cifra (la columna de Vehículos), no el de una de
   // sus series: antes decía «Compras» y enlazaba a «Ver flota».
-  if (canViewPurchaseCosts && canViewCosts && canViewWorkOrders) {
+  if (canViewPurchaseCosts && canViewCosts) {
     rows.push({
       key: "cost-per-unit",
       label: "Costo por km u hora",

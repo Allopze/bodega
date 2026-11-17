@@ -34,13 +34,12 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     sheet.getRow(1).font = { bold: true }
     sheet.views = [{ state: "frozen", ySplit: 1 }]
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheet.columns.length } }
-    // Las cuatro cifras en pesos del grupo de costos llevan el mismo formato; cada
+    // Las cifras en pesos del grupo de costos llevan el mismo formato; cada
     // columna sólo existe con la capacidad de su serie (ver `buildOperationalAssetExportColumns`).
     if (showFuelCost) sheet.getColumn("fuelCost").numFmt = "$#,##0"
-    if (canViewWorkOrders) sheet.getColumn("maintenanceCost").numFmt = "$#,##0"
     if (canViewPurchaseCosts) sheet.getColumn("purchaseAmount").numFmt = "$#,##0"
-    if (showFuelCost && canViewWorkOrders && canViewPurchaseCosts) sheet.getColumn("totalCost").numFmt = "$#,##0"
-    if (showFuelCost && canViewWorkOrders && canViewPurchaseCosts) sheet.getColumn("gpsCostPerUnit").numFmt = "$#,##0"
+    if (showFuelCost && canViewPurchaseCosts) sheet.getColumn("totalCost").numFmt = "$#,##0"
+    if (showFuelCost && canViewPurchaseCosts) sheet.getColumn("gpsCostPerUnit").numFmt = "$#,##0"
     if (canViewInspections) sheet.getColumn("inspectionCompliance").numFmt = '0.0"%"'
 
     // Mismos decimales que la pantalla: un float crudo en el Excel se copia

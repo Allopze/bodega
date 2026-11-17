@@ -9,7 +9,7 @@ import { migratePGlite } from "@/lib/testing/pglite-migrate"
 
 /**
  * Indicadores de mantención contra Postgres de verdad: alcance (quién ve qué OT, registros y
- * equipos) y las agregaciones principales (OT creadas/cerradas/backlog por mes, MTTR, costo,
+ * equipos) y las agregaciones principales (OT creadas/cerradas/backlog por mes, MTTR,
  * OT abiertas por estado, ranking de reparaciones, registros P/C y días fuera de servicio).
  *
  * El «hoy» es fijo (2026-11-13) para que las cifras no dependan del día en que corre la prueba.
@@ -58,7 +58,7 @@ interface OtInput {
   id: string; vehicleId: string; worksiteId: string; requestDate: string
   repair: boolean; maintenance: boolean; requestedBy: string
   status: "solicitada" | "en_ejecucion" | "cerrada" | "anulada"
-  entryAt?: string; exitAt?: string; closedAt?: string; voidedAt?: string; cost?: number
+  entryAt?: string; exitAt?: string; closedAt?: string; voidedAt?: string
 }
 
 async function insertOt(input: OtInput) {
@@ -70,7 +70,6 @@ async function insertOt(input: OtInput) {
     repair: input.repair, maintenance: input.maintenance, requestDate: input.requestDate,
     requestedByUserId: input.requestedBy, requesterName: "Solicitante de Prueba",
     repairDescription: input.repair ? "Reparación de prueba" : null,
-    totalCost: input.cost ?? null,
     status: input.status,
     assignedToUserId: input.status === "solicitada" || input.status === "anulada" ? null : U.mech,
     assignedByUserId: input.status === "solicitada" || input.status === "anulada" ? null : U.mech,
@@ -118,9 +117,9 @@ beforeAll(async () => {
   await testDb.insert(schema.mantEquipmentProfiles).values([V.a1, V.a2, V.b1].map((vehicleId) => ({ vehicleId, brandId: "b-ind" })))
 
   // OT. «Antes del rango» cerrada en el período anterior (19-06 → 31-08).
-  await insertOt({ id: "a0", vehicleId: V.a1, worksiteId: WS.a, requestDate: "2026-07-01", repair: true, maintenance: false, requestedBy: U.reqA, status: "cerrada", entryAt: "2026-07-02T12:00:00Z", exitAt: "2026-07-04T12:00:00Z", closedAt: "2026-07-20T15:00:00Z", cost: 10_000 })
-  await insertOt({ id: "a1", vehicleId: V.a1, worksiteId: WS.a, requestDate: "2026-09-10", repair: true, maintenance: false, requestedBy: U.reqA, status: "cerrada", entryAt: "2026-09-12T12:00:00Z", exitAt: "2026-09-14T12:00:00Z", closedAt: "2026-10-03T15:00:00Z", cost: 100_000 })
-  await insertOt({ id: "a2", vehicleId: V.a1, worksiteId: WS.a, requestDate: "2026-10-05", repair: true, maintenance: true, requestedBy: U.reqA, status: "cerrada", entryAt: "2026-10-06T12:00:00Z", exitAt: "2026-10-06T18:00:00Z", closedAt: "2026-11-02T15:00:00Z", cost: 50_000 })
+  await insertOt({ id: "a0", vehicleId: V.a1, worksiteId: WS.a, requestDate: "2026-07-01", repair: true, maintenance: false, requestedBy: U.reqA, status: "cerrada", entryAt: "2026-07-02T12:00:00Z", exitAt: "2026-07-04T12:00:00Z", closedAt: "2026-07-20T15:00:00Z" })
+  await insertOt({ id: "a1", vehicleId: V.a1, worksiteId: WS.a, requestDate: "2026-09-10", repair: true, maintenance: false, requestedBy: U.reqA, status: "cerrada", entryAt: "2026-09-12T12:00:00Z", exitAt: "2026-09-14T12:00:00Z", closedAt: "2026-10-03T15:00:00Z" })
+  await insertOt({ id: "a2", vehicleId: V.a1, worksiteId: WS.a, requestDate: "2026-10-05", repair: true, maintenance: true, requestedBy: U.reqA, status: "cerrada", entryAt: "2026-10-06T12:00:00Z", exitAt: "2026-10-06T18:00:00Z", closedAt: "2026-11-02T15:00:00Z" })
   await insertOt({ id: "a3", vehicleId: V.a2, worksiteId: WS.a, requestDate: "2026-10-20", repair: false, maintenance: true, requestedBy: U.reqA, status: "solicitada" })
   await insertOt({ id: "a4", vehicleId: V.a2, worksiteId: WS.a, requestDate: "2026-11-03", repair: true, maintenance: false, requestedBy: U.reqA, status: "en_ejecucion", entryAt: "2026-11-04T12:00:00Z" })
   await insertOt({ id: "a5", vehicleId: V.a1, worksiteId: WS.a, requestDate: "2026-10-07", repair: true, maintenance: false, requestedBy: U.reqA, status: "anulada", voidedAt: "2026-10-08T15:00:00Z" })
@@ -211,22 +210,22 @@ describe("órdenes de trabajo", () => {
     expect(series.at(-1)!.backlog).toBe(2)
   })
 
-  it("cerradas del período vs anterior, tiempo medio de reparación y costo", async () => {
+  it("cerradas del período vs anterior y tiempo medio de reparación", async () => {
     const stats = await loadWorkOrderPeriodStats(GLOBAL, QUERY)
     expect(stats.closed).toBe(2)
     expect(stats.closedPrevious).toBe(1)
     expect(stats.repairClosed).toBe(2)
     // a1: 48 h; a2: 6 h → promedio 27 h.
     expect(stats.mttrHours).toBeCloseTo(27, 5)
-    expect(stats.cost).toBe(150_000)
+    // La OT no lleva costo (decisión 2026-11-17): el período no publica uno.
+    expect(stats).not.toHaveProperty("cost")
   })
 
-  it("sin cierres con costo en el período, el costo es null y no 0", async () => {
+  it("sin cierres en el período, el tiempo medio es null y no 0", async () => {
     const stats = await loadWorkOrderPeriodStats(GLOBAL, { ...QUERY, from: "2026-11-05", to: TODAY, previous: { from: "2026-10-27", to: "2026-11-04" } })
     expect(stats.closed).toBe(0)
     expect(stats.closedPrevious).toBe(1) // a2 se cerró el 2-11
     expect(stats.mttrHours).toBeNull()
-    expect(stats.cost).toBeNull()
   })
 
   it("ranking de equipos con más OT de reparación: sólo con 2 o más, sin anuladas y desempate por patente", async () => {

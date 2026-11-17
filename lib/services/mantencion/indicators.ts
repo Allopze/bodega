@@ -258,8 +258,6 @@ export interface WorkOrderPeriodStats {
   /** Horas promedio en taller de las reparaciones cerradas en el período; `null` si no hubo ninguna que medir. */
   mttrHours: number | null
   repairClosed: number
-  /** Suma de `total_cost` de las cerradas del período; `null` si ninguna trae costo cargado. */
-  cost: number | null
 }
 
 /** Cifras del período para los tiles de OT (mismas definiciones que `getVehicleWorkOrderMetrics`). */
@@ -277,7 +275,6 @@ export async function loadWorkOrderPeriodStats(viewer: MantViewer, query: MantIn
     closedPrevious: sql<number>`(COUNT(*) FILTER (WHERE ${closedIn(prevStart, prevEnd)}))::int`,
     repairClosed: sql<number>`(COUNT(*) FILTER (WHERE ${closedNow} AND ${mantWorkOrders.repair}))::int`,
     repairHours: sql<number>`COALESCE(SUM(EXTRACT(EPOCH FROM (${mantWorkOrders.workshopExitAt} - ${mantWorkOrders.workshopEntryAt})) / 3600) FILTER (WHERE ${repairMeasured}), 0)::float8`,
-    cost: sql<number | null>`SUM(${mantWorkOrders.totalCost}) FILTER (WHERE ${closedNow})`,
   })
     .from(mantWorkOrders)
     .where(and(ne(mantWorkOrders.status, "anulada"), workOrderScope(viewer, query.worksiteId)))
@@ -287,7 +284,6 @@ export async function loadWorkOrderPeriodStats(viewer: MantViewer, query: MantIn
     closedPrevious: Number(row?.closedPrevious ?? 0),
     repairClosed,
     mttrHours: meanTimeToRepairHours(repairClosed, Number(row?.repairHours ?? 0)),
-    cost: row?.cost == null ? null : Number(row.cost),
   }
 }
 

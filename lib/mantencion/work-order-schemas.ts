@@ -31,12 +31,8 @@ const requestFields = {
   requesterName: z.string().trim().min(2, "Indica quién solicita.").max(120),
   repairDescription: z.string().trim().max(2000).nullable(),
   observations: z.string().trim().max(2000).nullable(),
-  /**
-   * Costo de mano de obra o taller externo de la OT (CLP), opcional; puede quedar
-   * vacío. Desde el 2026-11-07 los repuestos y servicios no van acá: se suman
-   * desde las OC de las solicitudes vinculadas al equipo.
-   */
-  totalCost: z.number().finite().min(0).max(999_999_999).nullable().optional(),
+  // La OT no lleva costo (decisión 2026-11-17): los repuestos y servicios se ven
+  // en las OC de las solicitudes vinculadas al equipo.
   annexItems: itemList,
   maintenanceItems: itemList,
 }

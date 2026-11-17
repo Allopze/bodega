@@ -11,8 +11,8 @@ import { IDS, seedControlFixtures } from "@/lib/combustibles/control/queries/tes
 /**
  * Compras vinculadas al equipo en Control operacional (plan «Repuestos
  * vinculados al equipo y a la OT», T15): el costo por equipo suma, además del
- * combustible y la mano de obra de las OT, las líneas de OC de las solicitudes
- * que apuntan al vehículo (`purchase_request_items.vehicle_id`).
+ * combustible, las líneas de OC de las solicitudes que apuntan al vehículo
+ * (`purchase_request_items.vehicle_id`). La OT no lleva costo (decisión 2026-11-17).
  *
  * Se prueban el agregado (`getVehiclePurchaseSummary`) y su integración con el
  * hub, contra Postgres de verdad: lo que decide la cifra es el SQL (estados,
@@ -107,8 +107,8 @@ async function addPurchase(input: {
   })
 }
 
-/** Una OT cerrada con costo cargado a mano (mano de obra / taller externo). */
-async function addClosedWorkOrder(input: { id: string; vehicle: string; worksite: string; totalCost: number; closedAt: string }) {
+/** Una OT cerrada en el período: no aporta costo al equipo. */
+async function addClosedWorkOrder(input: { id: string; vehicle: string; worksite: string; closedAt: string }) {
   await testDb.insert(schema.mantWorkOrders).values({
     id: input.id,
     folio: `OT-OCP-${input.id}`,
@@ -121,7 +121,6 @@ async function addClosedWorkOrder(input: { id: string; vehicle: string; worksite
     requestedByUserId: IDS.user,
     requesterName: "QA",
     repairDescription: "Falla de frenos en la cabina",
-    totalCost: input.totalCost,
     status: "cerrada",
     assignedToUserId: IDS.user,
     assignedByUserId: IDS.user,
@@ -174,7 +173,7 @@ beforeAll(async () => {
   await addPurchase({ orderWorksite: IDS.wsB, vehicle: IDS.vB, orderId: "oc-b1", subtotal: 70_000 })
   await addPurchase({ orderWorksite: IDS.wsC, vehicle: IDS.vC, orderId: "oc-c1", subtotal: 90_000 })
 
-  // Combustible y OT de vA para probar el costo total con las tres series.
+  // Combustible y una OT cerrada de vA: el costo total suma sólo combustible y compras.
   await testDb.insert(schema.fuelProviderSyncRuns).values({
     id: "ocp-run",
     provider: "copec",
@@ -200,7 +199,7 @@ beforeAll(async () => {
     status: "accepted",
     granularity: "transaction",
   })
-  await addClosedWorkOrder({ id: "ocp-ot-1", vehicle: IDS.vA, worksite: IDS.wsA, totalCost: 30_000, closedAt: "2026-03-12T15:00:00Z" })
+  await addClosedWorkOrder({ id: "ocp-ot-1", vehicle: IDS.vA, worksite: IDS.wsA, closedAt: "2026-03-12T15:00:00Z" })
 }, 120_000)
 
 afterEach(() => {
@@ -276,21 +275,27 @@ describe("getOperationalControlHub · compras vinculadas", () => {
     expect(hub.assets.every((asset) => asset.purchaseAmount === null)).toBe(true)
   })
 
-  it("el costo total exige las tres series: combustible + mano de obra + compras", async () => {
+  it("el costo total suma combustible + compras; la OT cerrada no aporta costo", async () => {
     const all = ["flota:view", "combustibles:view", "combustibles:view_costs", "mant:ot:view_all", "purchasing:view"]
 
     const complete = await getOperationalControlHub(session({ permissions: all }), MARCH, { includeAttention: false })
     const a = find(complete, IDS.vA)
-    expect(a).toMatchObject({ fuelBilledAmount: 200_000, maintenanceCost: 30_000, purchaseAmount: 160_000 })
-    expect(a.totalCost).toBe(390_000)
+    expect(a).toMatchObject({ fuelBilledAmount: 200_000, purchaseAmount: 160_000 })
+    expect(a).not.toHaveProperty("maintenanceCost")
+    expect(a.totalCost).toBe(360_000)
 
-    // Un equipo sin OT cerradas con costo en el período aporta $0 de mano de obra:
-    // el total existe igual (antes salía «—» para casi toda la flota).
     const b = find(complete, IDS.vB)
-    expect(b.maintenanceCost).toBe(0)
     expect(b.purchaseAmount).toBe(70_000)
     expect(b.fuelBilledAmount).not.toBeNull()
     expect(b.totalCost).toBe((b.fuelBilledAmount ?? Number.NaN) + 70_000)
+
+    // Sin capacidad de OT el total sigue existiendo: ya no depende de la OT.
+    const withoutWorkOrders = await getOperationalControlHub(
+      session({ permissions: all.filter((permission) => permission !== "mant:ot:view_all") }),
+      MARCH,
+      { includeAttention: false },
+    )
+    expect(find(withoutWorkOrders, IDS.vA).totalCost).toBe(360_000)
 
     // Sin la capacidad de compras no se publica un total que parezca completo.
     const withoutPurchases = await getOperationalControlHub(
@@ -298,6 +303,6 @@ describe("getOperationalControlHub · compras vinculadas", () => {
       MARCH,
       { includeAttention: false },
     )
-    expect(find(withoutPurchases, IDS.vA)).toMatchObject({ fuelBilledAmount: 200_000, maintenanceCost: 30_000, purchaseAmount: null, totalCost: null })
+    expect(find(withoutPurchases, IDS.vA)).toMatchObject({ fuelBilledAmount: 200_000, purchaseAmount: null, totalCost: null })
   })
 })

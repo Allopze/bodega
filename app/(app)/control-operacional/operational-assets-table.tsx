@@ -128,19 +128,14 @@ const COLUMNS = (showMeterMismatch: boolean, canViewCosts: boolean, canViewInspe
     ...(showFuelCost
       ? [{ key: "fuelBilledAmount", label: "Costo combustible (proveedor)", sortable: true, numeric: true, defaultVisible: false }]
       : []),
-    // Mano de obra y taller externo que jefatura carga en la OT cerrada. Los
-    // repuestos y servicios comprados por OC van en su propia columna.
-    ...(canViewWorkOrders
-      ? [{ key: "maintenanceCost", label: "Mano de obra / taller (OT)", sortable: true, numeric: true, defaultVisible: false }]
-      : []),
     ...(canViewPurchaseCosts
       ? [{ key: "purchaseAmount", label: "Repuestos y servicios (OC)", sortable: true, numeric: true, defaultVisible: false }]
       : []),
-    ...(showFuelCost && canViewPurchaseCosts && canViewWorkOrders
+    ...(showFuelCost && canViewPurchaseCosts
       ? [{ key: "gpsCostPerUnit", label: "Costo por km u hora (GPS)", sortable: false, numeric: true, defaultVisible: false }]
       : []),
-    // El total suma las tres series; con una sola ausente no se publica.
-    ...(canViewWorkOrders && showFuelCost && canViewPurchaseCosts
+    // El total suma combustible y compras; con una de las dos ausente no se publica.
+    ...(showFuelCost && canViewPurchaseCosts
       ? [{ key: "totalCost", label: "Costo total", sortable: true, numeric: true, defaultVisible: false }]
       : []),
     // Las acciones no se ocultan: sin «Ver»/«Combustible» la fila no tiene
@@ -183,7 +178,7 @@ export function OperationalAssetsTable({
   showMeterMismatch?: boolean
 }) {
   const showFuelCost = canViewFuel && canViewCosts
-  const showTotalCost = canViewWorkOrders && showFuelCost && canViewPurchaseCosts
+  const showTotalCost = showFuelCost && canViewPurchaseCosts
   const showCapa = canViewCapa && canViewInspections
 
   /**
@@ -374,17 +369,12 @@ export function OperationalAssetsTable({
           {asset.fuelBilledAmount == null ? "—" : formatCLP(asset.fuelBilledAmount)}
         </TableCell>
       )}
-      {canViewWorkOrders && (
-        <TableCell className="text-right font-mono">
-          {asset.maintenanceCost == null ? "—" : formatCLP(asset.maintenanceCost)}
-        </TableCell>
-      )}
       {canViewPurchaseCosts && (
         <TableCell className="text-right font-mono">
           {asset.purchaseAmount == null ? "—" : formatCLP(asset.purchaseAmount)}
         </TableCell>
       )}
-      {showFuelCost && canViewPurchaseCosts && canViewWorkOrders && (
+      {showFuelCost && canViewPurchaseCosts && (
         <TableCell className="text-right font-mono">{formatGpsCost(asset) ?? "—"}</TableCell>
       )}
       {showTotalCost && (
