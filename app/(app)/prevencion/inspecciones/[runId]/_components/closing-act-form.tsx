@@ -50,7 +50,7 @@ export function ClosingActForm({ closingAct, closing, updateClosing }: {
                * `aria-labelledby` que lo pisa —el nombre accesible pasaría
                * de "Firma de prevencionista" a "Firma: prevencionista"— y
                * rompe a todo el que localice el campo por su nombre. */
-              <Field key={signature.role} label={`Firma: ${formatSignatureRole(signature.role)}`} hint="Nombre de quien firma.">
+              <Field key={signature.role} label={`Firma: ${formatSignatureRole(signature.role)}`} hint={closingAct.allowMissingSignatures ? "Déjalo en blanco si el papel no trae esta firma." : "Nombre de quien firma."}>
                 <Input
                   value={signature.name}
                   onChange={(event) => updateClosing((c) => ({

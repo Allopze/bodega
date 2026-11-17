@@ -88,6 +88,14 @@ export interface ChecklistItem {
     rowLabel: string
     columnLabel: string
   }
+  /**
+   * Sólo en ítems `number`: el valor no puede ser menor que el de este otro
+   * ítem de la MISMA sección (p. ej. horómetro de término ≥ inicio). La regla
+   * aplica únicamente cuando los dos tienen valor; un campo en blanco no la
+   * dispara. Lo hace cumplir la captura (error en línea) y
+   * `assessRunCompletion` (bloqueo en el servidor).
+   */
+  notLessThanItemId?: string
 }
 
 export interface ChecklistSection {
@@ -109,6 +117,14 @@ export interface ChecklistSection {
   hasActionCorrectiva?: boolean   // adds "Acción correctiva" column
   requiresPermission?: string     // gate: only users with this permission can view/edit this section
   weekNumber?: 1 | 2 | 3 | 4     // set for acompanamiento_terreno_sN weekly sections (conductor_lider)
+  /**
+   * Tipos de equipo (`fuel_vehicles.type`) a los que corresponde la sección.
+   * Si la ejecución tiene un equipo como sujeto y su tipo NO está en la lista,
+   * la sección no se muestra ni cuenta para la completitud. Sin equipo, con un
+   * tipo desconocido o sin este campo: se muestra todo, como siempre.
+   * Ver `sectionAppliesToVehicleType` en `lib/prevention/inspections.ts`.
+   */
+  appliesToVehicleTypes?: string[]
 }
 
 export type Cargo = string
@@ -154,6 +170,14 @@ export interface ChecklistDefinition {
     }
   }
   /**
+   * Programación diaria de lunes a sábado: el materializador no crea ejecuciones
+   * con fecha en domingo y la siguiente fecha salta los domingos. Sólo tiene
+   * efecto con frecuencia `daily`; se lee del snapshot de la plantilla del
+   * programa, así que una plantilla anterior sin el campo se programa igual que
+   * siempre.
+   */
+  scheduleSkipsSundays?: boolean
+  /**
    * Opcional: los instrumentos que registran desviaciones no tienen acta, porque
    * el papel firmado sigue siendo el respaldo. Ensanchar el tipo no rompe a
    * ninguna definición existente — todas la declaran.
@@ -195,6 +219,12 @@ export interface ClosingActDefinition {
   resultOptions: SelectOption[]
   hasRestrictions?: boolean
   signatureRoles: string[]
+  /**
+   * El papel puede traer firmas en blanco y quien lo transcribe no debe inventar
+   * un nombre: con `true`, `validateClosingAct` no exige los roles que falten
+   * (las firmas presentes siguen exigiendo nombre). Sin el campo se exigen todas.
+   */
+  allowMissingSignatures?: boolean
 }
 
 // --- Evaluation Domain Types ---

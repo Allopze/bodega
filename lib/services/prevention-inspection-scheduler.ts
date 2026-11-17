@@ -23,7 +23,7 @@ import {
 import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
-import { CAPA_REQUIRED_CRITICALITIES, nextDueAfter } from "@/lib/prevention/inspections"
+import { CAPA_REQUIRED_CRITICALITIES, nextDueAfter, programSkipsSundays, resolveProgramSlot } from "@/lib/prevention/inspections"
 import { resolveSubject } from "@/lib/services/prevention-inspections"
 import { createNotifications } from "@/lib/services/notifications"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
@@ -38,6 +38,11 @@ export interface MaterializeResult {
   skippedDuplicate: number
   /** La plantilla dejó de estar aprobada: un fallo de datos que hay que ver. */
   skippedTemplate: number
+  /**
+   * Programas de lunes a sábado cuyo vencimiento cayó en domingo: la fecha avanzó
+   * al lunes sin crear nada. No es un fallo ni merece aviso.
+   */
+  skippedSunday: number
   errors: number
   /** Ejecuciones creadas, para que una acción interactiva pueda abrirlas. */
   createdRuns: { id: string; code: string }[]
@@ -48,12 +53,17 @@ const MAX_PROGRAMS_PER_RUN = 500
 
 export async function materializeProgramRuns(options: { programId?: string } = {}): Promise<MaterializeResult> {
   const today = todayInChile()
-  const result: MaterializeResult = { examined: 0, created: 0, skippedDuplicate: 0, skippedTemplate: 0, errors: 0, createdRuns: [] }
+  const result: MaterializeResult = { examined: 0, created: 0, skippedDuplicate: 0, skippedTemplate: 0, skippedSunday: 0, errors: 0, createdRuns: [] }
 
   const due = await db.select({
     program: preventionInspectionPrograms,
     templateStatus: preventionInspectionTemplates.status,
     templateName: preventionInspectionTemplates.name,
+    // La cadencia de lunes a sábado la declara el snapshot de la plantilla del
+    // programa, no el registro de definiciones en código: al aprobar una versión
+    // nueva los programas se reasignan solos, y una plantilla anterior sin el
+    // campo tiene que seguir programándose igual que siempre.
+    templateSnapshot: preventionInspectionTemplates.definitionSnapshot,
   })
     .from(preventionInspectionPrograms)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionPrograms.templateId))
@@ -74,6 +84,31 @@ export async function materializeProgramRuns(options: { programId?: string } = {
     result.examined += 1
 
     try {
+      const skipSundays = programSkipsSundays(program.frequency, row.templateSnapshot)
+      /* Lunes a sábado: un vencimiento en domingo nunca produce ejecución. Va
+       * ANTES de la comprobación de la plantilla para que ese día no dispare el
+       * aviso de "programación detenida": no se dejó de generar nada que debiera
+       * existir. `scheduledFor` es el primer día hábil desde el vencimiento.
+       *
+       * Cron: si ese día aún no llega (hoy es el domingo), sólo se mueve
+       * `nextDueOn` al lunes, con la misma condición de idempotencia que el
+       * avance normal. Si ya llegó (el cron no corrió el domingo), se crea la
+       * ejecución del lunes. "Ejecutar ahora" siempre crea, pero con esa misma
+       * fecha: nunca con fecha de domingo. */
+      const slot = resolveProgramSlot({ nextDueOn: program.nextDueOn, today, skipSundays, manual: Boolean(options.programId) })
+      const scheduledFor = slot.scheduledFor
+      if (slot.action === "advance") {
+        await db.update(preventionInspectionPrograms).set({
+          nextDueOn: scheduledFor,
+          updatedAt: new Date().toISOString(),
+        }).where(and(
+          eq(preventionInspectionPrograms.id, program.id),
+          eq(preventionInspectionPrograms.nextDueOn, program.nextDueOn),
+        ))
+        result.skippedSunday += 1
+        continue
+      }
+
       if (row.templateStatus !== "approved") {
         result.skippedTemplate += 1
         // Un programa apuntando a una plantilla reemplazada deja de producir
@@ -88,7 +123,6 @@ export async function materializeProgramRuns(options: { programId?: string } = {
         continue
       }
 
-      const scheduledFor = program.nextDueOn
       const created = await db.transaction(async (tx) => {
         /* La etiqueta del sujeto se congela igual que en `createInspectionRun`:
          * el run copiaba las dos FK pero no el nombre, así que una inspección
@@ -146,11 +180,13 @@ export async function materializeProgramRuns(options: { programId?: string } = {
          * La condición sobre `nextDueOn` hace la escritura idempotente: dos
          * disparos concurrentes del mismo slot avanzan un ciclo, no dos. */
         await tx.update(preventionInspectionPrograms).set({
-          nextDueOn: nextDueAfter(scheduledFor, program.intervalDays, today),
+          nextDueOn: nextDueAfter(scheduledFor, program.intervalDays, today, { skipSundays }),
           updatedAt: new Date().toISOString(),
         }).where(and(
           eq(preventionInspectionPrograms.id, program.id),
-          eq(preventionInspectionPrograms.nextDueOn, scheduledFor),
+          // El vencimiento que se leyó, no `scheduledFor`: difieren cuando un
+          // domingo se corrió al lunes.
+          eq(preventionInspectionPrograms.nextDueOn, program.nextDueOn),
         ))
 
         if (!inserted) return null

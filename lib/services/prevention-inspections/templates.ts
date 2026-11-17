@@ -23,7 +23,7 @@ import { TRANSITION_REASON_MIN_LENGTH, type InspectionItemSpec } from "@/lib/pre
 import { CHECKLIST_DEFINITIONS, isNonInspectionDefinition, isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import { officialInspectionSourceFor, type OfficialInspectionSource } from "@/lib/sst/official-inspection-sources"
 import type { ChecklistDefinition } from "@/lib/sst/types"
-import { defaultInspectionKindFor } from "@/lib/prevention/inspection-wiring"
+import { catalogDefaultsFor, defaultInspectionKindFor } from "@/lib/prevention/inspection-wiring"
 import { replacePdtpAccreditationBindings } from "@/lib/services/pdtp/accreditation-bindings"
 import {
   defaultPdtpActivityNumbers,
@@ -91,6 +91,7 @@ export function itemsFromDefinition(definition: ChecklistDefinition): Inspection
         options: item.options,
         placeholder: item.placeholder,
         matrix: item.matrix,
+        ...(item.notLessThanItemId ? { notLessThanItemId: item.notLessThanItemId } : {}),
       })
     }
   }
@@ -302,6 +303,7 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
   const officialSource = officialInspectionSourceFor(data.definitionCode)
   const needsOfficialSource = inspectionDefinitionNeedsOfficialSource(data.definitionCode)
   const kind = data.kind ?? defaultInspectionKindFor(data.definitionCode)
+  const catalogDefaults = catalogDefaultsFor(data.definitionCode)
 
   try {
     return await db.transaction(async (tx) => {
@@ -328,8 +330,9 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
         // elegida (el diálogo ya obliga a elegirla cuando es ambigua).
         code: inspectionTemplateCodeFor(data.definitionCode, pdtpActivityNumbers),
         versionLabel,
-        name: definition.title,
+        name: catalogDefaults.name ?? definition.title,
         kind,
+        executorOfRecord: catalogDefaults.executorOfRecord,
         sourceDefinitionCode: data.definitionCode,
         provenanceKind: needsOfficialSource ? "official_document" : "platform_definition",
         sourceDocumentVersionId: data.sourceDocumentVersionId ?? null,

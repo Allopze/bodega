@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, isNull, lt, or } from "drizzle-orm"
+import { and, asc, count, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   preventionInspectionPrograms,
@@ -108,6 +108,10 @@ export async function listInspectionPrograms(access: InspectionAccess, filter: I
     /* La plantilla decide si el programa exige contenedor del catálogo: el
      * formulario de edición lo necesita para no dejar quitarle el sujeto. */
     templateDefinitionCode: preventionInspectionTemplates.sourceDefinitionCode,
+    /* Programa diario de lunes a sábado: lo declara el snapshot de la plantilla
+     * (`scheduleSkipsSundays`). Se lee como booleano en SQL para no traer el
+     * JSON completo del cuestionario por cada programa. */
+    templateSkipsSundays: sql<boolean>`coalesce((${preventionInspectionTemplates.definitionSnapshot} ->> 'scheduleSkipsSundays') = 'true', false)`,
     worksiteName: worksites.name,
     assigneeName: users.name,
     riskHazardCode: preventionRiskEntries.hazardCode,

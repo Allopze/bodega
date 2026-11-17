@@ -101,6 +101,18 @@ function mirrorForAcoplado(item: ChecklistItem): ChecklistItem {
   return { ...item, id: `acoplado_${item.id}`, label: `Acoplado — ${item.label.charAt(0).toLowerCase()}${item.label.slice(1)}` }
 }
 
+/**
+ * Tipos de equipo (`fuel_vehicles.type`) a los que les corresponde cada bloque
+ * condicional del papel (v03). Con el equipo del run identificado y su tipo
+ * fuera de la lista, la sección ni se muestra ni cuenta: una grúa horquilla
+ * deja de ver rotor, garra, ampliroll y acoplado. Sin equipo o con un tipo
+ * desconocido se muestra todo, como en la v02. Un tipo nuevo del catálogo que
+ * deba llevar uno de estos bloques se agrega acá, en una versión nueva.
+ */
+const TIPOS_CON_CARGA = ['cargador', 'excavadora', 'retroexcavadora', 'minicargador']
+const TIPOS_CON_AMPLIROLL = ['camion', 'camion_3_4']
+const TIPOS_CON_ACOPLADO = ['camion', 'tracto']
+
 export const REPORTE_EQUIPOS_SECTIONS: ChecklistSection[] = [
   // ============================================================
   // 1. Identificación del turno
@@ -111,12 +123,12 @@ export const REPORTE_EQUIPOS_SECTIONS: ChecklistSection[] = [
     description: 'La faena, la fecha y el equipo salen del encabezado de la inspección; acá va lo que el papel pide además.',
     countsForCompliance: false,
     items: [
-      { id: 'turno', label: 'Turno.', kind: 'select', required: true, options: [
+      { id: 'turno', label: 'Turno.', kind: 'select', options: [
         { value: 'dia', label: 'Día' },
         { value: 'tarde', label: 'Tarde' },
         { value: 'noche', label: 'Noche' },
       ] },
-      { id: 'area_trabajo',      label: 'Área de trabajo.', kind: 'text', required: true, placeholder: 'Ej: Patio madera' },
+      { id: 'area_trabajo',      label: 'Área de trabajo.', kind: 'text', placeholder: 'Ej: Patio madera' },
       { id: 'operador_entrante', label: 'Operador entrante.', kind: 'text', required: true, placeholder: 'Nombre y apellido' },
       { id: 'operador_saliente', label: 'Operador saliente.', kind: 'text', placeholder: 'Nombre y apellido' },
       { id: 'folio_papel',       label: 'N° de reporte en papel.', kind: 'text', placeholder: 'Ej: 03101' },
@@ -129,11 +141,12 @@ export const REPORTE_EQUIPOS_SECTIONS: ChecklistSection[] = [
   {
     id: 'horometro',
     title: '2. Horómetro / odómetro',
-    description: 'Lectura al iniciar y al terminar el turno. Sin separador de miles.',
+    description: 'Lectura al iniciar y al terminar el turno. Sin separador de miles. El término no puede ser menor que el inicio; deja en blanco la lectura que el papel no traiga.',
     countsForCompliance: false,
     items: [
-      { id: 'horometro_inicio',  label: 'Horómetro inicio.', kind: 'number', required: true, placeholder: '134122' },
-      { id: 'horometro_termino', label: 'Horómetro término.', kind: 'number', required: true, placeholder: '135120' },
+      // v03: no obligatorio. Un equipo fuera de servicio no tiene lectura de turno (papel N° 023502, 07-11-2026).
+      { id: 'horometro_inicio',  label: 'Horómetro inicio.', kind: 'number', placeholder: '134122' },
+      { id: 'horometro_termino', label: 'Horómetro término.', kind: 'number', placeholder: '135120', notLessThanItemId: 'horometro_inicio' },
     ],
   },
 
@@ -176,6 +189,7 @@ export const REPORTE_EQUIPOS_SECTIONS: ChecklistSection[] = [
     title: '5. Exclusivo cargador frontal y excavadora',
     description: 'Importante: si falla uno de estos ítems, avisar al supervisor. Déjala sin responder si el equipo no corresponde.',
     countsForCompliance: false,
+    appliesToVehicleTypes: TIPOS_CON_CARGA,
     hasActionCorrectiva: true,
     items: FILAS_CARGA,
   },
@@ -184,6 +198,7 @@ export const REPORTE_EQUIPOS_SECTIONS: ChecklistSection[] = [
     title: '6. Exclusivo camión',
     description: 'Déjala sin responder si el equipo no lleva ampliroll.',
     countsForCompliance: false,
+    appliesToVehicleTypes: TIPOS_CON_AMPLIROLL,
     hasActionCorrectiva: true,
     items: FILAS_CAMION,
   },
@@ -196,6 +211,7 @@ export const REPORTE_EQUIPOS_SECTIONS: ChecklistSection[] = [
     title: '7. Acoplado (si aplica)',
     description: 'Segunda columna de marca del papel. Déjala sin responder entera si el equipo no lleva acoplado.',
     countsForCompliance: false,
+    appliesToVehicleTypes: TIPOS_CON_ACOPLADO,
     hasActionCorrectiva: true,
     items: REPORTE_EQUIPOS_FILAS.map(mirrorForAcoplado),
   },
