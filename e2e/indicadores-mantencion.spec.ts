@@ -155,10 +155,11 @@ test.describe("Panel de mantención: gráficos", () => {
     // Los gráficos no llevan tarjetas de KPI, sólo la tira compacta de cada sección (la franja «Hoy» es aparte).
     await expect(page.locator("[data-kpi-card]")).toHaveCount(0)
     // Con el gráfico «OT abiertas hoy, por estado» a la vista, su total va en su titular y sale de la tira (A5,
-    // crítica 2026-11-15, paso 5): la sección de órdenes tiene entonces tres cifras y no cuatro.
+    // crítica 2026-11-15, paso 5): la sección de órdenes tiene entonces dos cifras y no tres. Desde el
+    // 2026-11-17 la OT no lleva costo, así que «Mano de obra y taller» ya no es una de ellas.
     const nombre = /^OT abiertas hoy por estado/
     const porEstado = await page.getByRole("img", { name: nombre }).or(page.getByRole("group", { name: nombre })).count()
-    const cifras = { "Órdenes de trabajo": porEstado > 0 ? 3 : 4, "Pautas y disponibilidad": 3 } as const
+    const cifras = { "Órdenes de trabajo": porEstado > 0 ? 2 : 3, "Pautas y disponibilidad": 3 } as const
     for (const [region, esperadas] of Object.entries(cifras)) {
       const seccion = page.getByRole("region", { name: region, exact: true })
       const destinos = await seccion.locator("a[data-pressable]").evaluateAll((links) => links.map((link) => link.getAttribute("href")))
