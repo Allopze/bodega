@@ -129,6 +129,24 @@ export function defaultInspectionKindFor(definitionCode: string): InspectionTemp
   return PDTP_2026_INSPECTION_SPECS.find((spec) => spec.definitionCode === definitionCode)?.kind ?? "inspection"
 }
 
+/**
+ * Nombre y ejecutor de registro que el catálogo 2026 declara para la definición,
+ * para que «Incorporar» una versión nueva no los pierda.
+ *
+ * Se vio al preparar la v03 del Reporte de Equipos (2026-11-17): la v02 se creó
+ * desde este catálogo como «Reporte de Uso Diario de Equipos» con
+ * `declared_in_form`, y una incorporación a mano nacía como «Reporte de Equipos»
+ * con `platform_user` — al aprobarla, quien transcribe el papel ya no podía
+ * revisar su propia transcripción (D04). Sólo se aplica con una única fila para
+ * la definición: dos filas (EPP JT/PRF) son la ambigüedad que no se adivina.
+ */
+export function catalogDefaultsFor(definitionCode: string): { name: string | null; executorOfRecord: "platform_user" | "declared_in_form" } {
+  const specs = PDTP_2026_INSPECTION_SPECS.filter((spec) => spec.definitionCode === definitionCode)
+  const [only, ...rest] = specs
+  if (!only || rest.length > 0) return { name: null, executorOfRecord: "platform_user" }
+  return { name: only.name, executorOfRecord: only.executorOfRecord ?? "platform_user" }
+}
+
 /** `n` como lista, que es la forma en que la columna lo guarda. */
 export function completionNumbers(spec: InspectionTemplateSpec): number[] | null {
   if (spec.n === null) return null

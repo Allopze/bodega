@@ -12,11 +12,25 @@ import { REPORTE_EQUIPOS_SECTIONS } from './reporte-equipos-sections'
  * conductores no tienen cuenta (se resolvió porque el jefe de faena traspasa el papel) y el grano
  * diario chocaba con el mensual de `pdtpExecutions` (se resolvió al mudarse al
  * motor de inspecciones, que programa con `frequency: 'daily'`).
+ *
+ * ── Historia ─────────────────────────────────────────────────────────────
+ * v03 (2026-11-17), tras revisar 30 reportes en papel reales:
+ *   1. `scheduleSkipsSundays`: la programación es de lunes a sábado.
+ *   2. `appliesToVehicleTypes` en las secciones condicionales (carga, ampliroll,
+ *      acoplado): no se muestran ni cuentan si el tipo del equipo no las lleva.
+ *   3. `notLessThanItemId` en el horómetro de término: no puede ser menor que
+ *      el de inicio.
+ *   4. `closingAct.allowMissingSignatures`: el papel puede traer firmas en
+ *      blanco y el transcriptor no inventa un nombre.
+ *   5. Turno, área de trabajo y horómetro de término dejan de ser obligatorios,
+ *      porque el papel los trae en blanco; horómetro de inicio y operador
+ *      entrante siguen siéndolo.
+ * v02 (2026-08-30): cierra al declararse ejecutado (`closesOnCompletion`).
  */
 export const REPORTE_EQUIPOS: ChecklistDefinition = {
   code: 'reporte_equipos',
-  version: '02',
-  revisionDate: '2026-08-30',
+  version: '03',
+  revisionDate: '2026-11-17',
   tipo: 'seguimiento',
   title: 'Reporte de Equipos',
   subtitle: 'Reporte diario de uso: una instancia por equipo y por turno.',
@@ -39,6 +53,7 @@ export const REPORTE_EQUIPOS: ChecklistDefinition = {
    * Sin esto, un reporte por equipo y por turno inundaba "Esperando
    * revisión". Los que levanten un hallazgo grave sí esperan revisión. */
   closesOnCompletion: true,
+  scheduleSkipsSundays: true,
   sections: REPORTE_EQUIPOS_SECTIONS,
   closingAct: {
     title: 'Cierre del reporte de turno',
@@ -51,5 +66,8 @@ export const REPORTE_EQUIPOS: ChecklistDefinition = {
     // Triple firma del papel. Se registra rol + nombre + momento; el trazo real
     // vive en la foto del reporte firmado, adjunta como evidencia de respuesta.
     signatureRoles: ['operador_entrante', 'operador_saliente', 'supervisor_turno'],
+    // El papel puede traer una firma en blanco; se transcribe tal cual y la
+    // plataforma lo dice («Sin firma en el papel») en vez de exigir un nombre.
+    allowMissingSignatures: true,
   },
 }

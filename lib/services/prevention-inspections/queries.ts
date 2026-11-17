@@ -15,11 +15,12 @@ import {
   worksites,
 } from "@/db/schema"
 import { requireAccess, scopeAllows, scopeCondition, type InspectionAccess } from "@/lib/services/prevention-inspections-access"
-import { summarizeTimelyClosure } from "@/lib/prevention/inspections"
+import { definitionForVehicleType, summarizeTimelyClosure } from "@/lib/prevention/inspections"
 import { listOfferedDeviations } from "@/lib/services/prevention-deviations"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { todayInChile } from "@/lib/utils"
 import { resolveRunDefinition } from "./epp-rows"
+import { getRunVehicleType } from "./run-vehicle"
 
 /* ── Consultas ────────────────────────────────────────────────────────────── */
 
@@ -377,11 +378,23 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
   const deviationCatalog = definition?.recordsDeviations
     ? await listOfferedDeviations(run.templateCode)
     : []
+  /* Las secciones que no le corresponden al equipo (`appliesToVehicleTypes`) no
+   * salen en la captura, ni en la lectura, ni en el acta impresa: todo eso lee
+   * esta definición. Sin equipo, o con un tipo que no se pudo leer, sale todo. */
+  const vehicleType = await getRunVehicleType(db, run.run.subjectVehicleId)
+  const applicableDefinition = definitionForVehicleType(definition, vehicleType)
+  const applicableKeys = applicableDefinition === definition
+    ? null
+    : new Set(applicableDefinition.sections.flatMap((section) => section.items.map((item) => `${section.id}::${item.id}`)))
 
   return {
     ...run,
-    definitionSnapshot: definition as unknown as typeof run.definitionSnapshot,
-    answers: answers.map((row) => ({ ...row, evidence: evidenceByAnswer.get(row.id) ?? [] })),
+    definitionSnapshot: applicableDefinition as unknown as typeof run.definitionSnapshot,
+    /** Tipo del equipo sujeto (slug del catálogo), o `null` sin equipo o si no se pudo leer. */
+    subjectVehicleType: vehicleType,
+    answers: answers
+      .filter((row) => !applicableKeys || applicableKeys.has(`${row.sectionId}::${row.itemId}`))
+      .map((row) => ({ ...row, evidence: evidenceByAnswer.get(row.id) ?? [] })),
     findings: findings.map((row) => ({ ...row, evidence: evidenceByFinding.get(row.id) ?? [] })),
     documents,
     participants,

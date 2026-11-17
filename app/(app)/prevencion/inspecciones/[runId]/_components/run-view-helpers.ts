@@ -94,6 +94,7 @@ const BLOCKER_GAP_KIND: Record<CompletionBlocker["kind"], ProgressGapKind> = {
   missing_partial_reason: "no_reason",
   missing_nc_reason: "no_reason",
   unconfirmed_critical: "unconfirmed",
+  invalid_value: "to_fix",
   missing_closing_act: "closing_act",
 }
 

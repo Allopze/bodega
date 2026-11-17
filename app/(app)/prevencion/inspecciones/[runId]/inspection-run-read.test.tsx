@@ -401,6 +401,20 @@ describe("acta de cierre y casos sin respuestas", () => {
     expect(within(acta).getByText("Sin firma")).toBeInTheDocument()
   })
 
+  it("con `allowMissingSignatures` la firma que el papel no trae se lee «Sin firma en el papel»", async () => {
+    await montar({
+      closingAct: { ...ACTA, allowMissingSignatures: true },
+      run: {
+        ...propsDelDetalle().run,
+        closingResult: "operativo",
+        closingSignatures: [{ role: "prevencionista", name: "Pía Soto", userId: null, signedAt: "2026-10-19T12:30:00.000Z" }],
+      },
+    })
+    const acta = screen.getByRole("heading", { level: 2, name: "Cierre de la inspección" }).closest("section")!
+    expect(within(acta).getByText("Sin firma en el papel")).toBeInTheDocument()
+    expect(within(acta).queryByText("Sin firma")).toBeNull()
+  })
+
   it("una inspección cancelada no muestra acta ni listas de «sin responder»", async () => {
     await montar({
       closingAct: ACTA,

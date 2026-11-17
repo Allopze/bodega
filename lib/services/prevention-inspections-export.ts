@@ -11,11 +11,11 @@ import {
   DANO_POTENCIAL_LABELS,
   FINDING_CRITICALITY_LABELS,
   FINDING_STATUS_LABELS,
-  INSPECTION_FREQUENCY_LABELS,
   INSPECTION_KIND_LABELS,
   INSPECTION_ORIGIN_LABELS,
   INSPECTION_PROVENANCE_LABELS,
   INSPECTION_RUN_STATUS_LABELS,
+  inspectionFrequencyLabel,
   inspectionResultLabel,
   inspectionTemplateStatusLabel,
 } from "@/lib/prevention/inspections"
@@ -312,7 +312,7 @@ export async function buildInspectionExport(
       "Programación",
       ["Plantilla", "Faena", "Frecuencia", "Intervalo (días)", "Próxima", "Responsable", "Activa", "Plantilla vigente", "Sujeto"],
       programs.map((row) => [
-        safeCell(row.templateName), safeCell(row.worksiteName), label(INSPECTION_FREQUENCY_LABELS, row.program.frequency),
+        safeCell(row.templateName), safeCell(row.worksiteName), inspectionFrequencyLabel(row.program.frequency, { skipsSundays: row.templateSkipsSundays }),
         // `nextDueOn` es una fecha calendario: sale como fecha de Excel, sin hora ni desfase.
         row.program.intervalDays, excelPlainDate(row.program.nextDueOn), safeCell(row.assigneeName),
         row.program.isActive ? "Sí" : "No",

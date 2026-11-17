@@ -129,6 +129,30 @@ describe("acta imprimible de una inspección", () => {
   })
 })
 
+describe("firmas del acta", () => {
+  const ACTA = {
+    title: "Cierre del reporte", resultOptions: [{ value: "operativo", label: "Equipo operativo" }], hasRestrictions: false,
+    signatureRoles: ["operador_entrante", "supervisor_turno"],
+  }
+  const conFirma = { role: "operador_entrante", name: "Ana Soto", userId: null, verified: false, capturedByUserId: "u-1", signedAt: "2026-11-17T12:00:00.000Z" }
+  const celdasDeNombre = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll("tbody tr")).filter((row) => /Operador entrante|Supervisor turno/.test(row.textContent ?? ""))
+      .map((row) => row.querySelectorAll("td")[1]?.textContent)
+
+  it("con `allowMissingSignatures` la firma que el papel no trae dice «Sin firma en el papel» en vez de un hueco", () => {
+    const data = { ...actaData({ closingResult: "operativo", closingSignatures: [conFirma] }), closingAct: { ...ACTA, allowMissingSignatures: true } } as InspectionActaData
+    const { container } = render(<InspectionActaDocument data={data} />)
+    expect(celdasDeNombre(container)).toEqual(["Ana Soto", "Sin firma en el papel"])
+  })
+
+  it("sin el campo el hueco queda en blanco, como antes", () => {
+    const data = { ...actaData({ closingResult: "operativo", closingSignatures: [conFirma] }), closingAct: ACTA } as InspectionActaData
+    const { container } = render(<InspectionActaDocument data={data} />)
+    expect(celdasDeNombre(container)).toEqual(["Ana Soto", ""])
+    expect(container.textContent).not.toContain("Sin firma en el papel")
+  })
+})
+
 describe("actaComplianceLabels", () => {
   it("prefiere los puntos base exactos al porcentaje entero", () => {
     expect(actaComplianceLabels({

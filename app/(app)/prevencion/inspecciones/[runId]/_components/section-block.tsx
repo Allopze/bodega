@@ -4,6 +4,7 @@ import * as React from "react"
 import { ItemCapture } from "./item-capture"
 import type { UpdateItemDraft } from "./item-answer-control"
 import { MatrixRowCapture, type MatrixCellState } from "./matrix-row-capture"
+import { notLessThanProblem } from "@/lib/prevention/inspections"
 import { draftKey, EMPTY_DRAFT, groupSectionItems, type SectionProgress } from "./run-view-helpers"
 import type { RunViewModel } from "./run-view-types"
 import type { ItemInfo, SectionInfo } from "./types"
@@ -74,6 +75,15 @@ export function SectionBlock({ section, sectionIndex, sectionCount, progress, mo
             )
           }
           const cell = cellOf(block.item)
+          // Horómetro de término menor que el de inicio: el error sale en línea,
+          // y el cierre lo bloquea con el mismo texto (`assessRunCompletion`).
+          const valueProblem = block.item.notLessThanItemId
+            ? notLessThanProblem(
+                { sectionId: section.id, itemId: block.item.id, label: block.item.label, notLessThanItemId: block.item.notLessThanItemId },
+                section.items.map((entry) => ({ sectionId: section.id, itemId: entry.id, label: entry.label })),
+                (sectionId, itemId) => drafts[draftKey(sectionId, itemId)]?.value,
+              )
+            : null
           return (
             <ItemCapture
               key={block.item.id}
@@ -89,6 +99,7 @@ export function SectionBlock({ section, sectionIndex, sectionCount, progress, mo
               evidence={cell.evidence}
               heldReason={cell.heldReason}
               heldProblem={cell.heldProblem}
+              valueProblem={valueProblem}
               {...handlers}
             />
           )

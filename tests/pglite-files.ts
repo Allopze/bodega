@@ -346,6 +346,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/emergency-resource-inventory-pglite.test.ts",
   "lib/__tests__/prevention-containers-pglite.test.ts",
   "lib/__tests__/prevention-inspection-container-subject-pglite.test.ts",
+  // Reporte de Equipos v03: programación diaria de lunes a sábado (el snapshot decide; v02 sigue igual).
+  "lib/__tests__/prevention-inspection-scheduler-sundays-pglite.test.ts",
+  // Reporte de Equipos v03: secciones por tipo de equipo, horómetro y firmas del papel por el servicio real.
+  "lib/__tests__/prevention-inspection-vehicle-sections-pglite.test.ts",
   // Inspecciones, Ola 1: captura (códigos de error, filas idénticas, evidencia), bandeja (KPI y
   // total bajo filtros), exports Excel (fechas de Chile, etiquetas, Anexo 15) y catálogo
   // (versiones, fuente oficial, tipo por defecto, rollback).
@@ -595,4 +599,7 @@ export const pgliteTestFiles = [
   // Gráficos del Panel de mantención (/mantencion/panel): OT creadas, cerradas y en
   // cola por balde, pautas, días fuera de servicio y alcance por faena.
   "lib/services/mantencion/indicators-pglite.test.ts",
+  // Sección «Reportes de equipos» del Panel de mantención: esperados y recibidos por fecha de
+  // turno, firmas, horas, fallas abiertas con su antigüedad y alcance por faena.
+  "lib/services/mantencion/reporte-equipos-pglite.test.ts",
 ]
