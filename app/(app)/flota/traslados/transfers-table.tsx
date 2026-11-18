@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { TransferButton } from "@/components/fleet/transfer/transfer-button"
 import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
 import { Badge } from "@/components/ui/badge"
@@ -57,9 +58,19 @@ function Items({ row }: { row: TransferListRow }) {
 /**
  * Lista de traslados. La búsqueda es la de la barra superior (DataTable se conecta sola); el período y la
  * faena son filtros de la página. «Anular» sólo aparece en un traslado vigente cuyos equipos siguen donde
- * él los dejó (`voidable`) y para quien puede trasladar. Sin filas, el estado vacío ofrece registrar el primero.
+ * él los dejó (`voidable`) y para quien puede trasladar. Sin filas, el estado vacío dice si es por los filtros (y ofrece quitarlos) o si aún no hay
+ * ninguno (y ofrece registrar el primero).
  */
-export function TransfersTable({ rows, canTransfer }: { rows: TransferListRow[]; canTransfer: boolean }) {
+export function TransfersTable({ rows, canTransfer, showAllHref }: {
+  rows: TransferListRow[]
+  canTransfer: boolean
+  /**
+   * Sólo si la lista está vacía POR el período o la faena elegidos (hay traslados fuera de ellos): enlace que los
+   * quita. Sin él, el vacío significa que aún no hay ninguno.
+   */
+  showAllHref?: string
+}) {
+  const router = useRouter()
   const [voiding, setVoiding] = React.useState<{ id: string; folio: string } | null>(null)
   const data = React.useMemo<Row[]>(() => rows.map((row) => ({ ...row, search: searchTextOf(row) })), [rows])
 
@@ -82,9 +93,15 @@ export function TransfersTable({ rows, canTransfer }: { rows: TransferListRow[];
         rows={data}
         searchKeys={["search"]}
         tableClassName="min-w-[960px]"
-        emptyTitle="Aún no hay traslados registrados"
-        emptyDescription="Cuando Gerencia mueva equipos de faena, regístralo aquí para que quede su recorrido."
-        emptyAction={canTransfer ? <TransferButton /> : undefined}
+        emptyTitle={showAllHref ? "No hay traslados en este período o faena" : "Aún no hay traslados registrados"}
+        emptyDescription={showAllHref
+          ? "Hay traslados fuera del período o de la faena elegidos."
+          : "Cuando Gerencia mueva equipos de faena, regístralo aquí para que quede su recorrido."}
+        emptyAction={showAllHref ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => router.replace(showAllHref, { scroll: false })}>
+            Ver todos los traslados
+          </Button>
+        ) : canTransfer ? <TransferButton /> : undefined}
         renderMobileCard={(row) => (
           <article className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]">
             <div className="flex items-start justify-between gap-3">

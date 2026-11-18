@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import type * as React from "react"
-import { cleanup, render, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }))
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => router,
   useSearchParams: () => new URLSearchParams(),
   usePathname: () => "/flota/traslados",
 }))
@@ -71,5 +72,14 @@ describe("TransfersTable", () => {
     render(<TransfersTable rows={[]} canTransfer={false} />)
     expect(screen.getAllByText("Aún no hay traslados registrados").length).toBeGreaterThan(0)
     expect(screen.queryByRole("button", { name: "Trasladar equipos" })).toBeNull()
+  })
+
+  it("sin filas por el período o la faena elegidos lo dice y ofrece ver todos, en vez de «aún no hay»", () => {
+    render(<TransfersTable rows={[]} canTransfer showAllHref="/flota/traslados?desde=2000-01-01" />)
+    expect(screen.getAllByText("No hay traslados en este período o faena").length).toBeGreaterThan(0)
+    expect(screen.queryByText("Aún no hay traslados registrados")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Trasladar equipos" })).toBeNull()
+    fireEvent.click(screen.getAllByRole("button", { name: "Ver todos los traslados" })[0]!)
+    expect(router.replace).toHaveBeenCalledWith("/flota/traslados?desde=2000-01-01", { scroll: false })
   })
 })

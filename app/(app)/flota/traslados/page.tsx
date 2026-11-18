@@ -19,6 +19,9 @@ export const metadata: Metadata = { title: "Traslados" }
 
 type SearchParams = Record<string, string | string[] | undefined>
 
+/** Desde cuándo mira «Ver todos los traslados»: antes de que existiera la plataforma. */
+const ALL_TIME_FROM = "2000-01-01"
+
 const PLAIN_DATE = /^\d{4}-\d{2}-\d{2}$/
 const isPlainDate = (value: unknown): value is string =>
   typeof value === "string" && PLAIN_DATE.test(value) && addDaysToPlainDate(value, 0) === value
@@ -49,6 +52,10 @@ export default async function TransfersPage({ searchParams }: { searchParams: Pr
   const filters = { from, to, ...(worksiteId ? { worksiteId } : {}) }
   const rows = await listTransfers(serviceWorksiteScope(session), filters)
   const canTransfer = can(session, "flota:transfer")
+  // Una lista vacía puede ser «aún no hay ninguno» o «los filtros lo esconden» (el período por defecto es el
+  // año en curso: en enero el año pasado no se ve). Sólo con la lista vacía se mira todo el historial.
+  const hiddenByFilters = rows.length === 0
+    && (await listTransfers(serviceWorksiteScope(session), { from: ALL_TIME_FROM, to: today })).length > 0
 
   return (
     <PageContainer>
@@ -69,7 +76,7 @@ export default async function TransfersPage({ searchParams }: { searchParams: Pr
         </div>}
       />
       <TransferFilters worksiteId={worksiteId} worksites={worksites} />
-      <TransfersTable rows={rows} canTransfer={canTransfer} />
+      <TransfersTable rows={rows} canTransfer={canTransfer} showAllHref={hiddenByFilters ? `/flota/traslados?desde=${ALL_TIME_FROM}` : undefined} />
     </PageContainer>
   )
 }
