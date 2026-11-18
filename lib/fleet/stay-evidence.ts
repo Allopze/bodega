@@ -16,6 +16,8 @@ import type { StayEvidence } from "./stay-reconstruction"
  * - Una carga cancelada, un envío TAE rechazado (`voided`), una carga en terreno
  *   anulada o legada (`legacy_tae`), un registro de mantención anulado o hecho
  *   fuera de la faena y una OT anulada no prueban nada y no entran.
+ * - La auditoría que escribe el servicio de traslados (al trasladar o anular)
+ *   tampoco: está fechada el día del registro y el traslado ya es el dato firme.
  *
  * Los instantes (`timestamptz`) se llevan al día civil de Chile: una carga de las
  * 23:30 chilenas se guarda al día siguiente en UTC, pero es del día en que ocurrió.
@@ -44,18 +46,30 @@ function pushEvidence(
   else map.set(vehicleId, [item])
 }
 
-function worksiteIdOf(state: string | null): string | null {
+function parseState(state: string | null): Record<string, unknown> | null {
   if (!state) return null
   try {
     const parsed: unknown = JSON.parse(state)
-    if (parsed && typeof parsed === "object" && "worksiteId" in parsed) {
-      const value = (parsed as { worksiteId: unknown }).worksiteId
-      return typeof value === "string" && value ? value : null
-    }
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null
   } catch {
     // Un estado que no es JSON no es evidencia.
+    return null
   }
-  return null
+}
+
+function worksiteIdOf(state: Record<string, unknown> | null): string | null {
+  const value = state?.worksiteId
+  return typeof value === "string" && value ? value : null
+}
+
+/**
+ * Lo escribió el servicio de traslados (al trasladar o al anular): el traslado es
+ * el registro firme y su auditoría lleva la fecha en que se REGISTRÓ, no la del
+ * traslado. Contarla inventaba estadías: un traslado anulado dejaba un día en la
+ * faena de destino.
+ */
+function isTransferAudit(state: Record<string, unknown> | null): boolean {
+  return Boolean(state && ("transferId" in state || "voidedTransferId" in state))
 }
 
 export async function loadStayEvidence(db: DB, vehicleIds?: string[]): Promise<Map<string, StayEvidence[]>> {
@@ -110,7 +124,8 @@ export async function loadStayEvidence(db: DB, vehicleIds?: string[]): Promise<M
   for (const row of orders) pushEvidence(result, row.vehicleId, { day: row.day, worksiteId: row.worksiteId, kind: "ot", ref: row.id })
 
   // 6. Cambios auditados de faena (flota y mantención): el equipo ya está en la faena
-  //    nueva el día del cambio. Se exige faena en ambos estados y que difieran.
+  //    nueva el día del cambio. Se exige faena en ambos estados y que difieran. Las
+  //    filas del servicio de traslados no cuentan (ver `isTransferAudit`).
   const audits = await db
     .select({
       id: auditLog.id, vehicleId: auditLog.entityId, day: chileDay(auditLog.createdAt),
@@ -123,8 +138,10 @@ export async function loadStayEvidence(db: DB, vehicleIds?: string[]): Promise<M
       scoped(vehicleIds, auditLog.entityId),
     ))
   for (const row of audits) {
-    const from = worksiteIdOf(row.oldState)
-    const to = worksiteIdOf(row.newState)
+    const newState = parseState(row.newState)
+    if (isTransferAudit(newState)) continue
+    const from = worksiteIdOf(parseState(row.oldState))
+    const to = worksiteIdOf(newState)
     if (from && to && from !== to) pushEvidence(result, row.vehicleId, { day: row.day, worksiteId: to, kind: "auditoria", ref: row.id })
   }
 

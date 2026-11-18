@@ -98,7 +98,10 @@ function describeEvidence(run: Run): string {
     const count = counts.get(kind)
     if (count) parts.push(`${count} ${count === 1 ? singular : plural}`)
   }
-  return `${parts.join(", ")} entre ${formatDate(run.firstDay)} y ${formatDate(run.lastDay)}`
+  const when = run.firstDay === run.lastDay
+    ? `el ${formatDate(run.firstDay)}`
+    : `entre ${formatDate(run.firstDay)} y ${formatDate(run.lastDay)}`
+  return `${parts.join(", ")} ${when}`
 }
 
 export function reconstructStays(input: {

@@ -218,4 +218,19 @@ describe("reconstructStays", () => {
       "1 carga en terreno, 1 envío TAE, 1 OT, 1 cambio auditado entre 14-09-2026 y 17-09-2026",
     )
   })
+
+  it("evidencia de un solo día: «el 05-09-2026», no «entre 05-09-2026 y 05-09-2026»", () => {
+    const result = reconstructStays({
+      evidence: [
+        ev("2026-08-02", "ws-a", "carga", "l1"),
+        ev("2026-09-01", "ws-a", "carga", "l2"),
+        ev("2026-09-05", "ws-b", "carga", "l3"),
+        ev("2026-09-05", "ws-b", "ot", "o1"),
+      ],
+      currentWorksiteId: "ws-b",
+      maxGapDays: 7,
+    })
+    expect(result.stays[0]!.evidence).toBe("2 cargas entre 02-08-2026 y 01-09-2026")
+    expect(result.stays[1]!.evidence).toBe("1 carga, 1 OT el 05-09-2026")
+  })
 })

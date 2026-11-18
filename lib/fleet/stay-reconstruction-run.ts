@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray } from "drizzle-orm"
 import type { DB } from "@/db"
-import { fuelVehicles, fuelVehicleWorksiteIntervals as stayTable, worksites } from "@/db/schema"
+import { fleetTransferItems, fleetTransfers, fuelVehicles, fuelVehicleWorksiteIntervals as stayTable, worksites } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
 import { nanoid } from "@/lib/id"
@@ -16,8 +16,10 @@ import {
  *
  * Principio vinculante (spec «Reconstrucción del pasado»): nunca se inventa una
  * fecha. Un equipo con algo por confirmar (`confident: false`) NO se escribe; va a
- * «Por confirmar» para que lo fije una persona. Un equipo con estadías de traslado
- * tampoco se toca: su recorrido ya es dato firme.
+ * «Por confirmar» para que lo fije una persona. Un equipo que aparece en algún
+ * traslado registrado (vigente o anulado) tampoco se toca: su recorrido ya lo
+ * fijó una persona por pantalla, y un traslado anulado deja una auditoría que no
+ * prueba presencia (ver `stay-evidence.ts`).
  *
  * La base garantiza la cadena (triggers diferidos): por equipo y en una sola
  * transacción se borran sus estadías `alta`/`reconstruccion` y se inserta la
@@ -93,7 +95,7 @@ export interface StayRunResult {
   toConfirm: VehicleOutcome[]
   /** Sin evidencia física: una sola estadía en la faena actual. */
   noEvidence: VehicleOutcome[]
-  /** Con estadías de traslado: se saltan. */
+  /** Con algún traslado registrado (vigente o anulado): se saltan. */
   skippedTransfers: VehicleOutcome[]
   unmatched: UnmatchedSnapshot[]
   failed: FailedVehicle[]
@@ -132,6 +134,19 @@ function sameChain(existing: StayRow[], proposed: ReconstructedStay[]): boolean 
     const next = proposed[index]!
     return row.worksiteId === next.worksiteId && row.startedOn === next.startedOn && row.endedOn === next.endedOn
   })
+}
+
+/** Por qué se salta un equipo con traslados: cuántos registrados y cuántos anulados. */
+function skippedNote(transfers: { total: number; voided: number } | undefined, transferStays: number): string {
+  if (!transfers) {
+    return `Tiene ${transferStays} ${transferStays === 1 ? "estadía" : "estadías"} de traslado: su recorrido ya es firme`
+  }
+  const { total, voided } = transfers
+  const registered = `Tiene ${total} ${total === 1 ? "traslado registrado" : "traslados registrados"}`
+  const voidedText = voided === 0 ? "" : voided === total
+    ? (total === 1 ? " (anulado)" : " (todos anulados)")
+    : ` (${voided} ${voided === 1 ? "anulado" : "anulados"})`
+  return `${registered}${voidedText}: su recorrido lo fija la pantalla de traslados, no se reconstruye`
 }
 
 interface VehicleRef {
@@ -202,6 +217,20 @@ export async function runStayReconstruction(db: DB, options: StayRunOptions = {}
     : []
   const staysByVehicle = new Map<string, StayRow[]>()
   for (const row of stayRows) staysByVehicle.set(row.vehicleId, [...(staysByVehicle.get(row.vehicleId) ?? []), row])
+  // Traslados registrados por equipo, anulados incluidos: un equipo que aparece en uno no se reconstruye.
+  const transferRows = ids.length
+    ? await db.select({ vehicleId: fleetTransferItems.vehicleId, voidedAt: fleetTransfers.voidedAt })
+      .from(fleetTransferItems)
+      .innerJoin(fleetTransfers, eq(fleetTransfers.id, fleetTransferItems.transferId))
+      .where(inArray(fleetTransferItems.vehicleId, ids))
+    : []
+  const transfersByVehicle = new Map<string, { total: number; voided: number }>()
+  for (const row of transferRows) {
+    const count = transfersByVehicle.get(row.vehicleId) ?? { total: 0, voided: 0 }
+    count.total += 1
+    if (row.voidedAt) count.voided += 1
+    transfersByVehicle.set(row.vehicleId, count)
+  }
 
   const physical = ids.length ? await loadStayEvidence(db, ids) : new Map<string, StayEvidence[]>()
   const { evidence: planilla, unmatched } = resolveSnapshots(options.snapshots ?? [], vehicles, worksiteByName)
@@ -218,12 +247,10 @@ export async function runStayReconstruction(db: DB, options: StayRunOptions = {}
     const base = { vehicleId: vehicle.id, code: vehicle.code, plate: vehicle.plate, currentWorksite: nameOf(vehicle.worksiteId)! }
     const existing = staysByVehicle.get(vehicle.id) ?? []
 
-    const transferStays = existing.filter((row) => row.source === "traslado")
-    if (transferStays.length > 0) {
-      result.skippedTransfers.push({
-        ...base, stays: [], pending: [],
-        note: `Tiene ${transferStays.length} ${transferStays.length === 1 ? "estadía" : "estadías"} de traslado: su recorrido ya es firme`,
-      })
+    const transfers = transfersByVehicle.get(vehicle.id)
+    const transferStays = existing.filter((row) => row.source === "traslado").length
+    if (transfers || transferStays > 0) {
+      result.skippedTransfers.push({ ...base, stays: [], pending: [], note: skippedNote(transfers, transferStays) })
       continue
     }
 
@@ -291,8 +318,9 @@ async function writeChain(
     const [current] = await tx.select({ worksiteId: fuelVehicles.worksiteId }).from(fuelVehicles)
       .where(eq(fuelVehicles.id, vehicle.id)).for("update")
     if (!current || current.worksiteId !== vehicle.worksiteId) throw new Error("El equipo cambió de faena durante la corrida")
-    const transfers = await tx.select({ id: stayTable.id }).from(stayTable)
-      .where(and(eq(stayTable.vehicleId, vehicle.id), eq(stayTable.source, "traslado")))
+    // El servicio de traslados bloquea esta misma fila antes de escribir el ítem: bajo el candado, lo que se ve es firme.
+    const transfers = await tx.select({ id: fleetTransferItems.id }).from(fleetTransferItems)
+      .where(eq(fleetTransferItems.vehicleId, vehicle.id)).limit(1)
     if (transfers.length > 0) throw new Error("El equipo recibió un traslado durante la corrida")
 
     await tx.delete(stayTable).where(and(eq(stayTable.vehicleId, vehicle.id), inArray(stayTable.source, ["alta", "reconstruccion"])))

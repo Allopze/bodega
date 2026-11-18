@@ -182,3 +182,55 @@ describe("runStayReconstruction", () => {
     expect(result.noEvidence.map((v) => v.code)).toEqual(["KA-2"])
   })
 })
+
+/**
+ * Un traslado anulado no deja rastro en el recorrido (la anulación borra su
+ * estadía), pero sí deja dos auditorías: la del traslado (A → B, fechada el día
+ * en que se REGISTRÓ) y la de la anulación (B → A). Contadas como evidencia, la
+ * reconstrucción inventaba una estadía en B. El equipo aparece en un traslado
+ * registrado, así que se salta, y esas auditorías no son evidencia.
+ */
+describe("runStayReconstruction con un traslado anulado", () => {
+  const VOIDED = "veh-rr-voided"
+  const TODAY = "2026-11-18"
+  const actor = { userId: "u-rr", email: "rr@example.com", scope: "all" as const }
+
+  beforeAll(async () => {
+    await testDb.insert(schema.fuelVehicles).values({
+      id: VOIDED, plate: "RR-0005", code: "KA-5", type: "Camión", equipmentTypeId: "fet-rr", worksiteId: WS.a,
+    })
+    await carga(VOIDED, "2026-10-20", WS.a)
+    await carga(VOIDED, "2026-11-05", WS.a)
+    const { transferVehicles, voidTransfer } = await import("@/lib/services/fleet-transfers")
+    const made = await transferVehicles(actor, {
+      toWorksiteId: WS.b, effectiveDate: "2026-11-10", reason: "Refuerzo de la faena B", authorizedBy: "Gerencia", vehicleIds: [VOIDED],
+    }, TODAY)
+    if (!made.ok) throw new Error(`setup: ${made.message}`)
+    const voided = await voidTransfer(actor, { transferId: made.data.transferId, reason: "Se registró por error" }, TODAY)
+    if (!voided.ok) throw new Error(`setup: ${voided.message}`)
+  })
+
+  it("no cuenta las auditorías del servicio de traslados como evidencia", async () => {
+    const { loadStayEvidence } = await import("@/lib/fleet/stay-evidence")
+    const evidence = (await loadStayEvidence(testDb, [VOIDED])).get(VOIDED) ?? []
+    expect(evidence.map((item) => item.kind)).toEqual(["carga", "carga"])
+    expect(evidence.every((item) => item.worksiteId === WS.a)).toBe(true)
+  })
+
+  it("lo salta con --apply aunque ya no tenga estadías de traslado, y no le escribe nada", async () => {
+    expect((await stayRows(VOIDED)).map((row) => [row.worksiteId, row.startedOn, row.endedOn, row.source])).toEqual([
+      [WS.a, null, null, "alta"],
+    ])
+    const result = await runStayReconstruction(testDb, { apply: true, vehicleIds: [VOIDED] })
+    expect(result.applied).toEqual([])
+    expect(result.toConfirm).toEqual([])
+    expect(result.written).toBe(0)
+    expect(result.skippedTransfers).toEqual([expect.objectContaining({
+      vehicleId: VOIDED,
+      note: "Tiene 1 traslado registrado (anulado): su recorrido lo fija la pantalla de traslados, no se reconstruye",
+    })])
+    expect((await stayRows(VOIDED)).map((row) => [row.worksiteId, row.startedOn, row.endedOn, row.source])).toEqual([
+      [WS.a, null, null, "alta"],
+    ])
+  })
+})
