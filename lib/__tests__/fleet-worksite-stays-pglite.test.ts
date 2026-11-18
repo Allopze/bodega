@@ -37,7 +37,6 @@ async function newVehicle(worksiteId = "ws-a"): Promise<string> {
   const id = `v-stay-${seq}`
   await db.insert(schema.fuelVehicles).values({
     id, plate: `ST-${seq}`, type: "Camión", equipmentTypeId: "fet-stay", worksiteId,
-    fileName: "x", filePath: "x",
   })
   return id
 }
@@ -74,7 +73,7 @@ describe("estadías por faena", () => {
     const text = await rejectionText(db.update(schema.fuelVehicles).set({ worksiteId: "ws-b" }).where(eq(schema.fuelVehicles.id, id)))
     expect(text).toContain("FLEET_STAY_INVARIANT")
     const [row] = await db.select({ worksiteId: schema.fuelVehicles.worksiteId }).from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, id))
-    expect(row.worksiteId).toBe("ws-a")
+    expect(row?.worksiteId).toBe("ws-a")
   })
 
   it("acepta cambiar faena y estadía en la misma transacción", async () => {
@@ -110,6 +109,6 @@ describe("estadías por faena", () => {
     await setVehicleWorksiteForTest(db, id, "ws-b", "2026-11-15")
     const [row] = await db.select({ worksiteId: schema.fleetGpsPositionHistory.worksiteId })
       .from(schema.fleetGpsPositionHistory).where(eq(schema.fleetGpsPositionHistory.id, `gph-${id}`))
-    expect(row.worksiteId).toBe("ws-a")
+    expect(row?.worksiteId).toBe("ws-a")
   })
 })

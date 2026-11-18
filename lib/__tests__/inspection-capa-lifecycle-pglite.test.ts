@@ -274,7 +274,7 @@ describe("derivación de hallazgos de inspección a CAPA", () => {
 
   it("no deriva si el equipo ya fue trasladado a otra faena, y no deja CAPA a medias", async () => {
     await testDb.insert(schema.worksites).values({ id: "inspection-maintenance-other-worksite", code: "IM2", name: "Otra faena" })
-    await setVehicleWorksiteForTest(testDb, VEHICLE_ID, "inspection-maintenance-other-worksite", "2026-11-15")
+    await setVehicleWorksiteForTest(testDb as never, VEHICLE_ID, "inspection-maintenance-other-worksite", "2026-11-15")
 
     await expect(deriveFinding()).rejects.toThrow(/pertenece a otra faena/)
 

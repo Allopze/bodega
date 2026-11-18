@@ -268,8 +268,8 @@ export async function transferVehiclesTx(
 
   // El folio se calcula bajo candado: dos traslados simultáneos no pueden tomar el mismo número.
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext('fleet_transfer_folio'))`)
-  const [{ total }] = await tx.select({ total: sql<number>`count(*)::int` }).from(fleetTransfers)
-  const folio = formatTransferFolio(total + 1)
+  const [totalRow] = await tx.select({ total: sql<number>`count(*)::int` }).from(fleetTransfers)
+  const folio = formatTransferFolio((totalRow?.total ?? 0) + 1)
   const transferId = nanoid()
 
   await tx.insert(fleetTransfers).values({

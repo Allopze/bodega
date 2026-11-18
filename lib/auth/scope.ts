@@ -99,8 +99,8 @@ export function worksiteScopeSqlFor(scope: string[] | "all", column: AnyColumn |
   if (scope !== "all" && scope.length === 0) return sql`false`
   if (worksiteId) {
     if (scope !== "all" && !scope.includes(worksiteId)) return sql`false`
-    return eq(column, worksiteId)
+    return eq(column as AnyColumn, worksiteId)
   }
   if (scope === "all") return undefined
-  return inArray(column, scope)
+  return inArray(column as AnyColumn, scope)
 }

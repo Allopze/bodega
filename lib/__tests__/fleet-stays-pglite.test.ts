@@ -28,7 +28,6 @@ async function newVehicle(worksiteId = "ws-a"): Promise<string> {
   const id = `v-q-${seq}`
   await testDb.insert(schema.fuelVehicles).values({
     id, plate: `QS-${seq}`, type: "Camión", equipmentTypeId: "fet-q", worksiteId,
-    fileName: "x", filePath: "x",
   })
   return id
 }
@@ -37,7 +36,7 @@ async function worksiteOn(vehicleId: string, day: string): Promise<string | null
   const [row] = await testDb.select({
     worksiteId: stayWorksiteOnDaySql(schema.fuelVehicles.id, sql`${day}::text`),
   }).from(schema.fuelVehicles).where(sql`${schema.fuelVehicles.id} = ${vehicleId}`)
-  return row.worksiteId
+  return row?.worksiteId ?? null
 }
 
 beforeAll(async () => {
@@ -104,6 +103,6 @@ describe("listVehicleStays", () => {
       .set({ source: "traslado", transferId: "tr-q2" })
       .where(sql`${schema.fuelVehicleWorksiteIntervals.vehicleId} = ${id} AND ${schema.fuelVehicleWorksiteIntervals.startedOn} = '2026-11-16'`)
     const stays = await listVehicleStays(id)
-    expect(stays[1].transfer?.voided).toBe(true)
+    expect(stays[1]?.transfer?.voided).toBe(true)
   })
 })

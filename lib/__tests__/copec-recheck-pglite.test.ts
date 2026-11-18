@@ -131,7 +131,7 @@ describe("re-verificación de Copec desde el mes de un traslado retroactivo", ()
     const original = testGlobal.__db
     testGlobal.__db = {
       query: { systemSettings: { findFirst: () => Promise.reject(new Error("db caída")) } },
-    } as unknown as typeof inMemoryDb
+    } as unknown as NonNullable<typeof testGlobal.__db>
     try {
       await expect(requestCopecRecheckFrom("2026-10-01")).resolves.toEqual({ requested: false })
     } finally {

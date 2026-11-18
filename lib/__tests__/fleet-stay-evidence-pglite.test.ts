@@ -69,8 +69,8 @@ beforeAll(async () => {
   await testDb.insert(schema.fuelSuppliers).values({ id: "sup-ev", name: "Copec" })
   await testDb.insert(schema.fuelEquipmentTypes).values({ id: "fet-ev", slug: "t-ev", name: "Camión", category: "truck", defaultMeterType: "odometer" })
   await testDb.insert(schema.fuelVehicles).values([
-    { id: V, plate: "EV-0001", code: "KA-1", type: "Camión", equipmentTypeId: "fet-ev", worksiteId: WS.a, fileName: "x", filePath: "x" },
-    { id: V2, plate: "EV-0002", code: "KA-2", type: "Camión", equipmentTypeId: "fet-ev", worksiteId: WS.a, fileName: "x", filePath: "x" },
+    { id: V, plate: "EV-0001", code: "KA-1", type: "Camión", equipmentTypeId: "fet-ev", worksiteId: WS.a },
+    { id: V2, plate: "EV-0002", code: "KA-2", type: "Camión", equipmentTypeId: "fet-ev", worksiteId: WS.a },
   ])
 
   // fuel_loads: la cancelada no cuenta.

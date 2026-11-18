@@ -36,7 +36,7 @@ async function newVehicle(opts: { worksiteId?: string; isActive?: boolean; code?
   const id = `v-t-${seq}`
   await testDb.insert(schema.fuelVehicles).values({
     id, plate: `TR-${seq}`, code: opts.code ?? `KA-${seq}`, type: "Camión", equipmentTypeId: "fet-t",
-    worksiteId: opts.worksiteId ?? "ws-a", isActive: opts.isActive ?? true, fileName: "x", filePath: "x",
+    worksiteId: opts.worksiteId ?? "ws-a", isActive: opts.isActive ?? true,
   })
   return id
 }
@@ -64,7 +64,7 @@ async function staysOf(vehicleId: string) {
 
 async function worksiteOf(vehicleId: string): Promise<string> {
   const [row] = await testDb.select({ worksiteId: schema.fuelVehicles.worksiteId }).from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, vehicleId))
-  return row.worksiteId
+  return row?.worksiteId ?? ""
 }
 
 async function addMapping(vehicleId: string, worksiteId: string, effectiveFrom: string): Promise<string> {
@@ -228,7 +228,7 @@ describe("traslado de equipos", () => {
     // 23:30 del 14 en Chile sigue en la faena vieja; 01:00 del 15 pasa a la nueva.
     expect(await tripWorksites(v)).toEqual({ a: "ws-a", b: "ws-b" })
     const [latest] = await testDb.select({ worksiteId: schema.fleetGpsLatestPositions.worksiteId }).from(schema.fleetGpsLatestPositions).where(eq(schema.fleetGpsLatestPositions.vehicleId, v))
-    expect(latest.worksiteId).toBe("ws-b")
+    expect(latest?.worksiteId).toBe("ws-b")
   })
 
   it("equipo sin ficha de Mantención no escribe historial y no falla", async () => {
@@ -260,8 +260,8 @@ describe("traslado de equipos", () => {
     const vehicleAudit = await testDb.select().from(schema.auditLog).where(and(eq(schema.auditLog.entityType, "fuel_vehicle"), eq(schema.auditLog.entityId, v)))
     expect(vehicleAudit).toHaveLength(1)
     expect(vehicleAudit[0]).toMatchObject({ action: "update", reason: "Refuerzo de la faena Mininco", worksiteId: "ws-b" })
-    expect(JSON.parse(vehicleAudit[0].oldState!)).toMatchObject({ worksiteId: "ws-a" })
-    expect(JSON.parse(vehicleAudit[0].newState!)).toMatchObject({ worksiteId: "ws-b" })
+    expect(JSON.parse(vehicleAudit[0]?.oldState ?? "null")).toMatchObject({ worksiteId: "ws-a" })
+    expect(JSON.parse(vehicleAudit[0]?.newState ?? "null")).toMatchObject({ worksiteId: "ws-b" })
     const transferAudit = await testDb.select().from(schema.auditLog).where(and(eq(schema.auditLog.entityType, "fleet_transfer"), eq(schema.auditLog.entityId, result.data.transferId)))
     expect(transferAudit).toHaveLength(1)
     expect(transferAudit[0]).toMatchObject({ action: "create", entityCode: result.data.folio })
@@ -355,15 +355,15 @@ describe("anular un traslado", () => {
     expect(await staysOf(v)).toEqual([{ worksiteId: "ws-a", startedOn: null, endedOn: null }])
     const mappings = await testDb.select().from(schema.fuelProviderMappings).where(and(eq(schema.fuelProviderMappings.vehicleId, v), eq(schema.fuelProviderMappings.isActive, true)))
     expect(mappings).toHaveLength(1)
-    expect(mappings[0].worksiteId).toBe("ws-a")
+    expect(mappings[0]?.worksiteId).toBe("ws-a")
     expect(await tripWorksites(v)).toEqual({ a: "ws-a", b: "ws-a" })
     const [latest] = await testDb.select({ worksiteId: schema.fleetGpsLatestPositions.worksiteId }).from(schema.fleetGpsLatestPositions).where(eq(schema.fleetGpsLatestPositions.vehicleId, v))
-    expect(latest.worksiteId).toBe("ws-a")
+    expect(latest?.worksiteId).toBe("ws-a")
 
     const [row] = await testDb.select().from(schema.fleetTransfers).where(eq(schema.fleetTransfers.id, made.data.transferId))
-    expect(row.voidedAt).not.toBeNull()
-    expect(row.voidedBy).toBe("u-t")
-    expect(row.voidReason).toBe("Se registró por error")
+    expect(row?.voidedAt).not.toBeNull()
+    expect(row?.voidedBy).toBe("u-t")
+    expect(row?.voidReason).toBe("Se registró por error")
 
     const history = await testDb.select().from(schema.mantEquipmentHistory).where(eq(schema.mantEquipmentHistory.vehicleId, v))
     expect(history.map((h) => h.summary)).toContain(`Traslado ${made.data.folio} anulado: vuelve a Santa Fe`)
@@ -396,7 +396,7 @@ describe("anular un traslado", () => {
     const second = await transferVehicles(ALL, input([v], { toWorksiteId: "ws-a", effectiveDate: "2026-11-15" }), TODAY)
     if (!first.ok || !second.ok) throw new Error("setup")
     const result = await voidTransfer(ALL, { transferId: first.data.transferId, reason: "Quiero deshacerlo" }, TODAY)
-    expect(result).toEqual({ ok: false, message: `No se puede anular: ${(await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, v)))[0].code} se trasladó de nuevo después (${second.data.folio}).` })
+    expect(result).toEqual({ ok: false, message: `No se puede anular: ${(await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, v)))[0]?.code} se trasladó de nuevo después (${second.data.folio}).` })
     expect(await worksiteOf(v)).toBe("ws-a")
 
     const rows = await listTransfers("all", { from: "2026-11-01", to: "2026-11-30" })
