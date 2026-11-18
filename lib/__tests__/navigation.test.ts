@@ -298,6 +298,7 @@ describe("sidebar navigation", () => {
     expect(area?.items.map((item) => [item.group ?? null, item.label])).toEqual([
       ["Seguimiento", "Panel operacional"],
       ["Flota", "Vehículos"],
+      ["Flota", "Traslados"],
       ["Flota", "Conductores"],
       ["Flota", "Monitoreo GPS"],
       // GPS tiene su pantalla de Indicadores; en Mantención y Combustible los gráficos son el Panel.

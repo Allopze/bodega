@@ -89,12 +89,12 @@ Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 | `ppa` | 8 | Prevención de Peligros en el Área |
 | `feedback` | 4 | Soporte / feedback interno |
 | `combustibles` | 27 | Cargas (terreno, planilla, factura, carga pasada), bandeja «Por revisar», cuadratura, consumo y rendimiento, pagos y estados de cuenta, fuentes de datos, ajustes |
-| `flota` | 7 | Vehículos, licencias de conducir y su exportación |
+| `flota` | 8 | Vehículos, licencias de conducir, su exportación y traslados entre faenas |
 | `mantencion_equipos` | 18 | Mantención preventiva y correctiva de equipos y órdenes de trabajo (app del mecánico + jefatura) |
 | `prevention` | 121 | Documentación SST, capacitaciones, incidentes, inspecciones, PDTP, indicadores |
 | `ti` | 10 | Módulo de TI |
 
-**Total: 295 permisos**, derivados automáticamente. Recalcular con:
+**Total: 296 permisos**, derivados automáticamente. Recalcular con:
 
 ```bash
 npx tsx -e "import { registry } from './modules/registry'; \
@@ -303,7 +303,7 @@ Fuente de verdad: `SYSTEM_ROLES` en `lib/auth/system-rbac.ts`.
 | `subgerente_operaciones` | Todas | Subgerente de operaciones |
 | `tecnico_ti` | Todas | Técnico TI |
 
-**295 permisos granulares** derivados del registry (`modules/registry.ts` vía
+**296 permisos granulares** derivados del registry (`modules/registry.ts` vía
 `modules/permissions.ts`). La lista completa vive en el registry, no se mantiene a mano.
 
 ### Guards
