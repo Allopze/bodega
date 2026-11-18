@@ -80,6 +80,15 @@ El 2026-06-25 se saneó todo colapsando el historial en un **baseline único**
    `npm run db:seed` desde `lib/auth/system-rbac.ts` + los `defaultGrants` de
    los manifests de módulo.
 
+8. **Triggers diferidos de faena (desde 0391).** `drizzle-kit migrate` aplica
+   todas las pendientes en una sola transacción, y `fuel_vehicles` y
+   `fuel_vehicle_worksite_intervals` tienen triggers de restricción
+   `DEFERRABLE INITIALLY DEFERRED`: una migración que actualice
+   `fuel_vehicles.worksite_id` o las estadías y después haga `ALTER TABLE` sobre
+   cualquiera de las dos falla con «cannot ALTER TABLE … because it has pending
+   trigger events». Sepárala en dos migraciones (en deploys distintos) o
+   ejecuta `SET CONSTRAINTS ALL IMMEDIATE;` antes del `ALTER`.
+
 ## Flujo correcto para una migración nueva
 
 ```bash

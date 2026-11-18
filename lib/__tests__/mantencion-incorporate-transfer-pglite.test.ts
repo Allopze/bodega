@@ -11,9 +11,10 @@ import { todayInChile } from "@/lib/utils"
 
 /*
  * «Incorporar desde la flota» a una faena distinta de la del vehículo es un TRASLADO (la faena sólo
- * cambia por esa puerta): folio, estadía nueva, asignaciones de proveedor desde hoy. Si el traslado
- * se rechaza, no queda ficha, ni cambio de faena, ni traslado a medias. Y un UPDATE directo de la
- * faena lo frena la base con un error que las acciones traducen a la regla de negocio.
+ * cambia por esa puerta): folio, estadía nueva, asignaciones de proveedor desde hoy, autorizado por
+ * quien incorpora. Si el traslado se rechaza (llegó hoy, o «Traslados» sigue apagado), no queda ficha,
+ * ni cambio de faena, ni traslado a medias. Y un UPDATE directo de la faena lo frena la base con un
+ * error que las acciones traducen a la regla de negocio.
  */
 
 const pg = new PGlite()
@@ -44,6 +45,10 @@ function input(overrides: Partial<EquipmentInput> = {}): EquipmentInput {
   }
 }
 
+const TRANSFERS_TOGGLE = "submodule.enabled:flota:/flota/traslados"
+const setTransfersEnabled = (enabled: boolean) =>
+  testDb.update(schema.systemSettings).set({ value: String(enabled) }).where(eq(schema.systemSettings.key, TRANSFERS_TOGGLE))
+
 const transfers = () => testDb.select().from(schema.fleetTransfers)
 const stays = (vehicleId: string) => testDb.select().from(schema.fuelVehicleWorksiteIntervals).where(eq(schema.fuelVehicleWorksiteIntervals.vehicleId, vehicleId))
 const vehicle = async (id: string) => (await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, id)))[0]
@@ -63,7 +68,10 @@ beforeAll(async () => {
     { id: "veh-otra-faena", plate: "GHJK34", code: "KA-300", type: "test-camion", equipmentTypeId: T, worksiteId: WS.cholguan, isActive: true },
     { id: "veh-misma-faena", plate: "BCDF12", code: "KA-301", type: "test-camion", equipmentTypeId: T, worksiteId: WS.arauco, isActive: true },
     { id: "veh-recien", plate: "DFGH56", code: "KA-302", type: "test-camion", equipmentTypeId: T, worksiteId: WS.cholguan, isActive: true },
+    { id: "veh-apagado", plate: "HJKL78", code: "KA-303", type: "test-camion", equipmentTypeId: T, worksiteId: WS.cholguan, isActive: true },
   ])
+  // La migración deja «Traslados» apagado hasta reconstruir el pasado; estas pruebas lo encienden.
+  await setTransfersEnabled(true)
   await testDb.insert(schema.fuelProviderMappings).values({
     id: "map-GHJK34", provider: "copec", sourceAccount: "tct:diesel", externalKey: "GHJK34", normalizedValue: "GHJK34",
     worksiteId: WS.cholguan, vehicleId: "veh-otra-faena", decidedBy: actor.userId, reason: "prueba", effectiveFrom: "2026-01-01",
@@ -77,7 +85,7 @@ describe("incorporar desde la flota a otra faena", () => {
 
     expect(await transfers()).toEqual([expect.objectContaining({
       folio: "TR-0001", toWorksiteId: WS.arauco, effectiveDate: todayInChile(),
-      reason: "Incorporación a Mantención de equipos", authorizedBy: "Mantención de equipos", createdBy: actor.userId,
+      reason: "Incorporación a Mantención de equipos", authorizedBy: "Quien incorpora", createdBy: actor.userId,
     })])
     const recorrido = await stays("veh-otra-faena")
     expect(recorrido).toHaveLength(2)
@@ -97,16 +105,37 @@ describe("incorporar desde la flota a otra faena", () => {
     expect(await stays("veh-misma-faena")).toHaveLength(1)
   })
 
-  it("si el traslado se rechaza, lo dice en la faena y no deja ficha, traslado ni cambio de faena", async () => {
+  it("si llegó hoy a su faena, lo dice en la faena y no deja ficha, traslado ni cambio de faena", async () => {
     // Llegó a Cholguán hoy: el traslado de hoy no es posterior a su estadía actual.
     await setVehicleWorksiteForTest(testDb, "veh-recien", WS.cholguan, todayInChile())
     const before = (await transfers()).length
     const result = await createEquipment(actor, input({ code: "KA-302", plate: "DFGH-56", worksiteId: WS.arauco }))
     expect(result.ok).toBe(false)
-    expect(!result.ok && result.fieldErrors.worksiteId).toMatch(/la fecha debe ser posterior/)
+    expect(!result.ok && result.fieldErrors.worksiteId)
+      .toBe("El equipo llegó a su faena actual hoy: espera a mañana o regístralo con «Trasladar equipos».")
     expect(await vehicle("veh-recien")).toMatchObject({ worksiteId: WS.cholguan })
     expect(await profile("veh-recien")).toBeUndefined()
     expect(await transfers()).toHaveLength(before)
+  })
+
+  it("con «Traslados» apagado no incorpora a otra faena, pero sí en la suya", async () => {
+    await setTransfersEnabled(false)
+    try {
+      const before = (await transfers()).length
+      const elsewhere = await createEquipment(actor, input({ code: "KA-303", plate: "HJKL-78", worksiteId: WS.arauco }))
+      expect(elsewhere.ok).toBe(false)
+      expect(!elsewhere.ok && elsewhere.fieldErrors.worksiteId)
+        .toBe("Los traslados aún no están habilitados: incorpóralo en su faena actual.")
+      expect(await vehicle("veh-apagado")).toMatchObject({ worksiteId: WS.cholguan })
+      expect(await profile("veh-apagado")).toBeUndefined()
+      expect(await transfers()).toHaveLength(before)
+
+      const sameWorksite = await createEquipment(actor, input({ code: "KA-303", plate: "HJKL-78", worksiteId: WS.cholguan }))
+      expect(sameWorksite).toMatchObject({ ok: true, data: { vehicleId: "veh-apagado", incorporated: true } })
+      expect(await transfers()).toHaveLength(before)
+    } finally {
+      await setTransfersEnabled(true)
+    }
   })
 })
 

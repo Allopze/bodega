@@ -103,6 +103,8 @@ beforeAll(async () => {
   await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
   const now = new Date().toISOString()
   await testDb.insert(schema.users).values({ id: actor.userId, name: "Jefatura Equipos", email: actor.email, hashedPassword: "hash", isActive: true, createdAt: now, updatedAt: now })
+  // Incorporar a otra faena es un traslado: «Traslados» (apagado por la migración) va encendido.
+  await testDb.update(schema.systemSettings).set({ value: "true" }).where(eq(schema.systemSettings.key, "submodule.enabled:flota:/flota/traslados"))
   await testDb.insert(schema.worksites).values([
     { id: WS.arauco, name: "Arauco", code: "FN-ARA", isActive: true },
     { id: WS.cholguan, name: "Cholguan", code: "FN-CHO", isActive: true },
@@ -182,7 +184,7 @@ describe("alta", () => {
     const transfers = await testDb.select().from(schema.fleetTransfers)
     expect(transfers).toEqual([expect.objectContaining({
       folio: "TR-0001", toWorksiteId: WS.arauco, effectiveDate: todayInChile(),
-      reason: "Incorporación a Mantención de equipos", authorizedBy: "Mantención de equipos", createdBy: actor.userId,
+      reason: "Incorporación a Mantención de equipos", authorizedBy: "Jefatura Equipos", createdBy: actor.userId,
     })])
     const stays = await testDb.select().from(schema.fuelVehicleWorksiteIntervals)
       .where(eq(schema.fuelVehicleWorksiteIntervals.vehicleId, "veh-flota"))

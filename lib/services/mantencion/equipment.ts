@@ -1,13 +1,15 @@
-import { eq } from "drizzle-orm"
+import { and, eq, isNull } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
-  fuelEquipmentTypes, fuelVehicleOperationalIntervals, fuelVehicles, mantEquipmentProfiles, worksites,
+  fuelEquipmentTypes, fuelVehicleOperationalIntervals, fuelVehicleWorksiteIntervals, fuelVehicles, mantEquipmentProfiles,
+  users, worksites,
 } from "@/db/schema"
 import { isUniqueViolation } from "@/lib/action-error"
 import { USE_TRANSFER_MESSAGE, transferVehiclesTx } from "@/lib/services/fleet-transfers"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 import { EQUIPMENT_OUT_OF_SCOPE, actorEquipmentScope, isWorksiteInScope } from "./access"
 import {
@@ -42,6 +44,11 @@ export type { EquipmentCurrent, EquipmentInput, EquipmentPlanInput, EquipmentRes
 const PLATE_UNIQUE = "fuel_vehicles_plate_unique"
 /** Motivo con que queda registrado el traslado que nace al incorporar un vehículo a otra faena. */
 export const INCORPORATION_TRANSFER_REASON = "Incorporación a Mantención de equipos"
+
+/** Mientras «Traslados» está apagado (antes de reconstruir el pasado) no nace ningún traslado. */
+export const INCORPORATION_TRANSFERS_DISABLED = "Los traslados aún no están habilitados: incorpóralo en su faena actual."
+/** El traslado de hoy no sería posterior a la llegada: el formulario no deja elegir otra fecha. */
+export const INCORPORATION_ARRIVED_TODAY = "El equipo llegó a su faena actual hoy: espera a mañana o regístralo con «Trasladar equipos»."
 
 /** El traslado de una incorporación fue rechazado: aborta la transacción y se informa como error de la faena. */
 class IncorporationTransferRejected extends Error {}
@@ -90,6 +97,11 @@ export async function applyCreate(
   incorporate: VehicleIdentity | null,
   /** `fleet`: «Incorporar desde la flota» (sólo ficha de mantención; la flota no cambia). */
   origin: "create" | "import" | "fleet",
+  /**
+   * `transfersEnabled`: el submódulo «Traslados» está encendido (`isRouteOperational`). Se lee
+   * ANTES de la transacción y llega aquí; sin él, incorporar a otra faena se rechaza.
+   */
+  options: { transfersEnabled?: boolean } = {},
 ): Promise<{ vehicleId: string; incorporated: boolean }> {
   if (!resolved.worksite.id) throw new Error("La faena del equipo no se resolvió.")
   const now = new Date().toISOString()
@@ -124,12 +136,20 @@ export async function applyCreate(
     }
     // Incorporar a otra faena es un traslado: la faena del equipo sólo cambia por esa puerta.
     if (row && row.worksiteId !== resolved.worksite.id) {
+      if (!options.transfersEnabled) throw new IncorporationTransferRejected(INCORPORATION_TRANSFERS_DISABLED)
       const today = todayInChile()
+      const [openStay] = await tx.select({ startedOn: fuelVehicleWorksiteIntervals.startedOn })
+        .from(fuelVehicleWorksiteIntervals)
+        .where(and(eq(fuelVehicleWorksiteIntervals.vehicleId, vehicleId), isNull(fuelVehicleWorksiteIntervals.endedOn)))
+        .limit(1)
+      if (openStay?.startedOn && openStay.startedOn >= today) throw new IncorporationTransferRejected(INCORPORATION_ARRIVED_TODAY)
+      // «Autorizado por: quien incorpora» (spec): la persona, no el módulo.
+      const [person] = await tx.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, actor.userId)).limit(1)
       const outcome = await transferVehiclesTx(tx, { userId: actor.userId, email: actor.email, scope: actor.scope ?? "all" }, {
         toWorksiteId: resolved.worksite.id,
         effectiveDate: today,
         reason: INCORPORATION_TRANSFER_REASON,
-        authorizedBy: "Mantención de equipos",
+        authorizedBy: person?.name.trim() || person?.email || actor.email || "",
         vehicleIds: [vehicleId],
       }, today)
       if (!outcome.ok) {
@@ -193,6 +213,8 @@ export async function createEquipment(
 ): Promise<EquipmentResult<{ vehicleId: string; incorporated: boolean }>> {
   const scope = actorEquipmentScope(actor)
   if (input.worksiteId === NEW_WORKSITE) return equipmentFailure({ worksiteId: NEW_WORKSITE_NOT_ALLOWED })
+  // Fuera de la transacción: la lectura de interruptores usa su propia conexión.
+  const transfersEnabled = await isRouteOperational("/flota/traslados")
   try {
     return await db.transaction(async (tx) => {
       const resolved = await resolveEquipment(tx, input, { current: null })
@@ -204,7 +226,7 @@ export async function createEquipment(
       if (resolved.incorporate && !isWorksiteInScope(scope, resolved.incorporate.worksiteId)) {
         return equipmentFailure({ code: "Ese vehículo es de una faena que no administras: no puedes incorporarlo." })
       }
-      const data = await applyCreate(tx, actor, resolved.value, resolved.incorporate, "create")
+      const data = await applyCreate(tx, actor, resolved.value, resolved.incorporate, "create", { transfersEnabled })
       return { ok: true as const, data, message: data.incorporated ? "El vehículo ya estaba en la flota: se incorporó a la mantención." : "Equipo creado." }
     })
   } catch (error) {
