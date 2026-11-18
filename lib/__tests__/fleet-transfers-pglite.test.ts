@@ -283,18 +283,21 @@ describe("traslado de equipos", () => {
     expect(r3.ok).toBe(true)
   })
 
-  it("avisa de los consumos importados a mano posteriores a la fecha, no de los de Copec", async () => {
+  it("avisa de los consumos importados a mano posteriores a la fecha, no de los de proveedores automáticos", async () => {
     const v = await newVehicle()
     const now = new Date().toISOString()
     await testDb.insert(schema.fuelImportBatches).values([
       { id: `b-man-${v}`, worksiteId: "ws-a", fuente: "Planilla manual", periodoDesde: "2026-11-01", periodoHasta: "2026-11-30", archivoNombre: "x", hashArchivo: `h1-${v}`, importadoPor: "u-t", createdAt: now, updatedAt: now },
       { id: `b-cop-${v}`, worksiteId: "ws-a", fuente: "Copec TCT Diesel", periodoDesde: "2026-11-01", periodoHasta: "2026-11-30", archivoNombre: "y", hashArchivo: `h2-${v}`, importadoPor: "u-t", createdAt: now, updatedAt: now },
+      // Un lote legado de Aramco tampoco lo importó una persona.
+      { id: `b-ara-${v}`, worksiteId: "ws-a", fuente: "Aramco Fleet Diesel", periodoDesde: "2026-11-01", periodoHasta: "2026-11-30", archivoNombre: "z", hashArchivo: `h3-${v}`, importadoPor: "u-t", createdAt: now, updatedAt: now },
     ])
     const base = { worksiteId: "ws-a", vehicleId: v, patente: "X", cantidadUnidad: 10, monto: 1000, periodoDesde: "2026-11-01", periodoHasta: "2026-11-30" }
     await testDb.insert(schema.fuelConsumptionRecords).values([
       { id: `r1-${v}`, batchId: `b-man-${v}`, ...base },
       { id: `r2-${v}`, batchId: `b-cop-${v}`, ...base },
       { id: `r3-${v}`, batchId: `b-man-${v}`, ...base, periodoDesde: "2026-10-01", periodoHasta: "2026-10-31" },
+      { id: `r4-${v}`, batchId: `b-ara-${v}`, ...base },
     ])
     const result = await transferVehicles(ALL, input([v]), TODAY)
     expect(result.ok && result.data.manualImportNotice).toBe("1 consumo importado a mano posterior al 15-11-2026 sigue en Santa Fe: revisa ese lote.")
@@ -335,6 +338,46 @@ describe("traslado de equipos", () => {
     })).rejects.toThrow("rollback")
     expect(await worksiteOf(v)).toBe("ws-a")
     expect(await staysOf(v)).toHaveLength(1)
+  })
+})
+
+describe("casos de anomalía estampados con la faena del equipo", () => {
+  it("el traslado re-estampa los de lecturas y de inactividad desde la fecha; la anulación los devuelve", async () => {
+    const v = await newVehicle()
+    await testDb.insert(schema.fuelAnomalyRules).values({ id: `rule-${v}`, code: `regla-${v}`, name: "Regla de prueba" })
+    await testDb.insert(schema.fuelMeterReadings).values([
+      // 23:30 del 14-11 en Chile (02:30Z del 15): del 14, se queda.
+      { id: `mr-antes-${v}`, vehicleId: v, plate: "X", source: "copec_tct", sourceRef: `g1-${v}`, occurredAt: "2026-11-15T02:30:00.000Z", meterType: "odometer", value: 100 },
+      { id: `mr-despues-${v}`, vehicleId: v, plate: "X", source: "copec_tct", sourceRef: `g2-${v}`, occurredAt: "2026-11-15T04:00:00.000Z", meterType: "odometer", value: 50 },
+    ])
+    const anomalyCase = (id: string, referenceEntityType: string, referenceEntityId: string) => ({
+      id: `${id}-${v}`, ruleId: `rule-${v}`, ruleCode: `regla-${v}`, worksiteId: "ws-a", vehicleId: v,
+      referenceEntityType, referenceEntityId, description: "Caso de prueba",
+    })
+    await testDb.insert(schema.fuelAnomalyCases).values([
+      anomalyCase("c-lectura-antes", "fuel_meter_reading", `mr-antes-${v}`),
+      anomalyCase("c-lectura-despues", "fuel_meter_reading", `mr-despues-${v}`),
+      anomalyCase("c-inactivo-antes", "fuel_vehicle", `${v}:2026-11-14`),
+      anomalyCase("c-inactivo-despues", "fuel_vehicle", `${v}:2026-11-16`),
+      // Lleva la faena del envío: un traslado no lo mueve.
+      anomalyCase("c-tae", "fuel_tae_submission", `tae-${v}`),
+    ])
+    const caseWorksites = async () => Object.fromEntries(
+      (await testDb.select({ id: schema.fuelAnomalyCases.id, worksiteId: schema.fuelAnomalyCases.worksiteId })
+        .from(schema.fuelAnomalyCases).where(eq(schema.fuelAnomalyCases.vehicleId, v)))
+        .map((row) => [row.id.replace(`-${v}`, ""), row.worksiteId]),
+    )
+
+    const made = await transferVehicles(ALL, input([v]), TODAY)
+    if (!made.ok) throw new Error("setup")
+    expect(await caseWorksites()).toEqual({
+      "c-lectura-antes": "ws-a", "c-lectura-despues": "ws-b",
+      "c-inactivo-antes": "ws-a", "c-inactivo-despues": "ws-b",
+      "c-tae": "ws-a",
+    })
+
+    expect((await voidTransfer(ALL, { transferId: made.data.transferId, reason: "Se registró por error" }, TODAY)).ok).toBe(true)
+    expect(Object.values(await caseWorksites())).toEqual(["ws-a", "ws-a", "ws-a", "ws-a", "ws-a"])
   })
 })
 
@@ -390,6 +433,27 @@ describe("anular un traslado", () => {
     expect(await worksiteOf(v)).toBe("ws-b")
   })
 
+  it("no anula un traslado anterior a la ventana de registro, ni lo ofrece en la lista", async () => {
+    const v = await newVehicle()
+    const made = await transferVehicles(ALL, input([v], { effectiveDate: "2026-10-20" }), TODAY)
+    if (!made.ok) throw new Error("setup")
+    // El 05-12 la ventana parte el 01-11: el traslado del 20-10 ya quedó fuera.
+    const LATER = "2026-12-05"
+    const listed = async (today: string) =>
+      (await listTransfers("all", { from: "2026-10-01", to: "2026-10-31" }, today)).find((r) => r.id === made.data.transferId)?.voidable
+    expect(await listed(TODAY)).toBe(true)
+    expect(await listed(LATER)).toBe(false)
+    expect(await voidTransfer(ALL, { transferId: made.data.transferId, reason: "Se registró por error" }, LATER)).toEqual({
+      ok: false,
+      message: "No se puede anular: el traslado es anterior al 01-11-2026. Pide la corrección con el script de reconstrucción.",
+    })
+    expect(await worksiteOf(v)).toBe("ws-b")
+    const [row] = await testDb.select().from(schema.fleetTransfers).where(eq(schema.fleetTransfers.id, made.data.transferId))
+    expect(row?.voidedAt).toBeNull()
+    // Dentro de la ventana sí se anula.
+    expect((await voidTransfer(ALL, { transferId: made.data.transferId, reason: "Se registró por error" }, TODAY)).ok).toBe(true)
+  })
+
   it("no anula si hubo un traslado posterior", async () => {
     const v = await newVehicle()
     const first = await transferVehicles(ALL, input([v], { effectiveDate: "2026-11-10" }), TODAY)
@@ -399,18 +463,46 @@ describe("anular un traslado", () => {
     expect(result).toEqual({ ok: false, message: `No se puede anular: ${(await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, v)))[0]?.code} se trasladó de nuevo después (${second.data.folio}).` })
     expect(await worksiteOf(v)).toBe("ws-a")
 
-    const rows = await listTransfers("all", { from: "2026-11-01", to: "2026-11-30" })
+    const rows = await listTransfers("all", { from: "2026-11-01", to: "2026-11-30" }, TODAY)
     expect(rows.find((r) => r.id === first.data.transferId)?.voidable).toBe(false)
     expect(rows.find((r) => r.id === second.data.transferId)?.voidable).toBe(true)
   })
 })
 
 describe("lista de traslados", () => {
+  it("quien no administra el destino ve sólo los equipos que salieron de sus faenas, y no puede anular", async () => {
+    const now = new Date().toISOString()
+    await testDb.insert(schema.worksites).values({ id: "ws-d", name: "Cholguán", code: "FN-D", isActive: true, createdAt: now, updatedAt: now })
+    const fromA = await newVehicle({ worksiteId: "ws-a", code: "PRIV-A" })
+    const fromD = await newVehicle({ worksiteId: "ws-d", code: "PRIV-D" })
+    const made = await transferVehicles(ALL, input([fromA, fromD], { effectiveDate: "2026-11-16" }), TODAY)
+    if (!made.ok) throw new Error("setup")
+    const rowFor = async (scope: string[] | "all") =>
+      (await listTransfers(scope, { from: "2026-11-16", to: "2026-11-16" }, TODAY)).find((r) => r.id === made.data.transferId)
+    const codes = (row: Awaited<ReturnType<typeof rowFor>>) => row?.items.map((item) => item.code).sort()
+
+    // Sólo un origen: ve su equipo, no el de Cholguán, y el botón no se ofrece.
+    const onlyA = await rowFor(["ws-a"])
+    expect(codes(onlyA)).toEqual(["PRIV-A"])
+    expect(onlyA?.voidable).toBe(false)
+    // El destino: ve todos los equipos que llegaron, pero no administra Cholguán.
+    const onlyB = await rowFor(["ws-b"])
+    expect(codes(onlyB)).toEqual(["PRIV-A", "PRIV-D"])
+    expect(onlyB?.voidable).toBe(false)
+    // Destino y todos los orígenes: lo mismo que el servidor acepta.
+    const everyone = await rowFor(["ws-a", "ws-b", "ws-d"])
+    expect(codes(everyone)).toEqual(["PRIV-A", "PRIV-D"])
+    expect(everyone?.voidable).toBe(true)
+    expect((await rowFor("all"))?.voidable).toBe(true)
+    expect(await voidTransfer({ ...ALL, scope: ["ws-a", "ws-b"] }, { transferId: made.data.transferId, reason: "Se registró por error" }, TODAY))
+      .toEqual({ ok: false, message: "No administras todas las faenas de este traslado." })
+  })
+
   it("filtra por fecha, faena y alcance, con equipos y orígenes", async () => {
     const v = await newVehicle({ worksiteId: "ws-b" })
     const made = await transferVehicles(ALL, input([v], { toWorksiteId: "ws-a", effectiveDate: "2026-10-05" }), TODAY)
     if (!made.ok) throw new Error("setup")
-    const inRange = await listTransfers("all", { from: "2026-10-01", to: "2026-10-31" })
+    const inRange = await listTransfers("all", { from: "2026-10-01", to: "2026-10-31" }, TODAY)
     const row = inRange.find((r) => r.id === made.data.transferId)
     expect(row).toMatchObject({
       folio: made.data.folio, effectiveDate: "2026-10-05", toWorksiteName: "Santa Fe", reason: "Refuerzo de la faena Mininco",
@@ -419,13 +511,13 @@ describe("lista de traslados", () => {
     expect(row?.items).toEqual([{ vehicleId: v, code: expect.any(String), plate: expect.any(String), fromWorksiteId: "ws-b", fromWorksiteName: "Mininco" }])
     expect(inRange.every((r) => r.effectiveDate >= "2026-10-01" && r.effectiveDate <= "2026-10-31")).toBe(true)
     // Por faena: origen o destino.
-    expect((await listTransfers("all", { from: "2026-10-01", to: "2026-10-31", worksiteId: "ws-b" })).some((r) => r.id === made.data.transferId)).toBe(true)
-    expect((await listTransfers("all", { from: "2026-10-01", to: "2026-10-31", worksiteId: "ws-c" })).some((r) => r.id === made.data.transferId)).toBe(false)
+    expect((await listTransfers("all", { from: "2026-10-01", to: "2026-10-31", worksiteId: "ws-b" }, TODAY)).some((r) => r.id === made.data.transferId)).toBe(true)
+    expect((await listTransfers("all", { from: "2026-10-01", to: "2026-10-31", worksiteId: "ws-c" }, TODAY)).some((r) => r.id === made.data.transferId)).toBe(false)
     // Por alcance: visible si el destino o algún origen está en el alcance.
-    expect((await listTransfers(["ws-b"], { from: "2026-10-01", to: "2026-10-31" })).some((r) => r.id === made.data.transferId)).toBe(true)
-    expect((await listTransfers(["ws-c"], { from: "2026-10-01", to: "2026-10-31" })).some((r) => r.id === made.data.transferId)).toBe(false)
-    expect(await listTransfers([], { from: "2026-10-01", to: "2026-10-31" })).toEqual([])
+    expect((await listTransfers(["ws-b"], { from: "2026-10-01", to: "2026-10-31" }, TODAY)).some((r) => r.id === made.data.transferId)).toBe(true)
+    expect((await listTransfers(["ws-c"], { from: "2026-10-01", to: "2026-10-31" }, TODAY)).some((r) => r.id === made.data.transferId)).toBe(false)
+    expect(await listTransfers([], { from: "2026-10-01", to: "2026-10-31" }, TODAY)).toEqual([])
     // Fuera del rango de fechas.
-    expect((await listTransfers("all", { from: "2026-11-01", to: "2026-11-30" })).some((r) => r.id === made.data.transferId)).toBe(false)
+    expect((await listTransfers("all", { from: "2026-11-01", to: "2026-11-30" }, TODAY)).some((r) => r.id === made.data.transferId)).toBe(false)
   })
 })

@@ -7,9 +7,11 @@ import {
   fleetGpsTrips,
   fleetTransferItems,
   fleetTransfers,
+  fuelAnomalyCases,
   fuelConsumptionRecords,
   fuelEquipmentTypes,
   fuelImportBatches,
+  fuelMeterReadings,
   fuelVehicleWorksiteIntervals as stays,
   fuelVehicles,
   mantEquipmentProfiles,
@@ -18,12 +20,14 @@ import {
   worksites,
 } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
-import { copecTctSource } from "@/lib/combustibles/fuel-sources"
+import { isoTextDaySql } from "@/lib/combustibles/control/queries/field-filters"
+import { AUTOMATED_SOURCES } from "@/lib/combustibles/fuel-sources"
 import { moveProviderMappingsWithVehicleTx } from "@/lib/combustibles/provider-mappings"
 import {
   formatTransferFolio,
   MAX_VEHICLES_PER_TRANSFER,
   transferDateError,
+  transferDateWindow,
   transferTextErrors,
 } from "@/lib/fleet/transfer-rules"
 import { nanoid } from "@/lib/id"
@@ -35,8 +39,8 @@ import { addDaysToPlainDate, chileDayStartInstant, formatDate, todayInChile } fr
  * `fuel_vehicles.worksite_id` de un equipo existente. La base lo hace cumplir
  * (trigger diferido `FLEET_STAY_INVARIANT`): un `UPDATE` directo de la faena
  * falla al confirmar. Todo se mueve en la misma transacción: estadía, faena del
- * equipo, asignaciones de proveedor, filas GPS posteriores a la fecha,
- * historial de Mantención y auditoría.
+ * equipo, asignaciones de proveedor, filas GPS y casos de anomalía posteriores a
+ * la fecha, historial de Mantención y auditoría.
  */
 
 export interface TransferActor {
@@ -102,7 +106,11 @@ export interface TransferListRow {
   createdAt: string
   voidedAt: string | null
   voidReason: string | null
-  /** No anulado y cada equipo sigue en la estadía que abrió este traslado. */
+  /**
+   * Lo que el servidor aceptaría anular para quien mira: no anulado, cada equipo sigue
+   * en la estadía que abrió este traslado, la fecha está dentro de la ventana
+   * (`transferDateWindow`) y quien mira administra el destino y todos los orígenes.
+   */
   voidable: boolean
 }
 
@@ -144,6 +152,43 @@ async function restampGps(tx: Tx, vehicleId: string, worksiteId: string, date: s
     .where(and(eq(fleetGpsAlerts.vehicleId, vehicleId), gte(fleetGpsAlerts.occurredAt, since)))
   // La última posición es el estado actual del equipo, no un hecho fechado.
   await tx.update(fleetGpsLatestPositions).set({ worksiteId }).where(eq(fleetGpsLatestPositions.vehicleId, vehicleId))
+}
+
+/**
+ * Re-estampa con `worksiteId` los casos de anomalía del equipo que tomaron SU faena
+ * (no la de un registro propio) y son de `date` en adelante:
+ *
+ * - los de una lectura de medidor (`fuel_meter_reading`): el detector los estampa
+ *   con la estadía del día chileno de la lectura, y ese día es el que se compara;
+ * - los de «consumo durante inactividad» (`fuel_vehicle`): llevan la faena del
+ *   equipo el día en que se detectaron, que va al final de su referencia
+ *   (`<vehículo>:AAAA-MM-DD`); una referencia con otra forma no se toca.
+ *
+ * Los de TAE, cargas, consumos y registros de operación llevan la faena de su
+ * registro, que un traslado no mueve.
+ */
+async function restampAnomalyCases(tx: Tx, vehicleId: string, worksiteId: string, date: string): Promise<void> {
+  const detectedOn = sql`right(${fuelAnomalyCases.referenceEntityId}, 10)`
+  await tx.update(fuelAnomalyCases).set({ worksiteId, updatedAt: new Date().toISOString() })
+    .where(and(
+      eq(fuelAnomalyCases.vehicleId, vehicleId),
+      or(
+        and(
+          eq(fuelAnomalyCases.referenceEntityType, "fuel_meter_reading"),
+          sql`exists (
+            select 1 from ${fuelMeterReadings}
+            where ${fuelMeterReadings.id} = ${fuelAnomalyCases.referenceEntityId}
+              and to_char(${isoTextDaySql(fuelMeterReadings.occurredAt)}, 'YYYY-MM-DD') >= ${date}
+          )`,
+        ),
+        and(
+          eq(fuelAnomalyCases.referenceEntityType, "fuel_vehicle"),
+          sql`${fuelAnomalyCases.referenceEntityId} = ${fuelAnomalyCases.vehicleId} || ':' || ${detectedOn}`,
+          sql`${detectedOn} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`,
+          sql`${detectedOn} >= ${date}`,
+        ),
+      ),
+    ))
 }
 
 /** Equipos (de `vehicleIds`) que tienen ficha de Mantención: sólo ellos llevan historial. */
@@ -313,6 +358,7 @@ export async function transferVehiclesTx(
       effectiveFrom: date,
     })
     await restampGps(tx, vehicle.id, destination.id, date)
+    await restampAnomalyCases(tx, vehicle.id, destination.id, date)
     if (withProfile.has(vehicle.id)) {
       await writeEquipmentHistory(tx, {
         vehicleId: vehicle.id,
@@ -357,23 +403,22 @@ export async function transferVehiclesTx(
 }
 
 /**
- * Consumos importados a mano (lotes que no son de la sincronización Copec) del equipo en
- * su faena de origen y posteriores a la fecha: el traslado no los mueve y alguien debe
- * revisarlos. `null` si no hay.
+ * Consumos importados a mano (lotes que no son de un proveedor automático: Copec ni los
+ * legados de Aramco, `AUTOMATED_SOURCES`) del equipo en su faena de origen y posteriores
+ * a la fecha: el traslado no los mueve y alguien debe revisarlos. `null` si no hay.
  */
 async function manualImportNoticeFor(
   tx: Tx,
   vehicles: Array<{ id: string; worksiteId: string; worksiteName: string }>,
   date: string,
 ): Promise<string | null> {
-  const copecSources = [copecTctSource("diesel"), copecTctSource("bluemax")]
   const rows = await tx.select({ vehicleId: fuelConsumptionRecords.vehicleId, worksiteId: fuelConsumptionRecords.worksiteId })
     .from(fuelConsumptionRecords)
     .innerJoin(fuelImportBatches, eq(fuelImportBatches.id, fuelConsumptionRecords.batchId))
     .where(and(
       inArray(fuelConsumptionRecords.vehicleId, vehicles.map((vehicle) => vehicle.id)),
       gte(fuelConsumptionRecords.periodoHasta, date),
-      notInArray(fuelImportBatches.fuente, copecSources),
+      notInArray(fuelImportBatches.fuente, AUTOMATED_SOURCES),
     ))
   const originByVehicle = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle]))
   const origins = new Set<string>()
@@ -426,16 +471,15 @@ export async function transferVehicles(
 export async function voidTransfer(
   actor: TransferActor,
   input: { transferId: string; reason: string },
-  _today: string = todayInChile(),
+  today: string = todayInChile(),
 ): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
-  void _today
   const reason = input.reason.trim()
   if (reason.length < MIN_VOID_REASON_LENGTH) {
     return { ok: false, message: `Explica el motivo en al menos ${MIN_VOID_REASON_LENGTH} caracteres.` }
   }
   let outcome: { ok: true; message: string; copecRecheckFrom: string | null } | { ok: false; message: string }
   try {
-    outcome = await db.transaction((tx) => voidTransferTx(tx, actor, input.transferId, reason))
+    outcome = await db.transaction((tx) => voidTransferTx(tx, actor, input.transferId, reason, today))
   } catch (error) {
     if (isFleetStayInvariantError(error)) return { ok: false, message: STALE_MESSAGE }
     throw error
@@ -445,11 +489,24 @@ export async function voidTransfer(
   return { ok: true, message: outcome.message }
 }
 
+/**
+ * Un traslado anterior a la ventana de registro (`transferDateWindow`) no se anula por
+ * pantalla: deshacerlo reescribiría meses ya revisados y no se podría volver a registrar
+ * con su fecha. Se corrige con el script de reconstrucción, con aprobación del usuario.
+ */
+function voidWindowError(effectiveDate: string, today: string): string | null {
+  const { min } = transferDateWindow(today)
+  return effectiveDate < min
+    ? `No se puede anular: el traslado es anterior al ${formatDate(min)}. Pide la corrección con el script de reconstrucción.`
+    : null
+}
+
 async function voidTransferTx(
   tx: Tx,
   actor: TransferActor,
   transferId: string,
   reason: string,
+  today: string,
 ): Promise<{ ok: true; message: string; copecRecheckFrom: string | null } | { ok: false; message: string }> {
   const [transfer] = await tx.select().from(fleetTransfers).where(eq(fleetTransfers.id, transferId)).for("update")
   if (!transfer) return { ok: false, message: "Ese traslado no existe." }
@@ -460,6 +517,8 @@ async function voidTransferTx(
   if (!inScope(actor.scope, transfer.toWorksiteId) || items.some((item) => !inScope(actor.scope, item.fromWorksiteId))) {
     return { ok: false, message: "No administras todas las faenas de este traslado." }
   }
+  const windowError = voidWindowError(transfer.effectiveDate, today)
+  if (windowError) return { ok: false, message: windowError }
 
   const vehicleIds = items.map((item) => item.vehicleId)
   const vehicles = await tx.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate })
@@ -526,6 +585,7 @@ async function voidTransferTx(
       effectiveFrom: transfer.effectiveDate,
     })
     await restampGps(tx, item.vehicleId, item.fromWorksiteId, transfer.effectiveDate)
+    await restampAnomalyCases(tx, item.vehicleId, item.fromWorksiteId, transfer.effectiveDate)
     if (withProfile.has(item.vehicleId)) {
       await writeEquipmentHistory(tx, {
         vehicleId: item.vehicleId,
@@ -566,7 +626,6 @@ async function voidTransferTx(
     worksiteId: transfer.toWorksiteId,
   }, tx)
 
-  const today = todayInChile()
   return {
     ok: true,
     message: `${transfer.folio} anulado.`,
@@ -574,10 +633,15 @@ async function voidTransferTx(
   }
 }
 
-/** Traslados visibles para el alcance (destino u origen en el alcance), con sus equipos. */
+/**
+ * Traslados visibles para el alcance (destino u origen en el alcance). De cada uno, quien
+ * no administra el destino ve sólo los equipos que salieron de sus faenas: códigos,
+ * patentes y orígenes de faenas ajenas no se muestran ni se exportan.
+ */
 export async function listTransfers(
   scope: string[] | "all",
   filters: { from: string; to: string; worksiteId?: string },
+  today: string = todayInChile(),
 ): Promise<TransferListRow[]> {
   if (scope !== "all" && scope.length === 0) return []
   const itemsOf = (extra: SQL) => sql`exists (
@@ -643,16 +707,23 @@ export async function listTransfers(
 
   return transfers.map((transfer) => {
     const rows = itemsByTransfer.get(transfer.id) ?? []
+    const visible = inScope(scope, transfer.toWorksiteId) ? rows : rows.filter((row) => inScope(scope, row.fromWorksiteId))
+    // Con TODOS los equipos, no sólo los visibles: el servidor exige el traslado completo.
+    const voidable = transfer.voidedAt === null
+      && rows.every((row) => openTransferByVehicle.get(row.vehicleId) === transfer.id)
+      && voidWindowError(transfer.effectiveDate, today) === null
+      && inScope(scope, transfer.toWorksiteId)
+      && rows.every((row) => inScope(scope, row.fromWorksiteId))
     return {
       ...transfer,
-      items: rows.map((row) => ({
+      items: visible.map((row) => ({
         vehicleId: row.vehicleId,
         code: row.code ?? "",
         plate: row.plate,
         fromWorksiteId: row.fromWorksiteId,
         fromWorksiteName: row.fromWorksiteName,
       })),
-      voidable: transfer.voidedAt === null && rows.every((row) => openTransferByVehicle.get(row.vehicleId) === transfer.id),
+      voidable,
     }
   })
 }
