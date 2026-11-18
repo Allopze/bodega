@@ -235,11 +235,14 @@ describe("updateFuelVehicleAction governance fields", () => {
 // La sincronización atribuye el consumo por la faena de la asignación de
 // proveedor, no por la del vehículo: trasladar el vehículo tiene que llevarla.
 describe("updateFuelVehicleAction worksite transfer", () => {
-  it("moves the provider mappings when the vehicle changes worksite", async () => {
+  it("rejects a different worksite: the faena only changes through «Trasladar equipos»", async () => {
     const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({ id: "veh-1", worksiteId: "ws-2" }))
 
-    expect(result.ok).toBe(true)
-    expect(mockMoveProviderMappings).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ vehicleId: "veh-1", worksiteId: "ws-2", actorUserId: "user-1" }))
+    expect(result.ok).toBe(false)
+    expect(result.message).toBe("Revisa los datos")
+    expect(result.fieldErrors?.worksiteId?.[0]).toBe("Para cambiar de faena usa «Trasladar equipos».")
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+    expect(mockMoveProviderMappings).not.toHaveBeenCalled()
   })
 
   it("leaves the provider mappings alone when the worksite does not change", async () => {

@@ -106,6 +106,9 @@ export interface TransferListRow {
   voidable: boolean
 }
 
+/** Único texto con que se rechaza cualquier camino que intente cambiar la faena de un equipo sin trasladarlo. */
+export const USE_TRANSFER_MESSAGE = "Para cambiar de faena usa «Trasladar equipos»."
+
 const STALE_MESSAGE = "El equipo cambió de faena en otra sesión. Recarga e inténtalo de nuevo."
 const MIN_VOID_REASON_LENGTH = 10
 

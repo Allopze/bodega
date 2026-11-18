@@ -4,7 +4,7 @@ import {
   fuelEquipmentTypes, fuelVehicleOperationalIntervals, fuelVehicles, mantEquipmentProfiles, worksites,
 } from "@/db/schema"
 import { isUniqueViolation } from "@/lib/action-error"
-import { moveProviderMappingsWithVehicleTx } from "@/lib/combustibles/provider-mappings"
+import { USE_TRANSFER_MESSAGE, transferVehiclesTx } from "@/lib/services/fleet-transfers"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
@@ -40,6 +40,12 @@ export type { EquipmentCurrent, EquipmentInput, EquipmentPlanInput, EquipmentRes
 
 /** Índice único de la patente en la flota compartida. */
 const PLATE_UNIQUE = "fuel_vehicles_plate_unique"
+/** Motivo con que queda registrado el traslado que nace al incorporar un vehículo a otra faena. */
+export const INCORPORATION_TRANSFER_REASON = "Incorporación a Mantención de equipos"
+
+/** El traslado de una incorporación fue rechazado: aborta la transacción y se informa como error de la faena. */
+class IncorporationTransferRejected extends Error {}
+
 /** PK del perfil: el vehículo ya entró a la mantención (dos «incorporar» a la vez). */
 const PROFILE_PK = "mant_equipment_profiles_pkey"
 /**
@@ -116,13 +122,27 @@ export async function applyCreate(
         model: row.model, year: row.year, worksite: row.worksiteName, schedule: null, initialReading: null, initialReadingDate: null,
       }
     }
-    // «Incorporar desde la flota» sólo crea la ficha: el texto libre de marca de la flota se conserva.
-    const { brand: _fleetBrand, ...fleetSafe } = sharedValues
-    await tx.update(fuelVehicles).set({ ...(origin === "fleet" ? fleetSafe : sharedValues), updatedAt: now }).where(eq(fuelVehicles.id, vehicleId))
-    // Incorporar puede cambiar la faena del vehículo: sus asignaciones de proveedor lo siguen.
+    // Incorporar a otra faena es un traslado: la faena del equipo sólo cambia por esa puerta.
     if (row && row.worksiteId !== resolved.worksite.id) {
-      await moveProviderMappingsWithVehicleTx(tx, { vehicleId, worksiteId: resolved.worksite.id, actorUserId: actor.userId, actorEmail: actor.email })
+      const today = todayInChile()
+      const outcome = await transferVehiclesTx(tx, { userId: actor.userId, email: actor.email, scope: actor.scope ?? "all" }, {
+        toWorksiteId: resolved.worksite.id,
+        effectiveDate: today,
+        reason: INCORPORATION_TRANSFER_REASON,
+        authorizedBy: "Mantención de equipos",
+        vehicleIds: [vehicleId],
+      }, today)
+      if (!outcome.ok) {
+        throw new IncorporationTransferRejected(
+          outcome.rowErrors?.[vehicleId] ?? outcome.fieldErrors?.toWorksiteId ?? Object.values(outcome.fieldErrors ?? {})[0] ?? outcome.message,
+        )
+      }
     }
+    // «Incorporar desde la flota» sólo crea la ficha: el texto libre de marca de la flota se conserva.
+    // La faena no se escribe aquí: si cambia, ya la movió el traslado.
+    const { worksiteId: _worksiteId, ...sharedWithoutWorksite } = sharedValues
+    const { brand: _fleetBrand, ...fleetSafe } = sharedWithoutWorksite
+    await tx.update(fuelVehicles).set({ ...(origin === "fleet" ? fleetSafe : sharedWithoutWorksite), updatedAt: now }).where(eq(fuelVehicles.id, vehicleId))
   } else {
     // `meterType` y `performanceUnit` sólo se siembran en el alta: son editables por vehículo.
     await tx.insert(fuelVehicles).values({
@@ -188,6 +208,7 @@ export async function createEquipment(
       return { ok: true as const, data, message: data.incorporated ? "El vehículo ya estaba en la flota: se incorporó a la mantención." : "Equipo creado." }
     })
   } catch (error) {
+    if (error instanceof IncorporationTransferRejected) return equipmentFailure({ worksiteId: error.message })
     const mapped = uniqueFailure(error)
     if (mapped) return mapped
     throw error
@@ -225,6 +246,8 @@ export async function applyUpdate(
   const changes = diffEquipmentFields(current.fields, resolved.fields)
   if (Object.keys(changes).length === 0) return false
   if (!resolved.worksite.id) throw new Error("La faena del equipo no se resolvió.")
+  // Red de seguridad: la validación de filas ya rechaza un cambio de faena; si uno llegara hasta aquí, no se escribe.
+  if (EQUIPMENT_FIELD_LABELS.worksite in changes) throw new Error(USE_TRANSFER_MESSAGE)
   const now = new Date().toISOString()
   const unitChanged = resolved.type.unit !== current.unit
   await tx.update(fuelVehicles).set({
@@ -235,7 +258,7 @@ export async function applyUpdate(
     brand: resolved.brand.name,
     model: resolved.model,
     year: resolved.year,
-    worksiteId: resolved.worksite.id,
+    // La faena no se escribe: sólo cambia por traslado (la planilla ya rechaza la fila que la cambia).
     // Cambiar a un tipo de otra unidad (sólo posible sin registros) lleva sus defaults de medidor.
     ...(unitChanged ? { meterType: resolved.type.meterType, performanceUnit: resolved.type.performanceUnit } : {}),
     updatedAt: now,
@@ -249,10 +272,6 @@ export async function applyUpdate(
     updatedAt: now,
     updatedBy: actor.userId,
   }).where(eq(mantEquipmentProfiles.vehicleId, current.vehicleId))
-  // La sincronización atribuye por la faena de la asignación de proveedor, no por la del vehículo.
-  if (EQUIPMENT_FIELD_LABELS.worksite in changes) {
-    await moveProviderMappingsWithVehicleTx(tx, { vehicleId: current.vehicleId, worksiteId: resolved.worksite.id, actorUserId: actor.userId, actorEmail: actor.email })
-  }
   const action = origin === "import" ? "import" : historyActionFor(changes)
   await writeEquipmentHistory(tx, {
     vehicleId: current.vehicleId,

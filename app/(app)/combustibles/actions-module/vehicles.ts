@@ -11,7 +11,7 @@ import { canAccessWorksite, worksiteScopeSql } from "@/lib/auth/scope"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { nanoid } from "@/lib/id"
 import { setVehicleOperationalStatus } from "@/lib/services/fleet"
-import { moveProviderMappingsWithVehicleTx } from "@/lib/combustibles/provider-mappings"
+import { USE_TRANSFER_MESSAGE } from "@/lib/services/fleet-transfers"
 import { lockVehicleSeries, recomputeVehicles } from "@/lib/combustibles/control/projection-series"
 import { projectWithStaleDecisions, SERIES_START_INSTANT } from "@/lib/combustibles/control/stale-decisions"
 import { parseFleetXlsx } from "@/lib/combustibles/fleet-xlsx-import"
@@ -261,6 +261,10 @@ export async function updateFuelVehicleAction(
   if (parsed.data.worksiteId && !canManageFuelVehicleWorksite(session, parsed.data.worksiteId)) {
     return { ok: false, message: "No puedes gestionar vehículos para esta faena" }
   }
+  // La faena sólo cambia por «Trasladar equipos»: el padrón ya no es una puerta.
+  if (parsed.data.worksiteId && parsed.data.worksiteId !== existing.worksiteId) {
+    return { ok: false, message: "Revisa los datos", fieldErrors: { worksiteId: [USE_TRANSFER_MESSAGE] } }
+  }
   const serialTaken = await serialNumberTaken(parsed.data.serialNumber, id)
   if (serialTaken) return serialTaken
   const canChangeProfile = canChangeMaintenanceProfile(session, existing.worksiteId)
@@ -317,10 +321,6 @@ export async function updateFuelVehicleAction(
           { userId: session.user.id, userEmail: session.user.email ?? undefined },
           async () => { await recomputeVehicles(tx, [id]) },
         )
-      }
-      // La sincronización atribuye por la faena de la asignación de proveedor, no por la del vehículo.
-      if (data.worksiteId && data.worksiteId !== existing.worksiteId) {
-        await moveProviderMappingsWithVehicleTx(tx, { vehicleId: id, worksiteId: data.worksiteId, actorUserId: session.user.id, actorEmail: session.user.email })
       }
       if (statusChanged) {
         await setVehicleOperationalStatus(tx, {
@@ -518,6 +518,10 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
       errors.push({ rowIndex: row.rowIndex, field: "PATENTE", message: "El vehículo existente no puede ser administrado desde tu alcance" })
       return []
     }
+    if (existing && existing.worksiteId !== worksite.id) {
+      errors.push({ rowIndex: row.rowIndex, field: "FAENA", message: USE_TRANSFER_MESSAGE })
+      return []
+    }
     return [{ ...row, worksiteId: worksite.id, existing, equipmentTypeSlug: fuelEquipmentTypeSlug(row.type) }]
   })
 
@@ -584,14 +588,13 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
             errors.push({ rowIndex: row.rowIndex, field: IMPORT_COLUMN_BY_FIELD[field] ?? "CODIGO", message: `Equipo de Mantención: ${message}` })
             continue
           }
+          // La faena no se escribe: una fila con otra faena se rechazó arriba (sólo cambia por traslado).
+          const { worksiteId: _worksiteId, ...identityValues } = values
           const rowValues = identity
-            ? { ...values, code: identity.resolved.code, plate: identity.resolved.plate, brand: identity.resolved.brand.name, model: identity.resolved.model, year: identity.resolved.year }
-            : values
+            ? { ...identityValues, code: identity.resolved.code, plate: identity.resolved.plate, brand: identity.resolved.brand.name, model: identity.resolved.model, year: identity.resolved.year }
+            : identityValues
           updated++
           await tx.update(fuelVehicles).set({ ...rowValues, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, row.existing.id))
-          if (row.existing.worksiteId !== row.worksiteId) {
-            await moveProviderMappingsWithVehicleTx(tx, { vehicleId: row.existing.id, worksiteId: row.worksiteId, actorUserId: session.user.id, actorEmail: session.user.email })
-          }
           if (identity) {
             maintenanceUpdated = true
             await applyFleetIdentity(tx, { userId: session.user.id, email: session.user.email ?? null }, identity.current, identity.resolved, "padron_import")

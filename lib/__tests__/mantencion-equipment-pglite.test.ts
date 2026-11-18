@@ -178,6 +178,16 @@ describe("alta", () => {
     expect((await testDb.select().from(schema.fuelVehicles)).length).toBe(before)
     const [vehicle] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, "veh-flota"))
     expect(vehicle).toMatchObject({ plate: "GHJK-34", brand: "Volvo", model: "FH 460", worksiteId: WS.arauco })
+    // Incorporarlo a otra faena es un traslado (la faena sólo cambia por esa puerta): con folio, hoy y su motivo.
+    const transfers = await testDb.select().from(schema.fleetTransfers)
+    expect(transfers).toEqual([expect.objectContaining({
+      folio: "TR-0001", toWorksiteId: WS.arauco, effectiveDate: todayInChile(),
+      reason: "Incorporación a Mantención de equipos", authorizedBy: "Mantención de equipos", createdBy: actor.userId,
+    })])
+    const stays = await testDb.select().from(schema.fuelVehicleWorksiteIntervals)
+      .where(eq(schema.fuelVehicleWorksiteIntervals.vehicleId, "veh-flota"))
+    expect(stays.map((stay) => [stay.worksiteId, stay.source]).sort()).toEqual([[WS.arauco, "traslado"], [WS.cholguan, "alta"]])
+    expect(stays.find((stay) => stay.worksiteId === WS.arauco)).toMatchObject({ startedOn: todayInChile(), endedOn: null, transferId: transfers[0]!.id })
     expect(await profileOf("veh-flota")).toMatchObject({ brandId: B.volvo })
     const [entry] = await listEquipmentHistory("veh-flota")
     expect(entry?.summary).toMatch(/incorporado a la mantención desde la flota/)
@@ -543,7 +553,8 @@ describe("las asignaciones de proveedor siguen al equipo cuando cambia de faena"
     await mapPlate("veh-flota-map", "DFGH56", WS.cholguan)
     await createdId(await createEquipment(actor, input({ code: "KA-310", plate: "DFGH-56", worksiteId: WS.arauco })))
     const { active, closed } = await activeMapping("DFGH56")
-    expect(active).toEqual([expect.objectContaining({ worksiteId: WS.arauco, vehicleId: "veh-flota-map", version: 2 })])
+    // La asignación se mueve con el traslado: la nueva rige desde el día del traslado.
+    expect(active).toEqual([expect.objectContaining({ worksiteId: WS.arauco, vehicleId: "veh-flota-map", version: 2, effectiveFrom: todayInChile() })])
     expect(closed).toEqual([expect.objectContaining({ worksiteId: WS.cholguan, version: 1 })])
   })
 })

@@ -40,7 +40,7 @@ export function TransferButton({ initialVehicleId, label = "Trasladar equipos", 
 
   return (
     <>
-      <Button variant={variant} onClick={openDialog} loading={loading}>{label}</Button>
+      <Button type="button" variant={variant} onClick={openDialog} loading={loading}>{label}</Button>
       {loaded && (
         <TransferDialog
           key={loaded.key} open={open} onOpenChange={setOpen}

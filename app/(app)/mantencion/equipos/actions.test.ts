@@ -45,6 +45,11 @@ describe("el alta y la edición de equipos no crean faenas", () => {
     expect(state).toMatchObject({ ok: false, fieldErrors: { worksiteId: [expect.stringContaining("No puedes crear faenas nuevas")] } })
   })
 
+  it("devuelve en la faena el rechazo del traslado de una incorporación", async () => {
+    createEquipment.mockResolvedValue({ ok: false, message: "x", fieldErrors: { worksiteId: "Llegó a Santa Fe el 18-11: la fecha no puede ser anterior." } })
+    const state = await createEquipmentAction({ ok: false }, form({ code: "KA-1", plate: "ABCD-12", worksiteId: "ws-2" }))
+    expect(state).toMatchObject({ ok: false, fieldErrors: { worksiteId: [expect.stringContaining("Llegó a Santa Fe")] } })
+  })
 })
 
 describe("«Editar mantención»", () => {

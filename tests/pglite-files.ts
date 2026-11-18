@@ -620,4 +620,6 @@ export const pgliteTestFiles = [
   "lib/__tests__/copec-recheck-pglite.test.ts",
   // Traslado de equipos: casos de anomalía con la faena del evento e importador de consumos por estadía.
   "lib/__tests__/traslado-anomalias-importador-pglite.test.ts",
+  // «Incorporar desde la flota» a otra faena es un traslado; un UPDATE directo de la faena lo frena la base.
+  "lib/__tests__/mantencion-incorporate-transfer-pglite.test.ts",
 ]

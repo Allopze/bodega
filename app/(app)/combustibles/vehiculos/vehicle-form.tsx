@@ -22,6 +22,7 @@ import {
   FUEL_VEHICLE_STATUS_LABELS,
 } from "@/lib/combustibles/validation"
 import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
+import { TransferButton } from "@/components/fleet/transfer/transfer-button"
 import { maintenanceTypeBlock, type PadronBrandOption, type PadronMaintenance } from "@/lib/mantencion/padron-identity"
 
 export type VehicleForEdit = {
@@ -65,6 +66,8 @@ interface VehicleFormProps {
   editVehicle?: VehicleForEdit | null
   /** Marcas de la lista de Mantención; sólo hacen falta si el vehículo editado está en Mantención. */
   maintenanceBrands?: PadronBrandOption[]
+  /** Quien edita puede trasladar equipos (`flota:transfer` y submódulo activo): la faena de un equipo existente sólo cambia por ahí. */
+  canTransfer?: boolean
 }
 
 const DAYS = [
@@ -195,6 +198,7 @@ function MaintenanceIdentityFields({
   equipmentTypeId,
   onEquipmentTypeChange,
   worksites,
+  canTransfer,
   errors,
 }: {
   vehicle: VehicleForEdit
@@ -204,6 +208,7 @@ function MaintenanceIdentityFields({
   equipmentTypeId: string
   onEquipmentTypeChange: (id: string) => void
   worksites: VehicleFormProps["worksites"]
+  canTransfer: boolean
   errors?: Record<string, string[] | undefined>
 }) {
   const [noPlate, setNoPlate] = React.useState(maintenance.noPlate)
@@ -287,19 +292,47 @@ function MaintenanceIdentityFields({
         <SerialField vehicle={vehicle} error={errors?.serialNumber?.[0]} />
       </div>
 
-      <Field label="Faena asignada" htmlFor="v-worksite" required error={errors?.worksiteId?.[0]}>
-        <Select name="worksiteId" defaultValue={vehicle.worksiteId ?? undefined}>
-          <SelectTrigger id="v-worksite" error={!!errors?.worksiteId}><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+      <WorksiteField vehicle={vehicle} worksites={worksites} error={errors?.worksiteId?.[0]} canTransfer={canTransfer} />
+    </FieldGroup>
+  )
+}
+
+/**
+ * Faena del equipo. En el alta se elige; en un equipo existente es de sólo lectura (el nombre, más el
+ * valor en un campo oculto): la faena sólo cambia por «Trasladar equipos», que deja folio, fecha y
+ * motivo. Quien no puede trasladar ve el nombre sin botón.
+ */
+function WorksiteField({ vehicle, worksites, error, canTransfer }: {
+  vehicle?: VehicleForEdit | null
+  worksites: VehicleFormProps["worksites"]
+  error?: string
+  canTransfer: boolean
+}) {
+  if (!vehicle) {
+    return (
+      <Field label="Faena asignada" htmlFor="v-worksite" required error={error}>
+        <Select name="worksiteId">
+          <SelectTrigger id="v-worksite" error={!!error}><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
           <SelectContent>
             {worksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
           </SelectContent>
         </Select>
       </Field>
-    </FieldGroup>
+    )
+  }
+  const name = worksites.find((w) => w.id === vehicle.worksiteId)?.name ?? "Faena actual"
+  return (
+    <Field label="Faena asignada" error={error}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm text-[var(--color-text)]">{name}</span>
+        {canTransfer && <TransferButton initialVehicleId={vehicle.id} label="Trasladar" variant="ghost" />}
+      </div>
+      <input type="hidden" name="worksiteId" value={vehicle.worksiteId ?? ""} />
+    </Field>
   )
 }
 
-export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, suppliers, products, editVehicle, maintenanceBrands = [] }: VehicleFormProps) {
+export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, suppliers, products, editVehicle, maintenanceBrands = [], canTransfer = false }: VehicleFormProps) {
   const isEdit = !!editVehicle
   const maintenance = editVehicle?.maintenance ?? null
   const initialType = equipmentTypes.find((item) => item.id === editVehicle?.equipmentTypeId)
@@ -354,6 +387,7 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
                     equipmentTypeId={equipmentTypeId}
                     onEquipmentTypeChange={changeEquipmentType}
                     worksites={worksites}
+                    canTransfer={canTransfer}
                     errors={state.fieldErrors}
                   />
                 ) : (
@@ -396,14 +430,7 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
                     <SerialField vehicle={editVehicle} error={state.fieldErrors?.serialNumber?.[0]} />
                   </div>
 
-                  <Field label="Faena asignada" htmlFor="v-worksite" required error={state.fieldErrors?.worksiteId?.[0]}>
-                    <Select name="worksiteId" defaultValue={editVehicle?.worksiteId ?? undefined}>
-                      <SelectTrigger id="v-worksite" error={!!state.fieldErrors?.worksiteId}><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-                      <SelectContent>
-                        {worksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </Field>
+                  <WorksiteField vehicle={editVehicle} worksites={worksites} error={state.fieldErrors?.worksiteId?.[0]} canTransfer={canTransfer} />
                 </FieldGroup>
                 )}
               </TabsContent>

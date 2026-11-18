@@ -7,7 +7,7 @@
  *   queda en su historial;
  * - la marca y «Sin patente» son del perfil: sin `mant:equipment:manage` se conservan;
  * - un vehículo que no está en Mantención se guarda como siempre (marca en texto libre);
- * - cambiar la faena lleva las asignaciones de proveedor (antes lo probaba la edición de Mantención);
+ * - cambiar la faena desde el padrón se rechaza: sólo cambia por «Trasladar equipos» (tampoco toca las asignaciones);
  * - la importación desde Excel del padrón pasa por las mismas reglas, fila por fila.
  */
 
@@ -177,16 +177,20 @@ describe("padrón de un vehículo que está en Mantención", () => {
     expect(await vehicle(id)).toMatchObject({ equipmentTypeId: T.km, meterType: "odometer", model: "R510" })
   })
 
-  it("cambiar la faena lleva las asignaciones de proveedor y queda en el historial", async () => {
+  it("cambiar la faena desde el padrón se rechaza: sólo cambia por «Trasladar equipos» y nada se mueve", async () => {
     await testDb.insert(schema.fuelProviderMappings).values({
       id: "map-RSTV12", provider: "copec", sourceAccount: "tct:diesel", externalKey: "RSTV12", normalizedValue: "RSTV12",
       worksiteId: WS.arauco, vehicleId: id, decidedBy: ADMIN, reason: "prueba", effectiveFrom: "2026-01-01",
     })
-    expect(await save(JEFE, { ...base(id), worksiteId: WS.cholguan })).toMatchObject({ ok: true })
+    const historyBefore = (await listEquipmentHistory(id)).length
+    expect(await save(JEFE, { ...base(id), worksiteId: WS.cholguan })).toMatchObject({
+      ok: false, fieldErrors: { worksiteId: ["Para cambiar de faena usa «Trasladar equipos»."] },
+    })
+    expect(await vehicle(id)).toMatchObject({ worksiteId: WS.arauco })
     const mappings = await testDb.select().from(schema.fuelProviderMappings).where(eq(schema.fuelProviderMappings.externalKey, "RSTV12"))
-    expect(mappings.filter((row) => row.isActive)).toEqual([expect.objectContaining({ worksiteId: WS.cholguan })])
-    const [latest] = await listEquipmentHistory(id)
-    expect(latest?.summary).toContain("Faena: Arauco → Cholguan")
+    expect(mappings.filter((row) => row.isActive)).toEqual([expect.objectContaining({ worksiteId: WS.arauco })])
+    expect(await testDb.select().from(schema.fleetTransfers)).toHaveLength(0)
+    expect((await listEquipmentHistory(id)).length).toBe(historyBefore)
   })
 })
 
@@ -264,5 +268,19 @@ describe("importación del padrón desde Excel", () => {
     expect(errors).toEqual([expect.stringMatching(/^Fila 2, TIPO: Equipo de Mantención: No se puede cambiar a otra unidad/)])
     expect(await vehicle(id)).toMatchObject({ equipmentTypeId: T.km })
     expect(await vehicle("veh-solo-flota")).toMatchObject({ brand: "Volvo", model: "FH" })
+  })
+
+  it("una fila que cambia la faena de un equipo existente se rechaza en su columna FAENA, y las demás se importan", async () => {
+    const id = await created({ code: "KA-840", plate: "BCDF-34" })
+    const result = await importRows([
+      ["KA-840", "BCDF-34", "Cholguán", "test-camion", "Scania", "R999", 2022],
+      ["KA-300", "GHJK-34", "Arauco", "test-camion", "Volvo", "FH 500", 2021],
+    ])
+    expect(result).toMatchObject({ ok: true, data: { updated: 1, totalErrors: 1 } })
+    expect((result.data as { errors: string[] }).errors).toEqual(["Fila 2, FAENA: Para cambiar de faena usa «Trasladar equipos»."])
+    // El equipo de la fila rechazada queda intacto (ni modelo ni faena); el resto sí se importó.
+    expect(await vehicle(id)).toMatchObject({ worksiteId: WS.arauco, model: "R450" })
+    expect(await vehicle("veh-solo-flota")).toMatchObject({ model: "FH 500" })
+    expect(await testDb.select().from(schema.fleetTransfers)).toHaveLength(0)
   })
 })
