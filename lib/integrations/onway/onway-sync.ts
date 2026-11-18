@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm"
+import { and, desc, eq, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fleetGpsAlerts,
@@ -11,9 +11,11 @@ import {
   fuelVehicles,
 } from "@/db/schema"
 import { saveMeterReadings, type ParsedMeterReading } from "@/lib/combustibles/meter-readings"
+import { stayWorksiteOnDaySql } from "@/lib/fleet/stays-sql"
 import { buildVehicleResolverByPlate } from "@/lib/integrations/fleet-gps/identity"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
+import { todayInChile } from "@/lib/utils"
 import { fetchOnwayTelemetry, OnwayClientError } from "./onway-client"
 import { resolveOnwayDriverMappings } from "./onway-driver-mappings"
 import { reconcileOnwayDevices, type OnwayDeviceLink } from "./onway-reconciliation"
@@ -93,6 +95,16 @@ function telemetryMeterReading(input: {
 
 async function insertInBatches<T>(values: T[], size: number, insert: (batch: T[]) => Promise<unknown>) {
   for (let offset = 0; offset < values.length; offset += size) await insert(values.slice(offset, offset + size))
+}
+
+/**
+ * Faena de un evento GPS fechado (alerta, punto, viaje): la de la estadía del
+ * equipo el día civil chileno en que ocurrió, no la actual. Un viaje que llega
+ * tarde, de antes de un traslado, queda en la faena de ese día; sin estadía que
+ * lo cubra (no debería pasar: la primera no tiene inicio), la actual.
+ */
+function eventWorksiteSql(vehicleId: string, occurredAt: string, currentWorksiteId: string): SQL<string> {
+  return sql<string>`coalesce(${stayWorksiteOnDaySql(sql`${vehicleId}`, sql`${todayInChile(occurredAt)}`)}, ${currentWorksiteId})`
 }
 
 function sqlExcluded(column: string) {
@@ -266,7 +278,7 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
           externalDeviceId: alert.externalDeviceId!,
           externalEventKey: alert.externalEventKey,
           vehicleId: match.vehicleId,
-          worksiteId: match.worksiteId,
+          worksiteId: eventWorksiteSql(match.vehicleId, alert.occurredAt, match.worksiteId),
           driverMappingId: driverMappingIdForDevice(match.device.externalDeviceId),
           alertType: alert.alertType,
           category: "unknown",
@@ -310,7 +322,7 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
         externalDeviceId: match.device.externalDeviceId,
         externalPointKey: `${point.occurredAt}:${point.sourceSequence}`,
         vehicleId: match.vehicleId,
-        worksiteId: match.worksiteId,
+        worksiteId: eventWorksiteSql(match.vehicleId, point.occurredAt, match.worksiteId),
         driverMappingId: driverMappingIdForDevice(match.device.externalDeviceId),
         occurredAt: point.occurredAt,
         latitude: point.latitude,
@@ -329,7 +341,7 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
         externalDeviceId: match.device.externalDeviceId,
         externalTripKey: `${trip.externalTripKey}:${trip.startedAt}`,
         vehicleId: match.vehicleId,
-        worksiteId: match.worksiteId,
+        worksiteId: eventWorksiteSql(match.vehicleId, trip.startedAt, match.worksiteId),
         driverMappingId: driverMappingIdForDevice(match.device.externalDeviceId),
         startedAt: trip.startedAt,
         endedAt: trip.endedAt,

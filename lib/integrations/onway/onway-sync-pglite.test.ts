@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm"
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
+import { setVehicleWorksiteForTest } from "@/lib/testing/fleet-stays"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import type { OnwayTelemetryBundle } from "./onway-client"
 import type { OnwayDeviceTelemetry } from "./onway-telemetry-contract"
@@ -295,5 +296,71 @@ describe("syncOnway: medidores GPS y vínculos manuales", () => {
     expect(positions.find((row) => row.externalDeviceId === "9101")?.vehicleId).toBeNull()
     const [run] = await testDb.select().from(schema.fleetGpsSyncRuns).where(eq(schema.fleetGpsSyncRuns.id, result.runId))
     expect(run).toMatchObject({ status: "success", devicesAccepted: 1, devicesUnmatched: 0 })
+  })
+})
+
+/**
+ * Lo que llega tarde, de antes de un traslado, se queda en la faena de ese día:
+ * alertas, puntos y viajes se estampan con la estadía del día chileno en que
+ * ocurrieron. La última posición es el estado de hoy y sigue al equipo.
+ */
+describe("syncOnway: faena del día de cada evento", () => {
+  const WS_OLD = "ws-ingesta-vieja"
+  const WS_NEW = "ws-ingesta-nueva"
+  const EQ = "eq-ingesta"
+  const V = "veh-ingesta"
+
+  beforeAll(async () => {
+    await testDb.insert(schema.worksites).values([
+      { id: WS_OLD, name: "Santa Fe ingesta", code: "FING-A", isActive: true },
+      { id: WS_NEW, name: "Mininco ingesta", code: "FING-B", isActive: true },
+    ])
+    await testDb.insert(schema.fuelEquipmentTypes).values({ id: EQ, slug: "camion-ingesta", name: "Camión ingesta" })
+    await testDb.insert(schema.fuelVehicles).values({
+      id: V, plate: "PQ-RS-77", type: "camion", equipmentTypeId: EQ, worksiteId: WS_OLD, meterType: "odometer", isActive: true,
+    })
+    // Pasó a Mininco desde el 15-11 (el día del traslado ya cuenta en la nueva).
+    await setVehicleWorksiteForTest(testDb, V, WS_NEW, "2026-11-15")
+  })
+
+  it("estampa alertas, puntos y viajes con la estadía de su día y la posición con la faena actual", async () => {
+    const point = (sourceSequence: string, occurredAt: string) => ({
+      sourceSequence, occurredAt, latitude: -36.8, longitude: -73.05, speedKph: 10, headingDegrees: 0, ignition: true,
+    })
+    const trip = (externalTripKey: string, startedAt: string, endedAt: string) => ({
+      externalTripKey, startedAt, endedAt, distanceKm: 3, idleDuration: null, movementDuration: null, travelDuration: null,
+      beginOdometer: null, endOdometer: null,
+    })
+    const alert = (externalEventKey: string, occurredAt: string) => ({
+      externalDeviceId: "9300", externalEventKey, alertType: "exceso_velocidad", title: "Exceso de velocidad",
+      priority: "high", occurredAt, latitude: null, longitude: null, speedKph: null,
+    })
+    mocks.fetchOnwayTelemetry.mockResolvedValue({
+      ...telemetry({
+        devices: [{
+          externalDeviceId: "9300", groupId: "10", sourcePlate: "PQRS-77", normalizedPlate: "PQRS77",
+          latitude: -36.8, longitude: -73.05, speedKph: 0, headingDegrees: 0, ignition: false, sourceStatus: "1",
+        }],
+        rejected: [],
+      }),
+      // 23:30 del 14-11 en Chile (02:30Z del 15) es del 14: faena vieja. 01:00 del 15 en Chile: faena nueva.
+      alerts: [alert("al-antes", "2026-11-15T02:30:00Z"), alert("al-despues", "2026-11-15T04:00:00Z")],
+      historyByDeviceId: new Map([["9300", [point("p-antes", "2026-11-14T15:00:00Z"), point("p-despues", "2026-11-16T15:00:00Z")]]]),
+      tripsByDeviceId: new Map([["9300", [
+        trip("t-antes", "2026-11-15T02:30:00Z", "2026-11-15T03:00:00Z"),
+        trip("t-despues", "2026-11-15T04:00:00Z", "2026-11-15T05:00:00Z"),
+      ]]]),
+    })
+
+    await syncOnway({ trigger: "cron", includeHistory: true, now: new Date("2026-11-18T12:00:00Z") })
+
+    const alerts = await testDb.select().from(schema.fleetGpsAlerts).where(eq(schema.fleetGpsAlerts.vehicleId, V))
+    expect(Object.fromEntries(alerts.map((row) => [row.externalEventKey, row.worksiteId]))).toEqual({ "al-antes": WS_OLD, "al-despues": WS_NEW })
+    const points = await testDb.select().from(schema.fleetGpsPositionHistory).where(eq(schema.fleetGpsPositionHistory.vehicleId, V))
+    expect(Object.fromEntries(points.map((row) => [row.externalPointKey.split(":").at(-1), row.worksiteId]))).toEqual({ "p-antes": WS_OLD, "p-despues": WS_NEW })
+    const trips = await testDb.select().from(schema.fleetGpsTrips).where(eq(schema.fleetGpsTrips.vehicleId, V))
+    expect(Object.fromEntries(trips.map((row) => [row.externalTripKey.split(":")[0], row.worksiteId]))).toEqual({ "t-antes": WS_OLD, "t-despues": WS_NEW })
+    const [position] = await testDb.select().from(schema.fleetGpsLatestPositions).where(eq(schema.fleetGpsLatestPositions.externalDeviceId, "9300"))
+    expect(position).toMatchObject({ vehicleId: V, worksiteId: WS_NEW })
   })
 })
