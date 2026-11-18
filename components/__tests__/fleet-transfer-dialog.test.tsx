@@ -145,9 +145,36 @@ describe("TransferDialog", () => {
       toWorksiteId: "ws-te", effectiveDate: "2026-11-18", reason: "Cambio de contrato en Teno", authorizedBy: "Alexis Soto",
       vehicleIds: ["v-KA-70", "v-KA-7A"],
     })
-    expect(toast.success).toHaveBeenCalledWith("Traslado T-001 registrado: 2 equipos.")
+    // El aviso con el folio lleva el enlace a la lista de traslados.
+    expect(toast.success).toHaveBeenCalledWith("Traslado T-001 registrado: 2 equipos.", expect.objectContaining({
+      action: expect.objectContaining({ label: "Ver traslados", onClick: expect.any(Function) }),
+    }))
+    const [, options] = toast.success.mock.calls[0] as unknown as [string, { action: { onClick: () => void } }]
+    options.action.onClick()
+    expect(router.push).toHaveBeenCalledWith("/flota/traslados")
     expect(toast).toHaveBeenCalledWith("Revisa la importación manual de Copec.", expect.anything())
     expect(router.refresh).toHaveBeenCalled()
+  })
+
+  it("una fecha que no sirve para un equipo marcado se dice bajo su fila y bloquea «Trasladar» antes de enviar", () => {
+    const arrived = [
+      candidate("KA-70", "ws-sf", { stayStartedOn: "2026-11-18" }), // llegó hoy: la fecha por defecto (hoy) no es posterior
+      candidate("KA-71", "ws-sf", { stayStartedOn: "2026-11-10" }),
+    ]
+    render(<TransferDialog open onOpenChange={vi.fn()} candidates={arrived} worksites={WORKSITES} window={WINDOW} />)
+    const submit = screen.getByRole("button", { name: "Trasladar" }) as HTMLButtonElement
+    const message = "Llegó a su faena actual el 18-11-2026: la fecha debe ser posterior."
+    expect(screen.queryByText(message)).toBeNull() // sin marcar no hay mensaje
+    fireEvent.click(checkbox(/KA-71/))
+    expect(submit.disabled).toBe(false)
+    fireEvent.click(checkbox(/KA-70/))
+    expect(within(checkbox(/KA-70/).closest("li") as HTMLElement).getByText(message)).toBeDefined()
+    expect(within(checkbox(/KA-71/).closest("li") as HTMLElement).queryByText(message)).toBeNull()
+    expect(submit.disabled).toBe(true)
+    fireEvent.click(checkbox(/KA-70/)) // se desmarca: el mensaje y el bloqueo se van
+    expect(screen.queryByText(message)).toBeNull()
+    expect(submit.disabled).toBe(false)
+    expect(actions.transferVehiclesAction).not.toHaveBeenCalled()
   })
 
   it("no envía equipos que el destino dejó fuera de la lista", async () => {

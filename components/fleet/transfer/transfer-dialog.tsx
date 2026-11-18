@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { Textarea } from "@/components/ui/textarea"
 import { transferVehiclesAction } from "@/app/(app)/flota/traslados/actions"
+import { transferDateError } from "@/lib/fleet/transfer-rules"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { nameKey } from "@/lib/mantencion/normalize"
 import type { TransferCandidate, TransferOutcome } from "@/lib/services/fleet-transfers"
@@ -62,6 +63,19 @@ export function TransferDialog({ open, onOpenChange, candidates, worksites, wind
   }, [selectable, query, typeName])
   const chosen = React.useMemo(() => selectable.filter((item) => selected.has(item.vehicleId)).map((item) => item.vehicleId), [selectable, selected])
 
+  // El motivo que el servidor daría para la fecha de cada equipo marcado («Llegó a su faena actual el …»),
+  // calculado antes de enviar: quien traslada lo ve bajo la fila y el botón espera a que se corrija.
+  const dateErrors = React.useMemo(() => {
+    const errors: Record<string, string> = {}
+    for (const item of selectable) {
+      if (!selected.has(item.vehicleId)) continue
+      const error = transferDateError(effectiveDate, window.max, item.stayStartedOn)
+      if (error) errors[item.vehicleId] = error
+    }
+    return errors
+  }, [selectable, selected, effectiveDate, window.max])
+  const hasDateErrors = Object.keys(dateErrors).length > 0
+
   function setMany(ids: string[], on: boolean) {
     setSelected((current) => {
       const next = new Set(current)
@@ -86,7 +100,9 @@ export function TransferDialog({ open, onOpenChange, candidates, worksites, wind
         return { ok: true, message: outcome.message, data: { notice: outcome.data.manualImportNotice } }
       },
       (result) => {
-        toast.success(result.message ?? "Traslado registrado.")
+        toast.success(result.message ?? "Traslado registrado.", {
+          action: { label: "Ver traslados", onClick: () => router.push("/flota/traslados") },
+        })
         const notice = result.data?.notice
         if (typeof notice === "string" && notice) toast(notice, { duration: 10_000 })
         onOpenChange(false)
@@ -135,7 +151,7 @@ export function TransferDialog({ open, onOpenChange, candidates, worksites, wind
         <div className="mt-2 min-h-0 flex-1 overflow-y-auto border-y border-[var(--color-border)] px-6 py-2">
           <TransferEquipmentList
             candidates={visible} selected={selected} toWorksiteName={destination?.name ?? ""} effectiveDate={effectiveDate}
-            rowErrors={rowErrors} initialVehicleId={initialVehicleId} onToggle={setMany}
+            rowErrors={rowErrors} dateErrors={dateErrors} initialVehicleId={initialVehicleId} onToggle={setMany}
           />
         </div>
         {(fieldErrors.vehicleIds || message) && (
@@ -148,7 +164,7 @@ export function TransferDialog({ open, onOpenChange, candidates, worksites, wind
             {transferSummaryText(chosen.length, destination?.name ?? null, effectiveDate)}
           </p>
           <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button>
-          <Button onClick={submit} loading={pending} disabled={chosen.length === 0}>Trasladar</Button>
+          <Button onClick={submit} loading={pending} disabled={chosen.length === 0 || hasDateErrors}>Trasladar</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

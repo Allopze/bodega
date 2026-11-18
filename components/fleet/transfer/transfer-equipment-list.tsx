@@ -22,14 +22,16 @@ function GroupCheckbox({ id, checked, partial, label, onChange }: { id: string; 
  * Equipos agrupados por faena actual: una casilla por grupo y una por equipo. Recibe sólo los equipos
  * VISIBLES (ya filtrados), así que la casilla de grupo marca y desmarca únicamente esos: un filtro
  * activo no arrastra equipos ocultos. Cada fila marcada dice qué le pasaría; el error del servidor
- * para ese equipo (`rowErrors`) queda bajo su fila.
+ * para ese equipo (`rowErrors`) y la fecha que no le sirve (`dateErrors`) quedan bajo su fila.
  */
-export function TransferEquipmentList({ candidates, selected, toWorksiteName, effectiveDate, rowErrors, initialVehicleId, onToggle }: {
+export function TransferEquipmentList({ candidates, selected, toWorksiteName, effectiveDate, rowErrors, dateErrors, initialVehicleId, onToggle }: {
   candidates: TransferCandidate[]
   selected: ReadonlySet<string>
   toWorksiteName: string
   effectiveDate: string
   rowErrors: Readonly<Record<string, string>>
+  /** Fecha que no sirve para ese equipo, calculada en el cliente antes de enviar (sólo filas marcadas). */
+  dateErrors: Readonly<Record<string, string>>
   initialVehicleId?: string
   onToggle: (vehicleIds: string[], on: boolean) => void
 }) {
@@ -61,7 +63,7 @@ export function TransferEquipmentList({ candidates, selected, toWorksiteName, ef
             <ul>
               {group.items.map((item) => {
                 const on = selected.has(item.vehicleId)
-                const error = rowErrors[item.vehicleId]
+                const error = rowErrors[item.vehicleId] ?? dateErrors[item.vehicleId]
                 const errorId = `trf-err-${item.vehicleId}`
                 return (
                   <li key={item.vehicleId} ref={item.vehicleId === initialVehicleId ? initialRef : undefined}>
