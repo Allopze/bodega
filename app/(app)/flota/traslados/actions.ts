@@ -11,6 +11,7 @@ import { guardPermission } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { transferDateWindow } from "@/lib/fleet/transfer-rules"
+import { EXCEL_DATE_FORMAT, EXCEL_DATETIME_FORMAT, excelDateTime, excelPlainDate } from "@/lib/reports/excel-dates"
 import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { revalidateVehicleFicha } from "@/lib/routing/revalidate-vehicle-ficha"
@@ -138,12 +139,6 @@ export async function voidTransferAction(input: { transferId: string; reason: st
   }
 }
 
-/** «2026-11-10» como fecha de Excel (medianoche UTC: Excel no lleva zona). */
-function plainDateToExcel(date: string): Date {
-  const [y, m, d] = date.split("-").map(Number)
-  return new Date(Date.UTC(y!, m! - 1, d!))
-}
-
 export async function exportTransfersAction(filters: { from: string; to: string; worksiteId?: string }): Promise<ExportActionResult> {
   const guard = await authorize("flota:export")
   if (guard.error) return guard.error
@@ -160,7 +155,7 @@ export async function exportTransfersAction(filters: { from: string; to: string;
     const sheet = workbook.addWorksheet("Traslados")
     sheet.columns = [
       { header: "Folio", key: "folio", width: 12 },
-      { header: "Fecha", key: "date", width: 14, style: { numFmt: "dd-mm-yyyy" } },
+      { header: "Fecha", key: "date", width: 14, style: { numFmt: EXCEL_DATE_FORMAT } },
       { header: "Código", key: "code", width: 14 },
       { header: "Patente", key: "plate", width: 14 },
       { header: "Desde", key: "from", width: 24 },
@@ -168,14 +163,14 @@ export async function exportTransfersAction(filters: { from: string; to: string;
       { header: "Motivo", key: "reason", width: 44 },
       { header: "Autorizado por", key: "authorizedBy", width: 24 },
       { header: "Registrado por", key: "createdBy", width: 24 },
-      { header: "Registrado el", key: "createdAt", width: 18, style: { numFmt: "dd-mm-yyyy hh:mm" } },
+      { header: "Registrado el", key: "createdAt", width: 18, style: { numFmt: EXCEL_DATETIME_FORMAT } },
       { header: "Estado", key: "status", width: 12 },
       { header: "Motivo de anulación", key: "voidReason", width: 44 },
     ]
     for (const { transfer, item } of exportRows) {
       sheet.addRow({
         folio: transfer.folio,
-        date: plainDateToExcel(transfer.effectiveDate),
+        date: excelPlainDate(transfer.effectiveDate),
         code: item.code ?? "",
         plate: item.plate,
         from: item.fromWorksiteName,
@@ -183,7 +178,7 @@ export async function exportTransfersAction(filters: { from: string; to: string;
         reason: transfer.reason,
         authorizedBy: transfer.authorizedBy,
         createdBy: transfer.createdByName ?? "",
-        createdAt: new Date(transfer.createdAt),
+        createdAt: excelDateTime(transfer.createdAt), // hora de pared de Chile, como en pantalla
         status: transfer.voidedAt ? "Anulado" : "Vigente",
         voidReason: transfer.voidReason ?? "",
       })

@@ -27,7 +27,10 @@ vi.mock("@/lib/auth/can", () => ({ guardPermission: guard, can: () => true }))
 vi.mock("@/lib/auth/scope", () => ({ serviceWorksiteScope: scopeOf }))
 vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: operational }))
 vi.mock("@/lib/routing/revalidate-vehicle-ficha", () => ({ revalidateVehicleFicha: revalidateFicha }))
-vi.mock("@/lib/reports/export-module/excel-builder", () => ({ xlsxToBase64: async () => "BASE64" }))
+const built = vi.hoisted(() => ({ workbook: null as null | { getWorksheet: (name: string) => { getRow: (n: number) => { getCell: (key: string | number) => { value: unknown } } } | undefined } }))
+vi.mock("@/lib/reports/export-module/excel-builder", () => ({
+  xlsxToBase64: async (workbook: NonNullable<typeof built.workbook>) => { built.workbook = workbook; return "BASE64" },
+}))
 vi.mock("@/lib/reports/export-metadata", () => ({ addExportMetadataSheet: vi.fn() }))
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }))
 vi.mock("@/lib/services/fleet-transfers", () => ({
@@ -183,6 +186,10 @@ describe("acciones de traslados", () => {
       const result = await actions.exportTransfersAction({ from: "2026-10-01", to: "2026-11-18" })
       expect(listTransfers).toHaveBeenCalledWith(["w-1", "w-2"], { from: "2026-10-01", to: "2026-11-18" })
       expect(result).toMatchObject({ ok: true, data: { base64: "BASE64", filename: expect.stringMatching(/^traslados_.*\.xlsx$/) } })
+      // Las fechas van como celdas de fecha con la hora de pared de Chile (11-11 12:00 UTC = 09:00 en verano).
+      const row = built.workbook!.getWorksheet("Traslados")!.getRow(2)
+      expect((row.getCell("date").value as Date).getTime()).toBe(Date.UTC(2026, 10, 10))
+      expect((row.getCell("createdAt").value as Date).getTime()).toBe(Date.UTC(2026, 10, 11, 9, 0))
     })
   })
 })
