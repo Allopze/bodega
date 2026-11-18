@@ -137,10 +137,11 @@ describe("padrón: la faena es de sólo lectura al editar", () => {
   }
 
   for (const [label, maintenance] of [["en Mantención", MAINTENANCE], ["fuera de Mantención", null]] as const) {
-    it(`${label}: muestra el nombre, conserva la faena en un campo oculto y no ofrece un selector`, () => {
+    it(`${label}: muestra el nombre, no envía la faena (puede quedar vieja tras un traslado) y no ofrece un selector`, () => {
       renderWith(maintenance, false)
       expect(screen.getByText("Arauco")).toBeDefined()
-      expect(hidden("worksiteId")?.value).toBe("ws-1")
+      expect(hidden("worksiteId")).toBeNull()
+      expect(document.querySelector('[name="worksiteId"]')).toBeNull()
       expect(screen.queryByRole("combobox", { name: /Faena/ })).toBeNull()
       expect(screen.queryByRole("button", { name: "Trasladar" })).toBeNull()
     })

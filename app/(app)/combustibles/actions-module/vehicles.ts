@@ -258,13 +258,10 @@ export async function updateFuelVehicleAction(
   if (!canManageFuelVehicleWorksite(session, existing.worksiteId)) {
     return { ok: false, message: "No puedes gestionar vehículos para esta faena" }
   }
-  if (parsed.data.worksiteId && !canManageFuelVehicleWorksite(session, parsed.data.worksiteId)) {
-    return { ok: false, message: "No puedes gestionar vehículos para esta faena" }
-  }
-  // La faena sólo cambia por «Trasladar equipos»: el padrón ya no es una puerta.
-  if (parsed.data.worksiteId && parsed.data.worksiteId !== existing.worksiteId) {
-    return { ok: false, message: "Revisa los datos", fieldErrors: { worksiteId: [USE_TRANSFER_MESSAGE] } }
-  }
+  // La faena sólo cambia por «Trasladar equipos»: la edición del padrón nunca la escribe. Se ignora la
+  // que llegue en el formulario (puede venir vieja si el equipo se trasladó con la hoja abierta); el
+  // equipo sigue en la que tiene en la base. La importación del padrón, en cambio, sí rechaza el cambio.
+  const { id: _, worksiteId: _submittedWorksiteId, ...parsedData } = parsed.data
   const serialTaken = await serialNumberTaken(parsed.data.serialNumber, id)
   if (serialTaken) return serialTaken
   const canChangeProfile = canChangeMaintenanceProfile(session, existing.worksiteId)
@@ -274,7 +271,6 @@ export async function updateFuelVehicleAction(
     const equipmentTypeId = parsed.data.equipmentTypeId ?? existing.equipmentTypeId
     const equipmentType = await db.query.fuelEquipmentTypes.findFirst({ where: eq(fuelEquipmentTypes.id, equipmentTypeId) })
     if (!equipmentType) return { ok: false, message: "El tipo de equipo no existe" }
-    const { id: _, ...parsedData } = parsed.data
     const { compatibleProductIds, operationalStatusReason, ...data } = vehicleValues(parsedData, equipmentType.slug)
     const statusChanged = data.operationalStatus !== undefined && data.operationalStatus !== existing.operationalStatus
     if (statusChanged && !operationalStatusReason) {
@@ -298,7 +294,7 @@ export async function updateFuelVehicleAction(
         brandId: formData.has("brandId") ? String(formData.get("brandId")) : undefined,
         model: data.model === undefined ? (existing.model ?? "") : (data.model ?? ""),
         year: data.year ?? existing.year ?? null,
-        worksiteId: data.worksiteId ?? existing.worksiteId,
+        worksiteId: existing.worksiteId,
       }, { canChangeProfile })
       if (identity && !identity.ok) throw new MaintenanceIdentityRejected(identity.fieldErrors)
       if (identity) {

@@ -298,8 +298,9 @@ function MaintenanceIdentityFields({
 }
 
 /**
- * Faena del equipo. En el alta se elige; en un equipo existente es de sólo lectura (el nombre, más el
- * valor en un campo oculto): la faena sólo cambia por «Trasladar equipos», que deja folio, fecha y
+ * Faena del equipo. En el alta se elige; en un equipo existente es de sólo lectura (sólo el nombre; no se
+ * envía en el formulario: tras un traslado con la hoja abierta el valor sería viejo y el servidor
+ * ignora la faena al editar): la faena sólo cambia por «Trasladar equipos», que deja folio, fecha y
  * motivo. Quien no puede trasladar ve el nombre sin botón.
  */
 function WorksiteField({ vehicle, worksites, error, canTransfer }: {
@@ -327,7 +328,6 @@ function WorksiteField({ vehicle, worksites, error, canTransfer }: {
         <span className="text-sm text-[var(--color-text)]">{name}</span>
         {canTransfer && <TransferButton initialVehicleId={vehicle.id} label="Trasladar" variant="ghost" />}
       </div>
-      <input type="hidden" name="worksiteId" value={vehicle.worksiteId ?? ""} />
     </Field>
   )
 }

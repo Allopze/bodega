@@ -7,7 +7,7 @@
  *   queda en su historial;
  * - la marca y «Sin patente» son del perfil: sin `mant:equipment:manage` se conservan;
  * - un vehículo que no está en Mantención se guarda como siempre (marca en texto libre);
- * - cambiar la faena desde el padrón se rechaza: sólo cambia por «Trasladar equipos» (tampoco toca las asignaciones);
+ * - la edición del padrón ignora la faena enviada: sólo cambia por «Trasladar equipos» (tampoco toca las asignaciones);
  * - la importación desde Excel del padrón pasa por las mismas reglas, fila por fila.
  */
 
@@ -177,15 +177,16 @@ describe("padrón de un vehículo que está en Mantención", () => {
     expect(await vehicle(id)).toMatchObject({ equipmentTypeId: T.km, meterType: "odometer", model: "R510" })
   })
 
-  it("cambiar la faena desde el padrón se rechaza: sólo cambia por «Trasladar equipos» y nada se mueve", async () => {
+  it("una faena distinta en la edición del padrón se ignora: sólo cambia por «Trasladar equipos» y nada se mueve", async () => {
     await testDb.insert(schema.fuelProviderMappings).values({
       id: "map-RSTV12", provider: "copec", sourceAccount: "tct:diesel", externalKey: "RSTV12", normalizedValue: "RSTV12",
       worksiteId: WS.arauco, vehicleId: id, decidedBy: ADMIN, reason: "prueba", effectiveFrom: "2026-01-01",
     })
     const historyBefore = (await listEquipmentHistory(id)).length
-    expect(await save(JEFE, { ...base(id), worksiteId: WS.cholguan })).toMatchObject({
-      ok: false, fieldErrors: { worksiteId: ["Para cambiar de faena usa «Trasladar equipos»."] },
-    })
+    // El formulario puede traer la faena vieja (se trasladó con la hoja abierta) o una distinta: da igual,
+    // la edición se guarda sin error y el equipo sigue en la faena que tiene en la base.
+    expect(await save(JEFE, { ...base(id), worksiteId: WS.cholguan })).toMatchObject({ ok: true })
+    expect(await vehicle(id)).toMatchObject({ worksiteId: WS.arauco })
     expect(await vehicle(id)).toMatchObject({ worksiteId: WS.arauco })
     const mappings = await testDb.select().from(schema.fuelProviderMappings).where(eq(schema.fuelProviderMappings.externalKey, "RSTV12"))
     expect(mappings.filter((row) => row.isActive)).toEqual([expect.objectContaining({ worksiteId: WS.arauco })])
