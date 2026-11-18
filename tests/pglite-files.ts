@@ -616,4 +616,6 @@ export const pgliteTestFiles = [
   // Servicio de traslado de equipos: la única puerta que cambia la faena (estadías, asignaciones
   // de proveedor, GPS desde la medianoche chilena, historial de Mantención) y su anulación.
   "lib/__tests__/fleet-transfers-pglite.test.ts",
+  // Re-verificación de Copec desde el mes de un traslado retroactivo (sólo mueve el inicio hacia atrás).
+  "lib/__tests__/copec-recheck-pglite.test.ts",
 ]
