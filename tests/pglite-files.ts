@@ -607,4 +607,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/fleet-worksite-stays-pglite.test.ts",
   // Faena del día según la estadía y recorrido del equipo con el traslado que abrió cada una.
   "lib/__tests__/fleet-stays-pglite.test.ts",
+  // Combustible por la faena del día: ralentí, medidor y mapa de calor de un equipo trasladado a mitad de período.
+  "lib/__tests__/fleet-stays-combustible-pglite.test.ts",
+  // Reconstrucción del recorrido por faena: la evidencia de dónde estuvo el equipo (sólo las
+  // fuentes admitidas, con el día chileno) y el orquestador en seco y con --apply.
+  "lib/__tests__/fleet-stay-evidence-pglite.test.ts",
+  "lib/__tests__/fleet-stay-reconstruction-run-pglite.test.ts",
 ]

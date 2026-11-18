@@ -11,15 +11,15 @@ import { maxMeterRatePerDayOf } from "@/lib/combustibles/meter-series"
 import type { PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import { loadPerformanceControlContext } from "@/lib/combustibles/control/settings"
 import { mandanteWorksitesSql, type ControlFilters } from "@/lib/combustibles/control/filters"
-import { isoTextDaySql, isoTextMonthSql } from "./field-filters"
+import { isoTextDaySql, isoTextMonthSql, stayWorksiteOnIsoTextDaySql } from "./field-filters"
 import { todayInChile } from "@/lib/utils"
 
 /**
  * CHART-016: rendimiento por mes (km/L y L/h) de las lecturas de medidor que trae
  * el detalle de Copec (`fuel_meter_readings`, fuente `copec_tct`).
  *
- * La lectura no lleva faena propia: el alcance es el del equipo, igual que en
- * Flota (`getFleetOverview`) y que la comparación de L/h. El método y sus límites
+ * La lectura no lleva faena propia: el alcance y los filtros de faena y mandante son
+ * los de la faena del equipo el día de la lectura (`stayWorksiteOnDaySql`), no la actual. El método y sus límites
  * están en `lib/combustibles/meter-rate-series.ts`; acá sólo se leen las series, se
  * marcan los resets aceptados y los meses sin datos del proveedor, y se arma.
  *
@@ -63,6 +63,8 @@ export async function getMeterRateSeries(
   // Un mes de más hacia atrás: su última lectura es la base del primer par de la ventana.
   const lookbackMonth = previousMonth(firstMonth)
   const readingMonth = isoTextMonthSql(fuelMeterReadings.occurredAt)
+  // Faena en que estaba el equipo el día de la lectura, no la actual: tras un traslado cada lectura cuenta donde se tomó.
+  const readingWorksite = stayWorksiteOnIsoTextDaySql(fuelMeterReadings.vehicleId, fuelMeterReadings.occurredAt)
 
   const [rows, jumpRules, control] = await Promise.all([
     db.select({
@@ -82,8 +84,8 @@ export async function getMeterRateSeries(
         eq(fuelMeterReadings.source, "copec_tct"),
         sql`${readingMonth} >= ${lookbackMonth}`,
         sql`${isoTextDaySql(fuelMeterReadings.occurredAt)} <= ${to}::date`,
-        worksiteScopeSql(session, fuelVehicles.worksiteId, filters.worksiteId),
-        filters.mandanteId ? sql`${fuelVehicles.worksiteId} in ${mandanteWorksitesSql(filters.mandanteId)}` : undefined,
+        worksiteScopeSql(session, readingWorksite, filters.worksiteId),
+        filters.mandanteId ? sql`${readingWorksite} in ${mandanteWorksitesSql(filters.mandanteId)}` : undefined,
       ))
       .orderBy(fuelMeterReadings.vehicleId, fuelMeterReadings.meterType, fuelMeterReadings.occurredAt, fuelMeterReadings.id),
     db.select({ config: fuelAnomalyRules.config }).from(fuelAnomalyRules).where(eq(fuelAnomalyRules.code, "salto_medidor_implausible")).limit(1),
