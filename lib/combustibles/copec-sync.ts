@@ -1585,3 +1585,9 @@ export async function syncCopecReports(options: { importerId?: string } = {}): P
     }
   }, { deadline: budgetDeadline })
 }
+
+/** Pide a la sincronización de Copec volver a revisar desde `month` (`YYYY-MM-01`); la Tarea 5 la completa. */
+export async function requestCopecRecheckFrom(month: string): Promise<{ requested: boolean }> {
+  void month
+  return { requested: false }
+}

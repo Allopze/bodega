@@ -613,4 +613,7 @@ export const pgliteTestFiles = [
   // fuentes admitidas, con el día chileno) y el orquestador en seco y con --apply.
   "lib/__tests__/fleet-stay-evidence-pglite.test.ts",
   "lib/__tests__/fleet-stay-reconstruction-run-pglite.test.ts",
+  // Servicio de traslado de equipos: la única puerta que cambia la faena (estadías, asignaciones
+  // de proveedor, GPS desde la medianoche chilena, historial de Mantención) y su anulación.
+  "lib/__tests__/fleet-transfers-pglite.test.ts",
 ]
