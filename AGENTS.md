@@ -417,7 +417,6 @@ Rules until the migration is properly resumed:
 - See `modules/README.md` for the reconciliation plan.
 <!-- END:source-of-truth -->
 
-<!-- BEGIN:authorization-navigation -->
 # Faena de un equipo: sólo por traslado
 
 La faena de un vehículo existente (`fuel_vehicles.worksite_id`) cambia ÚNICAMENTE con
@@ -427,6 +426,7 @@ o script de una vez) falla por diseño al confirmar con `FLEET_STAY_INVARIANT`; 
 traducen con `isFleetStayInvariantError` a «Para cambiar de faena usa «Trasladar equipos».»
 (`USE_TRANSFER_MESSAGE`). No agregues un camino que escriba la faena por su cuenta.
 
+<!-- BEGIN:authorization-navigation -->
 # Authorization and Navigation Parity
 
 Any change that adds, removes, renames or materially changes a protected feature must check parity between:
