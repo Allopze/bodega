@@ -618,4 +618,6 @@ export const pgliteTestFiles = [
   "lib/__tests__/fleet-transfers-pglite.test.ts",
   // Re-verificación de Copec desde el mes de un traslado retroactivo (sólo mueve el inicio hacia atrás).
   "lib/__tests__/copec-recheck-pglite.test.ts",
+  // Traslado de equipos: casos de anomalía con la faena del evento e importador de consumos por estadía.
+  "lib/__tests__/traslado-anomalias-importador-pglite.test.ts",
 ]

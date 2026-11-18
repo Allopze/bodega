@@ -21,6 +21,7 @@ import { detectCorruptEvidence, getReusedEvidence } from "./evidence-management"
 import { fuelOperationOccurredAtSql } from "./fuel-log"
 import { accountableProviderTransactionsWhere, accountableFuelLoadsWhere } from "./load-status"
 import { countableLoadSql } from "./control/filters"
+import { stayWorksiteOnIsoTextDaySql } from "./control/queries/field-filters"
 import { DEFAULT_OUTLIER_THRESHOLD_STDDEVS, MIN_CONCLUSIVE_SAMPLE, flagOutliers } from "./performance-statistics"
 import { buildFuelVariationCandidates, candidateTouchesCutoff, fuelVariationProductLabel } from "./fuel-variation"
 import { configOf, elapsedDays, maxMeterRatePerDayOf, readEqTypeOverride } from "./meter-series"
@@ -393,7 +394,9 @@ const detectLitersExceedCapacity: DetectorFn = async (rule) => {
     // Escanear TAE. Se excluyen las cargas anuladas: una carga corregida por
     // anulación seguía generando un caso crítico contra un dato ya descartado.
     // `gt` y no `gte`: el caso dice "supera la capacidad", no "la alcanza".
-    const taeRows = await db.select({ id: fuelTaeSubmissions.id, liters: fuelTaeSubmissions.liters })
+    // La faena del caso es la del envío (donde ocurrió la carga), no la actual del
+    // equipo: tras un traslado, el caso sigue en la faena que cargó.
+    const taeRows = await db.select({ id: fuelTaeSubmissions.id, liters: fuelTaeSubmissions.liters, worksiteId: fuelTaeSubmissions.worksiteId })
       .from(fuelTaeSubmissions).where(and(
         eq(fuelTaeSubmissions.vehicleId, v.vehicleId),
         ne(fuelTaeSubmissions.status, "voided"),
@@ -404,7 +407,7 @@ const detectLitersExceedCapacity: DetectorFn = async (rule) => {
       try {
         const outcome = await createAnomalyCase({
           ruleId: rule.id, ruleCode: "litros_supera_capacidad", severity: severityOf(rule, "critical"),
-          worksiteId: v.worksiteId, vehicleId: v.vehicleId,
+          worksiteId: row.worksiteId, vehicleId: v.vehicleId,
           referenceEntityType: "fuel_tae_submission", referenceEntityId: row.id,
           description: `${Number(row.liters).toLocaleString("es-CL")} L supera la capacidad declarada de ${Number(v.tankCapacityLiters).toLocaleString("es-CL")} L (+${Math.round(margin * 100)}% margen) para el equipo ${v.plate}.`,
           observedValue: String(row.liters), expectedValue: `≤ ${Number(v.tankCapacityLiters)} L`,
@@ -863,7 +866,9 @@ async function meterReadingRows(meterType: "km" | "hora", vehicleIds: readonly s
     occurredAt: fuelMeterReadings.occurredAt,
     stationName: fuelMeterReadings.stationName,
     plate: fuelVehicles.plate,
-    worksiteId: fuelVehicles.worksiteId,
+    // Faena del equipo el día (chileno) de la lectura, no la actual: tras un traslado
+    // el caso queda donde se tecleó la lectura. Sin estadía ese día, la actual.
+    worksiteId: sql<string | null>`coalesce(${stayWorksiteOnIsoTextDaySql(fuelMeterReadings.vehicleId, fuelMeterReadings.occurredAt)}, ${fuelVehicles.worksiteId})`,
     equipmentTypeSlug: fuelEquipmentTypes.slug,
   })
     .from(fuelMeterReadings)

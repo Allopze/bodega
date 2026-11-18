@@ -319,6 +319,7 @@ export async function getOperationalControlHub(
   const canViewMaintenance = sessionCanViewMaintenanceEquipment(session)
   const workOrderScope = canViewWorkOrders ? workOrderMetricsScope(session) : null
   if (!canViewFleet && !canViewInspections && !canViewFuel) throw new Error("Sin permisos para Control operacional")
+  // El alcance sólo elige la lista actual de vehículos (por su faena de hoy); los conteos son por vehículo.
   const vehicleScope = worksiteScopeSql(session, fuelVehicles.worksiteId)
   const serviceScope = worksiteScopeSql(session, serviceEquipment.worksiteId)
   const today = todayInChile()
