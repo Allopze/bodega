@@ -622,4 +622,6 @@ export const pgliteTestFiles = [
   "lib/__tests__/traslado-anomalias-importador-pglite.test.ts",
   // «Incorporar desde la flota» a otra faena es un traslado; un UPDATE directo de la faena lo frena la base.
   "lib/__tests__/mantencion-incorporate-transfer-pglite.test.ts",
+  // Importación de consumos en modo «todas las faenas»: la faena es la del período, no la de hoy.
+  "lib/__tests__/traslado-importador-todas-pglite.test.ts",
 ]
