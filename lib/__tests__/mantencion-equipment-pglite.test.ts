@@ -6,7 +6,9 @@ import path from "node:path"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
+import { setVehicleWorksiteForTest } from "@/lib/testing/fleet-stays"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { todayInChile } from "@/lib/utils"
 
 /*
  * Equipos de mantención (§10) contra Postgres de verdad: alta, incorporación de
@@ -87,8 +89,10 @@ async function editIdentity(vehicleId: string, overrides: Partial<FleetIdentityI
     const { resolved } = result
     await tx.update(schema.fuelVehicles).set({
       code: resolved.code, plate: resolved.plate, brand: resolved.brand.name, model: resolved.model, year: resolved.year,
-      equipmentTypeId: resolved.type.id, type: resolved.type.slug, worksiteId: resolved.worksite.id!,
+      equipmentTypeId: resolved.type.id, type: resolved.type.slug,
     }).where(eq(schema.fuelVehicles.id, vehicleId))
+    // La faena no se cambia con un UPDATE directo: la base exige que la estadía abierta la acompañe.
+    if (resolved.worksite.id! !== vehicle.worksiteId) await setVehicleWorksiteForTest(tx as unknown as DB, vehicleId, resolved.worksite.id!, todayInChile())
     await applyFleetIdentity(tx, actor, result.current, resolved, "padron")
     return result
   })

@@ -602,4 +602,7 @@ export const pgliteTestFiles = [
   // Sección «Reportes de equipos» del Panel de mantención: esperados y recibidos por fecha de
   // turno, firmas, horas, fallas abiertas con su antigüedad y alcance por faena.
   "lib/services/mantencion/reporte-equipos-pglite.test.ts",
+  // Estadías por faena: el invariante `fuel_vehicles.worksite_id` = faena de la estadía abierta,
+  // hecho cumplir por triggers diferidos, y las filas GPS que ya no arrastran la faena.
+  "lib/__tests__/fleet-worksite-stays-pglite.test.ts",
 ]

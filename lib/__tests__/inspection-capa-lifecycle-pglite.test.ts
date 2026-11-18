@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { setVehicleWorksiteForTest } from "@/lib/testing/fleet-stays"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 
 const pg = new PGlite()
@@ -273,9 +274,7 @@ describe("derivación de hallazgos de inspección a CAPA", () => {
 
   it("no deriva si el equipo ya fue trasladado a otra faena, y no deja CAPA a medias", async () => {
     await testDb.insert(schema.worksites).values({ id: "inspection-maintenance-other-worksite", code: "IM2", name: "Otra faena" })
-    await testDb.update(schema.fuelVehicles)
-      .set({ worksiteId: "inspection-maintenance-other-worksite" })
-      .where(eq(schema.fuelVehicles.id, VEHICLE_ID))
+    await setVehicleWorksiteForTest(testDb, VEHICLE_ID, "inspection-maintenance-other-worksite", "2026-11-15")
 
     await expect(deriveFinding()).rejects.toThrow(/pertenece a otra faena/)
 
