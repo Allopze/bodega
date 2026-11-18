@@ -605,4 +605,6 @@ export const pgliteTestFiles = [
   // Estadías por faena: el invariante `fuel_vehicles.worksite_id` = faena de la estadía abierta,
   // hecho cumplir por triggers diferidos, y las filas GPS que ya no arrastran la faena.
   "lib/__tests__/fleet-worksite-stays-pglite.test.ts",
+  // Faena del día según la estadía y recorrido del equipo con el traslado que abrió cada una.
+  "lib/__tests__/fleet-stays-pglite.test.ts",
 ]
