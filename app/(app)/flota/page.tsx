@@ -14,6 +14,8 @@ import { FLEET_OVERVIEW_LOOKBACK_MONTHS, getFleetOverviewPage } from "@/lib/serv
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import { addDaysToPlainDate, countOf, formatCLP, todayInChile, formatQty } from "@/lib/utils"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import { TransferButton } from "@/components/fleet/transfer/transfer-button"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 import { FleetFilters } from "./fleet-filters"
 import { FleetTable } from "./fleet-table"
 import { FleetExportButton } from "./fleet-export-button"
@@ -34,6 +36,8 @@ export default async function FlotaPage({
   catch { redirect("/forbidden") }
   const canViewCosts = can(session, "combustibles:view_costs")
   const canViewFuel = can(session, "combustibles:view")
+  // «Trasladar equipos» está apagado de fábrica (lo enciende un administrador): sin el interruptor no hay botón.
+  const canTransfer = can(session, "flota:transfer") && await isRouteOperational("/flota/traslados")
 
   const fleetSettings = await getFleetAdminSettings()
   const sp = await searchParams
@@ -119,6 +123,7 @@ export default async function FlotaPage({
               <Link href="/admin/flota-catalogos/vehiculos">Gestionar vehículos</Link>
             </Button>
           )}
+          {canTransfer && <TransferButton />}
         </div>}
       />
 
