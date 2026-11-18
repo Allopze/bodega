@@ -29,9 +29,11 @@ const { getLitersPerHourComparison } = await import("@/lib/combustibles/control/
 const { getMeterRateSeries } = await import("@/lib/combustibles/control/queries/meter-rates")
 const { getWorksiteEquipmentMatrix } = await import("@/lib/combustibles/consumption-dashboard")
 
-const V = { tel: "veh-fsc-tel", mand: "veh-fsc-mand", km: "veh-fsc-km", heat: "veh-fsc-heat" } as const
+const V = { tel: "veh-fsc-tel", mand: "veh-fsc-mand", km: "veh-fsc-km", heat: "veh-fsc-heat", aba: "veh-fsc-aba" } as const
 const DAYS = Array.from({ length: 11 }, (_, i) => `2026-11-${String(10 + i)}`) // 10..20
 const NOV = { monthKeys: ["2026-11"], to: "2026-11-30", today: "2026-12-05" }
+// El equipo A→B→A lee en septiembre para no mezclar sus lecturas con las del resto de la suite.
+const SEP = { monthKeys: ["2026-09"], to: "2026-09-30", today: "2026-12-05" }
 
 function vehicle(id: string, plate: string, worksiteId: string, odometer = false): typeof schema.fuelVehicles.$inferInsert {
   return odometer
@@ -47,11 +49,15 @@ beforeAll(async () => {
     vehicle(V.mand, "FSC-0002", IDS.wsA),
     vehicle(V.km, "FSC-0003", IDS.wsA, true),
     vehicle(V.heat, "FSC-0004", IDS.wsA),
+    vehicle(V.aba, "FSC-0005", IDS.wsA, true),
   ])
   // tel: A → B el 15-11 (mismo mandante). mand: A → C el 15-11 (otro mandante). km: A → B el 15-11.
   await setVehicleWorksiteForTest(testDb, V.tel, IDS.wsB, "2026-11-15")
   await setVehicleWorksiteForTest(testDb, V.mand, IDS.wsC, "2026-11-15")
   await setVehicleWorksiteForTest(testDb, V.km, IDS.wsB, "2026-11-15")
+  // aba: A hasta el 12-09, en B del 13 al 15-09 y de vuelta en A desde el 16-09.
+  await setVehicleWorksiteForTest(testDb, V.aba, IDS.wsB, "2026-09-13")
+  await setVehicleWorksiteForTest(testDb, V.aba, IDS.wsA, "2026-09-16")
 
   let n = 0
   await testDb.insert(schema.fuelTelemetryDaily).values(
@@ -65,6 +71,12 @@ beforeAll(async () => {
   await testDb.insert(schema.fuelMeterReadings).values(DAYS.map((day, i) => ({
     id: `mr-fsc-${i}`, vehicleId: V.km, plate: "FSC-0003", source: "copec_tct" as const, sourceRef: `ref-fsc-${i}`,
     occurredAt: `${day}T15:00:00.000Z`, meterType: "odometer" as const, value: 10_000 + i * 100, liters: 40,
+  })))
+
+  // Una lectura por día del 10 al 20-09 en el equipo A→B→A (100 km y 40 L entre lecturas: 2,5 km/L).
+  await testDb.insert(schema.fuelMeterReadings).values(DAYS.map((_, i) => ({
+    id: `mr-fsc-aba-${i}`, vehicleId: V.aba, plate: "FSC-0005", source: "copec_tct" as const, sourceRef: `ref-fsc-aba-${i}`,
+    occurredAt: `2026-09-${String(10 + i)}T15:00:00.000Z`, meterType: "odometer" as const, value: 20_000 + i * 100, liters: 40,
   })))
 
   // Cargas de L/h del equipo `tel`: una el 12-11 (en A) y otra el 17-11 (en B), cada una con la faena de la carga.
@@ -149,6 +161,27 @@ describe("lecturas de medidor por la faena del día", () => {
     expect(b.km_per_liter.readings).toBe(6) // 15..20
     const scopedA = await getMeterRateSeries(scopedSession([IDS.wsA]), {}, NOV)
     expect(scopedA.km_per_liter.readings).toBe(5)
+  })
+
+  it("cada par de lecturas cuenta en la faena de su lectura final: el par que cruza el traslado es de la faena nueva", async () => {
+    const a = await getMeterRateSeries(globalSession(), { worksiteId: IDS.wsA }, NOV)
+    const b = await getMeterRateSeries(globalSession(), { worksiteId: IDS.wsB }, NOV)
+    const all = await getMeterRateSeries(globalSession(), {}, NOV)
+    expect(a.km_per_liter.segments).toBe(4) // 10→11 … 13→14
+    expect(b.km_per_liter.segments).toBe(6) // 14→15 (cruza) … 19→20
+    expect(a.km_per_liter.segments + b.km_per_liter.segments).toBe(all.km_per_liter.segments) // nada se pierde ni se cuenta dos veces
+  })
+
+  it("un equipo A→B→A no empareja las dos lecturas de A saltándose su paso por B", async () => {
+    const a = await getMeterRateSeries(globalSession(), { worksiteId: IDS.wsA }, SEP)
+    const b = await getMeterRateSeries(globalSession(), { worksiteId: IDS.wsB }, SEP)
+    // En A: 10→11, 11→12 y, tras volver, 15→16 (la lectura 15 fue en B pero el par termina en A) … 19→20.
+    expect(a.km_per_liter.segments).toBe(7)
+    expect(a.km_per_liter.discarded).toBe(0)
+    expect(a.km_per_liter.rate).toBeCloseTo(2.5, 5) // sin un par 12→16 de 400 km con 40 L (10 km/L)
+    // En B: los pares que terminan el 13, el 14 y el 15.
+    expect(b.km_per_liter.segments).toBe(3)
+    expect(b.km_per_liter.rate).toBeCloseTo(2.5, 5)
   })
 
   it("una lectura de las 23:30 hora de Chile del 14-11 sigue en la faena vieja", async () => {

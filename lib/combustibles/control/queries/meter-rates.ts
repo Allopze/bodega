@@ -19,7 +19,8 @@ import { todayInChile } from "@/lib/utils"
  * el detalle de Copec (`fuel_meter_readings`, fuente `copec_tct`).
  *
  * La lectura no lleva faena propia: el alcance y los filtros de faena y mandante son
- * los de la faena del equipo el día de la lectura (`stayWorksiteOnDaySql`), no la actual. El método y sus límites
+ * los de la faena del equipo el día de la lectura (`stayWorksiteOnDaySql`), no la actual, y se aplican DESPUÉS de
+ * emparejar: un par cuenta en la faena de su lectura final. El método y sus límites
  * están en `lib/combustibles/meter-rate-series.ts`; acá sólo se leen las series, se
  * marcan los resets aceptados y los meses sin datos del proveedor, y se arma.
  *
@@ -65,6 +66,15 @@ export async function getMeterRateSeries(
   const readingMonth = isoTextMonthSql(fuelMeterReadings.occurredAt)
   // Faena en que estaba el equipo el día de la lectura, no la actual: tras un traslado cada lectura cuenta donde se tomó.
   const readingWorksite = stayWorksiteOnIsoTextDaySql(fuelMeterReadings.vehicleId, fuelMeterReadings.occurredAt)
+  // Alcance y filtros se evalúan sobre la faena de cada lectura pero NO recortan la serie: el par se arma con la
+  // lectura anterior del equipo aunque haya sido en otra faena, y cada par cuenta en la faena de su lectura final.
+  // Filtrar antes de emparejar unía las dos últimas lecturas de A de un equipo que pasó por B (A→B→A).
+  const scopeCondition = and(
+    worksiteScopeSql(session, readingWorksite, filters.worksiteId),
+    filters.mandanteId ? sql`${readingWorksite} in ${mandanteWorksitesSql(filters.mandanteId)}` : undefined,
+  )
+  // Sin alcance ni filtros (`and` de nada = undefined) todo cuenta.
+  const readingInScope = scopeCondition ? sql<boolean>`coalesce(${scopeCondition}, false)` : sql<boolean>`true`
 
   const [rows, jumpRules, control] = await Promise.all([
     db.select({
@@ -74,6 +84,7 @@ export async function getMeterRateSeries(
       value: fuelMeterReadings.value,
       liters: fuelMeterReadings.liters,
       acceptedReset: acceptedMeterResetSql(),
+      inScope: readingInScope,
       performanceUnit: fuelVehicles.performanceUnit,
       equipmentTypeSlug: fuelEquipmentTypes.slug,
     })
@@ -84,8 +95,6 @@ export async function getMeterRateSeries(
         eq(fuelMeterReadings.source, "copec_tct"),
         sql`${readingMonth} >= ${lookbackMonth}`,
         sql`${isoTextDaySql(fuelMeterReadings.occurredAt)} <= ${to}::date`,
-        worksiteScopeSql(session, readingWorksite, filters.worksiteId),
-        filters.mandanteId ? sql`${readingWorksite} in ${mandanteWorksitesSql(filters.mandanteId)}` : undefined,
       ))
       .orderBy(fuelMeterReadings.vehicleId, fuelMeterReadings.meterType, fuelMeterReadings.occurredAt, fuelMeterReadings.id),
     db.select({ config: fuelAnomalyRules.config }).from(fuelAnomalyRules).where(eq(fuelAnomalyRules.code, "salto_medidor_implausible")).limit(1),
@@ -116,6 +125,7 @@ export async function getMeterRateSeries(
       occurredAt: row.occurredAt,
       acceptedReset: row.acceptedReset,
       liters: row.liters === null ? null : Number(row.liters),
+      inScope: row.inScope,
     }
     vehicle.readings.push(reading)
   }
@@ -125,7 +135,7 @@ export async function getMeterRateSeries(
   // Se mira también el mes previo: un par que lo cruza no se puede usar.
   const coverage = await listCopecPeriodCoverage(`${lookbackMonth}-01`, to)
   // El mes de una lectura es el de Chile, no el del texto UTC: si no, la del 31 de marzo por la noche «respalda» abril.
-  const monthsWithReadings = new Set(rows.map((row) => chileMonthOf(row.occurredAt)))
+  const monthsWithReadings = new Set(rows.filter((row) => row.inScope).map((row) => chileMonthOf(row.occurredAt)))
   const gapMonths = monthsWithoutProviderData([lookbackMonth, ...monthKeys], coverage, monthsWithReadings)
 
   const today = window.today ?? todayInChile()
