@@ -107,12 +107,35 @@ describe("assignVehiclesToContract", () => {
     expect(await rows()).toEqual(before)
   })
 
-  it("rechaza una fecha que cae dentro de una asignación ya cerrada", async () => {
+  it("reasignar dentro de una asignación cerrada la acorta al día anterior", async () => {
     await seedAssignment({ id: "a-1", validFrom: "2026-03-01", validTo: "2026-04-30" })
-    const result = await assign("c-2", ["v-1"], "2026-04-10")
+    expect(await assign("c-2", ["v-1"], "2026-04-10")).toMatchObject({ ok: true, assigned: 1 })
+    expect((await rows()).map((r) => [r.contractId, r.validFrom, r.validTo])).toEqual([
+      ["c-1", "2026-03-01", "2026-04-09"], ["c-2", "2026-04-10", null],
+    ])
+  })
+
+  it("mover un equipo fuera de un contrato con término acorta su asignación y abre la nueva", async () => {
+    await testDb.update(schema.contracts).set({ endDate: "2026-12-31" }).where(eq(schema.contracts.id, "c-1"))
+    await assign("c-1", ["v-1", "v-2"], "2026-03-01")
+    // La faena en lote y la ficha usan el mismo servicio: este es el caso que no podía hacerse.
+    expect(await assign("c-2", ["v-1", "v-2"], "2026-06-15")).toMatchObject({ ok: true, assigned: 2 })
+    expect((await rows()).map((r) => [r.vehicleId, r.contractId, r.validFrom, r.validTo])).toEqual([
+      ["v-1", "c-1", "2026-03-01", "2026-06-14"], ["v-1", "c-2", "2026-06-15", null],
+      ["v-2", "c-1", "2026-03-01", "2026-06-14"], ["v-2", "c-2", "2026-06-15", null],
+    ])
+  })
+
+  it("no toca una asignación de un contrato de otra faena (antes de un traslado)", async () => {
+    // v-3 está hoy en w-b; antes del traslado trabajó para c-1 (w-a) hasta el 30-06.
+    await seedAssignment({ id: "a-old", vehicleId: "v-3", contractId: "c-1", validFrom: "2026-01-01", validTo: "2026-06-30" })
+    const result = await assign("c-3", ["v-3"], "2026-03-01")
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.message).toContain("KA-11")
-    expect(await rows()).toHaveLength(1)
+    if (!result.ok) expect(result.message).toContain("otra faena")
+    expect((await endVehicleAssignment(actor, { vehicleId: "v-3", lastDay: "2026-04-30" })).ok).toBe(false)
+    expect((await rows()).map((r) => [r.id, r.validTo])).toEqual([["a-old", "2026-06-30"]])
+    // Desde el traslado en adelante sí se le asigna contrato en su faena actual.
+    expect(await assign("c-3", ["v-3"], "2026-07-01")).toMatchObject({ ok: true, assigned: 1 })
   })
 
   it("rechaza equipos de otra faena", async () => {
@@ -219,9 +242,30 @@ describe("endVehicleAssignment", () => {
     expect((await rows()).map((r) => r.validTo)).toEqual(["2026-07-15"])
   })
 
-  it("rechaza un último día anterior al inicio, un equipo sin asignación y datos mal formados", async () => {
+  it("«Sin contrato» desde el inicio de una asignación la borra: deshace una fecha equivocada", async () => {
     await assign("c-1", ["v-1"], "2026-03-01")
-    expect((await endVehicleAssignment(actor, { vehicleId: "v-1", lastDay: "2026-02-28" })).ok).toBe(false)
+    expect(await endVehicleAssignment(actor, { vehicleId: "v-1", lastDay: "2026-02-28" })).toEqual({ ok: true })
+    expect(await rows()).toEqual([])
+    const audit = await testDb.select().from(schema.auditLog).where(eq(schema.auditLog.action, "delete"))
+    expect(audit).toHaveLength(1)
+  })
+
+  it("«Sin contrato» rechaza si el equipo tiene una asignación posterior, en vez de dejarla viva", async () => {
+    await assign("c-1", ["v-1"], "2026-03-01")
+    await assign("c-2", ["v-1"], "2026-06-15")
+    const before = await rows()
+    const result = await endVehicleAssignment(actor, { vehicleId: "v-1", lastDay: "2026-04-30" })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toContain("2026-06-15")
+    expect(await rows()).toEqual(before)
+    // Quitando primero la posterior, y después desde el 01-05, queda sin contrato desde esa fecha.
+    expect(await endVehicleAssignment(actor, { vehicleId: "v-1", lastDay: "2026-06-14" })).toEqual({ ok: true })
+    expect(await endVehicleAssignment(actor, { vehicleId: "v-1", lastDay: "2026-04-30" })).toEqual({ ok: true })
+    expect((await rows()).map((r) => [r.contractId, r.validFrom, r.validTo])).toEqual([["c-1", "2026-03-01", "2026-04-30"]])
+  })
+
+  it("rechaza un equipo sin asignación y datos mal formados", async () => {
+    await assign("c-1", ["v-1"], "2026-03-01")
     expect((await endVehicleAssignment(actor, { vehicleId: "v-2", lastDay: "2026-08-31" })).ok).toBe(false)
     expect((await endVehicleAssignment(actor, { vehicleId: "v-1", lastDay: "ayer" })).ok).toBe(false)
     expect((await rows()).map((r) => r.validTo)).toEqual([null])
@@ -296,10 +340,30 @@ describe("assertContractChangeKeepsAssignmentsTx", () => {
     expect(await check("c-1", { ...base, endDate: "2026-12-31" })).toBeNull()
   })
 
-  it("cerrar el contrato con término es válido porque el estado se evalúa después de acotar", async () => {
-    await assign("c-1", ["v-1"], "2026-03-01")
-    expect(await check("c-1", { ...base, endDate: "2026-12-31", status: "closed" })).toBeNull()
-    expect(await check("c-1", { ...base, endDate: "2026-12-31", status: "suspended" })).toBeNull()
+  it("cerrar el contrato con término hasta hoy es válido porque el estado se evalúa después de acotar", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-11-20T15:00:00.000Z"))
+    try {
+      await assign("c-1", ["v-1"], "2026-03-01")
+      expect(await check("c-1", { ...base, endDate: "2026-10-31", status: "closed" })).toBeNull()
+      expect(await check("c-1", { ...base, endDate: "2026-11-20", status: "suspended" })).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("no deja cerrar ni suspender un contrato con equipos asignados hasta una fecha futura", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-11-20T15:00:00.000Z"))
+    try {
+      await testDb.update(schema.contracts).set({ endDate: "2027-12-31" }).where(eq(schema.contracts.id, "c-1"))
+      await assign("c-1", ["v-1"], "2026-03-01")
+      // La asignación heredó el término 2027-12-31: no está «abierta», pero sigue en vigor.
+      expect(await check("c-1", { ...base, endDate: "2027-12-31", status: "closed" })).toContain("2027-12-31")
+      expect(await check("c-1", { ...base, endDate: "2026-12-31", status: "suspended" })).toContain("2026-12-31")
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("rechaza un término anterior al inicio de una asignación", async () => {
@@ -375,12 +439,18 @@ describe("consultas", () => {
     expect(await listAssignmentWindows([], "2026-03-01", "2026-03-31")).toEqual([])
   })
 
+  it("listAssignmentWindows incluye ventanas que empiezan después de `to` dentro de su mes", async () => {
+    await seedAssignment({ id: "a-1", validFrom: "2026-04-25", validTo: null })
+    const windows = await listAssignmentWindows(["v-1"], "2026-04-01", "2026-04-20")
+    expect(windows.map((w) => w.validFrom)).toEqual(["2026-04-25"])
+  })
+
   it("listVehicleAssignmentHistory devuelve la más reciente primero, con el contrato", async () => {
     await seedAssignment({ id: "a-1", validFrom: "2026-01-01", validTo: "2026-02-28", reason: "Alta" })
     await seedAssignment({ id: "a-2", contractId: "c-2", validFrom: "2026-03-01", validTo: null })
     expect(await listVehicleAssignmentHistory("v-1")).toEqual([
-      { id: "a-2", contractId: "c-2", contractName: "Transporte de rollizos", contractCode: "CTR-2026-0002", validFrom: "2026-03-01", validTo: null, reason: null },
-      { id: "a-1", contractId: "c-1", contractName: "Movimiento de residuos", contractCode: "CTR-2026-0001", validFrom: "2026-01-01", validTo: "2026-02-28", reason: "Alta" },
+      { id: "a-2", contractId: "c-2", contractName: "Transporte de rollizos", contractCode: "CTR-2026-0002", contractStatus: "active", validFrom: "2026-03-01", validTo: null, reason: null },
+      { id: "a-1", contractId: "c-1", contractName: "Movimiento de residuos", contractCode: "CTR-2026-0001", contractStatus: "active", validFrom: "2026-01-01", validTo: "2026-02-28", reason: "Alta" },
     ])
   })
 })

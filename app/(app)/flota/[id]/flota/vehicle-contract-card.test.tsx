@@ -13,8 +13,8 @@ const TODAY = "2026-11-18"
 
 // Más reciente primero, como lo entrega `listVehicleAssignmentHistory`.
 const history: VehicleAssignmentRow[] = [
-  { id: "a2", contractId: "c2", contractName: "Residuos Santa Fe", contractCode: "CTR-2026-0002", validFrom: "2026-09-01", validTo: null, reason: null },
-  { id: "a1", contractId: "c1", contractName: "Cosecha Santa Fe", contractCode: "CTR-2026-0001", validFrom: "2026-03-01", validTo: "2026-08-31", reason: "Cambio de servicio" },
+  { id: "a2", contractId: "c2", contractName: "Residuos Santa Fe", contractCode: "CTR-2026-0002", contractStatus: "active", validFrom: "2026-09-01", validTo: null, reason: null },
+  { id: "a1", contractId: "c1", contractName: "Cosecha Santa Fe", contractCode: "CTR-2026-0001", contractStatus: "active", validFrom: "2026-03-01", validTo: "2026-08-31", reason: "Cambio de servicio" },
 ]
 const contractOptions = [
   { id: "c1", name: "Cosecha Santa Fe", code: "CTR-2026-0001" },
@@ -59,6 +59,14 @@ describe("VehicleContractCard · tarjeta de la ficha", () => {
     expect(screen.getByText("Sin contrato")).toBeInTheDocument()
     expect(screen.queryByText("Vigente")).toBeNull()
     expect(within(screen.getByRole("list")).getAllByRole("listitem")).toHaveLength(1)
+  })
+
+  it("la insignia dice el estado del contrato, no «Vigente» de un contrato suspendido", () => {
+    const [current, previous] = history
+    renderCard({ history: [{ ...current!, contractStatus: "suspended" }, previous!] })
+
+    expect(screen.getByText("Suspendido")).toBeInTheDocument()
+    expect(screen.queryByText("Vigente")).toBeNull()
   })
 
   it("sin permiso no muestra «Cambiar contrato»", () => {

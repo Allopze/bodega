@@ -59,7 +59,8 @@ function ContractForm({ onClose, worksiteId, contract, mandantes }: Omit<Contrac
   const [status, setStatus] = React.useState<string>(contract?.status ?? "active")
   const { pending, message, fieldErrors, run } = useOperation()
 
-  const clients = [...mandantes.clients, ...extraClients]
+  // Un RUT que ya era cliente vuelve con el mismo id: no se repite en la lista.
+  const clients = [...mandantes.clients, ...extraClients.filter((extra) => !mandantes.clients.some((client) => client.id === extra.id))]
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -151,6 +152,11 @@ interface MandanteFieldProps {
  * facturas de venta («aún no es cliente») y un alta en línea con RUT y razón
  * social. El alta se hace al pulsar «Guardar mandante», no al guardar el contrato.
  */
+/** Enter en el alta del mandante no debe enviar el formulario del contrato que lo contiene. */
+function keepEnterInside(event: React.KeyboardEvent<HTMLInputElement>): void {
+  if (event.key === "Enter") event.preventDefault()
+}
+
 function MandanteField({ clients, suggestions, value, onChange, onCreated, "aria-describedby": describedBy }: MandanteFieldProps) {
   const [creating, setCreating] = React.useState(false)
   const [rut, setRut] = React.useState("")
@@ -194,10 +200,10 @@ function MandanteField({ clients, suggestions, value, onChange, onCreated, "aria
         <div className="flex flex-col gap-3 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
           {mandante.message && <p role="alert" className="text-sm text-[var(--color-danger)]">{mandante.message}</p>}
           <Field label="RUT del mandante" helper="Ej.: 76.543.210-K">
-            <Input value={rut} onChange={(event) => setRut(event.target.value)} autoComplete="off" />
+            <Input value={rut} onChange={(event) => setRut(event.target.value)} onKeyDown={keepEnterInside} autoComplete="off" />
           </Field>
           <Field label="Razón social">
-            <Input value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
+            <Input value={name} onChange={(event) => setName(event.target.value)} onKeyDown={keepEnterInside} autoComplete="off" />
           </Field>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" size="sm" onClick={() => setCreating(false)}>Cancelar</Button>

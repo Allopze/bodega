@@ -114,11 +114,11 @@ export function attributeCosts(input: {
     const overlapping = windows.filter(
       (x) => x.validFrom <= monthEnd && (x.validTo === null || x.validTo >= monthStart),
     )
-    if (overlapping.length === 0) {
+    const [only] = overlapping
+    if (!only) {
       of(current).unassigned[c.component] += c.amount
       continue
     }
-    const only = overlapping[0]
     if (
       overlapping.length === 1 &&
       only.validFrom <= monthStart &&

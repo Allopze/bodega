@@ -45,6 +45,56 @@ function covers(row: { validFrom: string; validTo: string | null }, day: string)
   return row.validFrom <= day && (row.validTo === null || row.validTo >= day)
 }
 
+/** Una asignación con la faena de su contrato. */
+type RowWithWorksite = AssignmentRow & { worksiteId: string | null }
+
+/**
+ * Regla única de «a partir del día X el equipo cambia» (de contrato o a «Sin
+ * contrato»). La comparten `assignVehiclesToContract` y `endVehicleAssignment`
+ * para que la ficha y la faena se comporten igual:
+ *
+ * - la asignación que cubre X y empezó antes —abierta o con el término que
+ *   heredó del contrato— se acorta al día anterior (`covering`);
+ * - la que empieza justo en X se corrige o se borra (`sameDay`): así un error de
+ *   fecha se deshace;
+ * - una que empieza después de X se rechaza: reescribir historia posterior en
+ *   silencio no es lo que pidió quien eligió X;
+ * - nunca se toca una asignación de un contrato de otra faena (la del equipo
+ *   antes de un traslado): esa historia es de otra faena y de otro alcance.
+ */
+function planChangeFrom(
+  rows: readonly RowWithWorksite[],
+  day: string,
+  worksiteId: string,
+  label: string,
+): { ok: true; sameDay: RowWithWorksite | null; covering: RowWithWorksite | null } | { ok: false; message: string } {
+  const later = rows.find((row) => row.validFrom > day)
+  if (later) {
+    return { ok: false, message: `${label} ya tiene una asignación desde ${later.validFrom}: quítala primero desde su ficha («Sin contrato» desde esa fecha)` }
+  }
+  const sameDay = rows.find((row) => row.validFrom === day) ?? null
+  const covering = rows.find((row) => row.validFrom < day && covers(row, day)) ?? null
+  for (const row of [sameDay, covering]) {
+    if (row && row.worksiteId !== worksiteId) {
+      return { ok: false, message: `${label}: el ${day} trabajaba para un contrato de otra faena (antes de su traslado); ese período no se cambia desde aquí` }
+    }
+  }
+  return { ok: true, sameDay, covering }
+}
+
+async function vehicleRowsWithWorksite(tx: Tx, vehicleIds: readonly string[]): Promise<Map<string, RowWithWorksite[]>> {
+  const found = await tx.select({ assignment: contractVehicleAssignments, worksiteId: contracts.worksiteId })
+    .from(contractVehicleAssignments)
+    .innerJoin(contracts, eq(contracts.id, contractVehicleAssignments.contractId))
+    .where(inArray(contractVehicleAssignments.vehicleId, [...vehicleIds]))
+    .orderBy(asc(contractVehicleAssignments.vehicleId), asc(contractVehicleAssignments.validFrom))
+  const byVehicle = new Map<string, RowWithWorksite[]>()
+  for (const { assignment, worksiteId } of found) {
+    byVehicle.set(assignment.vehicleId, [...(byVehicle.get(assignment.vehicleId) ?? []), { ...assignment, worksiteId }])
+  }
+  return byVehicle
+}
+
 /**
  * Asigna uno o varios equipos a un contrato desde `validFrom` (inclusive).
  *
@@ -83,11 +133,7 @@ export async function assignVehiclesToContract(actor: AssignmentActor, input: un
       }
     }
 
-    const existing = await tx.select().from(contractVehicleAssignments)
-      .where(inArray(contractVehicleAssignments.vehicleId, vehicleIds))
-      .orderBy(asc(contractVehicleAssignments.vehicleId), asc(contractVehicleAssignments.validFrom))
-    const existingByVehicle = new Map<string, AssignmentRow[]>()
-    for (const row of existing) existingByVehicle.set(row.vehicleId, [...(existingByVehicle.get(row.vehicleId) ?? []), row])
+    const existingByVehicle = await vehicleRowsWithWorksite(tx, vehicleIds)
 
     // Primera pasada: sólo valida y decide; nada se escribe hasta que todo el lote pasa.
     type Plan =
@@ -96,15 +142,12 @@ export async function assignVehiclesToContract(actor: AssignmentActor, input: un
       | { kind: "correct"; row: AssignmentRow }
     const plans = new Map<string, Plan>()
     for (const id of vehicleIds) {
-      const rows = existingByVehicle.get(id) ?? []
-      const blocking = rows.find((row) => row.validFrom > validFrom || (row.validTo !== null && covers(row, validFrom)))
-      if (blocking) {
-        return { ok: false, message: `${vehicleLabel(byId.get(id)!)} ya tiene una asignación desde ${blocking.validFrom}; corrígela desde su ficha` }
-      }
-      const open = rows.find((row) => row.validTo === null) ?? null
-      if (open && open.contractId === contractId) plans.set(id, { kind: "skip" })
-      else if (open && open.validFrom === validFrom) plans.set(id, { kind: "correct", row: open })
-      else plans.set(id, { kind: "insert", closeOpen: open })
+      const decided = planChangeFrom(existingByVehicle.get(id) ?? [], validFrom, worksiteId, vehicleLabel(byId.get(id)!))
+      if (!decided.ok) return { ok: false, message: decided.message }
+      const { sameDay, covering } = decided
+      if (sameDay) plans.set(id, sameDay.contractId === contractId ? { kind: "skip" } : { kind: "correct", row: sameDay })
+      else if (covering && covering.contractId === contractId) plans.set(id, { kind: "skip" })
+      else plans.set(id, { kind: "insert", closeOpen: covering })
     }
 
     const validTo = contract.endDate ?? null
@@ -130,7 +173,8 @@ export async function assignVehiclesToContract(actor: AssignmentActor, input: un
         continue
       }
       if (plan.closeOpen) {
-        // Primero se cierra la vigente: el índice único admite una sola abierta por equipo.
+        // Primero se acorta la que cubría el día (abierta o con el término que
+        // heredó del contrato): el índice único admite una sola abierta por equipo.
         const closedTo = addDaysToPlainDate(validFrom, -1)
         await tx.update(contractVehicleAssignments)
           .set({ validTo: closedTo, updatedAt: new Date().toISOString() })
@@ -138,7 +182,7 @@ export async function assignVehiclesToContract(actor: AssignmentActor, input: un
         await recordAudit({
           userId: actor.userId, userEmail: actor.email ?? undefined, action: "update", entityType: ENTITY, entityId: plan.closeOpen.id,
           entityCode: vehicleLabel(vehicle), worksiteId,
-          oldState: { validTo: null }, newState: { validTo: closedTo },
+          oldState: { validTo: plan.closeOpen.validTo }, newState: { validTo: closedTo },
           reason: reason ?? "Reasignación a otro contrato",
         }, tx)
       }
@@ -194,40 +238,46 @@ async function fuelMappingWarnings(
 }
 
 /**
- * Quita un equipo de su contrato: la asignación que cubre `lastDay` (o la
- * vigente) termina ese día, inclusive. Funciona también con una asignación que
- * heredó el término del contrato.
+ * «Sin contrato» desde el día siguiente a `lastDay`, con la misma regla que una
+ * reasignación (`planChangeFrom`): la asignación que cubría ese día termina el
+ * `lastDay`; la que empezaba justo ese día se borra (deshace una asignación hecha
+ * con la fecha equivocada); una posterior se rechaza en vez de quedar viva sin
+ * que nadie lo note; y la historia de otra faena no se toca.
  */
 export async function endVehicleAssignment(actor: AssignmentActor, input: unknown, client: DB = db): Promise<{ ok: true } | { ok: false; message: string }> {
   const parsed = endAssignmentSchema.safeParse(input)
   if (!parsed.success) return { ok: false, message: firstIssue(parsed.error) }
   const { vehicleId, lastDay, reason } = parsed.data
+  const fromDay = addDaysToPlainDate(lastDay, 1)
 
   return client.transaction(async (tx): Promise<{ ok: true } | { ok: false; message: string }> => {
-    const [vehicle] = await tx.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate })
+    const [vehicle] = await tx.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, worksiteId: fuelVehicles.worksiteId })
       .from(fuelVehicles).where(eq(fuelVehicles.id, vehicleId)).limit(1).for("update")
     if (!vehicle) return { ok: false, message: "El equipo no existe" }
-    const [current] = await tx.select({ assignment: contractVehicleAssignments, worksiteId: contracts.worksiteId })
-      .from(contractVehicleAssignments)
-      .innerJoin(contracts, eq(contracts.id, contractVehicleAssignments.contractId))
-      .where(and(
-        eq(contractVehicleAssignments.vehicleId, vehicleId),
-        lte(contractVehicleAssignments.validFrom, lastDay),
-        or(isNull(contractVehicleAssignments.validTo), gte(contractVehicleAssignments.validTo, lastDay)),
-      ))
-      .orderBy(desc(contractVehicleAssignments.validFrom))
-      .limit(1)
-    if (!current) {
-      return { ok: false, message: `${vehicleLabel(vehicle)} no tiene una asignación de contrato que cubra el ${lastDay}` }
+    const label = vehicleLabel(vehicle)
+    const rows = (await vehicleRowsWithWorksite(tx, [vehicleId])).get(vehicleId) ?? []
+    const decided = planChangeFrom(rows, fromDay, vehicle.worksiteId, label)
+    if (!decided.ok) return decided
+    const { sameDay, covering } = decided
+    const base = { userId: actor.userId, userEmail: actor.email ?? undefined, entityType: ENTITY, entityCode: label }
+
+    if (sameDay) {
+      await tx.delete(contractVehicleAssignments).where(eq(contractVehicleAssignments.id, sameDay.id))
+      await recordAudit({
+        ...base, action: "delete", entityId: sameDay.id, worksiteId: sameDay.worksiteId ?? undefined,
+        oldState: { contractId: sameDay.contractId, validFrom: sameDay.validFrom, validTo: sameDay.validTo },
+        reason: reason ?? "Asignación deshecha: el equipo queda sin contrato desde su inicio",
+      }, tx)
+      return { ok: true }
     }
-    if (current.assignment.validTo === lastDay) return { ok: true }
+    if (!covering) return { ok: false, message: `${label} no tiene contrato el ${fromDay}` }
+    if (covering.validTo === lastDay) return { ok: true }
     await tx.update(contractVehicleAssignments)
       .set({ validTo: lastDay, updatedAt: new Date().toISOString() })
-      .where(eq(contractVehicleAssignments.id, current.assignment.id))
+      .where(eq(contractVehicleAssignments.id, covering.id))
     await recordAudit({
-      userId: actor.userId, userEmail: actor.email ?? undefined, action: "update", entityType: ENTITY, entityId: current.assignment.id,
-      entityCode: vehicleLabel(vehicle), worksiteId: current.worksiteId ?? undefined,
-      oldState: { validTo: current.assignment.validTo }, newState: { validTo: lastDay },
+      ...base, action: "update", entityId: covering.id, worksiteId: covering.worksiteId ?? undefined,
+      oldState: { validTo: covering.validTo }, newState: { validTo: lastDay },
       reason: reason ?? "Equipo retirado del contrato",
     }, tx)
     return { ok: true }
@@ -313,10 +363,23 @@ export async function assertContractChangeKeepsAssignmentsTx(
     const lastFrom = assignments.reduce((max, row) => (row.validFrom > max ? row.validFrom : max), assignments[0]!.validFrom)
     if (next.endDate < lastFrom) return `${label} desde el ${lastFrom}: el contrato no puede terminar antes de esa fecha`
   }
-  // El estado se evalúa DESPUÉS de acotar: con término, ya no quedan asignaciones abiertas.
-  const openAfterCap = next.endDate === null && assignments.some((row) => row.validTo === null)
-  if (next.status !== contract.status && next.status !== "active" && openAfterCap) {
-    return `${label} vigentes: quítalos o fija el término antes de ${next.status === "closed" ? "cerrar" : "suspender"} el contrato`
+  // El estado se evalúa DESPUÉS de acotar: cuenta el término efectivo de cada
+  // asignación (el suyo o el del contrato, el menor). Una asignación que sigue
+  // más allá de hoy —abierta o con un término futuro heredado— seguiría sumando
+  // costo a un contrato cerrado o suspendido.
+  const today = todayInChile()
+  let openEnded = false
+  let lastInForce: string | null = null
+  for (const row of assignments) {
+    const effective = next.endDate !== null && (row.validTo === null || row.validTo > next.endDate) ? next.endDate : row.validTo
+    if (effective === null) openEnded = true
+    else if (effective > today && (lastInForce === null || effective > lastInForce)) lastInForce = effective
+  }
+  if (next.status !== contract.status && next.status !== "active" && (openEnded || lastInForce !== null)) {
+    const verb = next.status === "closed" ? "cerrar" : "suspender"
+    return openEnded
+      ? `${label} sin término: fija el término (hoy o antes) o quítalos antes de ${verb} el contrato`
+      : `${label} hasta el ${lastInForce}: fija el término en hoy o antes, o quítalos, antes de ${verb} el contrato`
   }
   return null
 }
@@ -352,14 +415,23 @@ export async function capContractAssignmentsTx(tx: Tx, contractId: string, endDa
   return affected.length
 }
 
+/** Último día civil del mes de `day` (`YYYY-MM-DD`). */
+function lastDayOfMonth(day: string): string {
+  const last = new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)), 0)).getUTCDate()
+  return `${day.slice(0, 7)}-${String(last).padStart(2, "0")}`
+}
+
 /**
- * Ventanas de asignación de los equipos que tocan el rango que va desde el
- * primer día del mes de `from` hasta `to`. Se parte del mes porque el consumo de
- * proveedor llega como agregado mensual fechado el día 1.
+ * Ventanas de asignación de los equipos que tocan los meses completos de `from`
+ * a `to`. Se toman meses enteros porque el consumo de proveedor llega como
+ * agregado mensual fechado el día 1 y su reparto mira el mes completo: una
+ * ventana que empieza después de `to` pero dentro de su mes lo vuelve
+ * «Por repartir».
  */
 export async function listAssignmentWindows(vehicleIds: readonly string[], from: string, to: string, client: DB = db): Promise<AssignmentWindow[]> {
   if (vehicleIds.length === 0) return []
   const monthStart = `${from.slice(0, 7)}-01`
+  const monthEnd = lastDayOfMonth(to)
   const found = await client.select({
     vehicleId: contractVehicleAssignments.vehicleId, contractId: contractVehicleAssignments.contractId, worksiteId: contracts.worksiteId,
     validFrom: contractVehicleAssignments.validFrom, validTo: contractVehicleAssignments.validTo,
@@ -368,7 +440,7 @@ export async function listAssignmentWindows(vehicleIds: readonly string[], from:
     .where(and(
       inArray(contractVehicleAssignments.vehicleId, [...vehicleIds]),
       isNotNull(contracts.worksiteId),
-      lte(contractVehicleAssignments.validFrom, to),
+      lte(contractVehicleAssignments.validFrom, monthEnd),
       or(isNull(contractVehicleAssignments.validTo), gte(contractVehicleAssignments.validTo, monthStart)),
     ))
     .orderBy(asc(contractVehicleAssignments.vehicleId), asc(contractVehicleAssignments.validFrom))
@@ -380,6 +452,7 @@ export interface VehicleAssignmentRow {
   contractId: string
   contractName: string
   contractCode: string
+  contractStatus: "active" | "suspended" | "closed"
   validFrom: string
   validTo: string | null
   reason: string | null
@@ -389,7 +462,7 @@ export interface VehicleAssignmentRow {
 export async function listVehicleAssignmentHistory(vehicleId: string, client: DB = db): Promise<VehicleAssignmentRow[]> {
   return client.select({
     id: contractVehicleAssignments.id, contractId: contractVehicleAssignments.contractId,
-    contractName: contracts.name, contractCode: contracts.code,
+    contractName: contracts.name, contractCode: contracts.code, contractStatus: contracts.status,
     validFrom: contractVehicleAssignments.validFrom, validTo: contractVehicleAssignments.validTo, reason: contractVehicleAssignments.reason,
   }).from(contractVehicleAssignments)
     .innerJoin(contracts, eq(contracts.id, contractVehicleAssignments.contractId))

@@ -178,7 +178,7 @@ export async function getContractCostBreakdown(
   }
 
   // Sólo las faenas del alcance con al menos un contrato (sin «Sin contrato» que lo sea todo).
-  const byWorksite = new Map<string, typeof contractRows>()
+  const byWorksite = new Map<string, Array<(typeof contractRows)[number]>>()
   for (const row of contractRows) {
     if (!row.worksiteId) continue
     const list = byWorksite.get(row.worksiteId)
@@ -205,7 +205,7 @@ export async function getContractCostBreakdown(
   const contractOptions: { id: string; label: string }[] = []
 
   for (const [worksiteId, list] of byWorksite) {
-    const worksiteName = list[0].worksiteName
+    const worksiteName = list[0]?.worksiteName ?? ""
     const attr = attribution.get(worksiteId)
     const rows: ContractCostRow[] = []
 

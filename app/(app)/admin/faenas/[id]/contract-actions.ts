@@ -25,6 +25,8 @@ function revalidateWorksiteContracts(worksiteId: string): void {
   revalidatePath(`/admin/faenas/${worksiteId}`)
   revalidatePath("/admin/faenas")
   revalidatePath("/control-operacional")
+  // Acotar por término cambia el contrato que muestran las fichas de sus equipos.
+  revalidatePath("/flota", "layout")
 }
 
 const NO_ACCESS = "No tienes acceso a esta faena"

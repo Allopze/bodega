@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { VehicleAssignmentRow } from "@/lib/services/contracts/assignments"
@@ -31,6 +31,13 @@ function coversDay(row: { validFrom: string; validTo: string | null }, day: stri
  * Tarjeta «Contrato» de la pestaña Flota: para qué contrato trabaja hoy el equipo y por cuáles
  * pasó. Mismo patrón de lista de intervalos que «Historial de estado operacional».
  */
+/** El estado del contrato, no el de la asignación: un contrato suspendido o cerrado no se pinta «Vigente». */
+const CONTRACT_STATUS_BADGE = {
+  active: { label: "Vigente", variant: "success" },
+  suspended: { label: "Suspendido", variant: "warning" },
+  closed: { label: "Cerrado", variant: "neutral" },
+} as const
+
 export function VehicleContractCard({ vehicleId, vehicleLabel, history, contractOptions, today, canChange }: VehicleContractCardProps) {
   const [open, setOpen] = React.useState(false)
   const current = history.find((row) => coversDay(row, today)) ?? null
@@ -51,7 +58,7 @@ export function VehicleContractCard({ vehicleId, vehicleLabel, history, contract
             <>
               <p className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{current.contractName}</span>
-                <Badge variant="success">Vigente</Badge>
+                <MetaBadge meta={CONTRACT_STATUS_BADGE[current.contractStatus]} />
               </p>
               <p className="text-xs text-[var(--color-text-muted)]">
                 <span className="font-mono">{current.contractCode}</span> · desde {formatDate(current.validFrom)}

@@ -56,9 +56,7 @@ test.describe("Contratos de faena", () => {
         from contract_vehicle_assignments a join contracts c on c.id = a.contract_id
         where a.vehicle_id = ${VEHICULO} and c.name = ${CONTRATO}`
       expect(rows).toHaveLength(1)
-      expect(rows[0].code).toMatch(/^CTR-\d{4}-\d{4}$/)
-      expect(rows[0].billing_cycle).toBe("none")
-      expect(rows[0].valid_to).toBeNull()
+      expect(rows[0]).toMatchObject({ code: expect.stringMatching(/^CTR-\d{4}-\d{4}$/), billing_cycle: "none", valid_to: null })
     } finally {
       await client.end()
     }

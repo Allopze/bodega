@@ -718,6 +718,13 @@ export async function saveContractAction(input: unknown): Promise<ActionResult> 
     })
 
     revalidatePath("/facturacion/clientes")
+    // Un contrato de faena también se ve en su detalle, en el Panel y, si se
+    // acotaron asignaciones por término, en las fichas de sus equipos.
+    if (values.worksiteId) {
+      revalidatePath(`/admin/faenas/${values.worksiteId}`)
+      revalidatePath("/control-operacional")
+      revalidatePath("/flota", "layout")
+    }
     return { ok: true, message: data.id ? "Contrato actualizado" : "Contrato creado" }
   } catch (err) {
     const message = safeActionMessage(err, "No se pudo guardar el contrato")

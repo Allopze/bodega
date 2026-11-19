@@ -288,7 +288,7 @@ describe("getContractCostBreakdown", () => {
     expect(ids).toEqual(expect.arrayContaining([C_A1, C_A2]))
     expect(ids).not.toContain(C_B1)
     expect(ids).not.toContain(C_C1)
-    expect(breakdown.worksites[0].rows.some((row) => row.contractId === C_B1)).toBe(false)
+    expect(breakdown.worksites[0]?.rows.some((row) => row.contractId === C_B1)).toBe(false)
 
     const nobody = await breakdownFor(session({ global: false, worksiteIds: [] }))
     expect(nobody.breakdown.worksites).toEqual([])
@@ -302,7 +302,7 @@ describe("getContractCostBreakdown", () => {
     expect(noEquipment).toHaveLength(1)
     expect(noEquipment[0]).toMatchObject({ label: "Compras sin equipo", contractId: null, fuel: null, workOrders: null, purchases: 70_000, total: 70_000 })
     // Va al final de la faena y sólo cuando es distinta de cero.
-    expect(a.rows[a.rows.length - 1].kind).toBe("no_equipment")
+    expect(a.rows.at(-1)?.kind).toBe("no_equipment")
     expect(breakdown.worksites.find((w) => w.worksiteId === IDS.wsB)!.rows.some((row) => row.kind === "no_equipment")).toBe(false)
     // La fila de la faena suma todas sus cubetas.
     expect(a.total).toBe(a.rows.reduce((acc, row) => acc + (row.total ?? 0), 0))

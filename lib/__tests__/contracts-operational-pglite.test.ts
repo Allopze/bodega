@@ -162,8 +162,11 @@ describe("saveOperationalContract", () => {
     const result = await saveOperationalContract(actor, createInput({ id, endDate: "2026-12-31" }))
     expect(result.ok).toBe(true)
     expect((await assignmentRows()).map((row) => [row.vehicleId, row.validTo])).toEqual([["v-1", "2026-12-31"], ["v-2", "2026-12-31"]])
-    // Con término ya fijado, cerrar el contrato es coherente.
-    expect((await saveOperationalContract(actor, createInput({ id, endDate: "2026-12-31", status: "closed" }))).ok).toBe(true)
+    // Cerrarlo con equipos asignados hasta una fecha futura dejaría costo corriendo a un
+    // contrato cerrado: se rechaza. Con término hoy (reloj fijo: 2026-11-20) sí se cierra.
+    expect((await saveOperationalContract(actor, createInput({ id, endDate: "2026-12-31", status: "closed" }))).ok).toBe(false)
+    expect((await saveOperationalContract(actor, createInput({ id, endDate: "2026-11-20", status: "closed" }))).ok).toBe(true)
+    expect((await assignmentRows()).map((row) => row.validTo)).toEqual(["2026-11-20", "2026-11-20"])
   })
 
   it("rechaza un término anterior al inicio de una asignación y cerrar con equipos abiertos sin término", async () => {
@@ -297,9 +300,14 @@ describe("saveContractAction (Facturación)", () => {
     const early = await saveContractAction(form({ id, code, worksiteId: "w-a", endDate: "2026-02-01" }))
     expect(early.ok).toBe(false)
 
-    const closed = await saveContractAction(form({ id, code, worksiteId: "w-a", endDate: "2026-12-31", status: "closed" }))
+    // Término futuro y cerrado a la vez: los equipos seguirían sumando costo a un contrato cerrado.
+    const futureClose = await saveContractAction(form({ id, code, worksiteId: "w-a", endDate: "2026-12-31", status: "closed" }))
+    expect(futureClose.ok).toBe(false)
+    expect((await assignmentRows()).map((row) => row.validTo)).toEqual([null, null])
+
+    const closed = await saveContractAction(form({ id, code, worksiteId: "w-a", endDate: "2026-11-15", status: "closed" }))
     expect(closed.ok).toBe(true)
-    expect((await assignmentRows()).map((row) => row.validTo)).toEqual(["2026-12-31", "2026-12-31"])
-    expect(await contractRow(id)).toMatchObject({ status: "closed", endDate: "2026-12-31" })
+    expect((await assignmentRows()).map((row) => row.validTo)).toEqual(["2026-11-15", "2026-11-15"])
+    expect(await contractRow(id)).toMatchObject({ status: "closed", endDate: "2026-11-15" })
   })
 })

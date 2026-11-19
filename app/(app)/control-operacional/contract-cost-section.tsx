@@ -53,6 +53,7 @@ export function ContractCostSection({
           {row.kind === "contract" && row.contractId ? (
             <Link
               href={contractHref(period, row.contractId)}
+              replace
               scroll={false}
               aria-current={row.contractId === selectedContractId ? "true" : undefined}
               className="font-medium text-[var(--color-primary-ink)] underline-offset-4 hover:underline"

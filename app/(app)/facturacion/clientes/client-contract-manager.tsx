@@ -200,7 +200,7 @@ function ContractDialog({
         >
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Código" hint="Se genera solo si lo dejas vacío">
-              <Input name="code" placeholder="CTR-2026-0001" />
+              <Input name="code" placeholder="Automático" />
             </Field>
             <ContractCoreFields clients={clients} />
             <Field label="Faena" hint="Déjalo vacío si el contrato cubre varias faenas.">

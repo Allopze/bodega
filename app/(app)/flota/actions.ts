@@ -162,12 +162,12 @@ export async function changeVehicleContractAction(
     if (contractId) {
       const result = await assignVehiclesToContract(actor, { contractId, vehicleIds: [vehicleId], validFrom })
       if (!result.ok) return { ok: false, message: result.message }
-      revalidateAfterContractChange(vehicleId)
+      revalidateAfterContractChange(vehicleId, vehicle.worksiteId)
       return { ok: true, message: ["Contrato actualizado", ...result.warnings].join(". ") }
     }
     const result = await endVehicleAssignment(actor, { vehicleId, lastDay: addDaysToPlainDate(validFrom, -1) })
     if (!result.ok) return { ok: false, message: result.message }
-    revalidateAfterContractChange(vehicleId)
+    revalidateAfterContractChange(vehicleId, vehicle.worksiteId)
     return { ok: true, message: "Equipo sin contrato" }
   } catch (e) {
     logger.error("[changeVehicleContractAction]", e)
@@ -175,8 +175,9 @@ export async function changeVehicleContractAction(
   }
 }
 
-function revalidateAfterContractChange(vehicleId: string): void {
+function revalidateAfterContractChange(vehicleId: string, worksiteId: string): void {
   revalidatePath("/flota")
+  revalidatePath(`/admin/faenas/${worksiteId}`)
   revalidateVehicleFicha(vehicleId)
   revalidatePath("/control-operacional")
 }

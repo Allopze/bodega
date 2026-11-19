@@ -72,7 +72,7 @@ describe("WorksiteContractsView", () => {
     expect(within(sinContrato).getByText("GR-10")).toBeInTheDocument()
     expect(within(sinContrato).getByText("TO-37")).toBeInTheDocument()
     // Los cerrados quedan plegados bajo su propio rótulo.
-    expect(screen.getByText("Contratos cerrados (1)")).toBeInTheDocument()
+    expect(screen.getByText("Contratos suspendidos o cerrados (1)")).toBeInTheDocument()
   })
 
   it("sin contratos muestra el estado vacío con «Nuevo contrato»", () => {

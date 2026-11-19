@@ -99,7 +99,7 @@ export function WorksiteContractsView({ view, mandantes, canAssign, today }: Wor
           {otherContracts.length > 0 && (
             <details className="group rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
               <summary className="cursor-pointer select-none px-5 py-3 text-sm font-medium text-[var(--color-text-muted)]">
-                Contratos cerrados ({otherContracts.length})
+                Contratos suspendidos o cerrados ({otherContracts.length})
               </summary>
               <div className="flex flex-col gap-4 border-t border-[var(--color-border)] p-4">
                 {otherContracts.map((contract) => (
