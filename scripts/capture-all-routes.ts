@@ -935,6 +935,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-inventario-faena-detalle", path: "/admin/inventario-faena/inventory-audit-1", auth: true, notes: "Ficha de un extintor del padrón: ubicación, vigencias, asignaciones e historial." },
   { slug: "admin-equipo-detalle", path: "/admin/equipos/equip-audit-1", auth: true, notes: "Ficha del instrumento con su historial de intervenciones." },
   { slug: "admin-faenas", path: "/admin/faenas", auth: true },
+  { slug: "admin-faenas-detalle", path: "/admin/faenas/ws-audit-1", auth: true, notes: "Contratos y equipos de la faena" },
   { slug: "admin-flotas-catalogos", path: "/admin/flota-catalogos", auth: true },
   { slug: "admin-flota-vehiculos", path: "/admin/flota-catalogos/vehiculos", auth: true },
   { slug: "admin-flota-tipos-equipo", path: "/admin/flota-catalogos/tipos-equipo", auth: true },

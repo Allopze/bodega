@@ -34,6 +34,8 @@ vi.mock("../_ficha/ficha-chrome", () => ({
   VehicleFichaEditAction: () => null,
 }))
 vi.mock("@/lib/services/fleet", () => ({ getFleetVehicleDetail: mocks.detail }))
+// La tarjeta «Contrato» lee su historial de la base; acá no interesa.
+vi.mock("@/lib/services/vehicle-ficha", () => ({ loadVehicleContractCard: async () => ({ history: [], contractOptions: [] }) }))
 vi.mock("@/lib/services/fleet-stays", () => ({ listVehicleStays: (...args: unknown[]) => mocks.stays(...args) }))
 vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: (...args: unknown[]) => mocks.operational(...args) }))
 // El botón trae consigo las acciones de servidor; su prueba es la del modal.

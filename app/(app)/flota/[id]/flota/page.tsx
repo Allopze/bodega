@@ -13,6 +13,7 @@ import { listVehicleStays } from "@/lib/services/fleet-stays"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { TransferButton } from "@/components/fleet/transfer/transfer-button"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
+import { loadVehicleContractCard } from "@/lib/services/vehicle-ficha"
 import { FUEL_PERFORMANCE_UNIT_LABELS, VEHICLE_EXPIRY_FIELDS } from "@/lib/combustibles/validation"
 import { CANONICAL_FIELD_LABEL, expiringDocuments } from "@/lib/validation/fleet-documents"
 import { formatDate, formatDateTime, formatQty, todayInChile } from "@/lib/utils"
@@ -22,6 +23,7 @@ import { VehicleExpiries } from "../vehicle-expiries"
 import { VehicleStaysCard } from "./vehicle-stays-card"
 import { openVehicleFichaArea } from "../_ficha/access"
 import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaTabs } from "../_ficha/ficha-chrome"
+import { VehicleContractCard } from "./vehicle-contract-card"
 
 export const metadata: Metadata = { title: "Vehículo · Flota" }
 
@@ -69,6 +71,9 @@ export default async function FlotaVehiclePage({
     }
   })
   const canEditExpiries = can(session, "flota:manage_documents") && canAccessWorksite(session, vehicle.worksiteId)
+  // Cambiar el contrato del equipo es de quien administra equipos, con la faena del equipo en su alcance.
+  const canChangeContract = can(session, "mant:equipment:manage") && canAccessWorksite(session, vehicle.worksiteId)
+  const contractCard = await loadVehicleContractCard(vehicle.id, vehicle.worksiteId, { withOptions: canChangeContract })
   // «Trasladar» exige el permiso, el interruptor del submódulo (apagado de fábrica) y alcance sobre la faena actual.
   const canTransfer = vehicle.isActive && can(session, "flota:transfer") && canAccessWorksite(session, vehicle.worksiteId)
     && await isRouteOperational("/flota/traslados")
@@ -202,6 +207,15 @@ export default async function FlotaVehiclePage({
       )}
 
       <VehicleStaysCard stays={stays} />
+
+      <VehicleContractCard
+        vehicleId={vehicle.id}
+        vehicleLabel={vehicle.code ? `${vehicle.code} · ${vehicle.plate}` : vehicle.plate}
+        history={contractCard.history}
+        contractOptions={contractCard.contractOptions}
+        today={todayInChile()}
+        canChange={canChangeContract}
+      />
 
       <Card id="historial-estado" className="scroll-mt-4">
         <CardHeader><CardTitle as="h2" className="text-base">Historial de estado operacional</CardTitle></CardHeader>
