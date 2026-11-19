@@ -1,9 +1,10 @@
 import type { Session } from "next-auth"
-import { and, eq, inArray, ne, sql } from "drizzle-orm"
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrderItems, purchaseOrders, purchaseRequestItems } from "@/db/schema"
 import { can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import type { DatedCost } from "@/lib/contracts/cost-attribution"
 import { issuedOrderPredicate } from "@/lib/services/operational-period-metrics"
 
 /**
@@ -42,6 +43,24 @@ function emptySummary(vehicleId: string): VehiclePurchaseSummary {
 }
 
 /**
+ * Condiciones de una línea de OC que cuenta como gasto del período: UNA sola
+ * definición, compartida por el resumen por equipo, el detalle por día y las
+ * compras sin equipo. Línea no anulada, de una OC emitida (`issuedOrderPredicate`),
+ * con emisión en el período (día civil: `issued_at` es texto y puede traer hora,
+ * como el libro del proveedor en `getAssetFuelSummary`) y dentro del alcance de
+ * faena de la **OC**. Quien la use debe unir `purchase_orders`.
+ */
+function countedOrderLineWhere(session: Session, period: { from: string; to: string }) {
+  return and(
+    ne(purchaseOrderItems.status, "cancelled"),
+    issuedOrderPredicate(),
+    worksiteScopeSql(session, purchaseOrders.worksiteId),
+    sql`left(${purchaseOrders.issuedAt}, 10) >= ${period.from}`,
+    sql`left(${purchaseOrders.issuedAt}, 10) <= ${period.to}`,
+  )
+}
+
+/**
  * Los costos de compras se protegen con `purchasing:view` (no existe un permiso
  * de costos de compras aparte). Sin él devuelve el mapa **vacío** sin consultar:
  * el llamador distingue «sin capacidad» (no hay entrada) de «sin compras»
@@ -68,13 +87,7 @@ export async function getVehiclePurchaseSummary(
     .innerJoin(purchaseRequestItems, eq(purchaseRequestItems.id, purchaseOrderItems.requestItemId))
     .where(and(
       inArray(purchaseRequestItems.vehicleId, ids),
-      ne(purchaseOrderItems.status, "cancelled"),
-      issuedOrderPredicate(),
-      worksiteScopeSql(session, purchaseOrders.worksiteId),
-      // `issued_at` es texto y puede traer hora: se compara el día civil, como el
-      // libro del proveedor en `getAssetFuelSummary`.
-      sql`left(${purchaseOrders.issuedAt}, 10) >= ${period.from}`,
-      sql`left(${purchaseOrders.issuedAt}, 10) <= ${period.to}`,
+      countedOrderLineWhere(session, period),
     ))
     .groupBy(purchaseRequestItems.vehicleId)
 
@@ -87,5 +100,76 @@ export async function getVehiclePurchaseSummary(
     entry.lastOrderAt = row.lastOrderAt
   }
 
+  return out
+}
+
+/**
+ * Lo comprado por equipo y día de emisión de la OC, con la misma definición que
+ * `getVehiclePurchaseSummary` (ver `countedOrderLineWhere`). Una sola consulta
+ * agrupada por equipo y día. Sin `purchasing:view` devuelve `[]`.
+ */
+export async function getVehiclePurchaseByDay(
+  session: Session,
+  period: { from: string; to: string },
+  vehicleIds: readonly string[],
+): Promise<DatedCost[]> {
+  if (!can(session, "purchasing:view")) return []
+  const ids = [...new Set(vehicleIds)]
+  if (ids.length === 0) return []
+  const day = sql<string>`left(${purchaseOrders.issuedAt}, 10)`
+  const rows = await db.select({
+    vehicleId: purchaseRequestItems.vehicleId,
+    day,
+    amount: sql<number>`COALESCE(SUM(${purchaseOrderItems.subtotal}), 0)::float8`,
+  })
+    .from(purchaseOrderItems)
+    .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderItems.purchaseOrderId))
+    .innerJoin(purchaseRequestItems, eq(purchaseRequestItems.id, purchaseOrderItems.requestItemId))
+    .where(and(
+      inArray(purchaseRequestItems.vehicleId, ids),
+      countedOrderLineWhere(session, period),
+    ))
+    .groupBy(purchaseRequestItems.vehicleId, day)
+  return rows.flatMap((row) =>
+    row.vehicleId
+      ? [{
+          vehicleId: row.vehicleId,
+          day: row.day,
+          amount: Number(row.amount ?? 0),
+          component: "purchases" as const,
+          spansMonth: false,
+        }]
+      : [],
+  )
+}
+
+/**
+ * Compras emitidas en el período que no son de ningún equipo: líneas sin ítem de
+ * solicitud (compra de bodega) o cuyo ítem no nombra equipo. Agrupadas por la
+ * faena de la OC, con la misma definición de línea contada que el resumen por
+ * equipo. Sin `purchasing:view` devuelve un mapa vacío.
+ */
+export async function getWorksitePurchasesWithoutVehicle(
+  session: Session,
+  period: { from: string; to: string },
+): Promise<Map<string, number>> {
+  if (!can(session, "purchasing:view")) return new Map()
+  const rows = await db.select({
+    worksiteId: purchaseOrders.worksiteId,
+    amount: sql<number>`COALESCE(SUM(${purchaseOrderItems.subtotal}), 0)::float8`,
+  })
+    .from(purchaseOrderItems)
+    .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderItems.purchaseOrderId))
+    .leftJoin(purchaseRequestItems, eq(purchaseRequestItems.id, purchaseOrderItems.requestItemId))
+    .where(and(
+      isNull(purchaseRequestItems.vehicleId),
+      countedOrderLineWhere(session, period),
+    ))
+    .groupBy(purchaseOrders.worksiteId)
+  const out = new Map<string, number>()
+  for (const row of rows) {
+    if (!row.worksiteId) continue
+    out.set(row.worksiteId, Number(row.amount ?? 0))
+  }
   return out
 }

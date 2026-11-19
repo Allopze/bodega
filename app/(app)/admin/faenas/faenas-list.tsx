@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
@@ -24,9 +25,30 @@ interface WorksiteRow {
   region: string | null
   commune: string | null
   adminContratoLabel: string | null
+  /** Contratos de la faena (de cualquier estado); 0 = no se muestra. */
+  contractCount: number
   isActive: boolean
   createdAt: string
   updatedAt: string
+}
+
+/** «2 contratos»: el texto secundario bajo el nombre; una faena sin contratos no lleva ninguno. */
+function contractCountLabel(count: number): string | null {
+  if (count <= 0) return null
+  return count === 1 ? "1 contrato" : `${count} contratos`
+}
+
+/** El nombre es el acceso al detalle de la faena (`/admin/faenas/[id]`), con sus contratos y equipos. */
+function WorksiteNameLink({ ws, className }: { ws: WorksiteRow; className: string }) {
+  return (
+    <Link
+      href={`/admin/faenas/${encodeURIComponent(ws.id)}`}
+      title={ws.name}
+      className={`${className} text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline`}
+    >
+      {ws.name}
+    </Link>
+  )
 }
 
 export function FaenasList({
@@ -69,8 +91,11 @@ export function FaenasList({
       <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 title={ws.name} className="text-sm font-medium text-[var(--color-text)] truncate">{ws.name}</h2>
+            <h2 className="truncate text-sm font-medium"><WorksiteNameLink ws={ws} className="block truncate" /></h2>
             <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{ws.code}</p>
+            {contractCountLabel(ws.contractCount) && (
+              <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{contractCountLabel(ws.contractCount)}</p>
+            )}
           </div>
           <MetaBadge meta={{ label: `${ws.isActive ? "Activa" : "Inactiva"}`, variant: ws.isActive ? "success" : "default" }} dot />
         </div>
@@ -102,7 +127,10 @@ export function FaenasList({
       <React.Fragment key={ws.id}>
         <TableRow>
           <TableCell>
-            <span title={ws.name} className="text-sm font-medium text-text truncate">{ws.name}</span>
+            <WorksiteNameLink ws={ws} className="block truncate text-sm font-medium" />
+            {contractCountLabel(ws.contractCount) && (
+              <span className="block text-xs text-text-muted">{contractCountLabel(ws.contractCount)}</span>
+            )}
           </TableCell>
           <TableCell><span className="font-mono text-xs">{ws.code}</span></TableCell>
           <TableCell className="text-sm text-text-muted">{ws.region ?? "—"}</TableCell>

@@ -1,12 +1,14 @@
 import { cache } from "react"
-import { eq } from "drizzle-orm"
+import { and, asc, eq, gte, isNull, lte, or } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
-import { fuelEquipmentTypes, fuelVehicles, mantBrands, mantEquipmentProfiles, worksites } from "@/db/schema"
+import { contractVehicleAssignments, contracts, fuelEquipmentTypes, fuelVehicles, mantBrands, mantEquipmentProfiles, worksites } from "@/db/schema"
 import { can, canAccessWorksite, canAny } from "@/lib/auth/can"
 import { VEHICLE_FICHA_AREAS, type VehicleFichaArea, type VehicleFichaTab } from "@/lib/routing/vehicle-ficha"
+import { listVehicleAssignmentHistory, type VehicleAssignmentRow } from "@/lib/services/contracts/assignments"
 import { equipmentScope, isWorksiteInScope, viewerFromSession } from "@/lib/services/mantencion/access"
 import { getNavigationToggleState, routeIsEnabled } from "@/lib/services/module-toggles"
+import { todayInChile } from "@/lib/utils"
 import type { Permission } from "@/modules/permissions"
 
 /**
@@ -53,6 +55,11 @@ export interface VehicleFichaVehicle {
   brand: string | null
   worksiteId: string
   worksiteName: string
+  /**
+   * Contrato al que el equipo trabaja hoy (la asignación que cubre `todayInChile()`), o `null`
+   * si no tiene. A lo más uno: las asignaciones de un equipo no se traslapan.
+   */
+  contractName: string | null
   operationalStatus: string
   isActive: boolean
 }
@@ -79,6 +86,7 @@ export interface VehicleFichaContext {
 
 /** La fila del vehículo, una vez por request aunque la pidan la página y sus secciones. */
 const loadFichaVehicle = cache(async (vehicleId: string): Promise<(VehicleFichaVehicle & { hasProfile: boolean }) | null> => {
+  const today = todayInChile()
   const [row] = await db.select({
     id: fuelVehicles.id,
     code: fuelVehicles.code,
@@ -88,6 +96,7 @@ const loadFichaVehicle = cache(async (vehicleId: string): Promise<(VehicleFichaV
     maintenanceBrand: mantBrands.name,
     worksiteId: fuelVehicles.worksiteId,
     worksiteName: worksites.name,
+    contractName: contracts.name,
     operationalStatus: fuelVehicles.operationalStatus,
     isActive: fuelVehicles.isActive,
     profileVehicleId: mantEquipmentProfiles.vehicleId,
@@ -98,12 +107,19 @@ const loadFichaVehicle = cache(async (vehicleId: string): Promise<(VehicleFichaV
     .innerJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId))
     .leftJoin(mantEquipmentProfiles, eq(mantEquipmentProfiles.vehicleId, fuelVehicles.id))
     .leftJoin(mantBrands, eq(mantBrands.id, mantEquipmentProfiles.brandId))
+    .leftJoin(contractVehicleAssignments, and(
+      eq(contractVehicleAssignments.vehicleId, fuelVehicles.id),
+      lte(contractVehicleAssignments.validFrom, today),
+      or(isNull(contractVehicleAssignments.validTo), gte(contractVehicleAssignments.validTo, today)),
+    ))
+    .leftJoin(contracts, eq(contracts.id, contractVehicleAssignments.contractId))
     .where(eq(fuelVehicles.id, vehicleId))
     .limit(1)
   if (!row) return null
-  const { profileVehicleId, noPlate, code, fleetBrand, maintenanceBrand, ...vehicle } = row
+  const { profileVehicleId, noPlate, code, fleetBrand, maintenanceBrand, contractName, ...vehicle } = row
   return {
     ...vehicle,
+    contractName: contractName ?? null,
     code: code?.trim() || null,
     brand: maintenanceBrand ?? (fleetBrand?.trim() || null),
     noPlate: noPlate ?? false,
@@ -142,4 +158,29 @@ export async function loadVehicleFichaContext(session: Session, vehicleId: strin
     tabs: fichaTabsFor(areas),
     canEditVehicle: can(session, "admin:fleet_vehicles") && canAccessWorksite(session, vehicle.worksiteId),
   }
+}
+
+/** Contrato activo de la faena del equipo, para elegirlo al «Cambiar contrato». */
+export interface VehicleContractOption { id: string; name: string; code: string }
+
+/**
+ * Lo que dibuja la tarjeta «Contrato» de la pestaña Flota: la historia del equipo (la más reciente
+ * primero) y, sólo si quien mira puede cambiarla, los contratos activos de la faena del equipo
+ * (un equipo sólo se asigna a contratos de su propia faena).
+ */
+export async function loadVehicleContractCard(
+  vehicleId: string,
+  worksiteId: string,
+  options: { withOptions: boolean },
+): Promise<{ history: VehicleAssignmentRow[]; contractOptions: VehicleContractOption[] }> {
+  const [history, contractOptions] = await Promise.all([
+    listVehicleAssignmentHistory(vehicleId),
+    options.withOptions
+      ? db.select({ id: contracts.id, name: contracts.name, code: contracts.code })
+          .from(contracts)
+          .where(and(eq(contracts.worksiteId, worksiteId), eq(contracts.status, "active")))
+          .orderBy(asc(contracts.name))
+      : Promise.resolve([] as VehicleContractOption[]),
+  ])
+  return { history, contractOptions }
 }

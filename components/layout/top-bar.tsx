@@ -79,6 +79,9 @@ const OWN_SEARCH_PATTERNS = [
   // Mantención: «Importar» es una carga de archivo y la ficha de un equipo no
   // tiene lista que la shell pueda filtrar. La lista `/mantencion/equipos` lo conserva.
   /^\/mantencion\/equipos\/[^/]+$/,
+  // Administración: el detalle de una faena agrupa sus contratos y equipos en
+  // tarjetas, sin tabla que la shell pueda filtrar. La lista `/admin/faenas` lo conserva.
+  /^\/admin\/faenas\/[^/]+$/,
   // Flota: la lista de vehículos busca en el servidor con su propio buscador
   // rotulado y la ficha no tiene lista. Conductores y Monitoreo GPS filtran en
   // cliente con el input de la shell: estaban bajo el prefijo `/flota` y se

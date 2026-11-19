@@ -22,7 +22,7 @@ import {
 import { recordAudit } from "@/lib/audit"
 import { isoTextDaySql } from "@/lib/combustibles/control/queries/field-filters"
 import { AUTOMATED_SOURCES } from "@/lib/combustibles/fuel-sources"
-import { moveProviderMappingsWithVehicleTx } from "@/lib/combustibles/provider-mappings"
+import { relocateVehicleWorksiteTx, revertVehicleRelocationTx } from "@/lib/services/fleet-relocation"
 import {
   formatTransferFolio,
   MAX_VEHICLES_PER_TRANSFER,
@@ -350,7 +350,7 @@ export async function transferVehiclesTx(
       transferId,
     })
     await tx.update(fuelVehicles).set({ worksiteId: destination.id, updatedAt: nowIso }).where(eq(fuelVehicles.id, vehicle.id))
-    await moveProviderMappingsWithVehicleTx(tx, {
+    await relocateVehicleWorksiteTx(tx, {
       vehicleId: vehicle.id,
       worksiteId: destination.id,
       actorUserId: actor.userId,
@@ -577,7 +577,7 @@ async function voidTransferTx(
     await tx.update(stays).set({ endedOn: null })
       .where(and(eq(stays.vehicleId, item.vehicleId), eq(stays.endedOn, previousEnd)))
     await tx.update(fuelVehicles).set({ worksiteId: item.fromWorksiteId, updatedAt: nowIso }).where(eq(fuelVehicles.id, item.vehicleId))
-    await moveProviderMappingsWithVehicleTx(tx, {
+    await revertVehicleRelocationTx(tx, {
       vehicleId: item.vehicleId,
       worksiteId: item.fromWorksiteId,
       actorUserId: actor.userId,

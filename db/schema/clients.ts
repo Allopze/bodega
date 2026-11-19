@@ -95,8 +95,12 @@ export const contracts = pgTable("contracts", {
   code:             text("code").notNull(),
   clientId:         text("client_id").notNull().references(() => clients.id),
   name:             text("name").notNull(),
-  /** Faena principal, si el contrato es de una sola. */
-  worksiteId:       text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
+  /**
+   * Faena principal, si el contrato es de una sola. Un contrato que recibe
+   * equipos (`contract_vehicle_assignments`) debe tenerla; `restrict` impide
+   * borrar una faena con contratos y dejarlos sin lugar.
+   */
+  worksiteId:       text("worksite_id").references(() => worksites.id, { onDelete: "restrict" }),
   costCenterId:     text("cost_center_id").references(() => costCenters.id, { onDelete: "set null" }),
   /** Orden de compra marco que el cliente entregó, si existe. */
   clientPoNumber:   text("client_po_number"),

@@ -2,6 +2,7 @@ import type { Session } from "next-auth"
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
+  contracts,
   fleetVehicleDocuments,
   fuelAnomalyRules,
   fuelEquipmentTypes,
@@ -21,6 +22,7 @@ import { expiredDocumentTypes, resolveNextExpiryDate } from "@/lib/validation/fl
 import { getAssetFuelSummary, type AssetFuelSummary } from "@/lib/combustibles/control/queries/asset-fuel-summary"
 import { getVehiclePurchaseSummary, type VehiclePurchaseSummary } from "@/lib/services/purchasing-module/vehicle-purchase-summary"
 import { logger } from "@/lib/logger"
+import { listAssignmentWindows } from "@/lib/services/contracts/assignments"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import { loadMergedGpsByVehicle } from "@/lib/services/fleet-gps-latest"
 import { maxMeterRatePerDayOf, meterSeriesAdvance, meterSeriesCoversPeriod, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
@@ -59,6 +61,13 @@ export type OperationalAsset = {
   typeName?: string | null
   worksiteId: string
   worksiteName: string
+  /**
+   * Contrato vigente del equipo el último día del período (`period.to`), según
+   * `contract_vehicle_assignments`; `null` sin contrato ese día y para los
+   * instrumentos de servicio (no son flota).
+   */
+  contractId: string | null
+  contractName: string | null
   /** Valor crudo de la columna `operational_status` (`operativo`, `mantencion`,
    *  `fuera_servicio`); sólo se usa para filtros server-side y búsqueda
    *  cliente. La UI debe pintar `operationalStatusLabel`. */
@@ -136,18 +145,14 @@ export type OperationalAsset = {
   /** Costo del período según el libro del proveedor (`fuel_provider_transactions`); sólo con `combustibles:view_costs`. */
   fuelBilledAmount: number | null
   /**
-   * Mano de obra / taller externo: Σ `total_cost` de las OT cerradas del período, que
-   * jefatura carga a mano. No incluye los repuestos ni los servicios comprados por OC
-   * (van en `purchaseAmount`). $0 si el equipo no tiene OT cerradas con costo en el
-   * período; `null` sólo sin la capacidad de OT o si su consulta falló.
-   */
-  maintenanceCost: number | null
-  /**
    * Σ líneas de OC (no anuladas) emitidas en el período, de las solicitudes de repuestos o
    * servicios vinculadas al equipo. `null` sin `purchasing:view` o si la consulta falló.
    */
   purchaseAmount: number | null
-  /** Combustible + mano de obra + compras; `null` si falta cualquiera de las tres series. */
+  /**
+   * Combustible + compras; `null` si falta cualquiera de las dos series. La OT no lleva
+   * costo (decisión 2026-11-17): la mano de obra no entra.
+   */
   totalCost: number | null
   /** Horas de motor en vacío del período; `null` sin `combustibles:view`. */
   idleHours: number | null
@@ -296,6 +301,27 @@ export interface OperationalGpsCross {
   maintenance: { overdue: number; upcoming: number; estimated: number }
   purchases: { calculated: number; insufficient: number }
   prevention: { overdueCapaAssets: number; overdueCapaTotal: number; operatingWithOverdueCapa: number }
+}
+
+/**
+ * Contrato que cubre a cada equipo el día `day` (inclusivo en ambos extremos).
+ * Un equipo sin ventana ese día no aparece en el mapa.
+ */
+async function loadContractsAtPeriodEnd(vehicleIds: string[], day: string): Promise<Map<string, { id: string; name: string }>> {
+  const result = new Map<string, { id: string; name: string }>()
+  if (vehicleIds.length === 0) return result
+  const windows = await listAssignmentWindows(vehicleIds, day, day)
+  const covering = windows.filter((window) => window.validFrom <= day && (window.validTo === null || window.validTo >= day))
+  if (covering.length === 0) return result
+  const names = await db.select({ id: contracts.id, name: contracts.name })
+    .from(contracts)
+    .where(inArray(contracts.id, [...new Set(covering.map((window) => window.contractId))]))
+  const nameById = new Map(names.map((contract) => [contract.id, contract.name]))
+  for (const window of covering) {
+    const name = nameById.get(window.contractId)
+    if (name !== undefined) result.set(window.vehicleId, { id: window.contractId, name })
+  }
+  return result
 }
 
 /** Read model común: unifica navegación y métricas sin borrar las diferencias de dominio. */
@@ -488,6 +514,16 @@ export async function getOperationalControlHub(
   const purchaseUnavailable = purchaseSummaryPending !== null && purchaseSummary === null
   const purchaseByVehicle = purchaseSummary ?? new Map<string, VehiclePurchaseSummary>()
 
+  // Contrato vigente de cada equipo al cierre del período: una consulta de
+  // ventanas para todos y una de nombres, nunca una por vehículo. Degrada como
+  // el resto del panel: si falla, la columna queda en «Sin contrato» y la
+  // página anuncia que «contratos» no cargó.
+  const contractByVehicle = (await settleAttention(
+    "contratos",
+    () => loadContractsAtPeriodEnd(vehicles.map((vehicle) => vehicle.id), period.to),
+    degradedSources,
+  )) ?? new Map<string, { id: string; name: string }>()
+
   // La serie de medidores GPS se filtra por instantes de día chileno: el
   // período es una fecha civil, no un corte UTC.
   const gpsPeriodStart = chileDayStartInstant(period.from)
@@ -575,19 +611,14 @@ export async function getOperationalControlHub(
     const maintenance = maintenanceByVehicle.get(vehicle.id)
     const workOrder = workOrdersByVehicle?.get(vehicle.id)
     const fuelBilledAmount = canViewFuel && canViewCosts ? fuelValue(fuel?.billedAmount, 0) : null
-    // Sin OT cerradas con costo en el período, la mano de obra del equipo es $0 de
-    // verdad, no un dato faltante (decisión 2026-11-07): antes quedaba `null` y el
-    // «Costo total» salía «—» para casi toda la flota. Sólo es `null` sin la
-    // capacidad de OT o si su consulta falló (`workOrdersByVehicle` en null).
-    const maintenanceCost = workOrdersByVehicle ? (workOrder?.maintenanceCostInPeriod ?? 0) : null
     const purchaseAmount = canViewPurchaseCosts
       ? (purchaseUnavailable ? null : (purchaseByVehicle.get(vehicle.id)?.purchaseAmount ?? 0))
       : null
-    // Un total sólo existe con las tres series: sumar sólo dos y llamarlo «total» lo
+    // Un total sólo existe con las dos series: sumar sólo una y llamarlo «total» lo
     // subestimaría sin avisar. Una serie es `null` sólo sin su capacidad o si su
     // consulta falló; un equipo sin movimientos en una serie aporta $0.
-    const totalCost = fuelBilledAmount != null && maintenanceCost != null && purchaseAmount != null
-      ? fuelBilledAmount + maintenanceCost + purchaseAmount
+    const totalCost = fuelBilledAmount != null && purchaseAmount != null
+      ? fuelBilledAmount + purchaseAmount
       : null
     const gpsAdvanceValue = gpsAdvance.status === "ok" ? gpsAdvance.advance : null
     const gpsPerformanceStatus: GpsPerformanceStatus = gpsAdvance.status !== "ok"
@@ -633,6 +664,8 @@ export async function getOperationalControlHub(
       typeName: vehicle.typeName ?? vehicle.type,
       worksiteId: vehicle.worksiteId,
       worksiteName: vehicle.worksiteName,
+      contractId: contractByVehicle.get(vehicle.id)?.id ?? null,
+      contractName: contractByVehicle.get(vehicle.id)?.name ?? null,
       operationalStatus: rawStatus,
       operationalStatusLabel: vehicle.isActive
         ? formatFuelVehicleStatus(vehicle.operationalStatus)
@@ -688,7 +721,6 @@ export async function getOperationalControlHub(
       openAnomalyCases: canViewFuel ? fuelValue(fuel?.openCases, 0) : null,
       criticalOpenAnomalyCases: canViewFuel ? fuelValue(fuel?.criticalOpenCases, 0) : null,
       fuelBilledAmount,
-      maintenanceCost,
       purchaseAmount,
       totalCost,
       idleHours: canViewFuel ? fuelValue(fuel?.idleHours, 0) : null,
@@ -708,6 +740,9 @@ export async function getOperationalControlHub(
     name: instrument.name,
     worksiteId: instrument.worksiteId,
     worksiteName: instrument.worksiteName,
+    // Los instrumentos de servicio no son flota: no se asignan a contratos.
+    contractId: null,
+    contractName: null,
     operationalStatus: instrument.isActive ? "operativo" : "inactivo",
     operationalStatusLabel: instrument.isActive ? "Operativo" : "Inactivo",
     stateMismatch: false,
@@ -757,7 +792,6 @@ export async function getOperationalControlHub(
     openAnomalyCases: null,
     criticalOpenAnomalyCases: null,
     fuelBilledAmount: null,
-    maintenanceCost: null,
     // Los instrumentos de servicio no son `fuel_vehicles`: sus solicitudes apuntan a
     // `service_equipment`, no al vehículo, y no entran a esta suma.
     purchaseAmount: null,

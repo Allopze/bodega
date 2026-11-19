@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 import ExcelJS from "exceljs"
-import { expectPageTitle, selectRadixById } from "./helpers"
+import { expectPageTitle } from "./helpers"
 import { chileDay, dayMonthYear, asJefe, trackConsole, withSql, fichaValue, idFromPath, fillEquipmentForm, importWorkbook } from "./mantencion-3-helpers"
 
 /**

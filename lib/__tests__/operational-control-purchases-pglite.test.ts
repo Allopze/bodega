@@ -11,8 +11,8 @@ import { IDS, seedControlFixtures } from "@/lib/combustibles/control/queries/tes
 /**
  * Compras vinculadas al equipo en Control operacional (plan «Repuestos
  * vinculados al equipo y a la OT», T15): el costo por equipo suma, además del
- * combustible y la mano de obra de las OT, las líneas de OC de las solicitudes
- * que apuntan al vehículo (`purchase_request_items.vehicle_id`).
+ * combustible, las líneas de OC de las solicitudes que apuntan al vehículo
+ * (`purchase_request_items.vehicle_id`). La OT no lleva costo (decisión 2026-11-17).
  *
  * Se prueban el agregado (`getVehiclePurchaseSummary`) y su integración con el
  * hub, contra Postgres de verdad: lo que decide la cifra es el SQL (estados,
@@ -26,7 +26,11 @@ g.__db = testDb
 vi.mock("@/db", () => ({ get db() { return g.__db } }))
 vi.mock("server-only", () => ({}))
 
-const { getVehiclePurchaseSummary } = await import("@/lib/services/purchasing-module/vehicle-purchase-summary")
+const {
+  getVehiclePurchaseSummary,
+  getVehiclePurchaseByDay,
+  getWorksitePurchasesWithoutVehicle,
+} = await import("@/lib/services/purchasing-module/vehicle-purchase-summary")
 const { getOperationalControlHub } = await import("@/lib/services/operational-control")
 
 function session(options: { global?: boolean; worksiteIds?: string[]; permissions?: string[] } = {}): Session {
@@ -43,6 +47,8 @@ function session(options: { global?: boolean; worksiteIds?: string[]; permission
 }
 
 const MARCH = { from: "2026-03-01", to: "2026-03-31" }
+// Período que no empieza el día 1: deja fuera las OC del 10 de marzo.
+const MID = { from: "2026-03-15", to: "2026-04-20" }
 
 let seq = 0
 /** Una OC reúne varias líneas: se crea con la primera y las demás la reutilizan. */
@@ -107,8 +113,8 @@ async function addPurchase(input: {
   })
 }
 
-/** Una OT cerrada con costo cargado a mano (mano de obra / taller externo). */
-async function addClosedWorkOrder(input: { id: string; vehicle: string; worksite: string; totalCost: number; closedAt: string }) {
+/** Una OT cerrada en el período: no aporta costo al equipo. */
+async function addClosedWorkOrder(input: { id: string; vehicle: string; worksite: string; closedAt: string }) {
   await testDb.insert(schema.mantWorkOrders).values({
     id: input.id,
     folio: `OT-OCP-${input.id}`,
@@ -121,7 +127,6 @@ async function addClosedWorkOrder(input: { id: string; vehicle: string; worksite
     requestedByUserId: IDS.user,
     requesterName: "QA",
     repairDescription: "Falla de frenos en la cabina",
-    totalCost: input.totalCost,
     status: "cerrada",
     assignedToUserId: IDS.user,
     assignedByUserId: IDS.user,
@@ -170,11 +175,16 @@ beforeAll(async () => {
   await addPurchase({ orderWorksite: IDS.wsA, vehicle: null, orderId: "oc-a-sin-equipo", subtotal: 70_000 })
   await addPurchase({ orderWorksite: IDS.wsA, vehicle: IDS.vA, orderId: "oc-a-suelta", subtotal: 80_000, withoutRequestItem: true })
 
+  // Compras sin equipo: una línea anulada y una OC anulada no suman; la faena B aporta la suya.
+  await addPurchase({ orderWorksite: IDS.wsA, vehicle: null, orderId: "oc-a-sin-equipo", subtotal: 777, lineStatus: "cancelled" })
+  await addPurchase({ orderWorksite: IDS.wsA, vehicle: null, orderId: "oc-a-sin-equipo-anulada", orderStatus: "cancelled", subtotal: 888 })
+  await addPurchase({ orderWorksite: IDS.wsB, vehicle: null, orderId: "oc-b-sin-equipo", subtotal: 5_000 })
+
   // vB y vC viven en otras faenas.
   await addPurchase({ orderWorksite: IDS.wsB, vehicle: IDS.vB, orderId: "oc-b1", subtotal: 70_000 })
   await addPurchase({ orderWorksite: IDS.wsC, vehicle: IDS.vC, orderId: "oc-c1", subtotal: 90_000 })
 
-  // Combustible y OT de vA para probar el costo total con las tres series.
+  // Combustible y una OT cerrada de vA: el costo total suma sólo combustible y compras.
   await testDb.insert(schema.fuelProviderSyncRuns).values({
     id: "ocp-run",
     provider: "copec",
@@ -200,7 +210,7 @@ beforeAll(async () => {
     status: "accepted",
     granularity: "transaction",
   })
-  await addClosedWorkOrder({ id: "ocp-ot-1", vehicle: IDS.vA, worksite: IDS.wsA, totalCost: 30_000, closedAt: "2026-03-12T15:00:00Z" })
+  await addClosedWorkOrder({ id: "ocp-ot-1", vehicle: IDS.vA, worksite: IDS.wsA, closedAt: "2026-03-12T15:00:00Z" })
 }, 120_000)
 
 afterEach(() => {
@@ -257,6 +267,71 @@ describe("getVehiclePurchaseSummary", () => {
   })
 })
 
+describe("getVehiclePurchaseByDay", () => {
+  const TODOS = [IDS.vA, IDS.vB, IDS.vC]
+
+  it.each([
+    ["MARCH", MARCH, 160_000],
+    ["MID", MID, 40_000],
+  ])("el detalle por día de compras suma lo mismo que el resumen (%s)", async (_nombre, period, montoVA) => {
+    const resumen = await getVehiclePurchaseSummary(session(), period, TODOS)
+    const detalle = await getVehiclePurchaseByDay(session(), period, TODOS)
+
+    for (const id of TODOS) {
+      const suma = detalle.filter((r) => r.vehicleId === id).reduce((acc, r) => acc + r.amount, 0)
+      expect(suma).toBe(resumen.get(id)?.purchaseAmount ?? 0)
+    }
+    expect(detalle.filter((r) => r.vehicleId === IDS.vA).reduce((acc, r) => acc + r.amount, 0)).toBe(montoVA)
+    expect(detalle.every((r) => r.component === "purchases" && r.spansMonth === false)).toBe(true)
+  })
+
+  it("agrupa por día civil de emisión", async () => {
+    const detalle = await getVehiclePurchaseByDay(session(), MARCH, [IDS.vA])
+
+    expect(detalle.map((r) => [r.day, r.amount]).sort()).toEqual([
+      ["2026-03-10", 150_000],
+      ["2026-03-31", 10_000],
+    ])
+  })
+
+  it("sin purchasing:view no consulta y devuelve una lista vacía", async () => {
+    const select = vi.spyOn(testDb, "select")
+
+    expect(await getVehiclePurchaseByDay(session({ permissions: ["flota:view"] }), MARCH, TODOS)).toEqual([])
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it("respeta el alcance de faena de la OC y no consulta sin equipos", async () => {
+    const scoped = await getVehiclePurchaseByDay(session({ global: false, worksiteIds: [IDS.wsA] }), MARCH, TODOS)
+    expect(scoped.every((r) => r.vehicleId === IDS.vA)).toBe(true)
+
+    expect(await getVehiclePurchaseByDay(session(), MARCH, [])).toEqual([])
+  })
+})
+
+describe("getWorksitePurchasesWithoutVehicle", () => {
+  it("las compras sin equipo se agrupan por la faena de la OC y excluyen líneas anuladas", async () => {
+    const out = await getWorksitePurchasesWithoutVehicle(session(), MARCH)
+
+    // Faena A: 70.000 (solicitud sin equipo) + 80.000 (línea suelta sin solicitud).
+    // No suman: la línea anulada (777), la OC anulada (888) ni las líneas con equipo.
+    expect(out.get(IDS.wsA)).toBe(150_000)
+    expect(out.get(IDS.wsB)).toBe(5_000)
+    expect(out.has(IDS.wsC)).toBe(false)
+  })
+
+  it("respeta el período y el alcance de faena", async () => {
+    expect((await getWorksitePurchasesWithoutVehicle(session(), MID)).size).toBe(0)
+
+    const scoped = await getWorksitePurchasesWithoutVehicle(session({ global: false, worksiteIds: [IDS.wsB] }), MARCH)
+    expect([...scoped.entries()]).toEqual([[IDS.wsB, 5_000]])
+  })
+
+  it("sin purchasing:view devuelve un mapa vacío", async () => {
+    expect((await getWorksitePurchasesWithoutVehicle(session({ permissions: ["flota:view"] }), MARCH)).size).toBe(0)
+  })
+})
+
 describe("getOperationalControlHub · compras vinculadas", () => {
   const find = (hub: Awaited<ReturnType<typeof getOperationalControlHub>>, id: string) => hub.assets.find((asset) => asset.id === id)!
 
@@ -276,21 +351,27 @@ describe("getOperationalControlHub · compras vinculadas", () => {
     expect(hub.assets.every((asset) => asset.purchaseAmount === null)).toBe(true)
   })
 
-  it("el costo total exige las tres series: combustible + mano de obra + compras", async () => {
+  it("el costo total suma combustible + compras; la OT cerrada no aporta costo", async () => {
     const all = ["flota:view", "combustibles:view", "combustibles:view_costs", "mant:ot:view_all", "purchasing:view"]
 
     const complete = await getOperationalControlHub(session({ permissions: all }), MARCH, { includeAttention: false })
     const a = find(complete, IDS.vA)
-    expect(a).toMatchObject({ fuelBilledAmount: 200_000, maintenanceCost: 30_000, purchaseAmount: 160_000 })
-    expect(a.totalCost).toBe(390_000)
+    expect(a).toMatchObject({ fuelBilledAmount: 200_000, purchaseAmount: 160_000 })
+    expect(a).not.toHaveProperty("maintenanceCost")
+    expect(a.totalCost).toBe(360_000)
 
-    // Un equipo sin OT cerradas con costo en el período aporta $0 de mano de obra:
-    // el total existe igual (antes salía «—» para casi toda la flota).
     const b = find(complete, IDS.vB)
-    expect(b.maintenanceCost).toBe(0)
     expect(b.purchaseAmount).toBe(70_000)
     expect(b.fuelBilledAmount).not.toBeNull()
     expect(b.totalCost).toBe((b.fuelBilledAmount ?? Number.NaN) + 70_000)
+
+    // Sin capacidad de OT el total sigue existiendo: ya no depende de la OT.
+    const withoutWorkOrders = await getOperationalControlHub(
+      session({ permissions: all.filter((permission) => permission !== "mant:ot:view_all") }),
+      MARCH,
+      { includeAttention: false },
+    )
+    expect(find(withoutWorkOrders, IDS.vA).totalCost).toBe(360_000)
 
     // Sin la capacidad de compras no se publica un total que parezca completo.
     const withoutPurchases = await getOperationalControlHub(
@@ -298,6 +379,6 @@ describe("getOperationalControlHub · compras vinculadas", () => {
       MARCH,
       { includeAttention: false },
     )
-    expect(find(withoutPurchases, IDS.vA)).toMatchObject({ fuelBilledAmount: 200_000, maintenanceCost: 30_000, purchaseAmount: null, totalCost: null })
+    expect(find(withoutPurchases, IDS.vA)).toMatchObject({ fuelBilledAmount: 200_000, purchaseAmount: null, totalCost: null })
   })
 })

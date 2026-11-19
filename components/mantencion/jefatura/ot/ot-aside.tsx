@@ -2,7 +2,7 @@ import Link from "next/link"
 import { Clock, User } from "@phosphor-icons/react/dist/ssr"
 import { MetaBadge } from "@/components/states/state-badge"
 import type { WorkOrderDetail, WorkOrderEventDetail } from "@/lib/services/mantencion/work-orders/types"
-import { formatCLP, formatDate, formatDateTime } from "@/lib/utils"
+import { formatDate, formatDateTime } from "@/lib/utils"
 import { SectionCard } from "../shared/section-card"
 import { OT_EVENT_LABELS, OT_STATE_META } from "./ot-labels"
 import { sortEventsNewestFirst } from "./ot-format"
@@ -123,14 +123,9 @@ export function OtLinks({ detail }: { detail: WorkOrderDetail }) {
   )
 }
 
-export function OtAside({ detail, showCosts = false }: { detail: WorkOrderDetail; showCosts?: boolean }) {
+export function OtAside({ detail }: { detail: WorkOrderDetail }) {
   return (
     <aside aria-label="Historial y registros enlazados" className="flex min-w-0 flex-col gap-4">
-      {showCosts && detail.totalCost != null && (
-        <SectionCard title="Mano de obra / taller externo" description="Cargado por jefatura. Los repuestos y servicios comprados con orden de compra están en «Repuestos pedidos».">
-          <p className="font-mono text-lg font-semibold tabular-nums text-[var(--color-text)]">{formatCLP(detail.totalCost)}</p>
-        </SectionCard>
-      )}
       <OtTimeline events={detail.events} />
       <OtLinks detail={detail} />
     </aside>

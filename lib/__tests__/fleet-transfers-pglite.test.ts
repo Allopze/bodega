@@ -521,3 +521,68 @@ describe("lista de traslados", () => {
     expect((await listTransfers("all", { from: "2026-11-01", to: "2026-11-30" }, TODAY)).some((r) => r.id === made.data.transferId)).toBe(false)
   })
 })
+
+describe("contrato del equipo", () => {
+  // Contratos por faena: el contrato es de la faena donde está el equipo. El traslado lo cierra el día
+  // anterior a la fecha y la anulación lo devuelve, igual que la estadía de origen.
+  let contractSeq = 0
+  async function contractIn(worksiteId: string, opts: { status?: "active" | "suspended" | "closed"; endDate?: string } = {}): Promise<string> {
+    contractSeq += 1
+    const id = `c-t-${contractSeq}`
+    if (contractSeq === 1) await testDb.insert(schema.clients).values({ id: "cl-t", rut: "76123456-0", name: "Maderas Arauco S.A." })
+    await testDb.insert(schema.contracts).values({
+      id, code: `CTR-2026-${String(contractSeq).padStart(4, "0")}`, clientId: "cl-t", name: `Contrato ${contractSeq}`, worksiteId,
+      billingCycle: "none", status: opts.status ?? "active", endDate: opts.endDate ?? null,
+    })
+    return id
+  }
+  async function assignmentsOf(vehicleId: string) {
+    return testDb.select({
+      contractId: schema.contractVehicleAssignments.contractId,
+      validFrom: schema.contractVehicleAssignments.validFrom,
+      validTo: schema.contractVehicleAssignments.validTo,
+    }).from(schema.contractVehicleAssignments)
+      .where(eq(schema.contractVehicleAssignments.vehicleId, vehicleId))
+      .orderBy(schema.contractVehicleAssignments.validFrom)
+  }
+
+  it("el traslado cierra el contrato de origen el día anterior y la anulación lo devuelve", async () => {
+    const v = await newVehicle()
+    const origin = await contractIn("ws-a")
+    await testDb.insert(schema.contractVehicleAssignments).values({ id: `a-${v}`, contractId: origin, vehicleId: v, validFrom: "2026-08-01" })
+
+    const made = await transferVehicles(ALL, input([v]), TODAY)
+    expect(made.ok).toBe(true)
+    if (!made.ok) return
+    expect(await assignmentsOf(v)).toEqual([{ contractId: origin, validFrom: "2026-08-01", validTo: "2026-11-14" }])
+
+    // En la faena de destino lo asignan a otro contrato; anular el traslado lo saca de ése.
+    const destination = await contractIn("ws-b")
+    await testDb.insert(schema.contractVehicleAssignments).values({ id: `b-${v}`, contractId: destination, vehicleId: v, validFrom: "2026-11-15" })
+
+    expect((await voidTransfer(ALL, { transferId: made.data.transferId, reason: "Se registró por error" }, TODAY)).ok).toBe(true)
+    expect(await assignmentsOf(v)).toEqual([{ contractId: origin, validFrom: "2026-08-01", validTo: null }])
+  })
+
+  it("la anulación no reabre un contrato que ya no está activo ni uno que terminó antes del traslado", async () => {
+    const closedLater = await newVehicle()
+    const closedContract = await contractIn("ws-a")
+    await testDb.insert(schema.contractVehicleAssignments).values({ id: `a-${closedLater}`, contractId: closedContract, vehicleId: closedLater, validFrom: "2026-08-01" })
+    const madeClosed = await transferVehicles(ALL, input([closedLater]), TODAY)
+    expect(madeClosed.ok).toBe(true)
+    if (!madeClosed.ok) return
+    await testDb.update(schema.contracts).set({ status: "closed" }).where(eq(schema.contracts.id, closedContract))
+    expect((await voidTransfer(ALL, { transferId: madeClosed.data.transferId, reason: "Se registró por error" }, TODAY)).ok).toBe(true)
+    expect(await assignmentsOf(closedLater)).toEqual([{ contractId: closedContract, validFrom: "2026-08-01", validTo: "2026-11-14" }])
+
+    // Terminó con su contrato el 14: el traslado del 15 no lo cerró y anularlo no lo reabre.
+    const endedBefore = await newVehicle()
+    const endedContract = await contractIn("ws-a", { endDate: "2026-11-14" })
+    await testDb.insert(schema.contractVehicleAssignments).values({ id: `a-${endedBefore}`, contractId: endedContract, vehicleId: endedBefore, validFrom: "2026-08-01", validTo: "2026-11-14" })
+    const madeEnded = await transferVehicles(ALL, input([endedBefore]), TODAY)
+    expect(madeEnded.ok).toBe(true)
+    if (!madeEnded.ok) return
+    expect((await voidTransfer(ALL, { transferId: madeEnded.data.transferId, reason: "Se registró por error" }, TODAY)).ok).toBe(true)
+    expect(await assignmentsOf(endedBefore)).toEqual([{ contractId: endedContract, validFrom: "2026-08-01", validTo: "2026-11-14" }])
+  })
+})

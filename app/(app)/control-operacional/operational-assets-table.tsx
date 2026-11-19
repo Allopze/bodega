@@ -75,6 +75,7 @@ const COLUMNS = (showMeterMismatch: boolean, canViewCosts: boolean, canViewInspe
   return [
     { key: "code", label: "Vehículo", sortable: true },
     { key: "worksiteName", label: "Faena", sortable: true },
+    { key: "contractName", label: "Contrato", sortable: true },
     { key: "operationalStatusLabel", label: "Estado", sortable: true },
     ...(canViewFleet
       ? [
@@ -128,19 +129,14 @@ const COLUMNS = (showMeterMismatch: boolean, canViewCosts: boolean, canViewInspe
     ...(showFuelCost
       ? [{ key: "fuelBilledAmount", label: "Costo combustible (proveedor)", sortable: true, numeric: true, defaultVisible: false }]
       : []),
-    // Mano de obra y taller externo que jefatura carga en la OT cerrada. Los
-    // repuestos y servicios comprados por OC van en su propia columna.
-    ...(canViewWorkOrders
-      ? [{ key: "maintenanceCost", label: "Mano de obra / taller (OT)", sortable: true, numeric: true, defaultVisible: false }]
-      : []),
     ...(canViewPurchaseCosts
       ? [{ key: "purchaseAmount", label: "Repuestos y servicios (OC)", sortable: true, numeric: true, defaultVisible: false }]
       : []),
-    ...(showFuelCost && canViewPurchaseCosts && canViewWorkOrders
+    ...(showFuelCost && canViewPurchaseCosts
       ? [{ key: "gpsCostPerUnit", label: "Costo por km u hora (GPS)", sortable: false, numeric: true, defaultVisible: false }]
       : []),
-    // El total suma las tres series; con una sola ausente no se publica.
-    ...(canViewWorkOrders && showFuelCost && canViewPurchaseCosts
+    // El total suma combustible y compras; con una de las dos ausente no se publica.
+    ...(showFuelCost && canViewPurchaseCosts
       ? [{ key: "totalCost", label: "Costo total", sortable: true, numeric: true, defaultVisible: false }]
       : []),
     // Las acciones no se ocultan: sin «Ver»/«Combustible» la fila no tiene
@@ -149,7 +145,14 @@ const COLUMNS = (showMeterMismatch: boolean, canViewCosts: boolean, canViewInspe
   ]
 }
 
-const SEARCH_KEYS = ["code", "name", "worksiteName", "operationalStatusLabel"] as const
+const SEARCH_KEYS = ["code", "name", "worksiteName", "contractName", "operationalStatusLabel"] as const
+
+/** El contrato vigente del equipo al cierre del período, o «Sin contrato» en tono apagado. */
+function ContractLabel({ asset }: { asset: OperationalAsset }) {
+  return asset.contractName
+    ? <>{asset.contractName}</>
+    : <span className="text-[var(--color-text-muted)]">Sin contrato</span>
+}
 
 /** El panel sólo lista vehículos (los instrumentos de servicio se cuentan aparte, bajo la tabla). */
 function assetHref(asset: OperationalAsset): string {
@@ -183,11 +186,11 @@ export function OperationalAssetsTable({
   showMeterMismatch?: boolean
 }) {
   const showFuelCost = canViewFuel && canViewCosts
-  const showTotalCost = canViewWorkOrders && showFuelCost && canViewPurchaseCosts
+  const showTotalCost = showFuelCost && canViewPurchaseCosts
   const showCapa = canViewCapa && canViewInspections
 
   /**
-   * Tarjeta móvil: la identidad, el estado y seis datos, no los veinte de la
+   * Tarjeta móvil: la identidad, el estado y siete datos, no los veinte de la
    * tabla (llegaba a ~25 líneas por vehículo). El resto está en la ficha.
    */
   const renderMobileCard = (asset: OperationalAsset) => (
@@ -200,6 +203,10 @@ export function OperationalAssetsTable({
         <div>
           <dt className="text-[var(--color-text-subtle)]">Faena</dt>
           <dd>{asset.worksiteName}</dd>
+        </div>
+        <div>
+          <dt className="text-[var(--color-text-subtle)]">Contrato</dt>
+          <dd><ContractLabel asset={asset} /></dd>
         </div>
         {canViewFleet && (
           <div>
@@ -258,6 +265,7 @@ export function OperationalAssetsTable({
         <VehicleIdentity code={asset.code} plate={asset.plate} type={asset.typeName} href={assetHref(asset)} />
       </TableCell>
       <TableCell>{asset.worksiteName}</TableCell>
+      <TableCell><ContractLabel asset={asset} /></TableCell>
       <TableCell>
         <StateBadge entity="fleet" state={asset.operationalStatus} />
       </TableCell>
@@ -374,17 +382,12 @@ export function OperationalAssetsTable({
           {asset.fuelBilledAmount == null ? "—" : formatCLP(asset.fuelBilledAmount)}
         </TableCell>
       )}
-      {canViewWorkOrders && (
-        <TableCell className="text-right font-mono">
-          {asset.maintenanceCost == null ? "—" : formatCLP(asset.maintenanceCost)}
-        </TableCell>
-      )}
       {canViewPurchaseCosts && (
         <TableCell className="text-right font-mono">
           {asset.purchaseAmount == null ? "—" : formatCLP(asset.purchaseAmount)}
         </TableCell>
       )}
-      {showFuelCost && canViewPurchaseCosts && canViewWorkOrders && (
+      {showFuelCost && canViewPurchaseCosts && (
         <TableCell className="text-right font-mono">{formatGpsCost(asset) ?? "—"}</TableCell>
       )}
       {showTotalCost && (

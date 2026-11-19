@@ -104,7 +104,7 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
           <OtPartsRequestsSection detail={detail} canOpenRequests={canOpenRequests} canOpenSpareParts={canOpenSpareParts} partsRequestHref={partsRequestHref} />
           <OtObservationsSection detail={detail} />
         </div>
-        <OtAside detail={detail} showCosts={canDownloadPdf} />
+        <OtAside detail={detail} />
       </div>
     </PageContainer>
   )

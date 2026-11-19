@@ -17,7 +17,7 @@ export interface OperationalExportColumn {
  * Los flags son posicionales: los nuevos se agregan al final con `false` por
  * defecto, para no romper a los llamadores existentes. `canViewPurchaseCosts`
  * (`purchasing:view`) abre «Repuestos y servicios (OC)», y «Costo total» exige
- * las tres series: combustible, mano de obra de OT y compras.
+ * las dos series: combustible y compras. La OT no lleva costo.
  */
 export function buildOperationalAssetExportColumns(
   canViewInspections: boolean,
@@ -32,12 +32,14 @@ export function buildOperationalAssetExportColumns(
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
   return [
-    // Sin «Contrato»: el `key` interno (`vehicle:<uuid>`) no significa nada
-    // para quien recibe el archivo. Sin «Clase»: la hoja sólo lleva vehículos,
-    // así que la columna valía siempre lo mismo.
+    // Sin el `key` interno (`vehicle:<uuid>`): no significa nada para quien
+    // recibe el archivo. Sin «Clase»: la hoja sólo lleva vehículos, así que la
+    // columna valía siempre lo mismo. «Contrato» es el nombre del contrato
+    // vigente del equipo al cierre del período.
     { header: "Código", key: "code", width: 18 },
     { header: "Activo", key: "name", width: 30 },
     { header: "Faena", key: "worksite", width: 24 },
+    { header: "Contrato", key: "contractName", width: 28 },
     { header: "Estado", key: "status", width: 18 },
     ...(canViewFleet
       ? [
@@ -83,17 +85,16 @@ export function buildOperationalAssetExportColumns(
           { header: "OT abiertas", key: "openWorkOrders", width: 14 },
           { header: "En taller", key: "inWorkshop", width: 12 },
           { header: "Horas en taller (período)", key: "workshopHours", width: 22 },
-          { header: "Mano de obra / taller (OT)", key: "maintenanceCost", width: 24 },
         ]
       : []),
     ...(canViewPurchaseCosts ? [{ header: "Repuestos y servicios (OC)", key: "purchaseAmount", width: 26 }] : []),
     ...(canViewMaintenance ? [{ header: "Estimación GPS de mantención", key: "gpsMaintenance", width: 22 }] : []),
-    ...(showFuelCost && canViewPurchaseCosts && canViewWorkOrders
+    ...(showFuelCost && canViewPurchaseCosts
       ? [{ header: "Costo por km/h (GPS)", key: "gpsCostPerUnit", width: 20 }]
       : []),
     ...(showFuelCost ? [{ header: "Costo combustible (proveedor)", key: "fuelCost", width: 24 }] : []),
-    ...(showFuelCost && canViewWorkOrders && canViewPurchaseCosts
-      ? [{ header: "Costo total (combustible + mano de obra + compras)", key: "totalCost", width: 36 }]
+    ...(showFuelCost && canViewPurchaseCosts
+      ? [{ header: "Costo total (combustible + compras)", key: "totalCost", width: 30 }]
       : []),
   ]
 }
@@ -134,6 +135,7 @@ export function buildOperationalAssetExportRow(
     code: asset.code,
     name: asset.name,
     worksite: asset.worksiteName,
+    contractName: asset.contractName ?? "Sin contrato",
     status: asset.operationalStatusLabel,
     ...(canViewFleet
       ? {
@@ -179,15 +181,14 @@ export function buildOperationalAssetExportRow(
           openWorkOrders: asset.openWorkOrders,
           inWorkshop: asset.inWorkshop == null ? null : asset.inWorkshop ? "Sí" : "No",
           workshopHours: asset.workshopHours == null ? null : Math.round(asset.workshopHours * 10) / 10,
-          maintenanceCost: asset.maintenanceCost,
         }
       : {}),
     ...(canViewPurchaseCosts ? { purchaseAmount: asset.purchaseAmount } : {}),
     ...(canViewMaintenance
       ? { gpsMaintenance: asset.gpsMaintenanceState ? EQUIPMENT_STATE_LABEL[asset.gpsMaintenanceState] : null }
       : {}),
-    ...(showFuelCost && canViewPurchaseCosts && canViewWorkOrders ? { gpsCostPerUnit: asset.gpsCostPerUnit } : {}),
+    ...(showFuelCost && canViewPurchaseCosts ? { gpsCostPerUnit: asset.gpsCostPerUnit } : {}),
     ...(showFuelCost ? { fuelCost: asset.fuelBilledAmount } : {}),
-    ...(showFuelCost && canViewWorkOrders && canViewPurchaseCosts ? { totalCost: asset.totalCost } : {}),
+    ...(showFuelCost && canViewPurchaseCosts ? { totalCost: asset.totalCost } : {}),
   }
 }

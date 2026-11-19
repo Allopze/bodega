@@ -13,13 +13,13 @@ import { VehicleEditButton } from "./vehicle-edit-button"
  * piezas, así que el título y la descripción son los mismos en todas.
  */
 
-/** «Camión · DZTH-66 · Santa Fe · Operativo». La patente sólo si no es ya el título. */
+/** «Camión · DZTH-66 · Santa Fe · Residuos · Operativo». El contrato sólo si tiene uno. La patente sólo si no es ya el título. */
 export function vehicleFichaDescription({ vehicle }: VehicleFichaContext): string {
   const plate = vehicle.noPlate
     ? "Sin patente"
     : vehicle.code && vehicle.plate !== vehicle.code ? vehicle.plate : null
   const state = FLEET_STATE_META[vehicle.isActive ? vehicle.operationalStatus : "inactivo"]?.label ?? null
-  return [vehicle.typeName, plate, vehicle.worksiteName, state].filter(Boolean).join(" · ")
+  return [vehicle.typeName, plate, vehicle.worksiteName, vehicle.contractName, state].filter(Boolean).join(" · ")
 }
 
 /**

@@ -615,19 +615,19 @@ test.describe("Control operacional — tiles del panel", () => {
     expect(await page.locator("[data-kpi-card]").count()).toBeLessThanOrEqual(4)
   })
 
-  test("la tabla de activos separa mano de obra de OT y compras de repuestos y servicios", async ({ page }) => {
-    // Plan 2026-11-07: el costo manual de la OT es sólo mano de obra / taller, y
-    // las OC vinculadas al equipo tienen su propia columna. El administrador del
-    // seed tiene OT y `purchasing:view`, así que ve ambas. Desde la mejora UI/UX
-    // 2026-11-13 la tabla abre con seis columnas: las de costo se piden por la URL
-    // de la vista, que es lo que guarda el menú «Columnas».
+  test("la tabla de activos lleva las compras de repuestos y servicios, sin mano de obra de OT", async ({ page }) => {
+    // Las OC vinculadas al equipo tienen su propia columna (plan 2026-11-07) y la OT
+    // ya no lleva costo (decisión 2026-11-17). Desde la mejora UI/UX 2026-11-13 la
+    // tabla abre con seis columnas: las de costo se piden por la URL de la vista,
+    // que es lo que guarda el menú «Columnas». Una vista guardada con la columna
+    // retirada (`maintenanceCost`) no debe romper la tabla.
     await page.goto(`/control-operacional?control-operacional-activos_cols=${["code", "maintenanceCost", "purchaseAmount"].join(",")}`)
     const table = page.getByRole("table", { name: "Activos operacionales" })
     await expect(table).toBeVisible()
     const header = (label: string) =>
       table.getByRole("columnheader", { name: new RegExp(`^(?:Ordenar por )?${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) })
-    await expect(header("Mano de obra / taller (OT)")).toBeVisible()
     await expect(header("Repuestos y servicios (OC)")).toBeVisible()
+    await expect(header("Mano de obra / taller (OT)")).toHaveCount(0)
     await expect(header("Costo mantención")).toHaveCount(0)
   })
 

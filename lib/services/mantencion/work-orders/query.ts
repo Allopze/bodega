@@ -353,7 +353,6 @@ export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promi
     unit: ot.equipmentSnapshot.unit,
     repairDescription: ot.repairDescription,
     observations: ot.observations,
-    totalCost: ot.totalCost,
     requestedByUserId: ot.requestedByUserId,
     requestedByName: nameOf(ot.requestedByUserId) ?? ot.requesterName,
     assignedByName: nameOf(ot.assignedByUserId),

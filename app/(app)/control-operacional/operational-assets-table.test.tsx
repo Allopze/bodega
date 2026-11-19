@@ -14,7 +14,7 @@ afterEach(cleanup)
 
 const asset = (overrides: Partial<OperationalAsset> = {}): OperationalAsset => ({
   key: "vehicle:v1", kind: "vehicle", id: "v1", code: "KA-115", name: "Camión · DZTH-66", plate: "DZTH-66", typeName: "Camión",
-  worksiteId: "ws", worksiteName: "Faena Norte", operationalStatus: "mantencion", operationalStatusLabel: "En mantención", stateMismatch: false,
+  worksiteId: "ws", worksiteName: "Faena Norte", contractId: null, contractName: null, operationalStatus: "mantencion", operationalStatusLabel: "En mantención", stateMismatch: false,
   capabilities: ["fuel", "inspections"], inspectionCount: 0, inspectionCompliancePercent: null, inspectionNonConforming: null, inspectionPartial: null,
   openFindings: 3, criticalOpenFindings: 2, openFindingsWithWorkOrder: 1, openFindingsWithoutWorkOrder: 2, overdueCapa: 0,
   nextExpiryDate: "2026-12-01", expiredDocumentTypes: [], gpsOdometer: null, gpsHourMeter: null, gpsObservedAt: null, gpsFuelLevel: null,
@@ -31,12 +31,12 @@ const asset = (overrides: Partial<OperationalAsset> = {}): OperationalAsset => (
 const props = { canViewCosts: true, canViewInspections: true, canViewCapa: true, canViewFuel: true, canViewFleet: true, canViewWorkOrders: true, canViewPurchaseCosts: true, canViewMaintenance: true }
 
 describe("OperationalAssetsTable", () => {
-  it("por defecto muestra seis columnas más las acciones; el resto queda en «Columnas»", () => {
+  it("por defecto muestra siete columnas más las acciones; el resto queda en «Columnas»", () => {
     render(<OperationalAssetsTable assets={[asset()]} {...props} />)
 
     const table = screen.getByRole("table", { name: "Activos operacionales" })
     const headers = within(table).getAllByRole("columnheader").map((header) => (header.textContent ?? "").replace(/^Ordenar por /, "").trim())
-    expect(headers).toEqual(["Vehículo", "Faena", "Estado", "Próximo vencimiento", "OT abiertas", "Casos abiertos", "Acciones"])
+    expect(headers).toEqual(["Vehículo", "Faena", "Contrato", "Estado", "Próximo vencimiento", "OT abiertas", "Casos abiertos", "Acciones"])
   })
 
   it("cada fila emite una celda por columna declarada, con cualquier combinación de permisos (la tabla oculta por posición)", () => {
@@ -82,15 +82,30 @@ describe("OperationalAssetsTable", () => {
     expect(within(table).getByRole("link", { name: "Combustible de KA-115" }).getAttribute("href")).toBe("/flota/v1/combustible")
   })
 
-  it("la tarjeta móvil lleva identidad, estado, seis datos y «Ver ficha»", () => {
+  it("la tarjeta móvil lleva identidad, estado, siete datos y «Ver ficha»", () => {
     render(<OperationalAssetsTable assets={[asset()]} {...props} />)
 
     const card = screen.getAllByRole("article")[0]!
-    for (const label of ["Faena", "Próximo vencimiento", "OT abiertas", "Casos abiertos", "Litros del período", "Rendimiento promedio"]) {
+    for (const label of ["Faena", "Contrato", "Próximo vencimiento", "OT abiertas", "Casos abiertos", "Litros del período", "Rendimiento promedio"]) {
       expect(within(card).getByText(label)).toBeTruthy()
     }
     expect(within(card).getByRole("link", { name: "Ver ficha de KA-115" })).toBeTruthy()
     expect(within(card).queryByText("Cumplimiento inspecciones")).toBeNull()
+  })
+
+  it("muestra el contrato del equipo, o «Sin contrato» cuando no tiene", () => {
+    render(<OperationalAssetsTable assets={[
+      asset({ key: "vehicle:v1", id: "v1", code: "KA-115", contractId: "c1", contractName: "Movimiento de residuos" }),
+      asset({ key: "vehicle:v2", id: "v2", code: "KA-116", contractId: null, contractName: null }),
+    ]} {...props} />)
+
+    const table = screen.getByRole("table", { name: "Activos operacionales" })
+    const headers = within(table).getAllByRole("columnheader").map((header) => (header.textContent ?? "").replace(/^Ordenar por /, "").trim())
+    const cellsOf = (code: string) => within(within(table).getAllByRole("row").find((row) => row.textContent?.includes(code))!).getAllByRole("cell")
+    const column = headers.indexOf("Contrato")
+    expect(column).toBe(headers.indexOf("Faena") + 1)
+    expect(cellsOf("KA-115")[column]!.textContent).toBe("Movimiento de residuos")
+    expect(cellsOf("KA-116")[column]!.textContent).toBe("Sin contrato")
   })
 
   it("un vehículo dado de baja figura «Inactivo»", () => {

@@ -21,7 +21,7 @@ import {
   type WorkOrderPeriodStats,
   type WorkOrderSeriesPoint,
 } from "@/lib/services/mantencion/indicators"
-import { formatCLP, formatPercent, formatQty } from "@/lib/utils"
+import { formatPercent, formatQty } from "@/lib/utils"
 import { layoutChartSlots, type SlotSpan } from "@/lib/indicators/chart-layout"
 import {
   OutOfServiceChart,
@@ -197,20 +197,6 @@ export function WorkOrdersSection({
               href: closedList,
             }
           : { key: "mttr", label: "Tiempo medio de reparación", value: "Sin dato", valueKind: "text", secondary: "No se pudo calcular", href: closedList },
-        stats
-          ? {
-              key: "ot-costo",
-              label: "Mano de obra y taller (OT)",
-              value: stats.cost !== null ? formatCLP(stats.cost) : stats.closed === 0 ? "Sin OT cerradas" : "Sin costo cargado",
-              valueKind: stats.cost === null ? "text" : "number",
-              secondary: stats.cost !== null
-                ? "OT cerradas del período, sin repuestos por OC"
-                : stats.closed === 0
-                  ? "El costo sale de las OT que se cierran en el período"
-                  : stats.closed === 1 ? "La OT cerrada no trae costo: se carga al cerrarla" : `Ninguna de las ${formatQty(stats.closed)} OT cerradas trae costo: se carga al cerrarlas`,
-              href: closedList,
-            }
-          : { key: "ot-costo", label: "Mano de obra y taller (OT)", value: "Sin dato", valueKind: "text", secondary: "No se pudo calcular", href: closedList },
       ] satisfies SummaryStat[]}
     />
   )

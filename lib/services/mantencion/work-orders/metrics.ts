@@ -61,8 +61,6 @@ export interface VehicleWorkOrderMetrics {
   /** OT de reparación cerradas en el período, y las horas en taller de ellas (ingreso → salida completos): base del MTTR. */
   repairClosedInPeriod: number
   repairClosedWorkshopHours: number
-  /** Suma del costo cargado en las OT cerradas del período; null si ninguna lo trae. */
-  maintenanceCostInPeriod: number | null
   /** Última salida de taller registrada (cualquier OT vigente del equipo). */
   lastExitAt: string | null
   /** La OT cerrada más reciente del equipo (por fecha de cierre). */
@@ -97,6 +95,28 @@ function scopeWhere(scope: WorkOrderMetricsScope, worksiteId?: string): SQL | un
   return worksiteScopeSqlFor(scope, mantWorkOrders.worksiteId, worksiteId)
 }
 
+/**
+ * Límites del período en hora de Chile: desde la medianoche chilena del primer
+ * día hasta la medianoche chilena siguiente al último. Sin la zona explícita
+ * `::date` se leería en la de la sesión de Postgres (UTC en producción) y el
+ * recorte se movería 3–4 horas según el servidor.
+ */
+function periodBoundsSql(period: WorkOrderPeriod) {
+  return {
+    start: sql`(${period.from}::date)::timestamp AT TIME ZONE 'America/Santiago'`,
+    end: sql`((${period.to}::date + 1)::timestamp AT TIME ZONE 'America/Santiago')`,
+  }
+}
+
+/**
+ * Una OT cerrada dentro del período: UNA sola definición para las cifras por
+ * equipo (`closedInPeriod`…).
+ */
+function closedInPeriodSql(period: WorkOrderPeriod): SQL {
+  const { start, end } = periodBoundsSql(period)
+  return sql`${mantWorkOrders.status} = 'cerrada' AND ${mantWorkOrders.closedAt} >= ${start} AND ${mantWorkOrders.closedAt} < ${end}`
+}
+
 /** Una expresión de fecha puede volver como `Date` o como texto según el driver. */
 function isoOrNull(value: unknown): string | null {
   if (value == null) return null
@@ -122,16 +142,11 @@ export async function getVehicleWorkOrderMetrics(
   const nowIso = (options.now ?? new Date()).toISOString()
   const now = sql`${nowIso}::timestamptz`
 
-  // El período son días civiles chilenos: se acota desde la medianoche de Chile
-  // del primer día hasta la medianoche de Chile siguiente al último. Sin la zona
-  // explícita `::date` se leería en la de la sesión de Postgres (UTC en
-  // producción) y el recorte se movería 3–4 horas según el servidor.
   const period = options.period
-  const periodStart = period ? sql`(${period.from}::date)::timestamp AT TIME ZONE 'America/Santiago'` : null
-  const periodEnd = period ? sql`((${period.to}::date + 1)::timestamp AT TIME ZONE 'America/Santiago')` : null
-  const closedInRange = period
-    ? sql`${mantWorkOrders.status} = 'cerrada' AND ${mantWorkOrders.closedAt} >= ${periodStart} AND ${mantWorkOrders.closedAt} < ${periodEnd}`
-    : sql`false`
+  const bounds = period ? periodBoundsSql(period) : null
+  const periodStart = bounds?.start ?? null
+  const periodEnd = bounds?.end ?? null
+  const closedInRange = period ? closedInPeriodSql(period) : sql`false`
   const hasEntry = sql`${mantWorkOrders.workshopEntryAt} IS NOT NULL`
   const hoursInPeriod = period
     ? sql`COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(${mantWorkOrders.workshopExitAt}, ${now}), ${periodEnd}) - GREATEST(${mantWorkOrders.workshopEntryAt}, ${periodStart}))) / 3600) FILTER (WHERE ${hasEntry} AND ${mantWorkOrders.workshopEntryAt} < ${periodEnd} AND COALESCE(${mantWorkOrders.workshopExitAt}, ${now}) > ${periodStart}), 0)`
@@ -149,9 +164,6 @@ export async function getVehicleWorkOrderMetrics(
     workshopHoursInPeriod: sql<number>`${hoursInPeriod}::float8`,
     repairClosedInPeriod: sql<number>`(COUNT(*) FILTER (WHERE ${closedInRange} AND ${mantWorkOrders.repair}))::int`,
     repairClosedWorkshopHours: sql<number>`${repairClosedHours}::float8`,
-    maintenanceCostInPeriod: period
-      ? sql<number | null>`SUM(${mantWorkOrders.totalCost}) FILTER (WHERE ${closedInRange})`
-      : sql<null>`null`,
     lastExitAt: sql<string | null>`MAX(${mantWorkOrders.workshopExitAt})`,
     lastClosedWorkOrderId: sql<string | null>`(ARRAY_AGG(${mantWorkOrders.id} ORDER BY ${mantWorkOrders.closedAt} DESC) FILTER (WHERE ${mantWorkOrders.status} = 'cerrada'))[1]`,
   })
@@ -175,7 +187,6 @@ export async function getVehicleWorkOrderMetrics(
     workshopHoursInPeriod: Number(row.workshopHoursInPeriod),
     repairClosedInPeriod: Number(row.repairClosedInPeriod),
     repairClosedWorkshopHours: Number(row.repairClosedWorkshopHours),
-    maintenanceCostInPeriod: row.maintenanceCostInPeriod == null ? null : Number(row.maintenanceCostInPeriod),
     lastExitAt: isoOrNull(row.lastExitAt),
     lastClosedWorkOrderId: row.lastClosedWorkOrderId ?? null,
   }]))
