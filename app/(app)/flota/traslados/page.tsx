@@ -65,7 +65,6 @@ export default async function TransfersPage({ searchParams }: { searchParams: Pr
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Control operacional", href: "/control-operacional" },
-            { label: "Vehículos", href: "/flota" },
             { label: "Traslados" },
           ]} />
         }
