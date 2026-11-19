@@ -19,6 +19,7 @@ import { registry } from "@/modules/registry"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { MODULE_TOGGLE_RECOVERY_PATH } from "@/lib/module-toggle-path"
+import { getModuleLabel } from "@/lib/module-labels"
 import { PERMISSION_TARGET_OVERRIDES, ROUTE_OWNER_ALIASES, type RouteOwnerRule } from "./module-toggles-routes"
 
 // ── Key helpers ──────────────────────────────────────────────────────────────
@@ -217,48 +218,7 @@ export async function assertPermissionModuleEnabled(
   }
 }
 
-// ── Nombre propio de cada módulo (evita importar de components/ en lib/) ─────
-
-/**
- * ID de módulo → nombre propio.
- *
- * Antes esto devolvía el nombre del **área** de navegación, de modo que la
- * pantalla de módulos mostraba seis tarjetas llamadas "Adquisiciones", tres
- * "Control operacional", tres "Bodega" y tres "Prevención". Lo único que las
- * distinguía era el identificador técnico en inglés (`purchasing`,
- * `receiving`, `traceability`), justo el tipo de jerga que la auditoría
- * pide retirar del flujo estándar — y quien apagaba un módulo no podía saber
- * cuál estaba apagando. Cada módulo tiene ahora su propio nombre; el área
- * sigue disponible aparte para agrupar.
- */
-const MODULE_LABELS: Record<string, string> = {
-  admin:           "Administración",
-  requests:        "Solicitudes",
-  approvals:       "Aprobaciones",
-  purchasing:      "Órdenes de compra",
-  receiving:       "Recepción",
-  warehouse:       "Bodega",
-  deliveries:      "Entregas",
-  traceability:    "Trazabilidad",
-  reports:         "Reportes",
-  analytics:       "Analítica",
-  repuestos:       "Repuestos",
-  servicios:       "Servicios",
-  sst:             "Evaluaciones SST",
-  ppa:             "PPA digital",
-  feedback:        "Soporte",
-  combustibles:    "Combustibles",
-  flota:           "Flota",
-  mantencion_equipos: "Mantención de equipos",
-  prevention:      "Prevención",
-  operations:      "Pendientes operacionales",
-  billing:         "Facturación y cobranza",
-  ti:              "TI",
-}
-
-function getModuleLabel(moduleId: string): string {
-  return MODULE_LABELS[moduleId] ?? moduleId.charAt(0).toUpperCase() + moduleId.slice(1)
-}
+// El nombre propio de cada módulo vive en `lib/module-labels.ts`.
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
