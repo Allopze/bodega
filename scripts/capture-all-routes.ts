@@ -729,6 +729,8 @@ const routeTargets: RouteTarget[] = [
   { slug: "ti-licencias", path: "/ti/licencias", auth: true, notes: "Licencias y suscripciones con sus asignaciones a trabajadores o equipos." },
   { slug: "ti-mantenciones", path: "/ti/mantenciones", auth: true, notes: "Mantenciones y reparaciones con costo acumulado por activo." },
   { slug: "ti-reportes", path: "/ti/reportes", auth: true, notes: "Catálogo de exportes Excel del parque tecnológico." },
+  { slug: "ti-apps", path: "/ti/apps", auth: true, notes: "Uso y salud de cada app: acceso, movimientos de la auditoría e integraciones." },
+  { slug: "ti-app-detalle", path: "/ti/apps/combustibles", auth: true, notes: "Detalle de una app: tendencia semanal, movimientos por faena y corridas de sus tareas programadas." },
   // ── Combustibles (rediseño «El mes como hilo», 2026-10-31) ────────────
   { slug: "combustibles", path: "/combustibles", auth: true, notes: "Panel de combustible: cómo va el período y qué falta." },
   { slug: "combustibles-cargas", path: "/combustibles/cargas", auth: true },
