@@ -120,47 +120,51 @@ export function TransferDialog({ open, onOpenChange, candidates, worksites, wind
             Elige a qué faena pasan, desde qué día cuentan allí y marca los equipos. Queda registrado quién lo autorizó.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid shrink-0 gap-3 px-6 pt-3 sm:grid-cols-2">
-          <Field label="A la faena" htmlFor="trf-to-worksite" required error={fieldErrors.toWorksiteId}>
-            <OptionSelect
-              options={worksites.map((site) => ({ value: site.id, label: site.name }))}
-              id="trf-to-worksite" placeholder="Elige la faena" value={toWorksiteId} onValueChange={setToWorksiteId}
-              error={Boolean(fieldErrors.toWorksiteId)}
+        {/* Cuerpo: en teléfono campos y lista scrollean juntos (la lista no tiene scroll propio, que la
+            dejaba en 1–2 filas) y el pie queda a la vista; desde `sm` el alto es fijo y sólo la lista scrollea. */}
+        <div data-testid="transfer-body" className="flex min-h-0 flex-1 flex-col overflow-y-auto sm:overflow-hidden">
+          <div className="grid shrink-0 gap-3 px-6 pt-3 sm:grid-cols-2">
+            <Field label="A la faena" htmlFor="trf-to-worksite" required error={fieldErrors.toWorksiteId}>
+              <OptionSelect
+                options={worksites.map((site) => ({ value: site.id, label: site.name }))}
+                id="trf-to-worksite" placeholder="Elige la faena" value={toWorksiteId} onValueChange={setToWorksiteId}
+                error={Boolean(fieldErrors.toWorksiteId)}
+              />
+            </Field>
+            <Field label="Desde el" required helper="El día del traslado ya cuenta en la faena nueva." error={fieldErrors.effectiveDate}>
+              <DatePicker value={effectiveDate} onChange={setEffectiveDate} min={window.min} max={window.max} error={Boolean(fieldErrors.effectiveDate)} />
+            </Field>
+            <Field label="Motivo" required error={fieldErrors.reason}>
+              <Textarea
+                rows={2} className="min-h-0 max-sm:h-12" value={reason} maxLength={2000} placeholder="Por qué se trasladan"
+                onChange={(event) => setReason(event.target.value)}
+              />
+            </Field>
+            <Field label="Autorizado por" required error={fieldErrors.authorizedBy}>
+              <Input value={authorizedBy} maxLength={200} placeholder="Nombre de quien autoriza" onChange={(event) => setAuthorizedBy(event.target.value)} />
+            </Field>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-end gap-2 px-6 pt-4">
+            <Input
+              type="search" aria-label="Buscar por código, patente o marca" placeholder="Código, patente o marca" value={query}
+              className="h-11 w-full text-xs sm:h-8 sm:w-52" onChange={(event) => setQuery(event.target.value)}
             />
-          </Field>
-          <Field label="Desde el" required helper="El día del traslado ya cuenta en la faena nueva." error={fieldErrors.effectiveDate}>
-            <DatePicker value={effectiveDate} onChange={setEffectiveDate} min={window.min} max={window.max} error={Boolean(fieldErrors.effectiveDate)} />
-          </Field>
-          <Field label="Motivo" required error={fieldErrors.reason}>
-            <Textarea
-              rows={2} className="min-h-0" value={reason} maxLength={2000} placeholder="Por qué se trasladan"
-              onChange={(event) => setReason(event.target.value)}
+            <OptionSelect aria-label="Filtrar por tipo de equipo" className="h-11 w-full text-xs sm:h-8 sm:w-44" emptyLabel="Todos los tipos" options={types} value={typeName} onValueChange={setTypeName} />
+          </div>
+          <div data-testid="transfer-list" className="mt-2 shrink-0 border-y border-[var(--color-border)] px-6 py-2 sm:min-h-0 sm:flex-1 sm:shrink sm:overflow-y-auto">
+            <TransferEquipmentList
+              candidates={visible} selected={selected} toWorksiteName={destination?.name ?? ""} effectiveDate={effectiveDate}
+              rowErrors={rowErrors} dateErrors={dateErrors} initialVehicleId={initialVehicleId} onToggle={setMany}
             />
-          </Field>
-          <Field label="Autorizado por" required error={fieldErrors.authorizedBy}>
-            <Input value={authorizedBy} maxLength={200} placeholder="Nombre de quien autoriza" onChange={(event) => setAuthorizedBy(event.target.value)} />
-          </Field>
-        </div>
-        <div className="flex shrink-0 flex-wrap items-end gap-2 px-6 pt-4">
-          <Input
-            type="search" aria-label="Buscar por código, patente o marca" placeholder="Código, patente o marca" value={query}
-            className="h-11 w-full text-xs sm:h-8 sm:w-52" onChange={(event) => setQuery(event.target.value)}
-          />
-          <OptionSelect aria-label="Filtrar por tipo de equipo" className="h-11 w-full text-xs sm:h-8 sm:w-44" emptyLabel="Todos los tipos" options={types} value={typeName} onValueChange={setTypeName} />
-        </div>
-        <div className="mt-2 min-h-0 flex-1 overflow-y-auto border-y border-[var(--color-border)] px-6 py-2">
-          <TransferEquipmentList
-            candidates={visible} selected={selected} toWorksiteName={destination?.name ?? ""} effectiveDate={effectiveDate}
-            rowErrors={rowErrors} dateErrors={dateErrors} initialVehicleId={initialVehicleId} onToggle={setMany}
-          />
+          </div>
         </div>
         {(fieldErrors.vehicleIds || message) && (
           <p role="alert" className="px-6 pt-2 text-sm text-[var(--color-danger-ink)]">
             {[fieldErrors.vehicleIds, message].filter(Boolean).join(" ")}
           </p>
         )}
-        <DialogFooter className="mt-0 items-center gap-3 px-6 py-4">
-          <p className="mr-auto text-sm text-[var(--color-text)]" aria-live="polite">
+        <DialogFooter className="mt-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 px-6 py-4">
+          <p className="w-full text-sm sm:mr-auto sm:w-auto text-[var(--color-text)]" aria-live="polite">
             {transferSummaryText(chosen.length, destination?.name ?? null, effectiveDate)}
           </p>
           <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button>

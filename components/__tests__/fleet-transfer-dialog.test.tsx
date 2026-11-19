@@ -207,6 +207,24 @@ describe("TransferDialog", () => {
   })
 })
 
+describe("TransferDialog en teléfono", () => {
+  // jsdom no calcula estilos responsivos: se fija la estructura de clases que garantiza el comportamiento
+  // (campos y lista scrollean juntos bajo `sm`, el pie queda fuera del área que scrollea).
+  it("campos y lista comparten un solo scroll bajo sm y el pie queda fuera de él", () => {
+    renderDialog()
+    const body = screen.getByTestId("transfer-body")
+    const list = screen.getByTestId("transfer-list")
+    expect(body.className).toContain("overflow-y-auto")
+    expect(body.className).toContain("sm:overflow-hidden")
+    expect(body.contains(field("A la faena"))).toBe(true)
+    expect(body.contains(list)).toBe(true)
+    // La lista sólo tiene scroll propio desde sm: en móvil no compite con el del cuerpo.
+    expect(list.className).not.toMatch(/(^|\s)overflow-y-auto/)
+    expect(list.className).toContain("sm:overflow-y-auto")
+    expect(body.contains(screen.getByRole("button", { name: "Trasladar" }))).toBe(false)
+  })
+})
+
 describe("TransferButton", () => {
   it("carga los candidatos al abrir y monta el diálogo", async () => {
     actions.listTransferCandidatesAction.mockResolvedValue({ ok: true, data: { candidates: CANDIDATES, worksites: WORKSITES, window: WINDOW } })
