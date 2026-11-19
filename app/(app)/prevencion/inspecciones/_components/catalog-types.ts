@@ -122,6 +122,8 @@ export interface ProgramItem {
   templateName: string
   worksiteName: string
   frequency: string
+  /** Programa diario cuya plantilla excluye los domingos: se rotula «Diaria (lunes a sábado)». */
+  skipsSundays?: boolean
   intervalDays: number
   nextDueOn: string
   assignedToUserId: string | null

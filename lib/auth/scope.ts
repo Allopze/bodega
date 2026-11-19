@@ -83,7 +83,7 @@ export function serviceWorksiteScope(session: Session | null): string[] | "all" 
  * `undefined` significa "sin cláusula" y sólo lo devuelve un rol global sin
  * faena elegida.
  */
-export function worksiteScopeSql(session: Session | null, column: AnyColumn, worksiteId?: string): SQL | undefined {
+export function worksiteScopeSql(session: Session | null, column: AnyColumn | SQL, worksiteId?: string): SQL | undefined {
   return worksiteScopeSqlFor(serviceWorksiteScope(session), column, worksiteId)
 }
 
@@ -95,12 +95,12 @@ export function worksiteScopeSql(session: Session | null, column: AnyColumn, wor
  * vacía sigue significando "ninguna faena" y devuelve cero filas. Escribirlo así
  * evita el error clásico de tratar `[]` como "sin filtro".
  */
-export function worksiteScopeSqlFor(scope: string[] | "all", column: AnyColumn, worksiteId?: string): SQL | undefined {
+export function worksiteScopeSqlFor(scope: string[] | "all", column: AnyColumn | SQL, worksiteId?: string): SQL | undefined {
   if (scope !== "all" && scope.length === 0) return sql`false`
   if (worksiteId) {
     if (scope !== "all" && !scope.includes(worksiteId)) return sql`false`
-    return eq(column, worksiteId)
+    return eq(column as AnyColumn, worksiteId)
   }
   if (scope === "all") return undefined
-  return inArray(column, scope)
+  return inArray(column as AnyColumn, scope)
 }

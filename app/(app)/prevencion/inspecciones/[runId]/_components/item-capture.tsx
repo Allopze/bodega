@@ -49,6 +49,8 @@ export interface ItemCaptureProps {
   evidence: ItemEvidenceList | undefined
   heldReason: HeldRow["reason"] | null
   heldProblem: string | null
+  /** Error de orden contra otro ítem (horómetro de término menor que el de inicio); no retiene el guardado. */
+  valueProblem?: string | null
   /* Callbacks estables (ver `useStableCaptureCallbacks`). */
   onUpdate: UpdateItemDraft
   onConfirmRead: (sectionId: string, itemId: string) => void
@@ -66,7 +68,7 @@ export interface ItemCaptureProps {
  * Sin él, teclear en un comentario repintaría todos los demás.
  */
 export const ItemCapture = React.memo(function ItemCapture({
-  item, sectionId, index, required, result, comment, value, needsConfirmation, answerId, evidence, heldReason, heldProblem,
+  item, sectionId, index, required, result, comment, value, needsConfirmation, answerId, evidence, heldReason, heldProblem, valueProblem = null,
   onUpdate, onConfirmRead, ensureAnswerId, onEvidenceChange,
 }: ItemCaptureProps) {
   const key = draftKey(sectionId, item.id)
@@ -75,7 +77,7 @@ export const ItemCapture = React.memo(function ItemCapture({
   const serverPhotoCount = evidence?.length ?? 0
   const photoCount = photos.countOf(key, serverPhotoCount)
   const reasonMissing = scorable && reasonIsMissing({ result, comment })
-  const problem = itemProblemText({ scorable, result, comment, heldProblem })
+  const problem = itemProblemText({ scorable, result, comment, heldProblem }) ?? valueProblem
   const problemId = `item-problema-${React.useId()}`
   // Se abre solo cuando la respuesta exige motivo, o hay fotos que quitar para poder dejarla «Sin responder».
   const disclosure = useNotesDisclosure(reasonMissing || heldReason === "unanswer_with_photos")

@@ -99,6 +99,7 @@ export default async function ProgramacionInspeccionPage() {
           templateName: row.templateName,
           worksiteName: row.worksiteName,
           frequency: row.program.frequency,
+          skipsSundays: row.program.frequency === "daily" && row.templateSkipsSundays,
           intervalDays: row.program.intervalDays,
           nextDueOn: row.program.nextDueOn,
           assignedToUserId: row.program.assignedToUserId,

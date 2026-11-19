@@ -8,6 +8,7 @@ import { EXCEL_DATE_FORMAT } from "@/lib/reports/excel-dates"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import type { MantActionResult } from "./result"
 import { actorEquipmentScope, isWorksiteInScope } from "./access"
+import { USE_TRANSFER_MESSAGE } from "@/lib/services/fleet-transfers"
 import { applyCreate, applyUpdate } from "./equipment"
 import { diffEquipmentFields, summarizeChanges, type MantActor } from "./equipment-history"
 import type { MantWorksiteScope } from "./fleet"
@@ -160,8 +161,8 @@ function findIdentityByPlate(identities: readonly VehicleIdentity[], rawPlate: s
  * Lo que la fila querría cambiar de la FLOTA en un vehículo que ya existe.
  * Faena, patente y tipo son datos de la flota compartida: la planilla de
  * Mantención no los cambia (decisión 2026-11-11, auditoría I-1/I-2). Un
- * traslado se hace en la ficha, que exige administrar la faena de origen y la
- * de destino. Se revisa ANTES de resolver: así una faena mal escrita nunca
+ * traslado se hace con «Trasladar equipos», que exige administrar la faena de
+ * origen y la de destino. Se revisa ANTES de resolver: así una faena mal escrita nunca
  * llega a crearse.
  */
 function fleetConflicts(raw: RawImportRow, code: string, fleet: VehicleIdentity, catalogs: EquipmentCatalogs): string[] {
@@ -170,7 +171,7 @@ function fleetConflicts(raw: RawImportRow, code: string, fleet: VehicleIdentity,
     const typed = findByNameKey(catalogs.worksites, raw.worksite)
     if (typed?.id !== fleet.worksiteId) {
       const currentName = catalogs.worksites.find((item) => item.id === fleet.worksiteId)?.name ?? "otra"
-      messages.push(`La faena de ${code} es ${currentName}: la planilla no traslada equipos. Para moverlo, usa su ficha.`)
+      messages.push(`La faena de ${code} es ${currentName}. ${USE_TRANSFER_MESSAGE}`)
     }
   }
   if (raw.type && fleet.equipmentTypeId) {

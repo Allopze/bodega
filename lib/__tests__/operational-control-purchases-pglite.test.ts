@@ -26,7 +26,11 @@ g.__db = testDb
 vi.mock("@/db", () => ({ get db() { return g.__db } }))
 vi.mock("server-only", () => ({}))
 
-const { getVehiclePurchaseSummary } = await import("@/lib/services/purchasing-module/vehicle-purchase-summary")
+const {
+  getVehiclePurchaseSummary,
+  getVehiclePurchaseByDay,
+  getWorksitePurchasesWithoutVehicle,
+} = await import("@/lib/services/purchasing-module/vehicle-purchase-summary")
 const { getOperationalControlHub } = await import("@/lib/services/operational-control")
 
 function session(options: { global?: boolean; worksiteIds?: string[]; permissions?: string[] } = {}): Session {
@@ -43,6 +47,8 @@ function session(options: { global?: boolean; worksiteIds?: string[]; permission
 }
 
 const MARCH = { from: "2026-03-01", to: "2026-03-31" }
+// Período que no empieza el día 1: deja fuera las OC del 10 de marzo.
+const MID = { from: "2026-03-15", to: "2026-04-20" }
 
 let seq = 0
 /** Una OC reúne varias líneas: se crea con la primera y las demás la reutilizan. */
@@ -169,6 +175,11 @@ beforeAll(async () => {
   await addPurchase({ orderWorksite: IDS.wsA, vehicle: null, orderId: "oc-a-sin-equipo", subtotal: 70_000 })
   await addPurchase({ orderWorksite: IDS.wsA, vehicle: IDS.vA, orderId: "oc-a-suelta", subtotal: 80_000, withoutRequestItem: true })
 
+  // Compras sin equipo: una línea anulada y una OC anulada no suman; la faena B aporta la suya.
+  await addPurchase({ orderWorksite: IDS.wsA, vehicle: null, orderId: "oc-a-sin-equipo", subtotal: 777, lineStatus: "cancelled" })
+  await addPurchase({ orderWorksite: IDS.wsA, vehicle: null, orderId: "oc-a-sin-equipo-anulada", orderStatus: "cancelled", subtotal: 888 })
+  await addPurchase({ orderWorksite: IDS.wsB, vehicle: null, orderId: "oc-b-sin-equipo", subtotal: 5_000 })
+
   // vB y vC viven en otras faenas.
   await addPurchase({ orderWorksite: IDS.wsB, vehicle: IDS.vB, orderId: "oc-b1", subtotal: 70_000 })
   await addPurchase({ orderWorksite: IDS.wsC, vehicle: IDS.vC, orderId: "oc-c1", subtotal: 90_000 })
@@ -253,6 +264,71 @@ describe("getVehiclePurchaseSummary", () => {
 
     const nobody = await getVehiclePurchaseSummary(session({ global: false, worksiteIds: [] }), MARCH, [IDS.vA])
     expect(nobody.get(IDS.vA)?.purchaseAmount).toBe(0)
+  })
+})
+
+describe("getVehiclePurchaseByDay", () => {
+  const TODOS = [IDS.vA, IDS.vB, IDS.vC]
+
+  it.each([
+    ["MARCH", MARCH, 160_000],
+    ["MID", MID, 40_000],
+  ])("el detalle por día de compras suma lo mismo que el resumen (%s)", async (_nombre, period, montoVA) => {
+    const resumen = await getVehiclePurchaseSummary(session(), period, TODOS)
+    const detalle = await getVehiclePurchaseByDay(session(), period, TODOS)
+
+    for (const id of TODOS) {
+      const suma = detalle.filter((r) => r.vehicleId === id).reduce((acc, r) => acc + r.amount, 0)
+      expect(suma).toBe(resumen.get(id)?.purchaseAmount ?? 0)
+    }
+    expect(detalle.filter((r) => r.vehicleId === IDS.vA).reduce((acc, r) => acc + r.amount, 0)).toBe(montoVA)
+    expect(detalle.every((r) => r.component === "purchases" && r.spansMonth === false)).toBe(true)
+  })
+
+  it("agrupa por día civil de emisión", async () => {
+    const detalle = await getVehiclePurchaseByDay(session(), MARCH, [IDS.vA])
+
+    expect(detalle.map((r) => [r.day, r.amount]).sort()).toEqual([
+      ["2026-03-10", 150_000],
+      ["2026-03-31", 10_000],
+    ])
+  })
+
+  it("sin purchasing:view no consulta y devuelve una lista vacía", async () => {
+    const select = vi.spyOn(testDb, "select")
+
+    expect(await getVehiclePurchaseByDay(session({ permissions: ["flota:view"] }), MARCH, TODOS)).toEqual([])
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it("respeta el alcance de faena de la OC y no consulta sin equipos", async () => {
+    const scoped = await getVehiclePurchaseByDay(session({ global: false, worksiteIds: [IDS.wsA] }), MARCH, TODOS)
+    expect(scoped.every((r) => r.vehicleId === IDS.vA)).toBe(true)
+
+    expect(await getVehiclePurchaseByDay(session(), MARCH, [])).toEqual([])
+  })
+})
+
+describe("getWorksitePurchasesWithoutVehicle", () => {
+  it("las compras sin equipo se agrupan por la faena de la OC y excluyen líneas anuladas", async () => {
+    const out = await getWorksitePurchasesWithoutVehicle(session(), MARCH)
+
+    // Faena A: 70.000 (solicitud sin equipo) + 80.000 (línea suelta sin solicitud).
+    // No suman: la línea anulada (777), la OC anulada (888) ni las líneas con equipo.
+    expect(out.get(IDS.wsA)).toBe(150_000)
+    expect(out.get(IDS.wsB)).toBe(5_000)
+    expect(out.has(IDS.wsC)).toBe(false)
+  })
+
+  it("respeta el período y el alcance de faena", async () => {
+    expect((await getWorksitePurchasesWithoutVehicle(session(), MID)).size).toBe(0)
+
+    const scoped = await getWorksitePurchasesWithoutVehicle(session({ global: false, worksiteIds: [IDS.wsB] }), MARCH)
+    expect([...scoped.entries()]).toEqual([[IDS.wsB, 5_000]])
+  })
+
+  it("sin purchasing:view devuelve un mapa vacío", async () => {
+    expect((await getWorksitePurchasesWithoutVehicle(session({ permissions: ["flota:view"] }), MARCH)).size).toBe(0)
   })
 })
 

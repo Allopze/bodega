@@ -1,7 +1,7 @@
 import type { Session } from "next-auth"
 import { and, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelEquipmentLoads, fuelVehicles } from "@/db/schema"
+import { fuelEquipmentLoads } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { telemetryLitersPerHour } from "../calc/idle"
 import { mandanteWorksitesSql, periodSql, statisticallyValidLoadSql, type ControlFilters } from "../filters"
@@ -10,6 +10,9 @@ import { dailyTelemetry, equipmentLabel } from "./idle"
 /**
  * V-08: L/h según la telemetría frente al L/h calculado desde las cargas del
  * mismo equipo y mes.
+ *
+ * Lado telemetría: la faena del equipo el día de cada fila (`dailyTelemetry`). Lado cargas: la
+ * faena de la carga. Así un equipo trasladado a mitad de mes compara en cada faena sólo lo suyo.
  *
  * Los dos lados son la misma razón: Σlitros ÷ Σhoras. Sumar los litros y las
  * horas de los tramos y dividir una vez (Σ 50 L/10 h y 40 L/1 h da 90/11 = 8,2)
@@ -52,12 +55,12 @@ export async function getLitersPerHourComparison(session: Session | null, filter
       avg: sql<number | null>`avg(${fuelEquipmentLoads.performanceValue})::float8`,
       count: sql<number>`count(*)::int`,
     }).from(fuelEquipmentLoads)
-      .innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
       .where(and(
         statisticallyValidLoadSql,
         eq(fuelEquipmentLoads.performanceUnit, "liters_per_hour"),
-        worksiteScopeSql(session, fuelVehicles.worksiteId, filters.worksiteId),
-        filters.mandanteId ? sql`${fuelVehicles.worksiteId} in ${mandanteWorksitesSql(filters.mandanteId)}` : undefined,
+        // Lado cargas: la faena de la carga (`fuel_equipment_loads.worksite_id`), no la actual del equipo.
+        worksiteScopeSql(session, fuelEquipmentLoads.worksiteId, filters.worksiteId),
+        filters.mandanteId ? sql`${fuelEquipmentLoads.worksiteId} in ${mandanteWorksitesSql(filters.mandanteId)}` : undefined,
         periodSql(filters, fuelEquipmentLoads.month, fuelEquipmentLoads.occurredAt),
       ))
       .groupBy(fuelEquipmentLoads.vehicleId, fuelEquipmentLoads.month),

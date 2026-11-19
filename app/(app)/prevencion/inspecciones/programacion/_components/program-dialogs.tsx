@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { FREQUENCY_INTERVAL_DAYS, INSPECTION_FREQUENCY_LABELS, nextDueAfter } from "@/lib/prevention/inspections"
+import { FREQUENCY_INTERVAL_DAYS, INSPECTION_FREQUENCY_LABELS, inspectionFrequencyLabel, nextDueAfter } from "@/lib/prevention/inspections"
 import {
   NO_SUBJECT,
   subjectIdsFromRef,
@@ -106,7 +106,7 @@ export function EditProgramDialog({ program, assignees, subjects, riskEntries }:
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Frecuencia" error={operation.fieldError("frequency")}>
-              <Select value={frequency} onValueChange={(value) => { setFrequency(value); setIntervalDays(FREQUENCY_INTERVAL_DAYS[value] ?? 30) }}><SelectTrigger aria-label="Frecuencia"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+              <Select value={frequency} onValueChange={(value) => { setFrequency(value); setIntervalDays(FREQUENCY_INTERVAL_DAYS[value] ?? 30) }}><SelectTrigger aria-label="Frecuencia"><SelectValue /></SelectTrigger><SelectContent>{Object.keys(INSPECTION_FREQUENCY_LABELS).map((value) => <SelectItem key={value} value={value}>{inspectionFrequencyLabel(value, { skipsSundays: program.skipsSundays })}</SelectItem>)}</SelectContent></Select>
             </Field>
             <Field label="Intervalo efectivo (días)" hint="Este número gobierna el calendario. Al cambiar la frecuencia se propone su intervalo estándar." error={operation.fieldError("intervalDays")}>
               <Input name="intervalDays" type="number" min={1} max={3650} value={intervalDays} onChange={(event) => setIntervalDays(Number(event.target.value))} required />
@@ -219,7 +219,7 @@ export function RunProgramNowButton({ program }: { program: ProgramItem }) {
   // correcto y no debe pedir confirmación; crearla fuera de ciclo sí consume
   // un ciclo del programa anual y merece decirlo antes, no después.
   const outOfCycle = program.frequency !== "on_demand" && program.nextDueOn > today
-  const nextAfter = nextDueAfter(program.nextDueOn, program.intervalDays, today)
+  const nextAfter = nextDueAfter(program.nextDueOn, program.intervalDays, today, { skipSundays: program.frequency === "daily" && program.skipsSundays })
 
   function create() {
     setConfirming(false)

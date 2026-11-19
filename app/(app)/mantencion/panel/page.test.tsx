@@ -11,6 +11,7 @@ const session = vi.hoisted(() => ({ permissions: ["mant:records:view_all"] as st
 const scope = vi.hoisted(() => ({ equipment: 3, records: 5, inWorkshop: 1 }))
 const unassigned = vi.hoisted(() => vi.fn(async () => 2))
 // Los cargadores de series quedan como espías: la página debe pasarles la ventana de los gráficos (`chart`).
+const reporteEquipos = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => ({ hasRuns: true })))
 const loaders = vi.hoisted(() => ({
   series: vi.fn(async (..._args: unknown[]) => [{ key: "2026-10", created: 1, closed: 0, backlog: 1 }]),
   records: vi.fn(async (..._args: unknown[]) => ({ points: [{ key: "2026-10", preventive: scope.records, corrective: 0, partial: false }], preventive: scope.records, preventivePrevious: 0 })),
@@ -41,8 +42,10 @@ vi.mock("@/lib/services/mantencion/indicators", () => ({
   loadRecordIndicators: loaders.records,
   loadOutOfService: loaders.outOfService,
 }))
+vi.mock("@/lib/services/mantencion/reporte-equipos", () => ({ loadReporteEquipos: reporteEquipos }))
 vi.mock("@/components/ui/page-header", () => ({ PageHeader: () => null, Breadcrumbs: () => null }))
 vi.mock("./indicators-sections", () => ({ WorkOrdersSection: () => null, PautasSection: () => null }))
+vi.mock("./reporte-equipos-section", () => ({ ReporteEquiposSection: () => null }))
 
 import MantencionPanelPage from "./page"
 import { BoardExportButton } from "@/components/dashboard/board-export-button"
@@ -51,6 +54,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { PanelEmptyState } from "@/components/mantencion/jefatura/panel/panel-empty"
 import { PanelToday } from "@/components/mantencion/jefatura/panel/panel-today"
 import { WorkOrdersSection } from "./indicators-sections"
+import { ReporteEquiposSection } from "./reporte-equipos-section"
 
 afterEach(() => {
   vi.useRealTimers()
@@ -118,6 +122,27 @@ describe("/mantencion/panel · ventana de los gráficos", () => {
     expect(props.chart).toMatchObject({ isHistory: true })
     expect(props.chartNote).toMatch(/^Últimos 6 meses, hasta noviembre de 2026 · /)
     expect(String(props.scopeNote)).not.toMatch(/Últimos/)
+  })
+})
+
+describe("/mantencion/panel · reportes de equipos", () => {
+  it("se consulta con el período y la faena de la pantalla y la sección recibe los datos", async () => {
+    const tree = await page({ desde: "2026-11-01", hasta: "2026-11-10", faena: "ws-2" })
+    expect(reporteEquipos).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ from: "2026-11-01", to: "2026-11-10", worksiteId: "ws-2" }))
+    const section = findElement(tree, ReporteEquiposSection)!
+    expect(section.props).toMatchObject({ data: { hasRuns: true }, worksiteId: "ws-2", canViewInspections: false })
+  })
+
+  it("el enlace a Inspecciones sólo se ofrece con `prevention:inspections:view`", async () => {
+    session.permissions = ["mant:records:view_all", "prevention:inspections:view"]
+    expect(findElement(await page(), ReporteEquiposSection)!.props.canViewInspections).toBe(true)
+  })
+
+  it("si la consulta falla, la sección recibe null (la página avisa por el banner) y el resto del Panel sigue", async () => {
+    reporteEquipos.mockRejectedValueOnce(new Error("sin base"))
+    const tree = await page()
+    expect(findElement(tree, ReporteEquiposSection)!.props.data).toBeNull()
+    expect(findElement(tree, PanelToday)).not.toBeNull()
   })
 })
 

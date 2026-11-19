@@ -10,7 +10,7 @@ import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-too
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
-import { INSPECTION_FREQUENCY_LABELS, inspectionProgramIsOverdue } from "@/lib/prevention/inspections"
+import { inspectionFrequencyLabel, inspectionProgramIsOverdue } from "@/lib/prevention/inspections"
 import { filterPrograms, normalizeProgramFilters, programSubjectLabel } from "@/lib/prevention/inspection-catalog-logic"
 import type { InspectionSubjectOption } from "@/lib/prevention/inspection-list-query"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
@@ -53,8 +53,8 @@ export function programStatusMeta(
 }
 
 /** «Mensual · cada 30 días»: la frecuencia y el intervalo que gobierna el calendario. */
-function cadenceLabel(program: Pick<ProgramItem, "frequency" | "intervalDays">) {
-  const frequency = INSPECTION_FREQUENCY_LABELS[program.frequency] ?? program.frequency
+function cadenceLabel(program: Pick<ProgramItem, "frequency" | "intervalDays" | "skipsSundays">) {
+  const frequency = inspectionFrequencyLabel(program.frequency, { skipsSundays: program.skipsSundays })
   return `${frequency} · cada ${program.intervalDays} ${program.intervalDays === 1 ? "día" : "días"}`
 }
 

@@ -10,6 +10,8 @@ const asset: OperationalAsset = {
   name: "Camión · BPDH-41",
   worksiteId: "w1",
   worksiteName: "Faena Norte",
+  contractId: "c1",
+  contractName: "Movimiento de residuos",
   operationalStatus: "mantencion",
   operationalStatusLabel: "En mantención",
   stateMismatch: false,
@@ -72,8 +74,9 @@ function keys(cols: ReturnType<typeof buildOperationalAssetExportColumns>) {
   return cols.map((c) => c.key)
 }
 
-// Sin «Contrato» (el `key` interno) ni «Clase» (la hoja sólo lleva vehículos).
-const BASE = ["code", "name", "worksite", "status"]
+// Sin el `key` interno ni «Clase» (la hoja sólo lleva vehículos). «Contrato» es el
+// nombre del contrato vigente del equipo, no una clave: va justo después de «Faena».
+const BASE = ["code", "name", "worksite", "contractName", "status"]
 const INSPECTION_KEYS = ["inspections", "inspectionCompliance", "openFindings", "criticalOpenFindings", "openFindingsWithWorkOrder", "openFindingsWithoutWorkOrder"]
 const FUEL_KEYS = ["gpsPerformance", "gpsPerformanceSource", "fuelLiters", "fuelLoadCount", "lastFuelLoadAt", "fuelPerformance", "flaggedLoads", "openAnomalyCases", "criticalOpenAnomalyCases", "idlePct", "litersIdle"]
 const WORK_ORDER_KEYS = ["openWorkOrders", "inWorkshop", "workshopHours"]
@@ -124,6 +127,13 @@ describe("buildOperationalAssetExportColumns", () => {
     expect(headers.totalCost).toBe("Costo total (combustible + compras)")
   })
 
+  it("incluye la columna Contrato después de Faena", () => {
+    const columns = buildOperationalAssetExportColumns(false, false)
+    const headers = columns.map((column) => column.header)
+    expect(headers.indexOf("Contrato")).toBe(headers.indexOf("Faena") + 1)
+    expect(columns.find((column) => column.key === "contractName")).toEqual({ header: "Contrato", key: "contractName", width: 28 })
+  })
+
   it("deja sólo las columnas base sin capacidades", () => {
     expect(keys(buildOperationalAssetExportColumns(false, false))).toEqual(BASE)
   })
@@ -171,6 +181,11 @@ describe("buildOperationalAssetExportRow", () => {
   it("exporta el estado con etiqueta humana, no el enum crudo", () => {
     const row = buildOperationalAssetExportRow(asset, true, true)
     expect(row.status).toBe("En mantención")
+  })
+
+  it("exporta el nombre del contrato del equipo, o «Sin contrato»", () => {
+    expect(buildOperationalAssetExportRow(asset, false, false).contractName).toBe("Movimiento de residuos")
+    expect(buildOperationalAssetExportRow({ ...asset, contractId: null, contractName: null }, false, false).contractName).toBe("Sin contrato")
   })
 
   it("no exporta la clave interna ni una columna Clase constante", () => {

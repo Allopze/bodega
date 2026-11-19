@@ -6,7 +6,9 @@ import path from "node:path"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
+import { setVehicleWorksiteForTest } from "@/lib/testing/fleet-stays"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 
 /*
  * Equipos de mantención (§10) contra Postgres de verdad: alta, incorporación de
@@ -87,8 +89,10 @@ async function editIdentity(vehicleId: string, overrides: Partial<FleetIdentityI
     const { resolved } = result
     await tx.update(schema.fuelVehicles).set({
       code: resolved.code, plate: resolved.plate, brand: resolved.brand.name, model: resolved.model, year: resolved.year,
-      equipmentTypeId: resolved.type.id, type: resolved.type.slug, worksiteId: resolved.worksite.id!,
+      equipmentTypeId: resolved.type.id, type: resolved.type.slug,
     }).where(eq(schema.fuelVehicles.id, vehicleId))
+    // La faena no se cambia con un UPDATE directo: la base exige que la estadía abierta la acompañe.
+    if (resolved.worksite.id! !== vehicle.worksiteId) await setVehicleWorksiteForTest(tx as unknown as DB, vehicleId, resolved.worksite.id!, todayInChile())
     await applyFleetIdentity(tx, actor, result.current, resolved, "padron")
     return result
   })
@@ -99,6 +103,8 @@ beforeAll(async () => {
   await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
   const now = new Date().toISOString()
   await testDb.insert(schema.users).values({ id: actor.userId, name: "Jefatura Equipos", email: actor.email, hashedPassword: "hash", isActive: true, createdAt: now, updatedAt: now })
+  // Incorporar a otra faena es un traslado: «Traslados» (apagado por la migración) va encendido.
+  await testDb.update(schema.systemSettings).set({ value: "true" }).where(eq(schema.systemSettings.key, "submodule.enabled:flota:/flota/traslados"))
   await testDb.insert(schema.worksites).values([
     { id: WS.arauco, name: "Arauco", code: "FN-ARA", isActive: true },
     { id: WS.cholguan, name: "Cholguan", code: "FN-CHO", isActive: true },
@@ -174,6 +180,16 @@ describe("alta", () => {
     expect((await testDb.select().from(schema.fuelVehicles)).length).toBe(before)
     const [vehicle] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, "veh-flota"))
     expect(vehicle).toMatchObject({ plate: "GHJK-34", brand: "Volvo", model: "FH 460", worksiteId: WS.arauco })
+    // Incorporarlo a otra faena es un traslado (la faena sólo cambia por esa puerta): con folio, hoy y su motivo.
+    const transfers = await testDb.select().from(schema.fleetTransfers)
+    expect(transfers).toEqual([expect.objectContaining({
+      folio: "TR-0001", toWorksiteId: WS.arauco, effectiveDate: todayInChile(),
+      reason: "Incorporación a Mantención de equipos", authorizedBy: "Jefatura Equipos", createdBy: actor.userId,
+    })])
+    const stays = await testDb.select().from(schema.fuelVehicleWorksiteIntervals)
+      .where(eq(schema.fuelVehicleWorksiteIntervals.vehicleId, "veh-flota"))
+    expect(stays.map((stay) => [stay.worksiteId, stay.source]).sort()).toEqual([[WS.arauco, "traslado"], [WS.cholguan, "alta"]])
+    expect(stays.find((stay) => stay.worksiteId === WS.arauco)).toMatchObject({ startedOn: todayInChile(), endedOn: null, transferId: transfers[0]!.id })
     expect(await profileOf("veh-flota")).toMatchObject({ brandId: B.volvo })
     const [entry] = await listEquipmentHistory("veh-flota")
     expect(entry?.summary).toMatch(/incorporado a la mantención desde la flota/)
@@ -539,7 +555,26 @@ describe("las asignaciones de proveedor siguen al equipo cuando cambia de faena"
     await mapPlate("veh-flota-map", "DFGH56", WS.cholguan)
     await createdId(await createEquipment(actor, input({ code: "KA-310", plate: "DFGH-56", worksiteId: WS.arauco })))
     const { active, closed } = await activeMapping("DFGH56")
-    expect(active).toEqual([expect.objectContaining({ worksiteId: WS.arauco, vehicleId: "veh-flota-map", version: 2 })])
+    // La asignación se mueve con el traslado: la nueva rige desde el día del traslado.
+    expect(active).toEqual([expect.objectContaining({ worksiteId: WS.arauco, vehicleId: "veh-flota-map", version: 2, effectiveFrom: todayInChile() })])
     expect(closed).toEqual([expect.objectContaining({ worksiteId: WS.cholguan, version: 1 })])
+  })
+
+  // Contratos por faena: el contrato de un equipo es de la faena donde está. Incorporar a Mantención un
+  // vehículo de la flota en otra faena lo traslada (applyCreate → transferVehiclesTx), y el traslado
+  // cierra el contrato de la faena que deja.
+  it("mover un equipo de faena al incorporarlo cierra su asignación de contrato", async () => {
+    const vehicleId = "veh-flota-ctr"
+    await testDb.insert(schema.fuelVehicles).values({ id: vehicleId, plate: "DFGH57", code: "KA-712", type: "test-camion", equipmentTypeId: T.km, worksiteId: WS.cholguan, isActive: true })
+    await testDb.insert(schema.clients).values({ id: "cl-ctr", rut: "76123456-0", name: "Maderas Arauco S.A." })
+    await testDb.insert(schema.contracts).values({ id: "c-ctr", code: "CTR-2026-0001", clientId: "cl-ctr", name: "Movimiento de residuos", worksiteId: WS.cholguan, billingCycle: "none" })
+    await testDb.insert(schema.contractVehicleAssignments).values({ id: "a-ctr", contractId: "c-ctr", vehicleId, validFrom: "2020-01-01" })
+
+    await createdId(await createEquipment(actor, input({ code: "KA-712", plate: "DFGH-57", worksiteId: WS.arauco })))
+
+    const [vehicle] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, vehicleId))
+    expect(vehicle?.worksiteId).toBe(WS.arauco)
+    const [assignment] = await testDb.select().from(schema.contractVehicleAssignments).where(eq(schema.contractVehicleAssignments.id, "a-ctr"))
+    expect(assignment?.validTo).toBe(addDaysToPlainDate(todayInChile(), -1))
   })
 })

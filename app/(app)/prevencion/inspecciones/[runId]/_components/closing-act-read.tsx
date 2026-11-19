@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { formatSignatureRole, type ClosingActSpec } from "@/lib/prevention/inspections"
+import { formatSignatureRole, MISSING_PAPER_SIGNATURE_LABEL, type ClosingActSpec } from "@/lib/prevention/inspections"
 import { formatDateTime } from "@/lib/utils"
 import type { RunInfo } from "./types"
 
@@ -9,7 +9,8 @@ import type { RunInfo } from "./types"
  * El acta de cierre ya declarada: resultado, restricciones y quiénes firmaron y
  * cuándo. Una lista de pares rótulo–valor separada por filetes, sin caja: el
  * acta no es una tarjeta dentro de la página. Los roles que la plantilla exige y
- * todavía no firmaron se dicen («Sin firma»), no se omiten.
+ * todavía no firmaron se dicen («Sin firma»; «Sin firma en el papel» cuando la plantilla
+ * admite que el papel las traiga en blanco), no se omiten.
  */
 export function ClosingActRead({ closingAct, run }: {
   closingAct: ClosingActSpec
@@ -33,7 +34,7 @@ export function ClosingActRead({ closingAct, run }: {
         ))}
         {pendingRoles.map((role) => (
           <ActRow key={role} label={formatSignatureRole(role)}>
-            <span className="text-[var(--color-text-subtle)]">Sin firma</span>
+            <span className="text-[var(--color-text-subtle)]">{closingAct.allowMissingSignatures ? MISSING_PAPER_SIGNATURE_LABEL : "Sin firma"}</span>
           </ActRow>
         ))}
       </dl>

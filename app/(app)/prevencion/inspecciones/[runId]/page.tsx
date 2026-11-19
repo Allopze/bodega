@@ -146,6 +146,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
             options: item.options,
             placeholder: item.placeholder,
             matrix: item.matrix,
+            notLessThanItemId: item.notLessThanItemId,
           })),
         }))}
         answers={detail.answers.map((item) => ({

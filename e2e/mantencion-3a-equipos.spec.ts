@@ -133,7 +133,8 @@ test.describe("E2E 6 · Equipos", () => {
     // La marca es la de la lista de Mantención, no un texto libre.
     await expect(sheet.getByRole("combobox", { name: /^Marca/ })).toContainText("Scania")
     await sheet.getByRole("textbox", { name: "Modelo", exact: true }).fill("R500")
-    await selectRadixById(page, "v-worksite", "Biodiversa")
+    // La faena ya no se edita aquí: sólo cambia por «Trasladar equipos» (2026-11-18).
+    await expect(page.locator("#v-worksite")).toHaveCount(0)
     // Un equipo creado en Mantención no trae productos compatibles: el padrón los pide y lleva a su pestaña.
     await sheet.getByRole("button", { name: "Guardar cambios", exact: true }).click()
     await expect(sheet.getByRole("tab", { name: /^Combustible/ })).toHaveAttribute("aria-selected", "true")
@@ -142,8 +143,9 @@ test.describe("E2E 6 · Equipos", () => {
 
     await expect(page.getByText("Vehículo actualizado")).toBeVisible()
     await expect(sheet).toHaveCount(0)
-    await expect(page.getByRole("banner")).toContainText("Biodiversa")
-    await expect(page.getByText(/Editado en Vehículos · Modelo: R450 → R500 · Faena: Cholguan → Biodiversa/)).toBeVisible()
+    await expect(page.getByRole("banner")).toContainText("Cholguan")
+    await expect(page.getByText(/Editado en Vehículos · Modelo: R450 → R500/)).toBeVisible()
+    await expect(page.getByText(/Faena: Cholguan → /)).toHaveCount(0)
     expect(errors).toEqual([])
   })
 

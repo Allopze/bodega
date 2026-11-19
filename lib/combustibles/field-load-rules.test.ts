@@ -204,4 +204,18 @@ describe("suggestSupplyMedium", () => {
     expect(suggestSupplyMedium("Surtidor", [{ id: "x", name: "Único" }])).toBe("x")
     expect(suggestSupplyMedium(null, media)).toBeNull()
   })
+  it("compara con el nombre del catálogo, no con el de pantalla", () => {
+    const shown = [
+      { id: "a", name: "Vasija (carga Copec)", matchName: "TAE" },
+      { id: "b", name: "Tarjeta Copec de equipos", matchName: "TCT" },
+      { id: "c", name: "Surtidor CMPC", matchName: "Surtidor CMPC" },
+    ]
+    expect(suggestSupplyMedium("Surtidor TAE bodega", shown)).toBe("a")
+    expect(suggestSupplyMedium("Estación TCT Ruta 5", shown)).toBe("b")
+    expect(suggestSupplyMedium("Surtidor CMPC norte", shown)).toBe("c")
+    // El nombre de pantalla no es una pista: «Vasija» en el lugar no elige nada.
+    expect(suggestSupplyMedium("Vasija norte", shown)).toBeNull()
+    // Sin `matchName` (configuración guardada antes del campo) se compara con `name`.
+    expect(suggestSupplyMedium("Surtidor CMPC", media)).toBe("b")
+  })
 })

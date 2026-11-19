@@ -50,6 +50,7 @@ export function VehicleEditButton({ vehicleId }: { vehicleId: string }) {
           {...payload.catalogs}
           editVehicle={payload.vehicle}
           maintenanceBrands={payload.maintenanceBrands}
+          canTransfer={payload.canTransfer}
         />
       ) : null}
     </>

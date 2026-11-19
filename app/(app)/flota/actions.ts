@@ -8,7 +8,7 @@ import { promises as fs } from "node:fs"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelVehicles } from "@/db/schema"
-import { can, requirePermission } from "@/lib/auth/can"
+import { can, guardPermission, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite, serviceWorksiteScope } from "@/lib/auth/scope"
 import { VEHICLE_EXPIRY_FIELDS, formatFuelVehicleStatus, updateVehicleExpiriesSchema, type VehicleExpiryField } from "@/lib/combustibles/validation"
 import { meterSourceLabel } from "@/lib/combustibles/meter-source"
@@ -27,6 +27,8 @@ import { recordAudit } from "@/lib/audit"
 import { fleetProviderGapNotice } from "./fleet-provider-gap"
 import { formatLastReading } from "./fleet-last-reading"
 import { revalidateVehicleFicha } from "@/lib/routing/revalidate-vehicle-ficha"
+import { assignVehiclesToContract, endVehicleAssignment } from "@/lib/services/contracts/assignments"
+import { civilDate } from "@/lib/validation/dates"
 
 const FLEET_EXPORT_LIMIT = 10_000
 
@@ -125,6 +127,59 @@ export async function deleteFleetDocumentAction(
     logger.error("[deleteFleetDocumentAction]", e)
     return { ok: false, message: safeActionMessage(e, "Error al eliminar documento") }
   }
+}
+
+/**
+ * «Cambiar contrato» de la ficha del equipo: lo asigna a un contrato de su faena desde un día
+ * (`contractId`), o lo deja «Sin contrato» (`contractId` vacío: la asignación que rige termina el
+ * día anterior a `validFrom`). Las vigencias, los traslapes y que el contrato sea de la faena del
+ * equipo los sostiene el servicio; aquí van el permiso y el alcance de la faena del equipo.
+ */
+export async function changeVehicleContractAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { session, error } = await guardPermission("mant:equipment:manage")
+  if (error) return error
+
+  const vehicleId = String(formData.get("vehicleId") ?? "").trim()
+  const contractId = String(formData.get("contractId") ?? "").trim()
+  if (!vehicleId) return { ok: false, message: "Elige un equipo" }
+  const from = civilDate("Indica desde qué día").safeParse(String(formData.get("validFrom") ?? "").trim())
+  if (!from.success) {
+    return { ok: false, message: from.error.issues[0]?.message ?? "Indica desde qué día", fieldErrors: { validFrom: [from.error.issues[0]?.message ?? "Indica desde qué día"] } }
+  }
+  const validFrom = from.data
+
+  try {
+    const vehicle = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, vehicleId) })
+    if (!vehicle) return { ok: false, message: "Vehículo no encontrado" }
+    if (!canAccessWorksite(session, vehicle.worksiteId)) {
+      return { ok: false, message: "No puedes gestionar vehículos de esta faena" }
+    }
+
+    const actor = { userId: session.user.id, email: session.user.email }
+    if (contractId) {
+      const result = await assignVehiclesToContract(actor, { contractId, vehicleIds: [vehicleId], validFrom })
+      if (!result.ok) return { ok: false, message: result.message }
+      revalidateAfterContractChange(vehicleId, vehicle.worksiteId)
+      return { ok: true, message: ["Contrato actualizado", ...result.warnings].join(". ") }
+    }
+    const result = await endVehicleAssignment(actor, { vehicleId, lastDay: addDaysToPlainDate(validFrom, -1) })
+    if (!result.ok) return { ok: false, message: result.message }
+    revalidateAfterContractChange(vehicleId, vehicle.worksiteId)
+    return { ok: true, message: "Equipo sin contrato" }
+  } catch (e) {
+    logger.error("[changeVehicleContractAction]", e)
+    return { ok: false, message: safeActionMessage(e, "No se pudo cambiar el contrato") }
+  }
+}
+
+function revalidateAfterContractChange(vehicleId: string, worksiteId: string): void {
+  revalidatePath("/flota")
+  revalidatePath(`/admin/faenas/${worksiteId}`)
+  revalidateVehicleFicha(vehicleId)
+  revalidatePath("/control-operacional")
 }
 
 /**

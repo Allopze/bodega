@@ -32,12 +32,14 @@ export function buildOperationalAssetExportColumns(
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
   return [
-    // Sin «Contrato»: el `key` interno (`vehicle:<uuid>`) no significa nada
-    // para quien recibe el archivo. Sin «Clase»: la hoja sólo lleva vehículos,
-    // así que la columna valía siempre lo mismo.
+    // Sin el `key` interno (`vehicle:<uuid>`): no significa nada para quien
+    // recibe el archivo. Sin «Clase»: la hoja sólo lleva vehículos, así que la
+    // columna valía siempre lo mismo. «Contrato» es el nombre del contrato
+    // vigente del equipo al cierre del período.
     { header: "Código", key: "code", width: 18 },
     { header: "Activo", key: "name", width: 30 },
     { header: "Faena", key: "worksite", width: 24 },
+    { header: "Contrato", key: "contractName", width: 28 },
     { header: "Estado", key: "status", width: 18 },
     ...(canViewFleet
       ? [
@@ -133,6 +135,7 @@ export function buildOperationalAssetExportRow(
     code: asset.code,
     name: asset.name,
     worksite: asset.worksiteName,
+    contractName: asset.contractName ?? "Sin contrato",
     status: asset.operationalStatusLabel,
     ...(canViewFleet
       ? {

@@ -111,6 +111,8 @@ const CODE_SERIES_TABLES: Record<string, string> = {
   DEV: "stock_returns",
   CON: "physical_inventory_counts",
   PF:  "billing_proposals",
+  // Contratos con mandantes (CTR-AAAA-NNNN), generados al crearlos sin código.
+  CTR: "contracts",
   ACT: "it_asset_assignments",
   INC: "it_tickets",
   // Incidentes de prevención (EV, "Evento"): INC ya es la serie de tickets de TI.

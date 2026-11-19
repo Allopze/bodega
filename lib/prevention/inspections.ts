@@ -100,6 +100,16 @@ export const INSPECTION_FREQUENCY_LABELS: Record<string, string> = {
   on_demand: "A demanda",
 }
 
+/**
+ * Rótulo de la frecuencia de un programa. Un programa diario cuya plantilla
+ * declara `scheduleSkipsSundays` se lee «Diaria (lunes a sábado)»: sin eso la
+ * pantalla prometía siete días y el calendario entregaba seis.
+ */
+export function inspectionFrequencyLabel(frequency: string, options: { skipsSundays?: boolean } = {}): string {
+  if (frequency === "daily" && options.skipsSundays) return "Diaria (lunes a sábado)"
+  return INSPECTION_FREQUENCY_LABELS[frequency] ?? frequency
+}
+
 /** Días entre ejecuciones por frecuencia. Es el default; el programa lo puede sobrescribir. */
 export const FREQUENCY_INTERVAL_DAYS: Record<string, number> = {
   daily: 1,
@@ -353,6 +363,8 @@ export interface InspectionItemSpec {
   placeholder?: string
   /** Dos o más respuestas independientes presentadas en una misma fila. */
   matrix?: { rowId: string; rowLabel: string; columnLabel: string }
+  /** Ítem `number` que no puede superar a éste (horómetro de término ≥ inicio). Ver `ChecklistItem`. */
+  notLessThanItemId?: string
 }
 
 export type InspectionResult = "conforming" | "partial" | "non_conforming" | "not_applicable" | "not_present" | "recorded"
@@ -558,7 +570,7 @@ export function deriveFindings(items: InspectionItemSpec[], answers: InspectionA
 }
 
 export interface CompletionBlocker {
-  kind: "missing_required" | "missing_na_reason" | "missing_partial_reason" | "missing_nc_reason" | "missing_closing_act" | "unconfirmed_critical"
+  kind: "missing_required" | "missing_na_reason" | "missing_partial_reason" | "missing_nc_reason" | "missing_closing_act" | "unconfirmed_critical" | "invalid_value"
   detail: string
   /** Ítem que lo originó. Ausente sólo en `missing_closing_act`, que no cuelga de ningún ítem. */
   sectionId?: string
@@ -613,6 +625,8 @@ export interface ClosingActSpec {
   resultOptions: { value: string; label: string }[]
   hasRestrictions: boolean
   signatureRoles: string[]
+  /** El papel puede traer firmas en blanco: los roles que falten no bloquean el cierre. */
+  allowMissingSignatures?: boolean
 }
 
 export interface ClosingActInput {
@@ -629,6 +643,7 @@ export function closingActFromDefinition(definition: {
     resultOptions?: { value: string; label: string }[]
     hasRestrictions?: boolean
     signatureRoles?: string[]
+    allowMissingSignatures?: boolean
   }
 }): ClosingActSpec | null {
   const act = definition.closingAct
@@ -638,8 +653,13 @@ export function closingActFromDefinition(definition: {
     resultOptions: act.resultOptions,
     hasRestrictions: act.hasRestrictions ?? false,
     signatureRoles: act.signatureRoles ?? [],
+    // Sólo cuando se declara `true`: una plantilla anterior sin el campo exige todas las firmas.
+    ...(act.allowMissingSignatures === true ? { allowMissingSignatures: true } : {}),
   }
 }
+
+/** Lo que se lee en lugar del nombre cuando el papel no trae esa firma. */
+export const MISSING_PAPER_SIGNATURE_LABEL = "Sin firma en el papel"
 
 /**
  * Valida el acta contra lo que declara la plantilla. Devuelve el mensaje de
@@ -657,11 +677,130 @@ export function validateClosingAct(spec: ClosingActSpec, act: ClosingActInput | 
   }
   const signed = new Set(act.signatures.filter((item) => item.name.trim().length > 0).map((item) => item.role))
   const missing = spec.signatureRoles.filter((role) => !signed.has(role))
-  if (missing.length > 0) {
+  // Con `allowMissingSignatures` el papel manda: una firma en blanco ahí no se
+  // inventa en la plataforma. Las que sí vienen exigieron su nombre arriba.
+  if (missing.length > 0 && spec.allowMissingSignatures !== true) {
     // «Jefe area», no `jefe_area`: la clave cruda es del catálogo, no de quien firma.
     return `Faltan firmas del acta: ${missing.map(formatSignatureRole).join(", ")}.`
   }
   return null
+}
+
+/** Número de una lectura como la escribe el papel: acepta coma decimal. `null` si no es número. */
+export function parseMeterValue(raw: string | null | undefined): number | null {
+  const text = raw?.trim() ?? ""
+  if (text.length === 0) return null
+  const parsed = Number(text.replace(",", "."))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+/**
+ * Mensaje de error si un ítem con `notLessThanItemId` quedó por debajo del ítem
+ * al que apunta; `null` si no aplica, si falta alguno de los dos valores o si
+ * está en orden. Pura: la consumen el formulario (error en línea) y
+ * `assessRunCompletion` (bloqueo en el servidor), para decir lo mismo en ambos.
+ */
+export function notLessThanProblem(
+  item: Pick<InspectionItemSpec, "sectionId" | "itemId" | "label" | "notLessThanItemId">,
+  items: readonly Pick<InspectionItemSpec, "sectionId" | "itemId" | "label">[],
+  valueOf: (sectionId: string, itemId: string) => string | null | undefined,
+): string | null {
+  if (!item.notLessThanItemId) return null
+  const other = items.find((entry) => entry.sectionId === item.sectionId && entry.itemId === item.notLessThanItemId)
+  if (!other) return null
+  const own = parseMeterValue(valueOf(item.sectionId, item.itemId))
+  const floor = parseMeterValue(valueOf(other.sectionId, other.itemId))
+  if (own === null || floor === null || own >= floor) return null
+  const name = (label: string) => label.replace(/\.$/, "").trim().toLowerCase()
+  const shown = (id: string) => valueOf(item.sectionId, id)?.trim() ?? ""
+  return `El ${name(item.label)} (${shown(item.itemId)}) es menor que el ${name(other.label)} (${shown(other.itemId)}).`
+}
+
+/**
+ * ¿La sección corresponde al equipo inspeccionado? Sin lista, sin equipo o con un
+ * tipo que no se pudo leer: sí (se muestra todo, como antes de este campo). La
+ * comparación ignora mayúsculas y espacios, porque `fuel_vehicles.type` es texto libre
+ * con catálogo (`fuel_equipment_types`) y no una enumeración de base.
+ */
+export function sectionAppliesToVehicleType(
+  section: { appliesToVehicleTypes?: readonly string[] | null },
+  vehicleType: string | null | undefined,
+): boolean {
+  const allowed = section.appliesToVehicleTypes
+  if (!allowed || allowed.length === 0) return true
+  const type = vehicleType?.trim().toLowerCase()
+  if (!type) return true
+  return allowed.some((entry) => entry.trim().toLowerCase() === type)
+}
+
+/** Las secciones que le corresponden al equipo; la definición original no se muta. */
+export function sectionsForVehicleType<T extends { appliesToVehicleTypes?: readonly string[] | null }>(
+  sections: readonly T[],
+  vehicleType: string | null | undefined,
+): T[] {
+  return sections.filter((section) => sectionAppliesToVehicleType(section, vehicleType))
+}
+
+/**
+ * La definición reducida a lo que le toca al equipo. Devuelve la MISMA definición
+ * si ninguna sección se filtra (y si no trae `sections`, como los fixtures
+ * legados), de modo que una plantilla sin `appliesToVehicleTypes` no cambia en
+ * nada.
+ */
+export function definitionForVehicleType<T extends { sections?: readonly { appliesToVehicleTypes?: readonly string[] | null }[] }>(
+  definition: T,
+  vehicleType: string | null | undefined,
+): T {
+  if (!Array.isArray(definition.sections)) return definition
+  const sections = sectionsForVehicleType(definition.sections, vehicleType)
+  return sections.length === definition.sections.length ? definition : { ...definition, sections }
+}
+
+/* ── Programación de lunes a sábado ────────────────────────────────────────
+ * Un programa diario cuya plantilla declara `scheduleSkipsSundays` no tiene
+ * ejecuciones en domingo. Las fechas son días civiles ISO (`YYYY-MM-DD`); el
+ * día de la semana se lee a mediodía UTC, que no cruza de día en ningún huso.
+ */
+
+export function isSunday(date: string): boolean {
+  return new Date(`${date}T12:00:00.000Z`).getUTCDay() === 0
+}
+
+/** La misma fecha, o el lunes siguiente si cae en domingo. */
+export function skipSunday(date: string): string {
+  return isSunday(date) ? addDays(date, 1) : date
+}
+
+/**
+ * Qué hace el materializador con un programa vencido.
+ *
+ * - `create`: crea la ejecución con `scheduledFor`.
+ * - `advance`: no crea nada; sólo mueve `nextDueOn` a `scheduledFor` (un domingo
+ *   que aún es hoy: la ejecución del lunes nace cuando el lunes llegue).
+ *
+ * Sin `skipSundays` es siempre `create` sobre el vencimiento, como antes.
+ * `manual` ("Ejecutar ahora") siempre crea, pero con el primer día hábil.
+ */
+export function resolveProgramSlot(args: {
+  nextDueOn: string
+  today: string
+  skipSundays: boolean
+  manual: boolean
+}): { action: "create" | "advance"; scheduledFor: string } {
+  const scheduledFor = args.skipSundays ? skipSunday(args.nextDueOn) : args.nextDueOn
+  const shifted = scheduledFor !== args.nextDueOn
+  if (shifted && !args.manual && scheduledFor > args.today) return { action: "advance", scheduledFor }
+  return { action: "create", scheduledFor }
+}
+
+/**
+ * ¿Este programa salta los domingos? Lo decide el snapshot de la plantilla (no el
+ * registro de definiciones en código) y sólo con frecuencia diaria: una plantilla
+ * anterior que no trae el campo se programa exactamente como siempre.
+ */
+export function programSkipsSundays(frequency: string, definitionSnapshot: unknown): boolean {
+  if (frequency !== "daily") return false
+  return (definitionSnapshot as { scheduleSkipsSundays?: unknown } | null | undefined)?.scheduleSkipsSundays === true
 }
 
 /**
@@ -715,6 +854,14 @@ export function assessRunCompletion(
     if (answer.result === "non_conforming" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
       blockers.push({ kind: "missing_nc_reason", detail: item.label, sectionId: item.sectionId, itemId: item.itemId })
     }
+  }
+  // Un número que no puede ser menor que otro de la misma sección (horómetro de
+  // término ≥ inicio). Sólo si AMBOS tienen valor: un campo en blanco no es un
+  // error de orden, y si es obligatorio ya lo dijo el recorrido de arriba.
+  for (const item of items) {
+    if (!item.notLessThanItemId) continue
+    const problem = notLessThanProblem(item, items, (sectionId, itemId) => answered.get(`${sectionId}::${itemId}`)?.value)
+    if (problem) blockers.push({ kind: "invalid_value", detail: problem, sectionId: item.sectionId, itemId: item.itemId })
   }
   // Ratificación de lo que leyó la máquina en los ítems que matan. Va después
   // del recorrido de obligatorios para que el mensaje liste sólo lo que queda
@@ -962,7 +1109,19 @@ export function addDays(date: string, days: number): string {
  * completos hasta superar hoy: un programa diario abandonado seis meses genera
  * UNA ejecución, no 180.
  */
-export function nextDueAfter(dueOn: string, intervalDays: number, today: string): string {
+export function nextDueAfter(
+  dueOn: string,
+  intervalDays: number,
+  today: string,
+  options: { skipSundays?: boolean } = {},
+): string {
+  const next = rollForward(dueOn, intervalDays, today)
+  // Un domingo pasa al lunes: sigue siendo posterior a hoy, y sólo se agrega
+  // un día, así que la cadencia no se desordena.
+  return options.skipSundays ? skipSunday(next) : next
+}
+
+function rollForward(dueOn: string, intervalDays: number, today: string): string {
   const step = Math.max(1, Math.trunc(intervalDays))
   let next = addDays(dueOn, step)
   if (next > today) return next

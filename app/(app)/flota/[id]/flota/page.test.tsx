@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   // Áreas que quien mira ve en la ficha. Por defecto sólo Flota: así la pestaña muestra también lo que,
   // con Mantención o Combustible visibles, vive en esas pestañas (OT, compras, cómo carga).
   areas: ["flota"] as string[],
+  stays: vi.fn(async (..._args: unknown[]): Promise<unknown[]> => []),
+  operational: vi.fn(async (..._args: unknown[]) => true),
 }))
 vi.mock("next/navigation", () => ({
   redirect: (href: string) => { throw new Error(href) },
@@ -32,6 +34,14 @@ vi.mock("../_ficha/ficha-chrome", () => ({
   VehicleFichaEditAction: () => null,
 }))
 vi.mock("@/lib/services/fleet", () => ({ getFleetVehicleDetail: mocks.detail }))
+// La tarjeta «Contrato» lee su historial de la base; acá no interesa.
+vi.mock("@/lib/services/vehicle-ficha", () => ({ loadVehicleContractCard: async () => ({ history: [], contractOptions: [] }) }))
+vi.mock("@/lib/services/fleet-stays", () => ({ listVehicleStays: (...args: unknown[]) => mocks.stays(...args) }))
+vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: (...args: unknown[]) => mocks.operational(...args) }))
+// El botón trae consigo las acciones de servidor; su prueba es la del modal.
+vi.mock("@/components/fleet/transfer/transfer-button", () => ({
+  TransferButton: ({ initialVehicleId }: { initialVehicleId?: string }) => <button type="button" data-vehicle={initialVehicleId}>Trasladar</button>,
+}))
 vi.mock("@/lib/services/system-settings", () => ({ getFleetAdminSettings: async () => ({ warningDays: 30, defaultVehicleStatus: "operativo" }) }))
 // La hoja «Actualizar vencimientos» importa la acción; su lógica tiene su propia prueba.
 vi.mock("../../actions", () => ({ updateVehicleExpiriesAction: vi.fn() }))
@@ -72,7 +82,10 @@ async function factValue(performanceUnit: string, label: string) {
   return screen.getByText(label).nextElementSibling?.textContent
 }
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); mocks.can.mockReturnValue(false); mocks.areas = ["flota"]; vi.useRealTimers() })
+afterEach(() => {
+  cleanup(); vi.clearAllMocks(); mocks.can.mockReturnValue(false); mocks.areas = ["flota"]; vi.useRealTimers()
+  mocks.stays.mockResolvedValue([]); mocks.operational.mockResolvedValue(true)
+})
 
 describe("ficha de vehículo: unidad de rendimiento", () => {
   // El dato es la unidad con que se mide el rendimiento del equipo (catálogo), no una medición:
@@ -313,5 +326,62 @@ describe("ficha de vehículo: documentos y encabezado", () => {
 
     expect(screen.getByText("5,43 → 6,1 km/L")).toBeInTheDocument()
     expect(screen.queryByText(/5\.43/)).toBeNull()
+  })
+})
+
+describe("ficha de vehículo: traslados", () => {
+  const stay = (overrides: Record<string, unknown>) => ({
+    id: "s1", worksiteId: "ws-1", worksiteName: "Biodiversa", startedOn: null, endedOn: null, source: "alta", evidence: null, transfer: null,
+    ...overrides,
+  })
+
+  async function renderPage() {
+    mocks.detail.mockResolvedValue(detail("km_per_liter"))
+    render(await FlotaVehiclePage({ params: Promise.resolve({ id: "veh-1" }) }))
+  }
+
+  it("dibuja el recorrido: la estadía vieja con su traslado y la actual abierta", async () => {
+    mocks.stays.mockResolvedValue([
+      stay({ id: "s1", worksiteName: "Biodiversa", startedOn: null, endedOn: "2026-11-09" }),
+      stay({
+        id: "s2", worksiteId: "ws-2", worksiteName: "Mininco", startedOn: "2026-11-10", endedOn: "2026-11-19", source: "traslado",
+        transfer: { id: "t1", folio: "TR-2026-0001", reason: "Refuerzo de la cosecha", authorizedBy: "Gerencia", createdByName: "Ana Pérez", voided: false },
+      }),
+      stay({ id: "s3", worksiteName: "Biodiversa", startedOn: "2026-11-20", endedOn: null, source: "reconstruccion", evidence: "3 cargas de combustible" }),
+    ])
+    await renderPage()
+
+    const items = within(screen.getByRole("heading", { name: "Recorrido por faena" }).closest("[id='recorrido-faenas']") as HTMLElement).getAllByRole("listitem")
+    expect(items).toHaveLength(3)
+    expect(items[0]!.textContent).toContain("Desde el inicio del registro")
+    expect(items[0]!.textContent).toContain("Alta")
+    expect(items[1]!.textContent).toContain("TR-2026-0001 · Refuerzo de la cosecha · autorizado por Gerencia · registrado por Ana Pérez")
+    expect(items[1]!.textContent).toContain("10 días")
+    expect(items[2]!.textContent).toContain("Hasta hoy")
+    expect(items[2]!.textContent).toContain("Reconstruido · 3 cargas de combustible")
+  })
+
+  it("sin permiso de trasladar no hay botón; con permiso, el submódulo encendido y alcance, abre con este equipo", async () => {
+    await renderPage()
+    expect(screen.queryByRole("button", { name: "Trasladar" })).toBeNull()
+    cleanup()
+
+    mocks.can.mockImplementation((_session, permission) => permission === "flota:transfer")
+    await renderPage()
+    expect(screen.getByRole("button", { name: "Trasladar" })).toHaveAttribute("data-vehicle", "veh-1")
+  })
+
+  it("con el submódulo apagado no hay botón aunque tenga el permiso", async () => {
+    mocks.can.mockImplementation((_session, permission) => permission === "flota:transfer")
+    mocks.operational.mockResolvedValue(false)
+    await renderPage()
+    expect(screen.queryByRole("button", { name: "Trasladar" })).toBeNull()
+  })
+
+  it("con el equipo en una faena fuera de su alcance no hay botón", async () => {
+    mocks.can.mockImplementation((_session, permission) => permission === "flota:transfer")
+    mocks.detail.mockResolvedValue(detail("km_per_liter", { vehicle: { worksiteId: "ws-9" } }))
+    render(await FlotaVehiclePage({ params: Promise.resolve({ id: "veh-1" }) }))
+    expect(screen.queryByRole("button", { name: "Trasladar" })).toBeNull()
   })
 })

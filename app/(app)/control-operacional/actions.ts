@@ -8,10 +8,45 @@ import { getOperationalControlHub, resolveOperationalControlPeriod, type Operati
 import { OPERATIONAL_CONTROL_VIEW_PERMISSIONS } from "@/lib/operational-control/capabilities"
 import { buildOperationalAssetExportColumns, buildOperationalAssetExportRow } from "@/lib/operational-control/export-columns"
 import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
+import { contractVehicleIds, getContractCostBreakdown, type ContractCostBreakdown } from "@/lib/services/contracts/contract-costs"
+import { logger } from "@/lib/logger"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 
-export async function exportOperationalControlXlsxAction(filters: Partial<OperationalControlPeriod>) {
+/** Hoja «Costo por contrato»: las mismas filas que la sección del Panel, con los importes en pesos. */
+function addContractCostSheet(workbook: import("exceljs").Workbook, breakdown: ContractCostBreakdown) {
+  const sheet = workbook.addWorksheet("Costo por contrato")
+  sheet.columns = [
+    { header: "Faena", key: "worksite", width: 28 },
+    { header: "Contrato", key: "contract", width: 32 },
+    { header: "Mandante", key: "client", width: 28 },
+    { header: "Equipos", key: "vehicles", width: 10 },
+    { header: "Combustible", key: "fuel", width: 16 },
+    { header: "Compras", key: "purchases", width: 16 },
+    { header: "Total", key: "total", width: 16 },
+    { header: "Parcial", key: "partial", width: 10 },
+  ]
+  for (const worksite of breakdown.worksites) {
+    for (const row of worksite.rows) {
+      sheet.addRow({
+        worksite: worksite.worksiteName,
+        contract: row.label,
+        client: row.clientName,
+        // Las filas de «Por repartir» y «Compras sin equipo» no cuentan equipos.
+        vehicles: row.kind === "pending" || row.kind === "no_equipment" ? null : row.vehicleCount,
+        fuel: row.fuel,
+        purchases: row.purchases,
+        total: row.total,
+        partial: row.partial ? "Sí" : "No",
+      })
+    }
+  }
+  sheet.getRow(1).font = { bold: true }
+  sheet.views = [{ state: "frozen", ySplit: 1 }]
+  for (const key of ["fuel", "purchases", "total"]) sheet.getColumn(key).numFmt = "$#,##0"
+}
+
+export async function exportOperationalControlXlsxAction(filters: Partial<OperationalControlPeriod> & { contrato?: string }) {
   let session
   try { session = await requireAnyPermission(OPERATIONAL_CONTROL_VIEW_PERMISSIONS, "/control-operacional") }
   catch { return { ok: false as const, message: "Sin permisos para exportar Control operacional" } }
@@ -24,11 +59,27 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     // Los instrumentos de servicio no tienen combustible modelado; no se
     // exportan como activos operacionales para no pintar filas inertes.
     const operationalAssets = data.assets.filter((asset) => asset.kind === "vehicle")
+    // Costo por contrato: una consulta agrupada con los vehículos del hub. Si falla, el Excel sigue
+    // sin esa hoja y lo dice en «Secciones no cargadas», igual que las demás fuentes.
+    const degradedSources = [...data.degradedSources]
+    let contractCosts: ContractCostBreakdown | null = null
+    try {
+      contractCosts = await getContractCostBreakdown(session, period, operationalAssets.map((asset) => ({ id: asset.id, worksiteId: asset.worksiteId })))
+    } catch (error) {
+      logger.warn("[control-operacional] no se pudo calcular el costo por contrato para el Excel", error)
+      degradedSources.push("costo por contrato")
+    }
+    // «Activos» se filtra como la pantalla; un contrato fuera del alcance no filtra nada.
+    const selectedContractId = contractCosts && filters.contrato && contractCosts.contractOptions.some((option) => option.id === filters.contrato)
+      ? filters.contrato
+      : null
+    const contractVehicles = contractCosts && selectedContractId ? contractVehicleIds(contractCosts.windows, selectedContractId, period) : null
+    const exportedAssets = contractVehicles ? operationalAssets.filter((asset) => contractVehicles.has(asset.id)) : operationalAssets
     const ExcelJS = await import("exceljs")
     const workbook = new ExcelJS.Workbook()
     const sheet = workbook.addWorksheet("Activos")
     sheet.columns = buildOperationalAssetExportColumns(canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders, canViewPurchaseCosts, canViewMaintenance)
-    for (const asset of operationalAssets) {
+    for (const asset of exportedAssets) {
       sheet.addRow(buildOperationalAssetExportRow(asset, canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders, canViewPurchaseCosts, canViewMaintenance))
     }
     sheet.getRow(1).font = { bold: true }
@@ -100,8 +151,8 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     if (canViewCapa && canViewInspections) {
       indicatorRows.push(["CAPA vencidas con equipo operando (GPS)", data.gpsCross.prevention.operatingWithOverdueCapa])
     }
-    if (data.degradedSources.length > 0) {
-      indicatorRows.push(["Secciones no cargadas", data.degradedSources.join(", ")])
+    if (degradedSources.length > 0) {
+      indicatorRows.push(["Secciones no cargadas", degradedSources.join(", ")])
     }
     const indicators = workbook.addWorksheet("Indicadores")
     indicators.addRows(indicatorRows)
@@ -109,9 +160,14 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     indicators.getColumn(2).width = 22
     indicators.getRow(1).font = { bold: true }
 
-    await addExportMetadataSheet(workbook, session, { filters: period, rowCount: operationalAssets.length })
+    // Sin ningún componente de costo disponible la hoja sería sólo «—»: igual que la sección, no se agrega.
+    if (contractCosts && contractCosts.worksites.length > 0 && Object.values(contractCosts.availability).some(Boolean)) {
+      addContractCostSheet(workbook, contractCosts)
+    }
+
+    await addExportMetadataSheet(workbook, session, { filters: { ...period, ...(selectedContractId ? { contrato: selectedContractId } : {}) }, rowCount: exportedAssets.length })
     const base64 = await xlsxToBase64(workbook)
-    await recordAudit({ userId: session.user.id, action: "export", entityType: "operational_control_report", entityId: nanoid(), newState: { period, rowCount: operationalAssets.length, includesFuelCosts: showFuelCost, includesPurchaseCosts: canViewPurchaseCosts, includesCapa: canViewInspections && canViewCapa } })
+    await recordAudit({ userId: session.user.id, action: "export", entityType: "operational_control_report", entityId: nanoid(), newState: { period, contractId: selectedContractId, rowCount: exportedAssets.length, includesContractCosts: contractCosts !== null, includesFuelCosts: showFuelCost, includesPurchaseCosts: canViewPurchaseCosts, includesCapa: canViewInspections && canViewCapa } })
     return { ok: true as const, data: { base64, filename: `control_operacional_${period.from}_${period.to}.xlsx` } }
   } catch (error) { return { ok: false as const, message: safeActionMessage(error, "No se pudo exportar el reporte") } }
 }

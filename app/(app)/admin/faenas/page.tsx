@@ -6,6 +6,7 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { countContractsByWorksite } from "@/lib/services/contracts/worksite-view"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { FaenasList } from "./faenas-list"
 import { FaenasActions } from "./faenas-actions"
@@ -21,6 +22,7 @@ export default async function FaenasPage() {
     where: worksiteScopeSql(session, worksites.id),
     orderBy: (w, { asc }) => [asc(w.name)],
   })
+  const contractCounts = await countContractsByWorksite(allWorksites.map((w) => w.id))
   const canCreateWorksites = resolveWorksiteScope(session).mode === "all"
 
   const activeCount = allWorksites.filter((w) => w.isActive).length
@@ -51,6 +53,7 @@ export default async function FaenasPage() {
         worksites={allWorksites.map((w) => ({
           id: w.id, name: w.name, code: w.code,
           address: w.address, region: w.region, commune: w.commune, adminContratoLabel: w.adminContratoLabel,
+          contractCount: contractCounts.get(w.id) ?? 0,
           isActive: w.isActive, createdAt: w.createdAt, updatedAt: w.updatedAt,
         }))}
         canCreateWorksites={canCreateWorksites}

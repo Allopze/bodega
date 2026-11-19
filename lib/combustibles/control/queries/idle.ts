@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelTelemetryDaily, fuelVehicles } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { stayWorksiteOnDaySql } from "@/lib/fleet/stays-sql"
 import { idlePct } from "../calc/idle"
 import { mandanteWorksitesSql, selectedMonthKeys, type ControlFilters } from "../filters"
 
@@ -25,10 +26,16 @@ export function telemetryPeriodSql(filters: ControlFilters): SQL {
   return inArray(fuelTelemetryDaily.month, selectedMonthKeys(filters))
 }
 
+/**
+ * Alcance y filtros de faena y mandante sobre la faena del equipo EL DÍA de la fila de
+ * telemetría (su estadía), no sobre la actual: un equipo trasladado el 15-11 cuenta del 1
+ * al 14 en la faena vieja y desde el 15 en la nueva.
+ */
 function vehicleScopeSql(session: Session | null, filters: ControlFilters): SQL | undefined {
+  const worksiteOnDay = stayWorksiteOnDaySql(fuelTelemetryDaily.vehicleId, sql`${fuelTelemetryDaily.day}`)
   return and(
-    worksiteScopeSql(session, fuelVehicles.worksiteId, filters.worksiteId),
-    filters.mandanteId ? sql`${fuelVehicles.worksiteId} in ${mandanteWorksitesSql(filters.mandanteId)}` : undefined,
+    worksiteScopeSql(session, worksiteOnDay, filters.worksiteId),
+    filters.mandanteId ? sql`${worksiteOnDay} in ${mandanteWorksitesSql(filters.mandanteId)}` : undefined,
   )
 }
 

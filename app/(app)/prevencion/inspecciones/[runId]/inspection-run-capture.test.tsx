@@ -434,6 +434,51 @@ describe("«Declarar ejecutada»: un solo diálogo para los dos botones", () => 
   })
 })
 
+describe("Reporte de Equipos v03: horómetro y firmas del papel", () => {
+  const HOROMETRO = {
+    id: "horometro", title: "Horómetro", items: [
+      { id: "inicio", label: "Horómetro inicio.", kind: "number" as const, required: true, countsForCompliance: false, danoPotencial: null },
+      { id: "termino", label: "Horómetro término.", kind: "number" as const, required: false, countsForCompliance: false, danoPotencial: null, notLessThanItemId: "inicio" },
+    ],
+  }
+  const ACTA = {
+    title: "Cierre del reporte", resultOptions: [{ value: "operativo", label: "Operativo" }], hasRestrictions: false,
+    signatureRoles: ["operador_entrante", "supervisor_turno"],
+  }
+  const escribir = (nombre: string, valor: string) => fireEvent.change(screen.getByLabelText(`Respuesta de ${nombre}`), { target: { value: valor } })
+
+  it("el término menor que el inicio muestra el error en línea y lo retira al corregirlo", async () => {
+    await montar({ sections: [HOROMETRO] })
+    escribir("Horómetro inicio.", "140000")
+    escribir("Horómetro término.", "135120")
+    expect(screen.getByText("El horómetro término (135120) es menor que el horómetro inicio (140000).")).toBeInTheDocument()
+
+    escribir("Horómetro término.", "140350")
+    expect(screen.queryByText(/es menor que el horómetro inicio/)).toBeNull()
+    // Los decimales cuentan (el campo numérico entrega el punto; la coma la cubren las pruebas del servidor).
+    escribir("Horómetro inicio.", "140350.5")
+    expect(screen.getByText("El horómetro término (140350) es menor que el horómetro inicio (140350.5).")).toBeInTheDocument()
+  })
+
+  it("con el término en blanco no hay error", async () => {
+    await montar({ sections: [HOROMETRO] })
+    escribir("Horómetro inicio.", "140000")
+    expect(screen.queryByText(/es menor que el horómetro inicio/)).toBeNull()
+  })
+
+  it("con `allowMissingSignatures` la ayuda de cada firma dice que puede quedar en blanco", async () => {
+    await montar({ closingAct: { ...ACTA, allowMissingSignatures: true } })
+    expect(screen.getAllByText("Déjalo en blanco si el papel no trae esta firma.")).toHaveLength(2)
+    expect(screen.queryByText("Nombre de quien firma.")).toBeNull()
+  })
+
+  it("sin el campo (plantilla anterior) la ayuda es la de siempre", async () => {
+    await montar({ closingAct: ACTA })
+    expect(screen.getAllByText("Nombre de quien firma.")).toHaveLength(2)
+    expect(screen.queryByText(/Déjalo en blanco/)).toBeNull()
+  })
+})
+
 describe("la matriz de EPP", () => {
   it("una prenda tiene DOS grupos de radio (Usa y Estado) y no dos ítems sueltos", async () => {
     await montar({ sections: [{ id: "sec-1", title: "Uso y estado de EPP", items: [CELDA_USO, CELDA_ESTADO] }] })

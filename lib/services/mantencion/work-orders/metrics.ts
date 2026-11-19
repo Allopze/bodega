@@ -95,6 +95,28 @@ function scopeWhere(scope: WorkOrderMetricsScope, worksiteId?: string): SQL | un
   return worksiteScopeSqlFor(scope, mantWorkOrders.worksiteId, worksiteId)
 }
 
+/**
+ * Límites del período en hora de Chile: desde la medianoche chilena del primer
+ * día hasta la medianoche chilena siguiente al último. Sin la zona explícita
+ * `::date` se leería en la de la sesión de Postgres (UTC en producción) y el
+ * recorte se movería 3–4 horas según el servidor.
+ */
+function periodBoundsSql(period: WorkOrderPeriod) {
+  return {
+    start: sql`(${period.from}::date)::timestamp AT TIME ZONE 'America/Santiago'`,
+    end: sql`((${period.to}::date + 1)::timestamp AT TIME ZONE 'America/Santiago')`,
+  }
+}
+
+/**
+ * Una OT cerrada dentro del período: UNA sola definición para las cifras por
+ * equipo (`closedInPeriod`…).
+ */
+function closedInPeriodSql(period: WorkOrderPeriod): SQL {
+  const { start, end } = periodBoundsSql(period)
+  return sql`${mantWorkOrders.status} = 'cerrada' AND ${mantWorkOrders.closedAt} >= ${start} AND ${mantWorkOrders.closedAt} < ${end}`
+}
+
 /** Una expresión de fecha puede volver como `Date` o como texto según el driver. */
 function isoOrNull(value: unknown): string | null {
   if (value == null) return null
@@ -120,16 +142,11 @@ export async function getVehicleWorkOrderMetrics(
   const nowIso = (options.now ?? new Date()).toISOString()
   const now = sql`${nowIso}::timestamptz`
 
-  // El período son días civiles chilenos: se acota desde la medianoche de Chile
-  // del primer día hasta la medianoche de Chile siguiente al último. Sin la zona
-  // explícita `::date` se leería en la de la sesión de Postgres (UTC en
-  // producción) y el recorte se movería 3–4 horas según el servidor.
   const period = options.period
-  const periodStart = period ? sql`(${period.from}::date)::timestamp AT TIME ZONE 'America/Santiago'` : null
-  const periodEnd = period ? sql`((${period.to}::date + 1)::timestamp AT TIME ZONE 'America/Santiago')` : null
-  const closedInRange = period
-    ? sql`${mantWorkOrders.status} = 'cerrada' AND ${mantWorkOrders.closedAt} >= ${periodStart} AND ${mantWorkOrders.closedAt} < ${periodEnd}`
-    : sql`false`
+  const bounds = period ? periodBoundsSql(period) : null
+  const periodStart = bounds?.start ?? null
+  const periodEnd = bounds?.end ?? null
+  const closedInRange = period ? closedInPeriodSql(period) : sql`false`
   const hasEntry = sql`${mantWorkOrders.workshopEntryAt} IS NOT NULL`
   const hoursInPeriod = period
     ? sql`COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(${mantWorkOrders.workshopExitAt}, ${now}), ${periodEnd}) - GREATEST(${mantWorkOrders.workshopEntryAt}, ${periodStart}))) / 3600) FILTER (WHERE ${hasEntry} AND ${mantWorkOrders.workshopEntryAt} < ${periodEnd} AND COALESCE(${mantWorkOrders.workshopExitAt}, ${now}) > ${periodStart}), 0)`

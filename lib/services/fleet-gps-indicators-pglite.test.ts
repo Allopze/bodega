@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { setVehicleWorksiteForTest } from "@/lib/testing/fleet-stays"
 import { IDS, seedControlFixtures } from "@/lib/combustibles/control/queries/test-fixtures"
 
 /**
@@ -260,5 +261,106 @@ describe("getGpsIdleIndicators", () => {
 
   it("exige combustibles:view", async () => {
     await expect(getGpsIdleIndicators(session("global", ["flota:view", "flota:view_gps_history"]), period)).rejects.toThrow()
+  })
+})
+
+/**
+ * Faena del día: un equipo trasladado a mitad de período cuenta cada viaje, alerta y
+ * avance de medidor en la faena donde estaba ESE día (la estadía), no en la actual. Se
+ * traslada el 15-11 de `wsA` a `wsB`; el día del traslado ya cuenta en la faena nueva.
+ */
+describe("indicadores GPS por la faena del día", () => {
+  const MOVED = "veh-gps-moved"
+  const wide = {
+    from: "2026-11-01",
+    to: "2026-11-20",
+    previous: { from: "2026-10-12", to: "2026-10-31" },
+    granularity: "day" as const,
+    chart: { from: "2026-11-01", to: "2026-11-20", granularity: "day" as const },
+  }
+  const speed = "El dispositivo MV-1 ha excedido la velocidad en segmento vial, límite de 50 km/h."
+
+  beforeAll(async () => {
+    await testDb.insert(schema.fuelVehicles).values({
+      id: MOVED, plate: "MV-0001", code: "MV-1", type: "x", equipmentTypeId: IDS.eqType,
+      meterType: "odometer", performanceUnit: "km_per_liter", worksiteId: IDS.wsA,
+    })
+    await setVehicleWorksiteForTest(testDb, MOVED, IDS.wsB, "2026-11-15")
+
+    // Avance: +50 el 12 y +10 el 14 (en A); +10 el 15 (día del traslado, ya en B) y +30 el 17 (en B).
+    await testDb.insert(schema.fuelMeterReadings).values([
+      reading(MOVED, "MV0001", "gps_wialon", "odometer", "2026-11-11", 5_000),
+      reading(MOVED, "MV0001", "gps_wialon", "odometer", "2026-11-12", 5_050),
+      reading(MOVED, "MV0001", "gps_wialon", "odometer", "2026-11-14", 5_060),
+      reading(MOVED, "MV0001", "gps_wialon", "odometer", "2026-11-15", 5_070),
+      reading(MOVED, "MV0001", "gps_wialon", "odometer", "2026-11-17", 5_100),
+    ])
+    // La faena propia de cada fila ya no sigue al equipo: todas dicen la actual (B) y no deben usarse para la historia.
+    const trip = (key: string, startedAt: string, km: number) => ({
+      id: `trip-${key}`, provider: "onway", externalDeviceId: `dev-${key}`, externalTripKey: key, vehicleId: MOVED, worksiteId: IDS.wsB,
+      startedAt, endedAt: new Date(Date.parse(startedAt) + 3_600_000).toISOString(), distanceKm: km,
+    })
+    await testDb.insert(schema.fleetGpsTrips).values([
+      trip("m-12", "2026-11-12T15:00:00.000Z", 7),
+      // 23:30 del 14 en Chile (UTC-3): del 14, todavía en A, aunque en UTC ya sea 15.
+      trip("m-14-late", "2026-11-15T02:30:00.000Z", 3),
+      trip("m-17", "2026-11-17T15:00:00.000Z", 9),
+    ])
+    const alert = (key: string, day: string, title: string) => ({
+      id: `alert-${key}`, provider: "onway", externalDeviceId: `dev-${key}`, externalEventKey: key, vehicleId: MOVED, worksiteId: IDS.wsB,
+      alertType: "1", title, occurredAt: at(day),
+    })
+    await testDb.insert(schema.fleetGpsAlerts).values([
+      alert("m-s12", "2026-11-12", speed),
+      alert("m-s17", "2026-11-17", speed),
+      alert("m-h17", "2026-11-17", "El dispositivo MV-1 frenó bruscamente"),
+    ])
+  })
+
+  it("el avance se reparte por la faena de cada día", async () => {
+    const data = await getGpsUsageIndicators(session("global"), wide)
+    const byWorksite = Object.fromEntries(data.byWorksite.map((row) => [row.worksiteId, row.km]))
+    // wsA: los 130 de vA + 50 + 10 del equipo trasladado; wsB: 10 (día del traslado) + 30.
+    expect(byWorksite[IDS.wsA]).toBe(190)
+    expect(byWorksite[IDS.wsB]).toBe(40)
+    expect(data.km.current).toBe(230)
+    // El rótulo del equipo sigue siendo su faena actual.
+    expect(data.topByKm.find((row) => row.vehicleId === MOVED)).toMatchObject({ km: 100, worksiteId: IDS.wsB })
+  })
+
+  it("filtrar por la faena vieja deja fuera lo que el equipo recorrió después", async () => {
+    const onA = await getGpsUsageIndicators(session("global"), { ...wide, worksiteId: IDS.wsA })
+    expect(onA.km.current).toBe(190)
+    expect(onA.topByKm.find((row) => row.vehicleId === MOVED)).toMatchObject({ km: 60 })
+    expect(onA.byWorksite.map((row) => row.worksiteId)).toEqual([IDS.wsA])
+    const onB = await getGpsUsageIndicators(session("global"), { ...wide, worksiteId: IDS.wsB })
+    expect(onB.km.current).toBe(40)
+    expect(onB.topByKm.find((row) => row.vehicleId === MOVED)).toMatchObject({ km: 40 })
+  })
+
+  it("un rol acotado a la faena vieja ve lo que el equipo hizo allí, no lo de después", async () => {
+    const data = await getGpsUsageIndicators(session([IDS.wsA]), wide)
+    expect(data.km.current).toBe(190)
+    expect(data.byWorksite.map((row) => row.worksiteId)).toEqual([IDS.wsA])
+  })
+
+  it("los viajes siguen la faena del día, también pasada la medianoche en UTC", async () => {
+    const onA = await getGpsDrivingIndicators(session("global"), { ...wide, worksiteId: IDS.wsA })
+    // vA: 3 viajes (36 km) + el equipo trasladado el 12 (7) y el del 14 a las 23:30 de Chile (3).
+    expect(onA.trips).toMatchObject({ current: 5, km: 46 })
+    const onB = await getGpsDrivingIndicators(session("global"), { ...wide, worksiteId: IDS.wsB })
+    // vB: 1 viaje (5 km) + el del 17 (9 km).
+    expect(onB.trips).toMatchObject({ current: 2, km: 14 })
+  })
+
+  it("las alertas siguen la faena del día", async () => {
+    const onA = await getGpsDrivingIndicators(session("global"), { ...wide, worksiteId: IDS.wsA })
+    expect(onA.alertTotals).toMatchObject({ speeding: 3, harsh_driving: 0 })
+    expect(onA.topSpeeding.map((row) => [row.vehicleId, row.count])).toEqual([[IDS.vA, 2], [MOVED, 1]])
+    const onB = await getGpsDrivingIndicators(session("global"), { ...wide, worksiteId: IDS.wsB })
+    expect(onB.alertTotals).toMatchObject({ speeding: 2, harsh_driving: 2 })
+    // Un rol acotado a B no ve el exceso del 12, cuando el equipo estaba en A.
+    const scoped = await getGpsDrivingIndicators(session([IDS.wsB]), wide)
+    expect(scoped.alertTotals).toMatchObject({ speeding: 2, harsh_driving: 2 })
   })
 })

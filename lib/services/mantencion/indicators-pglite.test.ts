@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { resolveIndicatorPeriod } from "@/lib/indicators/period"
+import { setVehicleWorksiteForTest } from "@/lib/testing/fleet-stays"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 
 /**
@@ -330,5 +331,44 @@ describe("ventana de los gráficos de evolución vs período", () => {
     expect(oos.points).toHaveLength(6)
     expect(oos.total).toBe(4.5) // 1 día de a2 el 1-11 y 3,5 del abierto de a1; no los de octubre ni julio
     expect(oos.totalPrevious).toBe(0) // 1–13 oct: ninguna detención de la faena A (la de a2 empieza el 30)
+  })
+})
+
+describe("días fuera de servicio por la faena del día (traslado entre faenas)", () => {
+  const TRANSFERRED = "v-ind-transfer"
+  // Un cierre de mes posterior al «hoy» de las demás pruebas, para medir 12–18 de noviembre completos.
+  const LATER = new Date("2026-11-19T15:00:00Z")
+  const LATER_TODAY = "2026-11-19"
+  const laterPeriod = resolveIndicatorPeriod({ desde: "2026-11-01", hasta: LATER_TODAY }, LATER_TODAY)
+  const LATER_QUERY = { from: laterPeriod.from, to: laterPeriod.to, granularity: laterPeriod.granularity, previous: laterPeriod.previous, chart: laterPeriod.chart, today: LATER_TODAY }
+
+  it("cada día detenido cuenta en la faena donde estaba el equipo ese día; el del traslado, en la nueva", async () => {
+    const before = {
+      a: (await loadOutOfService(GLOBAL, { ...LATER_QUERY, worksiteId: WS.a }, LATER)).total,
+      b: (await loadOutOfService(GLOBAL, { ...LATER_QUERY, worksiteId: WS.b }, LATER)).total,
+      all: (await loadOutOfService(GLOBAL, LATER_QUERY, LATER)).total,
+    }
+    await testDb.insert(schema.fuelVehicles).values({
+      id: TRANSFERRED, code: "KA-T1", plate: "TTTT-01", type: "Camión", equipmentTypeId: "fet-ind", worksiteId: WS.a, model: "R450", year: 2021, brand: "Scania",
+    })
+    // Fuera de servicio del 12 al 18-11 (hora de Chile, UTC-3), trasladado a la faena B desde el 15-11.
+    await testDb.insert(schema.fuelVehicleOperationalIntervals).values({
+      id: "i-transfer", vehicleId: TRANSFERRED, status: "fuera_servicio", startedAt: "2026-11-12T03:00:00Z", endedAt: "2026-11-19T03:00:00Z",
+    })
+    await setVehicleWorksiteForTest(testDb, TRANSFERRED, WS.b, "2026-11-15")
+    try {
+      const a = (await loadOutOfService(GLOBAL, { ...LATER_QUERY, worksiteId: WS.a }, LATER)).total
+      const b = (await loadOutOfService(GLOBAL, { ...LATER_QUERY, worksiteId: WS.b }, LATER)).total
+      const all = (await loadOutOfService(GLOBAL, LATER_QUERY, LATER)).total
+      expect(a - before.a).toBeCloseTo(3, 5) // 12, 13 y 14
+      expect(b - before.b).toBeCloseTo(4, 5) // 15, 16, 17 y 18
+      expect(all - before.all).toBeCloseTo(7, 5) // sin filtro, cada día cuenta una sola vez
+      // Un visor de la faena A ya no ve los días en que el equipo estaba en la B.
+      const scopedA = (await loadOutOfService(SCOPED_A, LATER_QUERY, LATER)).total
+      expect(scopedA).toBeCloseTo(before.a + 3, 5)
+    } finally {
+      await testDb.delete(schema.fuelVehicleOperationalIntervals).where(eq(schema.fuelVehicleOperationalIntervals.id, "i-transfer"))
+      await testDb.delete(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, TRANSFERRED))
+    }
   })
 })

@@ -20,6 +20,8 @@ import {
   resolveOperationalControlPeriod,
   type OperationalControlPeriod,
 } from "@/lib/services/operational-control"
+import { contractVehicleIds, getContractCostBreakdown, type ContractCostBreakdown } from "@/lib/services/contracts/contract-costs"
+import { logger } from "@/lib/logger"
 import { getOperationalSourceHealth, type OperationalReconciliationHealth } from "@/lib/services/operational-control-sources"
 import { canViewOperationalControl } from "@/lib/operational-control/capabilities"
 import { formatDate, formatDateTime } from "@/lib/utils"
@@ -31,6 +33,8 @@ import {
   type AttentionTile,
   type FuelPendingCounts,
 } from "./attention-tiles"
+import { ContractCostSection } from "./contract-cost-section"
+import { ContractFilter } from "./contract-filter"
 import { OperationalAssetsTable } from "./operational-assets-table"
 import { OperationalExportButton } from "./operational-export-button"
 import { GpsCrossChecks } from "./gps-cross-checks"
@@ -127,11 +131,38 @@ export default async function OperationalControlPage({
   // con flota), OT (con su capacidad), combustible y compras vinculadas (con
   // `purchasing:view`). El denominador se deriva de las secciones realmente
   // consultadas; antes era un 4 fijo.
-  const degradedTotal = (canViewFleet ? 5 + (canViewMaintenance ? 1 : 0) : 0) + (canViewWorkOrders ? 1 : 0) + (canViewFuel ? 1 : 0) + (canViewPurchaseCosts ? 1 : 0)
+  // `+ 1`: el contrato vigente de cada equipo («contratos») se consulta siempre.
+  const degradedTotal = (canViewFleet ? 5 + (canViewMaintenance ? 1 : 0) : 0) + (canViewWorkOrders ? 1 : 0) + (canViewFuel ? 1 : 0) + (canViewPurchaseCosts ? 1 : 0) + 1
   const operationalAssets = data.assets.filter((asset) => asset.kind === "vehicle")
-  const visibleAssets = revision === "medidor-gps"
-    ? operationalAssets.filter((asset) => asset.meterMismatch)
+
+  // Costo por contrato: una consulta agrupada con los vehículos del hub (no una por equipo).
+  // Si falla no tumba el panel: la sección lo dice y el resto sigue.
+  let contractCosts: ContractCostBreakdown | null = null
+  let contractCostsFailed = false
+  try {
+    contractCosts = await getContractCostBreakdown(
+      session,
+      period,
+      operationalAssets.map((asset) => ({ id: asset.id, worksiteId: asset.worksiteId })),
+    )
+  } catch (error) {
+    logger.error("[control-operacional] no se pudo calcular el costo por contrato", error)
+    contractCostsFailed = true
+  }
+  // Un `?contrato=` que no está en el alcance del usuario no filtra: dejaría la tabla vacía sin explicación.
+  const requestedContract = typeof sp.contrato === "string" ? sp.contrato : null
+  const selectedContractId = contractCosts && requestedContract && contractCosts.contractOptions.some((option) => option.id === requestedContract)
+    ? requestedContract
+    : null
+  const contractVehicles = contractCosts && selectedContractId
+    ? contractVehicleIds(contractCosts.windows, selectedContractId, period)
+    : null
+  const contractAssets = contractVehicles
+    ? operationalAssets.filter((asset) => contractVehicles.has(asset.id))
     : operationalAssets
+  const visibleAssets = revision === "medidor-gps"
+    ? contractAssets.filter((asset) => asset.meterMismatch)
+    : contractAssets
   const fleetSize = operationalAssets.length
   const stateMismatchAssets = operationalAssets.filter((asset) => asset.stateMismatch)
   const serviceEquipmentCount = data.assets.filter((asset) => asset.kind === "service_equipment").length
@@ -171,7 +202,7 @@ export default async function OperationalControlPage({
             { label: "Panel operacional" },
           ]} />
         }
-        actions={<OperationalExportButton period={period} />}
+        actions={<OperationalExportButton period={period} contractId={selectedContractId} />}
       />
 
       {data.degradedSources.length > 0 && (
@@ -271,6 +302,15 @@ export default async function OperationalControlPage({
         )}
       </section>
 
+      {contractCostsFailed && (
+        <div className="mb-4">
+          <Callout tone="warning">No se pudo calcular el costo por contrato. El resto del panel no cambia: vuelve a cargar la página para reintentar.</Callout>
+        </div>
+      )}
+      {contractCosts && (
+        <ContractCostSection breakdown={contractCosts} period={period} selectedContractId={selectedContractId} />
+      )}
+
       {canViewFleet && (
         <GpsCrossChecks
           data={data.gpsCross}
@@ -291,8 +331,11 @@ export default async function OperationalControlPage({
           la columna 296 px fuera del pozo a 768 y 1024 px. */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Card>
-          <CardHeader>
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <CardTitle as="h2">Vehículos y estado operacional</CardTitle>
+            {contractCosts && contractCosts.contractOptions.length > 0 && (
+              <ContractFilter options={contractCosts.contractOptions} value={selectedContractId} />
+            )}
           </CardHeader>
           <CardContent>
             {revision === "medidor-gps" && (
@@ -301,7 +344,7 @@ export default async function OperationalControlPage({
                   Mostrando {visibleAssets.length === 1 ? "1 vehículo" : `${visibleAssets.length} vehículos`} con discrepancia
                   entre la última carga y la lectura GPS del mismo medidor.{" "}
                   <Link
-                    href={`/control-operacional?desde=${period.from}&hasta=${period.to}`}
+                    href={`/control-operacional?desde=${period.from}&hasta=${period.to}${selectedContractId ? `&contrato=${encodeURIComponent(selectedContractId)}` : ""}`}
                     className="underline underline-offset-4"
                   >
                     Quitar filtro
@@ -312,7 +355,7 @@ export default async function OperationalControlPage({
             <OperationalAssetsTable
               // En la revisión de medidores la columna «Discrepancia GPS» es el
               // motivo de la lista: se remonta para que arranque visible.
-              key={revision ?? "todos"}
+              key={`${revision ?? "todos"}:${selectedContractId ?? "todos"}`}
               assets={visibleAssets}
               canViewCosts={canViewCosts}
               canViewInspections={canViewInspections}

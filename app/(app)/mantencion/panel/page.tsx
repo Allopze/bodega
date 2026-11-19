@@ -23,11 +23,13 @@ import {
   type MantIndicatorQuery,
 } from "@/lib/services/mantencion/indicators"
 import { countPendingReview, loadPanelWorksites } from "@/lib/services/mantencion/panel"
+import { loadReporteEquipos } from "@/lib/services/mantencion/reporte-equipos"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { hasNoEquipmentInScope, PanelEmptyState } from "@/components/mantencion/jefatura/panel/panel-empty"
 import { PanelToday } from "@/components/mantencion/jefatura/panel/panel-today"
 import { countUnassignedWorkOrders } from "@/lib/services/mantencion/work-orders/query"
 import { PautasSection, WorkOrdersSection } from "./indicators-sections"
+import { ReporteEquiposSection } from "./reporte-equipos-section"
 
 export const metadata: Metadata = { title: "Panel de mantención" }
 export const dynamic = "force-dynamic"
@@ -41,8 +43,9 @@ function first(value: string | string[] | undefined): string | undefined {
 /**
  * Panel de mantención: abre con la franja «Hoy» (lo pendiente ahora: órdenes sin mecánico,
  * equipos en taller, registros por revisar) y debajo los gráficos del período, que contestan
- * dos preguntas: ¿cómo avanza el trabajo de taller? (órdenes de trabajo) y ¿cómo están las
- * pautas y la disponibilidad de los equipos? Los Indicadores eran una página aparte hasta el
+ * tres preguntas: ¿cómo avanza el trabajo de taller? (órdenes de trabajo), ¿cómo están las
+ * pautas y la disponibilidad de los equipos? y ¿llegan los reportes de turno y qué fallas dejan
+ * abiertas? (reportes de equipos, del motor de inspecciones de Prevención). Los Indicadores eran una página aparte hasta el
  * 2026-11-14; el usuario pidió que fueran el Panel (`/mantencion/indicadores` redirige acá).
  *
  * Gate: `mant:records:view_*`. «Órdenes de trabajo» sólo se consulta y se
@@ -93,7 +96,7 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
   }
   const none = <T,>(): Promise<T | null> => Promise.resolve(null)
 
-  const [series, stats, byStatus, ranking, pautas, records, outOfService, unassignedOrders, pendingReview] = await Promise.all([
+  const [series, stats, byStatus, ranking, pautas, records, outOfService, unassignedOrders, pendingReview, reporteEquipos] = await Promise.all([
     canViewOrders ? track(loadWorkOrderSeries(viewer, query), "órdenes por período") : none<Awaited<ReturnType<typeof loadWorkOrderSeries>>>(),
     canViewOrders ? track(loadWorkOrderPeriodStats(viewer, query), "cifras de órdenes") : none<Awaited<ReturnType<typeof loadWorkOrderPeriodStats>>>(),
     canViewOrders ? track(loadOpenWorkOrdersByStatus(viewer, query.worksiteId), "órdenes abiertas por estado") : none<Awaited<ReturnType<typeof loadOpenWorkOrdersByStatus>>>(),
@@ -103,6 +106,7 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
     track(loadOutOfService(viewer, query), "días fuera de servicio"),
     canViewOrders ? track(countUnassignedWorkOrders(viewer, query.worksiteId), "órdenes por asignar") : none<number>(),
     track(countPendingReview(viewer, query.worksiteId), "registros por revisar"),
+    track(loadReporteEquipos(viewer, query), "reportes de equipos"),
   ])
 
   // Sin equipos, sin registros y sin órdenes en el alcance: el Panel entero estaría vacío por una sola causa.
@@ -133,7 +137,7 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
     <PageContainer>
       <PageHeader
         title="Panel de mantención"
-        description="Lo pendiente hoy y cómo avanzan las órdenes de trabajo, las pautas y la disponibilidad de los equipos."
+        description="Lo pendiente hoy y cómo avanzan las órdenes de trabajo, las pautas, la disponibilidad y los reportes de turno de los equipos."
         breadcrumb={<Breadcrumbs items={[
           { label: "Control operacional", href: "/control-operacional" },
           { label: "Mantención" },
@@ -176,6 +180,7 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
           <div className="space-y-8">
             {canViewOrders && <WorkOrdersSection {...common} series={series} stats={stats} byStatus={byStatus} />}
             <PautasSection {...common} pautas={pautas} records={records} outOfService={outOfService} ranking={ranking} showRanking={canViewOrders} />
+            <ReporteEquiposSection {...common} data={reporteEquipos} canViewInspections={can(session, "prevention:inspections:view")} />
           </div>
         </>
       )}

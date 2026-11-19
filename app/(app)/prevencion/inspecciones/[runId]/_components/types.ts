@@ -49,6 +49,8 @@ export interface ItemInfo {
   options?: { value: string; label: string }[]
   placeholder?: string
   matrix?: { rowId: string; rowLabel: string; columnLabel: string }
+  /** Número que no puede ser menor que el de este otro ítem de la sección (horómetro de término ≥ inicio). */
+  notLessThanItemId?: string
 }
 
 export interface SectionInfo {

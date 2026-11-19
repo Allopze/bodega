@@ -35,6 +35,7 @@ import {
   assessRunCompletion,
   capaPriorityForCriticality,
   closingActFromDefinition,
+  definitionForVehicleType,
   deriveFindings,
   nextDueAfter,
   requiresCapa,
@@ -56,6 +57,7 @@ import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/e
 import { resolveSubject, assertContainerSubject } from "./programs"
 import { itemsFromDefinition } from "./templates"
 import { resolveRunDefinition } from "./epp-rows"
+import { getRunVehicleType } from "./run-vehicle"
 import { transitionInspectionRun } from "./transitions"
 import { InspectionRunError } from "./errors"
 
@@ -553,7 +555,13 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       .where(eq(preventionInspectionTemplates.id, run.templateId)).limit(1)
     if (!template) throw new Error(NOT_FOUND)
     const definition = await resolveRunDefinition(tx, template.definitionSnapshot as unknown as ChecklistDefinition, run)
-    const items = itemsFromDefinition(definition)
+    /* Las secciones que no le corresponden al equipo (`appliesToVehicleTypes`)
+     * no cuentan para el cierre: ni se exigen, ni puntúan, ni levantan
+     * hallazgo. Guardar sí las tolera (`saveAnswersWithClient` valida contra la
+     * definición completa), porque una respuesta que llegue desde la planilla
+     * leída o una cola sin conexión no debe tumbar el guardado entero. */
+    const applicableDefinition = definitionForVehicleType(definition, await getRunVehicleType(tx, run.subjectVehicleId))
+    const items = itemsFromDefinition(applicableDefinition)
     if (template.sourceDefinitionCode === "inspeccion_no_planeada") {
       const participants = await tx.select({ id: preventionInspectionRunParticipants.id })
         .from(preventionInspectionRunParticipants)
@@ -563,7 +571,12 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
 
     const stored = await tx.select().from(preventionInspectionAnswers)
       .where(eq(preventionInspectionAnswers.runId, run.id))
-    const answers: InspectionAnswerInput[] = stored.map((row) => ({
+    const applicableKeys = applicableDefinition === definition
+      ? null
+      : new Set(items.map((item) => `${item.sectionId}::${item.itemId}`))
+    const answers: InspectionAnswerInput[] = stored
+      .filter((row) => !applicableKeys || applicableKeys.has(`${row.sectionId}::${row.itemId}`))
+      .map((row) => ({
       sectionId: row.sectionId,
       itemId: row.itemId,
       result: row.result as InspectionAnswerInput["result"],

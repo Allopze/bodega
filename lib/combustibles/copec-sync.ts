@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, lte, ne, notInArray, sql }
 import { db } from "@/db"
 import { fuelConsumptionRecords, fuelImportBatches, fuelProviderRejections, fuelProviderSyncRuns, fuelProviderTransactions, fuelStorageLocations, systemSettings, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { logger } from "@/lib/logger"
 import { todayInChile, addDaysToPlainDate } from "@/lib/utils"
 import { parseCopecDetail, type ParsedConsumptionRow } from "@/lib/combustibles/consumption-import"
 import { computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
@@ -1584,4 +1585,42 @@ export async function syncCopecReports(options: { importerId?: string } = {}): P
       meterReadings,
     }
   }, { deadline: budgetDeadline })
+}
+
+/**
+ * Pide a la sincronización de Copec volver a revisar desde `month`
+ * (`YYYY-MM-01`): un traslado con fecha retroactiva cambia a qué faena
+ * pertenece el consumo de un mes que el barrido ya dio por cerrado, y sólo
+ * reproyectarlo lo reatribuye (el hash de cada grupo cambia y
+ * `replaceBatchRecords` mueve los registros).
+ *
+ * Es la versión sin pantalla de `setCopecSyncStartDate`: únicamente ADELANTA el
+ * inicio hacia atrás (nunca lo atrasa, para no pisar una revisión más antigua
+ * ya pedida), jamás antes del inicio configurado de la cuenta, y no lleva el
+ * control `expectedStart` porque nadie la está mirando. Si el estado cambió
+ * entre la lectura y el guardado, relee y reintenta una vez. Nunca lanza: el
+ * traslado ya está confirmado y esto es de mejor esfuerzo.
+ */
+export async function requestCopecRecheckFrom(month: string): Promise<{ requested: boolean }> {
+  try {
+    if (!isValidIsoDate(month) || !month.endsWith("-01")) {
+      logger.warn("[copec-sync] re-verificación ignorada: el mes no es el primer día de un mes", { month })
+      return { requested: false }
+    }
+    if (month < firstDayOfMonth(configuredStart())) return { requested: false }
+
+    for (let attempt = 0; ; attempt++) {
+      const current = await state()
+      if (month >= await firstUncoveredMonth(current)) return { requested: false }
+      try {
+        await saveState({ cursor: current.cursor, taeCursor: current.taeCursor, requestedStart: month, lastRunAt: current.lastRunAt, pending: current.pending }, current._version)
+        return { requested: true }
+      } catch (error) {
+        if (attempt >= 1) throw error
+      }
+    }
+  } catch (error) {
+    logger.warn("[copec-sync] no se pudo pedir la re-verificación de Copec", { month, error })
+    return { requested: false }
+  }
 }

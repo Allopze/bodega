@@ -5,8 +5,9 @@ import {
   isGlobalRole,
   canAccessWorksite,
   worksiteScopeSql,
+  worksiteScopeSqlFor,
 } from "@/lib/auth/scope"
-import type { AnyColumn } from "drizzle-orm"
+import { sql, type AnyColumn } from "drizzle-orm"
 
 function session(roles: string[], worksiteIds: string[] = []): Session {
   return {
@@ -80,6 +81,13 @@ describe("worksite scope", () => {
     // Restricted role with access ids -> mode: "some" -> returns inArray condition
     const someSql = worksiteScopeSql(session(["solicitante_faena"], ["ws-1", "ws-2"]), dummyColumn)
     expect(someSql).toBeDefined()
+  })
+
+  it("worksiteScopeSqlFor acepta una expresión SQL además de una columna", () => {
+    expect(() => worksiteScopeSqlFor(["ws-a"], sql`x`)).not.toThrow()
+    expect(worksiteScopeSqlFor(["ws-a"], sql`x`)).toBeDefined()
+    expect(worksiteScopeSqlFor("all", sql`x`)).toBeUndefined()
+    expect(worksiteScopeSqlFor(["ws-a"], sql`x`, "ws-a")).toBeDefined()
   })
 
   /**

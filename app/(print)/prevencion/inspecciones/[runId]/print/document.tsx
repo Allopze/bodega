@@ -13,6 +13,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getInspectionRunDetail } from "@/lib/services/prevention-inspections"
 import {
   closingActFromDefinition,
+  MISSING_PAPER_SIGNATURE_LABEL,
   fieldKindIsScorable,
   formatSignatureRole,
   FINDING_CRITICALITY_LABELS,
@@ -229,7 +230,8 @@ export function InspectionActaDocument({ data }: { data: InspectionActaData }) {
                           acta —el documento que se entrega en fiscalización—
                           seguía imprimiendo la clave cruda ("jefe_area"). */}
                       <td>{formatSignatureRole(role)}</td>
-                      <td>{signature?.name ?? ""}</td>
+                      {/* Una firma que el papel no traía se dice, en vez de dejar un hueco que se lee como olvido. */}
+                      <td>{signature?.name ?? (closingAct.allowMissingSignatures ? MISSING_PAPER_SIGNATURE_LABEL : "")}</td>
                       {/* Línea en blanco para la firma manuscrita sobre el papel:
                           el sistema registra quién y cuándo, no el trazo. */}
                       <td style={{ height: "14mm" }} />
