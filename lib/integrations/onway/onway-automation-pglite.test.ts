@@ -103,18 +103,63 @@ describe("applyOnwayAlertRules después de un traslado", () => {
     expect(await capaOf(after)).toMatchObject({ worksiteId: WS.b })
   })
 
-  it("una alerta que falla queda bloqueada y la cola sigue", async () => {
+  it("un fallo no detiene las demás alertas y la que falló queda para reintentar", async () => {
     const broken = await alert({ worksiteId: WS.a, occurredAt: "2026-11-11T12:00:00Z" })
     const next = await alert({ worksiteId: WS.b, occurredAt: "2026-11-17T12:00:00Z" })
     mocks.failCapaFor.add(broken)
 
     const result = await applyOnwayAlertRules()
 
-    expect(result).toMatchObject({ actioned: 1, blocked: 1 })
-    expect(await alertRow(broken)).toMatchObject({ processingStatus: "blocked", ruleId: "rule-oa-a", linkedEntityId: null })
+    expect(result).toMatchObject({ actioned: 1, blocked: 0, retrying: 1 })
+    expect(await alertRow(broken)).toMatchObject({
+      processingStatus: "new", ruleId: null, linkedEntityId: null, automationAttempts: 1, automationLastError: "CAPA_CAIDA",
+    })
+    expect((await alertRow(broken))?.automationLastAttemptAt).not.toBeNull()
     expect(await capaOf(broken)).toBeUndefined()
-    expect(await alertRow(next)).toMatchObject({ processingStatus: "actioned" })
-    // La siguiente corrida no la vuelve a tomar.
-    expect(await applyOnwayAlertRules()).toMatchObject({ actioned: 0, blocked: 0 })
+    expect(await alertRow(next)).toMatchObject({ processingStatus: "actioned", automationAttempts: 0 })
+
+    // Error transitorio: la corrida siguiente la atiende y no pierde su CAPA.
+    mocks.failCapaFor.clear()
+    expect(await applyOnwayAlertRules()).toMatchObject({ actioned: 1, blocked: 0, retrying: 0 })
+    expect(await alertRow(broken)).toMatchObject({ processingStatus: "actioned", ruleId: "rule-oa-a" })
+    expect(await capaOf(broken)).toMatchObject({ worksiteId: WS.a })
+  })
+
+  it("al tercer intento fallido queda bloqueada con el motivo y deja de reintentarse", async () => {
+    const broken = await alert({ worksiteId: WS.a, occurredAt: "2026-11-12T12:00:00Z" })
+    mocks.failCapaFor.add(broken)
+
+    expect(await applyOnwayAlertRules()).toMatchObject({ blocked: 0, retrying: 1 })
+    expect(await applyOnwayAlertRules()).toMatchObject({ blocked: 0, retrying: 1 })
+    expect(await alertRow(broken)).toMatchObject({ processingStatus: "new", automationAttempts: 2 })
+    expect(await applyOnwayAlertRules()).toMatchObject({ blocked: 1, retrying: 0 })
+
+    expect(await alertRow(broken)).toMatchObject({
+      processingStatus: "blocked", ruleId: "rule-oa-a", automationAttempts: 3, automationLastError: "CAPA_CAIDA", linkedEntityId: null,
+    })
+    expect(await capaOf(broken)).toBeUndefined()
+    // Bloqueada: aunque el problema se arregle, la cola ya no la toma.
+    mocks.failCapaFor.clear()
+    expect(await applyOnwayAlertRules()).toMatchObject({ actioned: 0, blocked: 0, retrying: 0 })
+    expect(await alertRow(broken)).toMatchObject({ processingStatus: "blocked", automationAttempts: 3 })
+  })
+
+  it("una alerta que sigue fallando no acapara el lote: las nuevas pasan primero", async () => {
+    const stuck = await alert({ worksiteId: WS.a, occurredAt: "2026-11-18T01:00:00Z" })
+    const newer = await alert({ worksiteId: WS.b, occurredAt: "2026-11-18T02:00:00Z" })
+    mocks.failCapaFor.add(stuck)
+
+    // Lote de 1: la más antigua falla y queda anotada.
+    expect(await applyOnwayAlertRules(1)).toMatchObject({ actioned: 0, retrying: 1 })
+    expect(await alertRow(newer)).toMatchObject({ processingStatus: "new", automationAttempts: 0 })
+
+    // En el lote siguiente va primero la que nunca se intentó, aunque sea más nueva.
+    expect(await applyOnwayAlertRules(1)).toMatchObject({ actioned: 1, retrying: 0 })
+    expect(await alertRow(newer)).toMatchObject({ processingStatus: "actioned" })
+    expect(await alertRow(stuck)).toMatchObject({ processingStatus: "new", automationAttempts: 1 })
+
+    mocks.failCapaFor.clear()
+    expect(await applyOnwayAlertRules(1)).toMatchObject({ actioned: 1 })
+    expect(await alertRow(stuck)).toMatchObject({ processingStatus: "actioned" })
   })
 })

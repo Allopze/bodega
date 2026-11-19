@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull } from "drizzle-orm"
+import { and, desc, eq, gte, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fleetGpsAlertRules, fleetGpsAlerts } from "@/db/schema"
 import { logger } from "@/lib/logger"
@@ -28,6 +28,33 @@ class AlertWorksiteChanged extends Error {}
 
 function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** Intentos fallidos tras los cuales la alerta deja de reintentarse y queda `blocked`. */
+export const MAX_ONWAY_AUTOMATION_ATTEMPTS = 3
+
+/**
+ * Anota un fallo inesperado de la automatización (una caída de la base, un error al crear la CAPA).
+ * La alerta sigue `new`, sin regla, y la próxima corrida la reintenta: un error transitorio no le
+ * quita su CAPA para siempre. Al intento número `MAX_ONWAY_AUTOMATION_ATTEMPTS` queda `blocked`
+ * con el motivo del último fallo. Devuelve el estado en que quedó.
+ */
+async function recordFailure(alert: OnwayAlert, rule: OnwayRule | undefined, error: unknown): Promise<"retry" | "blocked"> {
+  const now = new Date().toISOString()
+  const [row] = await db.update(fleetGpsAlerts).set({
+    automationAttempts: sql`${fleetGpsAlerts.automationAttempts} + 1`,
+    automationLastError: reasonOf(error).slice(0, 500),
+    automationLastAttemptAt: now,
+    updatedAt: now,
+  }).where(and(eq(fleetGpsAlerts.id, alert.id), eq(fleetGpsAlerts.processingStatus, "new")))
+    .returning({ attempts: fleetGpsAlerts.automationAttempts })
+  if (!row || row.attempts < MAX_ONWAY_AUTOMATION_ATTEMPTS) return "retry"
+  if (rule) await markAlert(alert.id, rule, "blocked")
+  else {
+    await db.update(fleetGpsAlerts).set({ processingStatus: "blocked", updatedAt: new Date().toISOString() })
+      .where(and(eq(fleetGpsAlerts.id, alert.id), eq(fleetGpsAlerts.processingStatus, "new")))
+  }
+  return "blocked"
 }
 
 async function markAlert(alertId: string, rule: OnwayRule, status: "blocked" | "ignored") {
@@ -97,18 +124,20 @@ async function applyRule(alert: OnwayAlert, rule: OnwayRule): Promise<"actioned"
  * Procesa solamente alertas ya normalizadas y con tipo previamente observado.
  * Las reglas se crean desactivadas; ningún tipo desconocido llega a esta capa.
  *
- * Una alerta nunca detiene la cola. La cola va de la más antigua a la más nueva:
- * una que fallara siempre tumbaba cada corrida y ninguna faena volvía a recibir
- * CAPA. La que falla queda `blocked` con su regla y el motivo va al registro.
+ * Una alerta nunca detiene la cola. Un fallo inesperado se reintenta en las corridas siguientes y
+ * sólo al tercero la alerta queda `blocked` con su motivo (`recordFailure`). La cola atiende primero
+ * las alertas sin intentos y después las de intento más antiguo, y dentro de cada grupo la más
+ * antigua: una alerta que falla siempre no acapara el lote ni deja sin CAPA a las más nuevas.
  */
 export async function applyOnwayAlertRules(limit = 200) {
   const fresh = await db.select().from(fleetGpsAlerts).where(and(
     eq(fleetGpsAlerts.provider, "onway"),
     eq(fleetGpsAlerts.processingStatus, "new"),
     isNull(fleetGpsAlerts.ruleId),
-  )).orderBy(fleetGpsAlerts.occurredAt).limit(limit)
+  )).orderBy(sql`${fleetGpsAlerts.automationLastAttemptAt} asc nulls first`, fleetGpsAlerts.occurredAt).limit(limit)
   let actioned = 0
   let blocked = 0
+  let retrying = 0
   for (const row of fresh) {
     const { vehicleId, worksiteId } = row
     if (!vehicleId || !worksiteId) continue
@@ -125,16 +154,15 @@ export async function applyOnwayAlertRules(limit = 200) {
         logger.info("[flota/onway] la alerta cambió de faena durante la corrida: se evalúa en la próxima", { alertId: alert.id })
         continue
       }
-      logger.warn("[flota/onway] no se pudo procesar una alerta: queda bloqueada", { alertId: alert.id, reason: reasonOf(error) })
-      // Sin regla (falló la lectura de reglas) no hay con qué anotarla: queda `new` para la próxima corrida.
-      if (!rule) continue
+      logger.warn("[flota/onway] no se pudo procesar una alerta", { alertId: alert.id, reason: reasonOf(error) })
       try {
-        await markAlert(alert.id, rule, "blocked")
-        blocked++
-      } catch (markError) {
-        logger.warn("[flota/onway] tampoco se pudo bloquear la alerta", { alertId: alert.id, reason: reasonOf(markError) })
+        if (await recordFailure(alert, rule, error) === "blocked") blocked++
+        else retrying++
+      } catch (recordError) {
+        // Sin poder anotar el fallo la alerta queda como estaba y la próxima corrida la vuelve a tomar.
+        logger.warn("[flota/onway] tampoco se pudo anotar el fallo de la alerta", { alertId: alert.id, reason: reasonOf(recordError) })
       }
     }
   }
-  return { actioned, blocked }
+  return { actioned, blocked, retrying }
 }

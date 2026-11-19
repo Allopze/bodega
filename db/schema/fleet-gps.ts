@@ -275,6 +275,12 @@ export const fleetGpsAlerts = pgTable("fleet_gps_alerts", {
   linkedEntityType: text("linked_entity_type"),
   linkedEntityId: text("linked_entity_id"),
   coordinatesPurgedAt: timestamp("coordinates_purged_at", { withTimezone: true, mode: "string" }),
+  /** Intentos fallidos de la automatización (error inesperado, p. ej. caída de la base): al tercero la alerta queda `blocked`. */
+  automationAttempts: integer("automation_attempts").notNull().default(0),
+  /** Motivo del último intento fallido de la automatización. */
+  automationLastError: text("automation_last_error"),
+  /** Cuándo fue ese intento: la cola atiende primero las alertas sin intentos o con el intento más antiguo. */
+  automationLastAttemptAt: timestamp("automation_last_attempt_at", { withTimezone: true, mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
