@@ -2766,6 +2766,13 @@
       "when": 1795096146000,
       "tag": "0394_sour_pet_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 395,
+      "version": "7",
+      "when": 1795118468062,
+      "tag": "0395_fantastic_bishop",
+      "breakpoints": true
     }
   ]
 }

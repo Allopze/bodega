@@ -631,6 +631,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-incorporate-transfer-pglite.test.ts",
   // Importación de consumos en modo «todas las faenas»: la faena es la del período, no la de hoy.
   "lib/__tests__/traslado-importador-todas-pglite.test.ts",
+  "lib/__tests__/app-visits-pglite.test.ts",
   // Reglas de alertas OnWay tras un traslado: la alerta se procesa en la faena del día en que
   // ocurrió y una alerta que falla queda bloqueada sin detener la cola.
   "lib/integrations/onway/onway-automation-pglite.test.ts",

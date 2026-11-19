@@ -14,7 +14,7 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { MiniSparkline } from "@/components/ui/mini-sparkline"
 import { BarRankingChartLazy } from "@/components/charts/bar-ranking-chart-lazy"
 import { Button } from "@/components/ui/button"
-import { formatDateRelative, formatDateTime } from "@/lib/utils"
+import { formatDate, formatDateRelative, formatDateTime } from "@/lib/utils"
 import { INTEGRATION_STATUS_META, RUN_OUTCOME_LABEL } from "../status"
 
 export async function generateMetadata({ params }: { params: Promise<{ appId: string }> }): Promise<Metadata> {
@@ -49,14 +49,14 @@ export default async function AppDetailPage({ params }: { params: Promise<{ appI
   if (!app) notFound()
 
   const stats: SummaryStat[] = [
-    { key: "access", label: "Con acceso", value: app.usersWithAccess, secondary: "personas activas con permiso" },
-    { key: "active", label: "Usuarios activos", value: app.activityNote ? "—" : app.activeUsers, valueKind: app.activityNote ? "text" : "number", secondary: "con movimientos en 30 días" },
+    { key: "active", label: "Usuarios activos", value: app.activeUsers, hint: `de ${app.usersWithAccess} con acceso`, secondary: `${app.movementUsers} con movimientos en 30 días` },
+    { key: "visits", label: "Visitas 30 d", value: app.visits, secondary: overview.visitsTrackedSince ? `desde el ${formatDate(overview.visitsTrackedSince)}` : "aún sin registros" },
     { key: "movements", label: "Movimientos 30 d", value: app.activityNote ? "—" : app.movements, valueKind: app.activityNote ? "text" : "number" },
     {
       key: "last",
       label: "Última actividad",
       valueKind: "text",
-      value: app.activityNote ? "No aplica" : app.lastActivityAt ? formatDateRelative(app.lastActivityAt) : "Más de un año",
+      value: app.lastActivityAt ? formatDateRelative(app.lastActivityAt) : app.activityNote ? "Sin visitas" : "Más de un año",
       secondary: app.lastActivityAt ? formatDateTime(app.lastActivityAt) : undefined,
     },
   ]

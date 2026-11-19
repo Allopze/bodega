@@ -28,6 +28,12 @@ vi.mock("./mobile-nav", () => ({
 vi.mock("./notification-bell", () => ({
   NotificationBell: () => <button type="button" aria-label="Notificaciones" />,
 }))
+vi.mock("./app-launcher", () => ({
+  AppLauncher: () => <button type="button" aria-label="Apps" />,
+}))
+vi.mock("./app-visit-tracker", () => ({
+  AppVisitTracker: () => null,
+}))
 vi.mock("./command-palette", () => ({
   CommandPalette: () => null,
 }))

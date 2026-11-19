@@ -133,4 +133,33 @@ describe("indicadores por app", () => {
     expect(appOf(result, "billing").enabled).toBe(false)
     expect(appOf(result, "requests").integrationStatus).toBe("none")
   })
+
+  it("las visitas suman personas activas y sacan de «sin uso» a una app sin movimientos", () => {
+    const result = overview({
+      users: [{ entityType: "purchase_order", userId: "u1" }],
+      visitors: [
+        { moduleId: "purchasing", userId: "u1" },
+        { moduleId: "purchasing", userId: "u2" },
+        { moduleId: "reports", userId: "u3" },
+      ],
+      visits: [
+        { moduleId: "purchasing", visits: 9, lastVisitAt: "2026-11-19T12:00:00Z" },
+        { moduleId: "reports", visits: 4, lastVisitAt: "2026-11-18T12:00:00Z" },
+      ],
+      visitsTrackedSince: "2026-11-19",
+    })
+    const purchasing = appOf(result, "purchasing")
+    expect(purchasing.activeUsers).toBe(2)
+    expect(purchasing.movementUsers).toBe(1)
+    expect(purchasing.visits).toBe(9)
+    expect(purchasing.idle).toBe(false)
+    expect(purchasing.lastActivityAt).toBe("2026-11-19T12:00:00Z")
+    expect(appOf(result, "reports").activeUsers).toBe(1)
+    expect(result.totalActiveUsers).toBe(3)
+  })
+
+  it("una app de sólo lectura queda «sin uso» sólo cuando las visitas cubren los 30 días", () => {
+    expect(appOf(overview({ visitsTrackedSince: "2026-11-10" }), "analytics").idle).toBe(false)
+    expect(appOf(overview({ visitsTrackedSince: "2026-09-01" }), "analytics").idle).toBe(true)
+  })
 })

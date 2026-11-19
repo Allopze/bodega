@@ -11,6 +11,9 @@ import { useHasWorksiteFilter, useSafeShellHeader, useShellHeader } from "./head
 const NotificationBell = React.lazy(() =>
   import("./notification-bell").then((m) => ({ default: m.NotificationBell }))
 )
+const AppLauncher = React.lazy(() =>
+  import("./app-launcher").then((m) => ({ default: m.AppLauncher }))
+)
 
 interface TopBarProps {
   session:       AuthSession
@@ -18,6 +21,9 @@ interface TopBarProps {
   className?:    string
   isMenuOpen?:   boolean
   worksiteName?: string
+  /** Para el lanzador ⊞: las mismas reglas de visibilidad que el menú. */
+  enabledModuleIds?:       Set<string>
+  disabledSubmoduleHrefs?: Set<string>
 }
 
 // `/combustibles`: las superficies de trabajo tienen su propio buscador
@@ -102,6 +108,9 @@ export function hidesShellSearch(pathname: string) {
 }
 
 const TopBarInner = React.memo(function TopBarInner({
+  session,
+  enabledModuleIds,
+  disabledSubmoduleHrefs,
   onMenuToggle,
   className,
   isMenuOpen = false,
@@ -292,6 +301,7 @@ const TopBarInner = React.memo(function TopBarInner({
             )}
           </div>
         )}
+        <AppLauncher session={session} enabledModuleIds={enabledModuleIds} disabledSubmoduleHrefs={disabledSubmoduleHrefs} />
         <NotificationBell />
       </div>
     </header>

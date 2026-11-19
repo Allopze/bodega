@@ -23,6 +23,7 @@ export interface AppRow {
   usersWithAccess: number
   activeUsers: number
   movements: number
+  visits: number
   trend: number[]
   lastActivityAt: string | null
   idle: boolean
@@ -35,6 +36,7 @@ const COLUMNS = [
   { key: "app", label: "App", sortable: true, sortValue: (row: AppRow) => row.areaOrder },
   { key: "usersWithAccess", label: "Con acceso", sortable: true, numeric: true, width: "w-28", sortValue: (row: AppRow) => row.usersWithAccess },
   { key: "activeUsers", label: "Activos 30 d", sortable: true, numeric: true, width: "w-28", sortValue: (row: AppRow) => row.activeUsers },
+  { key: "visits", label: "Visitas 30 d", sortable: true, numeric: true, width: "w-28", sortValue: (row: AppRow) => row.visits },
   { key: "movements", label: "Movimientos 30 d", sortable: true, numeric: true, width: "w-48", sortValue: (row: AppRow) => row.movements },
   { key: "lastActivity", label: "Última actividad", sortable: true, width: "w-40", sortValue: (row: AppRow) => row.lastActivityAt ?? "" },
   { key: "integrations", label: "Integraciones", sortable: true, width: "w-40", sortValue: (row: AppRow) => row.integrationProblems },
@@ -68,7 +70,7 @@ function AppName({ row }: { row: AppRow }) {
 }
 
 function LastActivity({ row }: { row: AppRow }) {
-  if (row.activityNote) return <span className="text-xs text-[var(--color-text-subtle)]">{row.activityNote}</span>
+  if (!row.lastActivityAt && row.activityNote) return <span className="text-xs text-[var(--color-text-subtle)]">{row.activityNote}</span>
   if (!row.lastActivityAt) return <span className="text-xs text-[var(--color-signal-ink)]">Más de un año</span>
   return (
     <span className={row.idle ? "text-[var(--color-signal-ink)]" : undefined} title={formatDateTime(row.lastActivityAt)}>
@@ -131,8 +133,9 @@ export function AppsTable({ rows, filtered }: { rows: AppRow[]; filtered: boolea
           <TableRow key={row.id}>
             <TableCell><AppName row={row} /></TableCell>
             <TableCell className="w-28 text-right font-mono tabular-nums">{row.usersWithAccess}</TableCell>
-            <TableCell className="w-28 text-right font-mono tabular-nums">{row.activityNote ? "—" : row.activeUsers}</TableCell>
-            <TableCell className="w-48 text-right"><Movements row={row} /></TableCell>
+            <TableCell className="w-28 text-right font-mono tabular-nums">{row.activeUsers}</TableCell>
+            <TableCell className="w-28 text-right font-mono tabular-nums">{row.visits.toLocaleString("es-CL")}</TableCell>
+            <TableCell className="w-48 text-right" title={row.activityNote ?? undefined}><Movements row={row} /></TableCell>
             <TableCell className="w-40 text-sm"><LastActivity row={row} /></TableCell>
             <TableCell className="w-40"><Integrations row={row} /></TableCell>
             <TableCell className="w-24 text-right"><OpenApp row={row} /></TableCell>
@@ -147,9 +150,10 @@ export function AppsTable({ rows, filtered }: { rows: AppRow[]; filtered: boolea
               <AppName row={row} />
               <OpenApp row={row} />
             </div>
-            <dl className="grid grid-cols-3 gap-2 text-xs">
+            <dl className="grid grid-cols-4 gap-2 text-xs">
               <div><dt className="text-[var(--color-text-subtle)]">Con acceso</dt><dd className="font-mono tabular-nums">{row.usersWithAccess}</dd></div>
-              <div><dt className="text-[var(--color-text-subtle)]">Activos 30 d</dt><dd className="font-mono tabular-nums">{row.activityNote ? "—" : row.activeUsers}</dd></div>
+              <div><dt className="text-[var(--color-text-subtle)]">Activos 30 d</dt><dd className="font-mono tabular-nums">{row.activeUsers}</dd></div>
+              <div><dt className="text-[var(--color-text-subtle)]">Visitas</dt><dd className="font-mono tabular-nums">{row.visits.toLocaleString("es-CL")}</dd></div>
               <div><dt className="text-[var(--color-text-subtle)]">Movimientos</dt><dd className="font-mono tabular-nums">{row.activityNote ? "—" : row.movements.toLocaleString("es-CL")}</dd></div>
             </dl>
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">

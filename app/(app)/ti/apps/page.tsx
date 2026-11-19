@@ -7,7 +7,7 @@ import type { AppOverview } from "@/lib/apps/metrics"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
-import { countOf } from "@/lib/utils"
+import { countOf, formatDate } from "@/lib/utils"
 import { AppsTable, type AppRow } from "./apps-table"
 import { APP_FILTERS, parseAppFilter, type AppFilter } from "./status"
 
@@ -50,7 +50,7 @@ export default async function AppsPage({
       key: "users",
       label: "Usuarios activos",
       value: overview.totalActiveUsers,
-      secondary: "con movimientos en 30 días",
+      secondary: "abrieron o registraron algo en 30 días",
     },
     {
       key: "integrations",
@@ -81,6 +81,7 @@ export default async function AppsPage({
     usersWithAccess: app.usersWithAccess,
     activeUsers: app.activeUsers,
     movements: app.movements,
+    visits: app.visits,
     trend: app.trend,
     lastActivityAt: app.lastActivityAt,
     idle: app.idle,
@@ -112,8 +113,12 @@ export default async function AppsPage({
         )}
         <AppsTable rows={rows} filtered={filter !== null} />
         <p className="text-xs text-[var(--color-text-subtle)]">
-          Los movimientos son altas, cambios y cambios de estado registrados en la auditoría; abrir o consultar una
-          pantalla no cuenta. «Con acceso» son las personas activas con al menos un permiso de la app.
+          Una visita es entrar a la app: moverse entre sus pantallas antes de 30 minutos no suma otra.
+          {overview.visitsTrackedSince
+            ? <> Las visitas se registran desde el {formatDate(overview.visitsTrackedSince)}.</>
+            : <> Las visitas empiezan a registrarse con el primer ingreso después de esta versión.</>}
+          {" "}Los movimientos son altas, cambios y cambios de estado registrados en la auditoría. «Con acceso» son las
+          personas activas con al menos un permiso de la app; «Activos», las que la abrieron o registraron algo.
           {overview.unassigned.movements > 0 && (
             <> {countOf(overview.unassigned.movements, "movimiento")} de los últimos 30 días son de tipos sin app asignada
               ({overview.unassigned.entityTypes.join(", ")}).</>

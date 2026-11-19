@@ -7,6 +7,7 @@ import { DesktopNav } from "./desktop-nav"
 import { MobileNav } from "./mobile-nav"
 import { TopBar } from "./top-bar"
 import { ShellHeaderProvider } from "./header-context"
+import { AppVisitTracker } from "./app-visit-tracker"
 
 const CommandPalette = React.lazy(() =>
   import("./command-palette").then((m) => ({ default: m.CommandPalette }))
@@ -158,6 +159,8 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
                 onMenuToggle={mobileOpen ? closeDrawer : openDrawer}
                 worksiteName={worksiteName}
                 isMenuOpen={mobileOpen}
+                enabledModuleIds={enabledSet}
+                disabledSubmoduleHrefs={disabledSubmoduleSet}
               />
               {/* `<main>` va SIN CLASES, y no es minimalismo: es corrección.
                   Dentro de `{children}` hay modales artesanales con
@@ -178,6 +181,9 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
           </div>
         </ShellHeaderProvider>
       </div>
+
+      {/* Visitas por app (TI › Apps y «Recientes» del lanzador). No pinta nada. */}
+      <AppVisitTracker />
 
       {/* Paleta de comandos global (⌘K / Ctrl+K) — lazy load */}
       <React.Suspense fallback={null}>
