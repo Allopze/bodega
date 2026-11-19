@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { DatePicker } from "@/components/ui/date-picker"
+import { ContractCoreFields } from "@/components/contracts/contract-core-fields"
 import { OptionSelect } from "@/components/ui/option-select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -162,10 +162,10 @@ function ContractDialog({
           className="space-y-3"
           action={(formData) => {
             // El select ya no es nativo, así que `required` del navegador no
-            // bloquea el envío: el cliente se valida acá (y en el servidor).
+            // bloquea el envío: el mandante se valida acá (y en el servidor).
             const clientId = String(formData.get("clientId") ?? "")
             if (!clientId) {
-              toast.error("Selecciona un cliente")
+              toast.error("Selecciona un mandante")
               return
             }
             startTransition(async () => {
@@ -199,19 +199,10 @@ function ContractDialog({
           }}
         >
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Código" required>
-              <Input name="code" required placeholder="CTR-2026-0001" />
+            <Field label="Código" hint="Se genera solo si lo dejas vacío">
+              <Input name="code" placeholder="CTR-2026-0001" />
             </Field>
-            <Field label="Cliente" required>
-              <OptionSelect
-                name="clientId"
-                options={clients.map((client) => ({ value: client.id, label: client.name }))}
-                aria-label="Cliente"
-              />
-            </Field>
-            <Field label="Nombre del contrato" required>
-              <Input name="name" required />
-            </Field>
+            <ContractCoreFields clients={clients} />
             <Field label="Faena" hint="Déjalo vacío si el contrato cubre varias faenas.">
               <OptionSelect
                 name="worksiteId"
@@ -233,12 +224,6 @@ function ContractDialog({
             </Field>
             <Field label="OC marco del cliente">
               <Input name="clientPoNumber" />
-            </Field>
-            <Field label="Inicio">
-              <DatePicker name="startDate" ariaLabel="Inicio del contrato" />
-            </Field>
-            <Field label="Término">
-              <DatePicker name="endDate" ariaLabel="Término del contrato" />
             </Field>
             <Field label="Ciclo de facturación">
               <OptionSelect

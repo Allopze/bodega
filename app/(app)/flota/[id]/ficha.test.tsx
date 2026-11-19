@@ -53,6 +53,7 @@ vi.mock("@/components/ui/section-nav", () => ({
 
 import { openVehicleFicha, openVehicleFichaArea } from "./_ficha/access"
 import VehicleSummaryPage from "./page"
+import { vehicleFichaDescription } from "./_ficha/ficha-chrome"
 
 type Area = "flota" | "mantencion" | "combustible"
 
@@ -191,5 +192,16 @@ describe("«Editar vehículo» en la cabecera (paso 4b)", () => {
     mocks.ctx.mockResolvedValue(ctx(["flota", "mantencion"]))
     render(await summaryPage())
     expect(screen.queryByRole("button", { name: "Editar vehículo" })).toBeNull()
+  })
+})
+
+describe("descripción de la cabecera", () => {
+  it("la descripción incluye el contrato después de la faena", () => {
+    const base = ctx(["flota"])
+    type Ctx = Parameters<typeof vehicleFichaDescription>[0]
+    const withContract = { ...base, vehicle: { ...base.vehicle, contractName: "Residuos Santa Fe" } } as unknown as Ctx
+    expect(vehicleFichaDescription(withContract)).toBe("Camión · RBYD-98 · Santa Fe · Residuos Santa Fe · Operativo")
+    // Sin contrato (o sin la propiedad) no deja un hueco ni un separador de más.
+    expect(vehicleFichaDescription({ ...base, vehicle: { ...base.vehicle, contractName: null } } as unknown as Ctx)).toBe("Camión · RBYD-98 · Santa Fe · Operativo")
   })
 })

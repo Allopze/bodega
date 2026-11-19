@@ -433,6 +433,8 @@ export const pgliteTestFiles = [
   "lib/combustibles/__tests__/copec-coverage-store.test.ts",
   "lib/combustibles/__tests__/provider-mappings.test.ts",
   "lib/__tests__/contract-assignments-schema-pglite.test.ts",
+  "lib/__tests__/contracts-operational-pglite.test.ts",
+  "lib/__tests__/contract-costs-pglite.test.ts",
   "lib/__tests__/contract-assignments-pglite.test.ts",
   "lib/__tests__/fleet-relocation-pglite.test.ts",
   "lib/combustibles/__tests__/tae-receipts-card.test.ts",

@@ -29,7 +29,7 @@ afterAll(async () => {
 
 const {
   assignVehiclesToContract, endVehicleAssignment, closeContractAssignmentsOnRelocationTx,
-  assertContractChangeKeepsAssignmentsTx, listAssignmentWindows, listVehicleAssignmentHistory,
+  assertContractChangeKeepsAssignmentsTx, capContractAssignmentsTx, listAssignmentWindows, listVehicleAssignmentHistory,
 } = await import("@/lib/services/contracts/assignments")
 
 const actor = { userId: "u-1", email: "j@chome.test" }
@@ -283,30 +283,80 @@ describe("assertContractChangeKeepsAssignmentsTx", () => {
   const check = (contractId: string, next: Parameters<typeof assertContractChangeKeepsAssignmentsTx>[2]) =>
     testDb.transaction((tx) => assertContractChangeKeepsAssignmentsTx(tx as unknown as Tx, contractId, next))
 
-  it("assertContractChangeKeepsAssignmentsTx bloquea cambiar faena, retrasar inicio, adelantar término o cerrar con asignaciones abiertas", async () => {
+  it("assertContractChangeKeepsAssignmentsTx bloquea cambiar faena, retrasar inicio o cerrar con asignaciones abiertas sin término", async () => {
     await assign("c-1", ["v-1"], "2026-03-01")
     expect(await check("c-1", { ...base, worksiteId: "w-b" })).toEqual(expect.any(String))
     expect(await check("c-1", { ...base, startDate: "2026-04-01" })).toEqual(expect.any(String))
-    expect(await check("c-1", { ...base, endDate: "2026-12-31" })).toEqual(expect.any(String))
     expect(await check("c-1", { ...base, status: "closed" })).toEqual(expect.any(String))
     expect(await check("c-1", { ...base, status: "suspended" })).toEqual(expect.any(String))
     // Lo que no toca las asignaciones se permite.
     expect(await check("c-1", base)).toBeNull()
     expect(await check("c-1", { ...base, startDate: "2026-03-01" })).toBeNull()
+    // Fijar el término es el caso normal: las asignaciones abiertas se acotan al guardar.
+    expect(await check("c-1", { ...base, endDate: "2026-12-31" })).toBeNull()
   })
 
-  it("adelantar el término bloquea también cuando la asignación heredó el término", async () => {
+  it("cerrar el contrato con término es válido porque el estado se evalúa después de acotar", async () => {
+    await assign("c-1", ["v-1"], "2026-03-01")
+    expect(await check("c-1", { ...base, endDate: "2026-12-31", status: "closed" })).toBeNull()
+    expect(await check("c-1", { ...base, endDate: "2026-12-31", status: "suspended" })).toBeNull()
+  })
+
+  it("rechaza un término anterior al inicio de una asignación", async () => {
+    await assign("c-1", ["v-1"], "2026-03-01")
+    await assign("c-1", ["v-2"], "2026-06-10")
+    const message = await check("c-1", { ...base, endDate: "2026-06-09" })
+    expect(message).toContain("2026-06-10")
+    // Terminar el mismo día en que empieza la última asignación es coherente (un solo día).
+    expect(await check("c-1", { ...base, endDate: "2026-06-10" })).toBeNull()
+  })
+
+  it("adelantar el término también acota las asignaciones que heredaron el término", async () => {
     await testDb.update(schema.contracts).set({ endDate: "2026-12-31" }).where(eq(schema.contracts.id, "c-1"))
     await assign("c-1", ["v-1"], "2026-03-01")
-    expect(await check("c-1", { ...base, endDate: "2026-10-31" })).toEqual(expect.any(String))
+    expect(await check("c-1", { ...base, endDate: "2026-10-31" })).toBeNull()
     expect(await check("c-1", { ...base, endDate: "2027-03-31" })).toBeNull()
-    // Cerrar el contrato con asignaciones que ya terminan con él es coherente.
-    expect(await check("c-1", { ...base, endDate: "2026-12-31", status: "closed" })).toBeNull()
+    expect(await check("c-1", { ...base, endDate: "2026-02-28" })).toEqual(expect.any(String))
   })
 
   it("sin asignaciones permite cualquier cambio", async () => {
     expect(await check("c-2", { worksiteId: "w-b", startDate: "2027-01-01", endDate: "2027-02-01", status: "closed" })).toBeNull()
     expect(await check("c-2", { worksiteId: null, startDate: null, endDate: null, status: "suspended" })).toBeNull()
+  })
+})
+
+describe("capContractAssignmentsTx", () => {
+  const cap = (contractId: string, endDate: string) =>
+    testDb.transaction((tx) => capContractAssignmentsTx(tx as unknown as Tx, contractId, endDate, actor))
+
+  it("fijar el término del contrato acota las asignaciones abiertas", async () => {
+    await assign("c-1", ["v-1", "v-2"], "2026-03-01")
+    await seedAssignment({ id: "a-old", vehicleId: "v-3", validFrom: "2026-01-01", validTo: "2026-02-28" })
+    expect(await cap("c-1", "2026-12-31")).toBe(2)
+    expect((await rows()).map((r) => [r.vehicleId, r.validFrom, r.validTo])).toEqual([
+      ["v-1", "2026-03-01", "2026-12-31"],
+      ["v-2", "2026-03-01", "2026-12-31"],
+      ["v-3", "2026-01-01", "2026-02-28"],
+    ])
+    const audit = await testDb.select().from(schema.auditLog).where(eq(schema.auditLog.reason, "Término del contrato"))
+    expect(audit).toHaveLength(2)
+    expect(audit.every((row) => row.action === "update" && row.worksiteId === "w-a")).toBe(true)
+  })
+
+  it("acota también las que pasaban del término y no toca las que ya terminaban antes", async () => {
+    await seedAssignment({ id: "a-1", vehicleId: "v-1", validFrom: "2026-03-01", validTo: "2027-06-30" })
+    await seedAssignment({ id: "a-2", vehicleId: "v-2", validFrom: "2026-03-01", validTo: "2026-05-31" })
+    expect(await cap("c-1", "2026-12-31")).toBe(1)
+    expect((await rows()).map((r) => [r.vehicleId, r.validTo])).toEqual([["v-1", "2026-12-31"], ["v-2", "2026-05-31"]])
+    // Idempotente.
+    expect(await cap("c-1", "2026-12-31")).toBe(0)
+  })
+
+  it("no toca asignaciones de otros contratos", async () => {
+    await assign("c-1", ["v-1"], "2026-03-01")
+    await assign("c-2", ["v-2"], "2026-03-01")
+    await cap("c-1", "2026-12-31")
+    expect((await rows()).map((r) => [r.contractId, r.validTo])).toEqual([["c-1", "2026-12-31"], ["c-2", null]])
   })
 })
 

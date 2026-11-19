@@ -3,6 +3,8 @@
 import { safeActionMessage } from "@/lib/action-error"
 import { assertIdentityStable, MasterIdentityError } from "@/lib/services/master-identity"
 import { clientHasBillingHistory, contractHasBillingHistory } from "@/lib/services/billing/client-identity"
+import { assertContractChangeKeepsAssignmentsTx, capContractAssignmentsTx } from "@/lib/services/contracts/assignments"
+import { nextContractCodeTx } from "@/lib/services/contracts/contracts"
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
@@ -590,7 +592,8 @@ export async function saveClientAction(input: unknown): Promise<ActionResult> {
 
 const contractSchema = z.object({
   id: z.string().optional(),
-  code: z.string().min(2, "El código es obligatorio").max(40),
+  // Vacío = se genera solo (CTR-AAAA-NNNN) al crear.
+  code: z.string().trim().max(40).optional(),
   clientId: z.string().min(1, "Selecciona un cliente"),
   name: z.string().min(2, "El nombre es obligatorio"),
   worksiteId: z.string().min(1).nullable().optional(),
@@ -616,6 +619,10 @@ export async function saveContractAction(input: unknown): Promise<ActionResult> 
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos inválidos" }
   }
   const data = parsed.data
+  const providedCode = data.code?.trim().toUpperCase() ?? ""
+  // Un código escrito a mano sigue exigiendo su largo mínimo; vacío en un alta se genera.
+  if (providedCode && providedCode.length < 2) return { ok: false, message: "El código es obligatorio" }
+  if (!providedCode && data.id) return { ok: false, message: "El código es obligatorio" }
 
   if (data.startDate && data.endDate && data.startDate > data.endDate) {
     return { ok: false, message: "La fecha de término no puede ser anterior al inicio" }
@@ -626,7 +633,7 @@ export async function saveContractAction(input: unknown): Promise<ActionResult> 
     if (data.costCenterId) await assertCostCenterAllowed(db, data.costCenterId, data.worksiteId ?? null)
     const now = new Date().toISOString()
     const values = {
-      code: data.code.trim().toUpperCase(),
+      code: providedCode,
       clientId: data.clientId,
       name: data.name.trim(),
       worksiteId: data.worksiteId ?? null,
@@ -669,17 +676,35 @@ export async function saveContractAction(input: unknown): Promise<ActionResult> 
           throw e
         }
 
+        // Equipos asignados: la faena, el inicio y el estado no pueden dejarlos colgando.
+        const assignmentsError = await assertContractChangeKeepsAssignmentsTx(tx, contractId, {
+          worksiteId: values.worksiteId, startDate: values.startDate, endDate: values.endDate, status: values.status,
+        })
+        if (assignmentsError) return assignmentsError
+
+        // Con término, las asignaciones abiertas terminan con el contrato (misma transacción).
+        if (values.endDate) {
+          await capContractAssignmentsTx(tx, contractId, values.endDate, { userId: session.user.id, email: session.user.email })
+        }
         await tx.update(contracts).set(values).where(eq(contracts.id, contractId))
         return null
       })
       if (identityError) return { ok: false, message: identityError }
     } else {
-      const existing = await db.query.contracts.findFirst({
-        where: eq(contracts.code, values.code),
-        columns: { id: true },
+      const created = await db.transaction(async (tx) => {
+        if (providedCode) {
+          const existing = await tx.query.contracts.findFirst({
+            where: eq(contracts.code, values.code),
+            columns: { id: true },
+          })
+          if (existing) return { error: `Ya existe un contrato con el código ${values.code}` }
+        } else {
+          values.code = await nextContractCodeTx(tx)
+        }
+        await tx.insert(contracts).values({ id: nanoid(), ...values })
+        return { error: null }
       })
-      if (existing) return { ok: false, message: `Ya existe un contrato con el código ${values.code}` }
-      await db.insert(contracts).values({ id: nanoid(), ...values })
+      if (created.error) return { ok: false, message: created.error }
     }
 
     await recordAudit({

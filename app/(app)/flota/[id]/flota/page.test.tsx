@@ -32,6 +32,8 @@ vi.mock("../_ficha/ficha-chrome", () => ({
   VehicleFichaEditAction: () => null,
 }))
 vi.mock("@/lib/services/fleet", () => ({ getFleetVehicleDetail: mocks.detail }))
+// La tarjeta «Contrato» lee su historial de la base; acá no interesa.
+vi.mock("@/lib/services/vehicle-ficha", () => ({ loadVehicleContractCard: async () => ({ history: [], contractOptions: [] }) }))
 vi.mock("@/lib/services/system-settings", () => ({ getFleetAdminSettings: async () => ({ warningDays: 30, defaultVehicleStatus: "operativo" }) }))
 // La hoja «Actualizar vencimientos» importa la acción; su lógica tiene su propia prueba.
 vi.mock("../../actions", () => ({ updateVehicleExpiriesAction: vi.fn() }))

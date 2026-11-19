@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm"
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import { contractVehicleAssignments, contracts, fuelProviderMappings, fuelVehicles } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
@@ -282,6 +282,13 @@ export async function closeContractAssignmentsOnRelocationTx(
  * ¿Puede cambiarse el contrato sin dejar equipos colgando? Devuelve `null` si sí,
  * o el mensaje que ve quien edita. Lo usan Facturación y la faena antes de
  * guardar un contrato con equipos asignados.
+ *
+ * Fijar o adelantar el término NO se rechaza por tener equipos abiertos: es el
+ * caso normal («este contrato termina el 31-12»). Quien guarda llama después a
+ * `capContractAssignmentsTx` en la misma transacción y las asignaciones que
+ * pasaban de esa fecha terminan con el contrato. Sólo se rechaza un término
+ * anterior al inicio de alguna asignación, porque acotarla dejaría
+ * `valid_to < valid_from`.
  */
 export async function assertContractChangeKeepsAssignmentsTx(
   tx: Tx,
@@ -303,16 +310,46 @@ export async function assertContractChangeKeepsAssignmentsTx(
     return `${label} desde el ${firstFrom}: el contrato no puede empezar después`
   }
   if (next.endDate !== null) {
-    if (assignments.some((row) => row.validTo === null)) {
-      return `${label} sin fecha de término: quítalos antes de fijar el término del contrato`
-    }
-    const lastTo = assignments.reduce((max, row) => (row.validTo! > max ? row.validTo! : max), assignments[0]!.validTo!)
-    if (next.endDate < lastTo) return `${label} hasta el ${lastTo}: el contrato no puede terminar antes`
+    const lastFrom = assignments.reduce((max, row) => (row.validFrom > max ? row.validFrom : max), assignments[0]!.validFrom)
+    if (next.endDate < lastFrom) return `${label} desde el ${lastFrom}: el contrato no puede terminar antes de esa fecha`
   }
-  if (next.status !== contract.status && next.status !== "active" && assignments.some((row) => row.validTo === null)) {
-    return `${label} vigentes: quítalos antes de ${next.status === "closed" ? "cerrar" : "suspender"} el contrato`
+  // El estado se evalúa DESPUÉS de acotar: con término, ya no quedan asignaciones abiertas.
+  const openAfterCap = next.endDate === null && assignments.some((row) => row.validTo === null)
+  if (next.status !== contract.status && next.status !== "active" && openAfterCap) {
+    return `${label} vigentes: quítalos o fija el término antes de ${next.status === "closed" ? "cerrar" : "suspender"} el contrato`
   }
   return null
+}
+
+/**
+ * El contrato termina el `endDate` (inclusive): toda asignación suya que seguía
+ * abierta o pasaba de ese día termina con él. Va en la misma transacción que el
+ * guardado del contrato, después de `assertContractChangeKeepsAssignmentsTx`.
+ * Devuelve cuántas asignaciones cambió.
+ */
+export async function capContractAssignmentsTx(tx: Tx, contractId: string, endDate: string, actor: AssignmentActor): Promise<number> {
+  const affected = await tx.select({
+    assignment: contractVehicleAssignments, code: fuelVehicles.code, plate: fuelVehicles.plate, worksiteId: contracts.worksiteId,
+  }).from(contractVehicleAssignments)
+    .innerJoin(fuelVehicles, eq(fuelVehicles.id, contractVehicleAssignments.vehicleId))
+    .innerJoin(contracts, eq(contracts.id, contractVehicleAssignments.contractId))
+    .where(and(
+      eq(contractVehicleAssignments.contractId, contractId),
+      or(isNull(contractVehicleAssignments.validTo), gt(contractVehicleAssignments.validTo, endDate)),
+    ))
+    .orderBy(asc(contractVehicleAssignments.vehicleId))
+  for (const { assignment, code, plate, worksiteId } of affected) {
+    await tx.update(contractVehicleAssignments)
+      .set({ validTo: endDate, updatedAt: new Date().toISOString() })
+      .where(eq(contractVehicleAssignments.id, assignment.id))
+    await recordAudit({
+      userId: actor.userId, userEmail: actor.email ?? undefined, action: "update", entityType: ENTITY, entityId: assignment.id,
+      entityCode: vehicleLabel({ code, plate }), worksiteId: worksiteId ?? undefined,
+      oldState: { validTo: assignment.validTo }, newState: { validTo: endDate },
+      reason: "Término del contrato",
+    }, tx)
+  }
+  return affected.length
 }
 
 /**
