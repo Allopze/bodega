@@ -189,6 +189,8 @@ export const pgliteTestFiles = [
   "lib/combustibles/control/queries/seals.test.ts",
   "lib/combustibles/control/queries/reconciliation.test.ts",
   "lib/combustibles/control/queries/idle.test.ts",
+  // Formulario de terreno: el medio sugerido por el lugar de carga sobrevive al renombre de pantalla del medio.
+  "lib/services/fuel-tae/field-config.test.ts",
   "lib/__tests__/fuel-control-imports-pglite.test.ts",
   // VisionLink: cruce por serie, upsert idempotente y fuente separada de los lotes manuales.
   "lib/__tests__/visionlink-sync-pglite.test.ts",
