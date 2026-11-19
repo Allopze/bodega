@@ -5,10 +5,9 @@
  * (`moveProviderMappingsWithVehicleTx`) y, desde los contratos por faena, cierra
  * su asignación de contrato (`closeContractAssignmentsOnRelocationTx`). Los dos
  * pasos viven juntos en `relocateVehicleWorksiteTx`. Si alguien vuelve a llamar
- * sólo al primero —como hacían los cuatro sitios antes—, el equipo queda en un
+ * sólo al primero —como hacían los cuatro sitios antes del traslado—, el equipo queda en un
  * contrato de una faena donde ya no está y su costo se atribuye mal sin que
- * nada lo avise. El caso que se había escapado es la importación XLSX del
- * padrón de combustible.
+ * nada lo avise.
  *
  * Mismo patrón de escaneo estático que `modal-alto-estable.test.ts`: sin base de
  * datos y en cada `npm test`.
@@ -26,10 +25,13 @@ const PERMITIDOS = new Set([
   "lib/services/fleet-relocation.ts",
 ])
 
-/** Los sitios que cambian la faena de un vehículo y deben pasar por el envoltorio. */
+/**
+ * El sitio que cambia la faena de un vehículo y debe pasar por el envoltorio. Desde
+ * el traslado de equipos (fleet-transfers) es el único: la edición, el padrón y
+ * «Incorporar» ya no escriben la faena, la piden a `transferVehiclesTx`.
+ */
 const LLAMADORES = [
-  "app/(app)/combustibles/actions-module/vehicles.ts",
-  "lib/services/mantencion/equipment.ts",
+  "lib/services/fleet-transfers.ts",
 ]
 
 function scannedFiles(): string[] {
@@ -58,15 +60,15 @@ describe("traslado de faena de un equipo", () => {
     ).toEqual([])
   })
 
-  it("los sitios que trasladan equipos usan relocateVehicleWorksiteTx", () => {
-    for (const rel of LLAMADORES) {
-      const source = readFileSync(path.join(ROOT, rel), "utf8")
-      expect(source, `${rel} ya no pasa por relocateVehicleWorksiteTx`).toContain("relocateVehicleWorksiteTx(")
-    }
-    // padrón: la acción de edición y la importación XLSX son dos sitios distintos del mismo archivo.
-    const vehicles = readFileSync(path.join(ROOT, "app/(app)/combustibles/actions-module/vehicles.ts"), "utf8")
-    expect(vehicles.match(/relocateVehicleWorksiteTx\(/g)?.length).toBe(2)
-    const equipment = readFileSync(path.join(ROOT, "lib/services/mantencion/equipment.ts"), "utf8")
-    expect(equipment.match(/relocateVehicleWorksiteTx\(/g)?.length).toBe(2)
+  it("el traslado pasa por relocateVehicleWorksiteTx y su anulación por revertVehicleRelocationTx", () => {
+    const transfers = readFileSync(path.join(ROOT, "lib/services/fleet-transfers.ts"), "utf8")
+    expect(transfers.match(/relocateVehicleWorksiteTx\(/g)?.length, "transferVehiclesTx ya no cierra el contrato").toBe(1)
+    expect(transfers.match(/revertVehicleRelocationTx\(/g)?.length, "voidTransferTx ya no devuelve el contrato").toBe(1)
+  })
+
+  it("nadie fuera del traslado escribe la faena de un vehículo con relocateVehicleWorksiteTx", () => {
+    const otros = files.filter((rel) => !PERMITIDOS.has(rel) && !LLAMADORES.includes(rel)
+      && readFileSync(path.join(ROOT, rel), "utf8").includes("relocateVehicleWorksiteTx("))
+    expect(otros, "La faena de un equipo sólo cambia por un traslado (transferVehiclesTx).").toEqual([])
   })
 })

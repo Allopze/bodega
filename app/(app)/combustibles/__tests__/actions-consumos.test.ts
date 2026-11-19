@@ -6,6 +6,7 @@ const mockCanAccessWorksite = vi.fn()
 const mockIsGlobalRole = vi.fn()
 const mockFindFirstBatch = vi.fn()
 const mockFindManyFuelVehicles = vi.fn()
+const mockStayRows = vi.fn()
 const mockTransaction = vi.fn()
 const mockRecordAudit = vi.fn()
 const mockMkdirp = vi.fn()
@@ -31,6 +32,8 @@ vi.mock("@/db", () => ({
       fuelImportBatches: { findFirst: (...a: unknown[]) => mockFindFirstBatch(...a) },
       fuelVehicles: { findMany: (...a: unknown[]) => mockFindManyFuelVehicles(...a) },
     },
+    // «all» pregunta por las faenas de las estadías del período: select().from().where() → filas {vehicleId, worksiteId}.
+    select: () => ({ from: () => ({ where: (...a: unknown[]) => mockStayRows(...a) }) }),
     transaction: (...a: unknown[]) => mockTransaction(...a),
   },
 }))
@@ -95,6 +98,7 @@ describe("confirmConsumptionImportAction", () => {
     mockIsGlobalRole.mockReturnValue(true)
     mockFindFirstBatch.mockResolvedValue(undefined)  // no duplicates by default
     mockFindManyFuelVehicles.mockResolvedValue([{ id: "veh-1", plate: "ABCD12", worksiteId: "ws-1" }])
+    mockStayRows.mockResolvedValue([])  // sin estadías: vale la faena actual del vehículo
   })
 
   it("imports valid rows, matches an existing vehicle by plate, and audits the batch", async () => {
@@ -172,19 +176,60 @@ describe("confirmConsumptionImportAction", () => {
     expect(recordsInsert[0]!.vehicleId).toBeNull()
   })
 
-  it("no vincula una patente cuyo vehículo pertenece a otra faena", async () => {
+  // El filtro «el equipo estuvo en la faena del lote durante el período» es SQL sobre las
+  // estadías (se ejercita con datos reales en traslado-anomalias-importador-pglite.test.ts);
+  // acá sólo se fija que una faena concreta filtra y que «all» no filtra por faena (resuelve por las estadías del período).
+  it("filtra los vehículos por estadías en la faena del lote, y no filtra en «all»", async () => {
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(makeTx()))
+
+    await confirmConsumptionImportAction(makeFormData(await makeXlsxFile(validRows), { worksiteId: "ws-1" }))
+    expect(mockFindManyFuelVehicles.mock.calls.at(-1)![0].where).toBeDefined()
+
+    await confirmConsumptionImportAction(makeFormData(await makeXlsxFile(validRows), { worksiteId: "all" }))
+    expect(mockFindManyFuelVehicles.mock.calls.at(-1)![0].where).toBeUndefined()
+    expect(mockStayRows).toHaveBeenCalledOnce()
+  })
+
+  // La agrupación real por estadía (y el rechazo si el equipo cambió de faena) se ejercita con datos
+  // reales en traslado-importador-todas-pglite.test.ts; acá se fija el resultado con filas de estadía simuladas.
+  it("en «all» archiva por la faena de la estadía del período, no por la actual del vehículo", async () => {
     const tx = makeTx()
-    mockFindManyFuelVehicles.mockResolvedValue([{ id: "veh-1", plate: "ABCD12", worksiteId: "ws-2" }])
+    mockFindManyFuelVehicles.mockResolvedValue([{ id: "veh-1", plate: "ABCD12", worksiteId: "ws-2" }]) // hoy en ws-2
+    mockStayRows.mockResolvedValue([{ vehicleId: "veh-1", worksiteId: "ws-1" }]) // pero en el período estaba en ws-1
     mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx))
 
-    const file = await makeXlsxFile(validRows)
-    const res = await confirmConsumptionImportAction(makeFormData(file, { worksiteId: "ws-1" }))
+    const res = await confirmConsumptionImportAction(makeFormData(await makeXlsxFile(validRows), { worksiteId: "all" }))
 
     expect(res.ok).toBe(true)
     if (!res.ok) return
-    const recordsInsert = tx._insertedRows[1]!.values as Array<{ vehicleId: string | null; worksiteId: string }>
-    expect(recordsInsert[0]!.worksiteId).toBe("ws-1")
-    expect(recordsInsert[0]!.vehicleId).toBeNull()
+    expect((tx._insertedRows[0]!.values as { worksiteId: string }).worksiteId).toBe("ws-1")
+  })
+
+  it("en «all» rechaza la fila de un equipo que estuvo en más de una faena en el período", async () => {
+    const tx = makeTx()
+    mockFindManyFuelVehicles.mockResolvedValue([
+      { id: "veh-1", plate: "ABCD12", worksiteId: "ws-2" },
+      { id: "veh-2", plate: "EFGH34", worksiteId: "ws-2" },
+    ])
+    mockStayRows.mockResolvedValue([
+      { vehicleId: "veh-1", worksiteId: "ws-1" },
+      { vehicleId: "veh-1", worksiteId: "ws-2" },
+      { vehicleId: "veh-2", worksiteId: "ws-2" },
+    ])
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx))
+    const file = await makeXlsxFile([
+      ...validRows,
+      { "Patente": "EFGH34", "N° Tarjetas": 1, "N° Transacciones": 3, "Cantidad (Unidad)": 50, "Monto ($)": 45000, "Rendimiento Promedio": 4.1 },
+    ])
+
+    const res = await confirmConsumptionImportAction(makeFormData(file, { worksiteId: "all" }))
+
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.data.imported).toBe(1)
+    expect(res.data.errors).toContainEqual(expect.objectContaining({
+      patente: "ABCD12", message: "El equipo cambió de faena en el período: impórtalo por faena.",
+    }))
   })
 
   it("imports a first general file into one batch per vehicle worksite", async () => {
@@ -300,17 +345,5 @@ describe("previewConsumptionImportAction", () => {
     expect(res.data.errores).toHaveLength(0)
     expect(mockTransaction).not.toHaveBeenCalled()
     expect(mockWriteBuffer).not.toHaveBeenCalled()
-  })
-
-  it("no cuenta como asociada una patente de otra faena", async () => {
-    mockFindManyFuelVehicles.mockResolvedValue([{ id: "veh-1", plate: "ABCD12", worksiteId: "ws-2" }])
-
-    const file = await makeXlsxFile(validRows)
-    const res = await previewConsumptionImportAction(makeFormData(file, { worksiteId: "ws-1" }))
-
-    expect(res.ok).toBe(true)
-    if (!res.ok) return
-    expect(res.data.patentesConVehiculo).toBe(0)
-    expect(res.data.patentesSinVehiculo).toBe(1)
   })
 })

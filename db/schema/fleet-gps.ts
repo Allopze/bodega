@@ -166,10 +166,10 @@ export const fleetGpsLatestPositions = pgTable("fleet_gps_latest_positions", {
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   foreignKey({
-    columns: [table.vehicleId, table.worksiteId],
-    foreignColumns: [fuelVehicles.id, fuelVehicles.worksiteId],
-    name: "fleet_gps_latest_positions_vehicle_worksite_fk",
-  }).onUpdate("cascade").onDelete("cascade"),
+    columns: [table.vehicleId],
+    foreignColumns: [fuelVehicles.id],
+    name: "fleet_gps_latest_positions_vehicle_fk",
+  }).onDelete("cascade"),
   check("fleet_gps_latest_positions_provider_valid", sql`${table.provider} IN ('onway', 'wialon')`),
   check("fleet_gps_latest_positions_vehicle_scope_consistent", sql`
     (${table.vehicleId} IS NULL AND ${table.worksiteId} IS NULL)
@@ -209,10 +209,10 @@ export const fleetGpsPositionHistory = pgTable("fleet_gps_position_history", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   foreignKey({
-    columns: [table.vehicleId, table.worksiteId],
-    foreignColumns: [fuelVehicles.id, fuelVehicles.worksiteId],
-    name: "fleet_gps_position_history_vehicle_worksite_fk",
-  }).onUpdate("cascade").onDelete("cascade"),
+    columns: [table.vehicleId],
+    foreignColumns: [fuelVehicles.id],
+    name: "fleet_gps_position_history_vehicle_fk",
+  }).onDelete("cascade"),
   check("fleet_gps_position_history_provider_valid", sql`${table.provider} IN ('onway')`),
   check("fleet_gps_position_history_scope_consistent", sql`(${table.vehicleId} IS NULL AND ${table.worksiteId} IS NULL) OR (${table.vehicleId} IS NOT NULL AND ${table.worksiteId} IS NOT NULL)`),
   check("fleet_gps_position_history_coordinates_valid", sql`${table.latitude} BETWEEN -90 AND 90 AND ${table.longitude} BETWEEN -180 AND 180`),
@@ -241,7 +241,11 @@ export const fleetGpsTrips = pgTable("fleet_gps_trips", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  foreignKey({ columns: [table.vehicleId, table.worksiteId], foreignColumns: [fuelVehicles.id, fuelVehicles.worksiteId], name: "fleet_gps_trips_vehicle_worksite_fk" }).onUpdate("cascade").onDelete("cascade"),
+  foreignKey({
+    columns: [table.vehicleId],
+    foreignColumns: [fuelVehicles.id],
+    name: "fleet_gps_trips_vehicle_fk",
+  }).onDelete("cascade"),
   check("fleet_gps_trips_provider_valid", sql`${table.provider} IN ('onway')`),
   check("fleet_gps_trips_scope_consistent", sql`(${table.vehicleId} IS NULL AND ${table.worksiteId} IS NULL) OR (${table.vehicleId} IS NOT NULL AND ${table.worksiteId} IS NOT NULL)`),
   check("fleet_gps_trips_duration_valid", sql`${table.endedAt} > ${table.startedAt}`),
@@ -271,10 +275,20 @@ export const fleetGpsAlerts = pgTable("fleet_gps_alerts", {
   linkedEntityType: text("linked_entity_type"),
   linkedEntityId: text("linked_entity_id"),
   coordinatesPurgedAt: timestamp("coordinates_purged_at", { withTimezone: true, mode: "string" }),
+  /** Intentos fallidos de la automatización (error inesperado, p. ej. caída de la base): al tercero la alerta queda `blocked`. */
+  automationAttempts: integer("automation_attempts").notNull().default(0),
+  /** Motivo del último intento fallido de la automatización. */
+  automationLastError: text("automation_last_error"),
+  /** Cuándo fue ese intento: la cola atiende primero las alertas sin intentos o con el intento más antiguo. */
+  automationLastAttemptAt: timestamp("automation_last_attempt_at", { withTimezone: true, mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  foreignKey({ columns: [table.vehicleId, table.worksiteId], foreignColumns: [fuelVehicles.id, fuelVehicles.worksiteId], name: "fleet_gps_alerts_vehicle_worksite_fk" }).onUpdate("cascade").onDelete("cascade"),
+  foreignKey({
+    columns: [table.vehicleId],
+    foreignColumns: [fuelVehicles.id],
+    name: "fleet_gps_alerts_vehicle_fk",
+  }).onDelete("cascade"),
   check("fleet_gps_alerts_provider_valid", sql`${table.provider} IN ('onway')`),
   check("fleet_gps_alerts_scope_consistent", sql`(${table.vehicleId} IS NULL AND ${table.worksiteId} IS NULL) OR (${table.vehicleId} IS NOT NULL AND ${table.worksiteId} IS NOT NULL)`),
   check("fleet_gps_alerts_coordinates_valid", sql`(${table.latitude} IS NULL AND ${table.longitude} IS NULL) OR (${table.latitude} BETWEEN -90 AND 90 AND ${table.longitude} BETWEEN -180 AND 180)`),

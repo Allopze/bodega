@@ -1,5 +1,5 @@
 {
-  "id": "c700c540-9ea4-4a48-9773-1c5b12b00e06",
+  "id": "e3e91022-5174-445f-8f4d-087c4bb8c26e",
   "prevId": "f1da3d75-3a74-4b90-9373-b9e441fb003c",
   "version": "7",
   "dialect": "postgresql",
@@ -12687,20 +12687,18 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
-        "fleet_gps_alerts_vehicle_worksite_fk": {
-          "name": "fleet_gps_alerts_vehicle_worksite_fk",
+        "fleet_gps_alerts_vehicle_fk": {
+          "name": "fleet_gps_alerts_vehicle_fk",
           "tableFrom": "fleet_gps_alerts",
           "tableTo": "fuel_vehicles",
           "columnsFrom": [
-            "vehicle_id",
-            "worksite_id"
+            "vehicle_id"
           ],
           "columnsTo": [
-            "id",
-            "worksite_id"
+            "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "cascade"
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -13346,20 +13344,18 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "fleet_gps_latest_positions_vehicle_worksite_fk": {
-          "name": "fleet_gps_latest_positions_vehicle_worksite_fk",
+        "fleet_gps_latest_positions_vehicle_fk": {
+          "name": "fleet_gps_latest_positions_vehicle_fk",
           "tableFrom": "fleet_gps_latest_positions",
           "tableTo": "fuel_vehicles",
           "columnsFrom": [
-            "vehicle_id",
-            "worksite_id"
+            "vehicle_id"
           ],
           "columnsTo": [
-            "id",
-            "worksite_id"
+            "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "cascade"
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -13573,20 +13569,18 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
-        "fleet_gps_position_history_vehicle_worksite_fk": {
-          "name": "fleet_gps_position_history_vehicle_worksite_fk",
+        "fleet_gps_position_history_vehicle_fk": {
+          "name": "fleet_gps_position_history_vehicle_fk",
           "tableFrom": "fleet_gps_position_history",
           "tableTo": "fuel_vehicles",
           "columnsFrom": [
-            "vehicle_id",
-            "worksite_id"
+            "vehicle_id"
           ],
           "columnsTo": [
-            "id",
-            "worksite_id"
+            "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "cascade"
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -13962,20 +13956,18 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
-        "fleet_gps_trips_vehicle_worksite_fk": {
-          "name": "fleet_gps_trips_vehicle_worksite_fk",
+        "fleet_gps_trips_vehicle_fk": {
+          "name": "fleet_gps_trips_vehicle_fk",
           "tableFrom": "fleet_gps_trips",
           "tableTo": "fuel_vehicles",
           "columnsFrom": [
-            "vehicle_id",
-            "worksite_id"
+            "vehicle_id"
           ],
           "columnsTo": [
-            "id",
-            "worksite_id"
+            "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "cascade"
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -13997,6 +13989,482 @@
         "fleet_gps_trips_distance_valid": {
           "name": "fleet_gps_trips_distance_valid",
           "value": "\"fleet_gps_trips\".\"distance_km\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.fleet_transfer_items": {
+      "name": "fleet_transfer_items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "transfer_id": {
+          "name": "transfer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vehicle_id": {
+          "name": "vehicle_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_worksite_id": {
+          "name": "from_worksite_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "fleet_transfer_items_transfer_vehicle_unique": {
+          "name": "fleet_transfer_items_transfer_vehicle_unique",
+          "columns": [
+            {
+              "expression": "transfer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "vehicle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fleet_transfer_items_vehicle_idx": {
+          "name": "fleet_transfer_items_vehicle_idx",
+          "columns": [
+            {
+              "expression": "vehicle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fleet_transfer_items_transfer_id_fleet_transfers_id_fk": {
+          "name": "fleet_transfer_items_transfer_id_fleet_transfers_id_fk",
+          "tableFrom": "fleet_transfer_items",
+          "tableTo": "fleet_transfers",
+          "columnsFrom": [
+            "transfer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fleet_transfer_items_vehicle_id_fuel_vehicles_id_fk": {
+          "name": "fleet_transfer_items_vehicle_id_fuel_vehicles_id_fk",
+          "tableFrom": "fleet_transfer_items",
+          "tableTo": "fuel_vehicles",
+          "columnsFrom": [
+            "vehicle_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fleet_transfer_items_from_worksite_id_worksites_id_fk": {
+          "name": "fleet_transfer_items_from_worksite_id_worksites_id_fk",
+          "tableFrom": "fleet_transfer_items",
+          "tableTo": "worksites",
+          "columnsFrom": [
+            "from_worksite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.fleet_transfers": {
+      "name": "fleet_transfers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "folio": {
+          "name": "folio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "effective_date": {
+          "name": "effective_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "to_worksite_id": {
+          "name": "to_worksite_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authorized_by": {
+          "name": "authorized_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "voided_at": {
+          "name": "voided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "voided_by": {
+          "name": "voided_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "void_reason": {
+          "name": "void_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "fleet_transfers_effective_date_idx": {
+          "name": "fleet_transfers_effective_date_idx",
+          "columns": [
+            {
+              "expression": "effective_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fleet_transfers_to_worksite_idx": {
+          "name": "fleet_transfers_to_worksite_idx",
+          "columns": [
+            {
+              "expression": "to_worksite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fleet_transfers_to_worksite_id_worksites_id_fk": {
+          "name": "fleet_transfers_to_worksite_id_worksites_id_fk",
+          "tableFrom": "fleet_transfers",
+          "tableTo": "worksites",
+          "columnsFrom": [
+            "to_worksite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fleet_transfers_created_by_users_id_fk": {
+          "name": "fleet_transfers_created_by_users_id_fk",
+          "tableFrom": "fleet_transfers",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fleet_transfers_voided_by_users_id_fk": {
+          "name": "fleet_transfers_voided_by_users_id_fk",
+          "tableFrom": "fleet_transfers",
+          "tableTo": "users",
+          "columnsFrom": [
+            "voided_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "fleet_transfers_folio_unique": {
+          "name": "fleet_transfers_folio_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "folio"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "fleet_transfers_reason_valid": {
+          "name": "fleet_transfers_reason_valid",
+          "value": "char_length(trim(\"fleet_transfers\".\"reason\")) >= 10"
+        },
+        "fleet_transfers_authorized_by_valid": {
+          "name": "fleet_transfers_authorized_by_valid",
+          "value": "char_length(trim(\"fleet_transfers\".\"authorized_by\")) >= 3"
+        },
+        "fleet_transfers_void_complete": {
+          "name": "fleet_transfers_void_complete",
+          "value": "\n    (\"fleet_transfers\".\"voided_at\" IS NULL AND \"fleet_transfers\".\"voided_by\" IS NULL AND \"fleet_transfers\".\"void_reason\" IS NULL)\n    OR (\"fleet_transfers\".\"voided_at\" IS NOT NULL AND \"fleet_transfers\".\"voided_by\" IS NOT NULL\n      AND char_length(trim(\"fleet_transfers\".\"void_reason\")) >= 10)\n  "
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.fuel_vehicle_worksite_intervals": {
+      "name": "fuel_vehicle_worksite_intervals",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "vehicle_id": {
+          "name": "vehicle_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "worksite_id": {
+          "name": "worksite_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_on": {
+          "name": "started_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ended_on": {
+          "name": "ended_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transfer_id": {
+          "name": "transfer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evidence": {
+          "name": "evidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "fuel_vehicle_worksite_intervals_open_unique": {
+          "name": "fuel_vehicle_worksite_intervals_open_unique",
+          "columns": [
+            {
+              "expression": "vehicle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"fuel_vehicle_worksite_intervals\".\"ended_on\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fuel_vehicle_worksite_intervals_first_unique": {
+          "name": "fuel_vehicle_worksite_intervals_first_unique",
+          "columns": [
+            {
+              "expression": "vehicle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"fuel_vehicle_worksite_intervals\".\"started_on\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fuel_vehicle_worksite_intervals_vehicle_started_idx": {
+          "name": "fuel_vehicle_worksite_intervals_vehicle_started_idx",
+          "columns": [
+            {
+              "expression": "vehicle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "started_on",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fuel_vehicle_worksite_intervals_worksite_idx": {
+          "name": "fuel_vehicle_worksite_intervals_worksite_idx",
+          "columns": [
+            {
+              "expression": "worksite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fuel_vehicle_worksite_intervals_vehicle_id_fuel_vehicles_id_fk": {
+          "name": "fuel_vehicle_worksite_intervals_vehicle_id_fuel_vehicles_id_fk",
+          "tableFrom": "fuel_vehicle_worksite_intervals",
+          "tableTo": "fuel_vehicles",
+          "columnsFrom": [
+            "vehicle_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fuel_vehicle_worksite_intervals_worksite_id_worksites_id_fk": {
+          "name": "fuel_vehicle_worksite_intervals_worksite_id_worksites_id_fk",
+          "tableFrom": "fuel_vehicle_worksite_intervals",
+          "tableTo": "worksites",
+          "columnsFrom": [
+            "worksite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fuel_vehicle_worksite_intervals_transfer_id_fleet_transfers_id_fk": {
+          "name": "fuel_vehicle_worksite_intervals_transfer_id_fleet_transfers_id_fk",
+          "tableFrom": "fuel_vehicle_worksite_intervals",
+          "tableTo": "fleet_transfers",
+          "columnsFrom": [
+            "transfer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "fuel_vehicle_worksite_intervals_source_valid": {
+          "name": "fuel_vehicle_worksite_intervals_source_valid",
+          "value": "\"fuel_vehicle_worksite_intervals\".\"source\" IN ('alta', 'traslado', 'reconstruccion')"
+        },
+        "fuel_vehicle_worksite_intervals_transfer_consistent": {
+          "name": "fuel_vehicle_worksite_intervals_transfer_consistent",
+          "value": "(\"fuel_vehicle_worksite_intervals\".\"source\" = 'traslado') = (\"fuel_vehicle_worksite_intervals\".\"transfer_id\" IS NOT NULL)"
+        },
+        "fuel_vehicle_worksite_intervals_dates_valid": {
+          "name": "fuel_vehicle_worksite_intervals_dates_valid",
+          "value": "\"fuel_vehicle_worksite_intervals\".\"started_on\" IS NULL OR \"fuel_vehicle_worksite_intervals\".\"ended_on\" IS NULL OR \"fuel_vehicle_worksite_intervals\".\"ended_on\" >= \"fuel_vehicle_worksite_intervals\".\"started_on\""
         }
       },
       "isRLSEnabled": false
@@ -64782,7 +65250,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "contracts_cost_center_id_cost_centers_id_fk": {
@@ -64839,191 +65307,6 @@
         "contracts_period_amount_non_negative": {
           "name": "contracts_period_amount_non_negative",
           "value": "\"contracts\".\"period_amount\" IS NULL OR \"contracts\".\"period_amount\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.contract_vehicle_assignments": {
-      "name": "contract_vehicle_assignments",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "contract_id": {
-          "name": "contract_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "vehicle_id": {
-          "name": "vehicle_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "valid_from": {
-          "name": "valid_from",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "valid_to": {
-          "name": "valid_to",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by_user_id": {
-          "name": "created_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "contract_vehicle_assignments_open_unique": {
-          "name": "contract_vehicle_assignments_open_unique",
-          "columns": [
-            {
-              "expression": "vehicle_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"contract_vehicle_assignments\".\"valid_to\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "contract_vehicle_assignments_vehicle_from_idx": {
-          "name": "contract_vehicle_assignments_vehicle_from_idx",
-          "columns": [
-            {
-              "expression": "vehicle_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "valid_from",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "contract_vehicle_assignments_contract_from_idx": {
-          "name": "contract_vehicle_assignments_contract_from_idx",
-          "columns": [
-            {
-              "expression": "contract_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "valid_from",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "contract_vehicle_assignments_contract_id_contracts_id_fk": {
-          "name": "contract_vehicle_assignments_contract_id_contracts_id_fk",
-          "tableFrom": "contract_vehicle_assignments",
-          "tableTo": "contracts",
-          "columnsFrom": [
-            "contract_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "contract_vehicle_assignments_vehicle_id_fuel_vehicles_id_fk": {
-          "name": "contract_vehicle_assignments_vehicle_id_fuel_vehicles_id_fk",
-          "tableFrom": "contract_vehicle_assignments",
-          "tableTo": "fuel_vehicles",
-          "columnsFrom": [
-            "vehicle_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "contract_vehicle_assignments_created_by_user_id_users_id_fk": {
-          "name": "contract_vehicle_assignments_created_by_user_id_users_id_fk",
-          "tableFrom": "contract_vehicle_assignments",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "contract_vehicle_assignments_dates_valid": {
-          "name": "contract_vehicle_assignments_dates_valid",
-          "value": "\"contract_vehicle_assignments\".\"valid_to\" IS NULL OR \"contract_vehicle_assignments\".\"valid_to\" >= \"contract_vehicle_assignments\".\"valid_from\""
-        },
-        "contract_vehicle_assignments_from_format": {
-          "name": "contract_vehicle_assignments_from_format",
-          "value": "\"contract_vehicle_assignments\".\"valid_from\" ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'"
-        },
-        "contract_vehicle_assignments_to_format": {
-          "name": "contract_vehicle_assignments_to_format",
-          "value": "\"contract_vehicle_assignments\".\"valid_to\" IS NULL OR \"contract_vehicle_assignments\".\"valid_to\" ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'"
-        },
-        "contract_vehicle_assignments_reason_length": {
-          "name": "contract_vehicle_assignments_reason_length",
-          "value": "\"contract_vehicle_assignments\".\"reason\" IS NULL OR length(\"contract_vehicle_assignments\".\"reason\") <= 300"
         }
       },
       "isRLSEnabled": false

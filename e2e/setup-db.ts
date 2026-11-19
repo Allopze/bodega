@@ -2686,6 +2686,37 @@ async function main() {
     updatedAt: now,
   })
 
+  /* Traslado de equipos entre faenas (e2e/traslado-equipos.spec.ts). La migración 0391 deja el
+   * submódulo `/flota/traslados` apagado hasta que corra la reconstrucción del pasado; en el E2E se
+   * enciende para ejercer el botón «Trasladar equipos» y la lista. El equipo es propio del spec: lo
+   * traslada y lo anula, y así ningún otro spec depende de en qué faena queda `fuel-veh-e2e`. */
+  await db.insert(schema.systemSettings).values({
+    key: "submodule.enabled:flota:/flota/traslados",
+    value: "true",
+    updatedAt: now,
+  }).onConflictDoUpdate({
+    target: schema.systemSettings.key,
+    set: { value: "true", updatedAt: now },
+  })
+  await db.insert(schema.fuelVehicles).values({
+    id: "fuel-veh-traslado-e2e",
+    plate: "E2E-TRAS-1",
+    code: "QA-TRAS-1",
+    type: "camioneta",
+    equipmentTypeId: "fet-camioneta",
+    meterType: "odometer",
+    performanceUnit: "km_per_liter",
+    brand: "Nissan",
+    model: "Navara",
+    year: 2022,
+    worksiteId: "ws-e2e",
+    responsibleUserId: "user-admin-e2e",
+    operationalStatus: "operativo",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+
   /* Contenedor del catálogo: la tercera rama de `listInspectionSubjects`, y el
    * sujeto que la inspección del Anexo 14 exige. */
   await db.insert(schema.preventionContainers).values({

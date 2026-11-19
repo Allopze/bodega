@@ -1,6 +1,6 @@
 import type { Tx } from "@/db"
 import { moveProviderMappingsWithVehicleTx } from "@/lib/combustibles/provider-mappings"
-import { closeContractAssignmentsOnRelocationTx } from "@/lib/services/contracts/assignments"
+import { closeContractAssignmentsOnRelocationTx, reopenContractAssignmentsOnVoidTx } from "@/lib/services/contracts/assignments"
 import { todayInChile } from "@/lib/utils"
 
 /**
@@ -28,4 +28,20 @@ export async function relocateVehicleWorksiteTx(
     vehicleId: input.vehicleId, effectiveFrom, actorUserId: input.actorUserId, actorEmail: input.actorEmail,
   })
   return { movedMappings, closedAssignments }
+}
+
+/**
+ * Anulación de un traslado: el equipo vuelve a `worksiteId` (su faena de origen)
+ * desde `effectiveFrom`, la fecha del traslado anulado. Además de lo que hace
+ * `relocateVehicleWorksiteTx` —mapeos de vuelta y fuera del contrato de la faena
+ * de destino—, devuelve el equipo al contrato de origen que el traslado había
+ * cerrado (`reopenContractAssignmentsOnVoidTx`).
+ */
+export async function revertVehicleRelocationTx(
+  tx: Tx,
+  input: { vehicleId: string; worksiteId: string; actorUserId: string; actorEmail?: string | null; effectiveFrom: string },
+): Promise<{ movedMappings: number; closedAssignments: number; reopenedAssignments: number }> {
+  const moved = await relocateVehicleWorksiteTx(tx, input)
+  const reopenedAssignments = await reopenContractAssignmentsOnVoidTx(tx, input)
+  return { ...moved, reopenedAssignments }
 }

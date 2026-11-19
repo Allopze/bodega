@@ -9,6 +9,9 @@ import { VehiclePurchasesCard } from "@/components/fleet/vehicle-purchases-card"
 import { can } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { getFleetVehicleDetail } from "@/lib/services/fleet"
+import { listVehicleStays } from "@/lib/services/fleet-stays"
+import { isRouteOperational } from "@/lib/services/module-toggles"
+import { TransferButton } from "@/components/fleet/transfer/transfer-button"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import { loadVehicleContractCard } from "@/lib/services/vehicle-ficha"
 import { FUEL_PERFORMANCE_UNIT_LABELS, VEHICLE_EXPIRY_FIELDS } from "@/lib/combustibles/validation"
@@ -17,6 +20,7 @@ import { formatDate, formatDateTime, formatQty, todayInChile } from "@/lib/utils
 import { OT_STATUS_LABELS, OT_STATUS_TONES } from "@/lib/mantencion/work-order-states"
 import { FleetDocumentUpload, FleetDocumentsPanel } from "../fleet-documents-panel"
 import { VehicleExpiries } from "../vehicle-expiries"
+import { VehicleStaysCard } from "./vehicle-stays-card"
 import { openVehicleFichaArea } from "../_ficha/access"
 import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaTabs } from "../_ficha/ficha-chrome"
 import { VehicleContractCard } from "./vehicle-contract-card"
@@ -70,10 +74,14 @@ export default async function FlotaVehiclePage({
   // Cambiar el contrato del equipo es de quien administra equipos, con la faena del equipo en su alcance.
   const canChangeContract = can(session, "mant:equipment:manage") && canAccessWorksite(session, vehicle.worksiteId)
   const contractCard = await loadVehicleContractCard(vehicle.id, vehicle.worksiteId, { withOptions: canChangeContract })
+  // «Trasladar» exige el permiso, el interruptor del submódulo (apagado de fábrica) y alcance sobre la faena actual.
+  const canTransfer = vehicle.isActive && can(session, "flota:transfer") && canAccessWorksite(session, vehicle.worksiteId)
+    && await isRouteOperational("/flota/traslados")
+  const stays = await listVehicleStays(vehicle.id)
 
   return (
     <PageContainer width="workbench">
-      <PageHeader title={ctx.label} description={vehicleFichaDescription(ctx)} breadcrumb={vehicleFichaBreadcrumb(ctx, "flota")} actions={<VehicleFichaEditAction ctx={ctx} />} />
+      <PageHeader title={ctx.label} description={vehicleFichaDescription(ctx)} breadcrumb={vehicleFichaBreadcrumb(ctx, "flota")} actions={<><VehicleFichaEditAction ctx={ctx} />{canTransfer && <TransferButton initialVehicleId={vehicle.id} label="Trasladar" variant="secondary" />}</>} />
       <VehicleFichaTabs ctx={ctx} active="flota" />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -197,6 +205,8 @@ export default async function FlotaVehiclePage({
           </CardContent>
         </Card>
       )}
+
+      <VehicleStaysCard stays={stays} />
 
       <VehicleContractCard
         vehicleId={vehicle.id}

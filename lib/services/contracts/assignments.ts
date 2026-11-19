@@ -329,6 +329,50 @@ export async function closeContractAssignmentsOnRelocationTx(
 }
 
 /**
+ * Deshace el cierre de `closeContractAssignmentsOnRelocationTx` al anular un
+ * traslado: la asignación del equipo en un contrato de su faena de origen que
+ * terminaba justo el día anterior al traslado vuelve a regir. Es el mismo
+ * criterio con el que la anulación reabre la estadía de origen
+ * (`voidTransferTx`, `fleet-transfers.ts`).
+ *
+ * No reabre si el contrato ya no está activo, o si terminó antes del traslado
+ * (entonces esa asignación terminó con el contrato, no por el traslado). Vuelve
+ * a regir hasta el término del contrato, que es hasta donde la habría dejado
+ * `capContractAssignmentsTx`. Devuelve cuántas reabrió (0 o 1).
+ */
+export async function reopenContractAssignmentsOnVoidTx(
+  tx: Tx,
+  input: { vehicleId: string; worksiteId: string; effectiveFrom: string; actorUserId: string; actorEmail?: string | null },
+): Promise<number> {
+  const closedTo = addDaysToPlainDate(input.effectiveFrom, -1)
+  const [later] = await tx.select({ id: contractVehicleAssignments.id }).from(contractVehicleAssignments)
+    .where(and(eq(contractVehicleAssignments.vehicleId, input.vehicleId), gt(contractVehicleAssignments.validFrom, closedTo)))
+    .limit(1)
+  if (later) return 0
+  const [row] = await tx.select({ assignment: contractVehicleAssignments, status: contracts.status, endDate: contracts.endDate })
+    .from(contractVehicleAssignments)
+    .innerJoin(contracts, eq(contracts.id, contractVehicleAssignments.contractId))
+    .where(and(
+      eq(contractVehicleAssignments.vehicleId, input.vehicleId),
+      eq(contractVehicleAssignments.validTo, closedTo),
+      eq(contracts.worksiteId, input.worksiteId),
+    ))
+    .limit(1)
+  if (!row || row.status !== "active") return 0
+  if (row.endDate !== null && row.endDate < input.effectiveFrom) return 0
+  await tx.update(contractVehicleAssignments)
+    .set({ validTo: row.endDate, updatedAt: new Date().toISOString() })
+    .where(eq(contractVehicleAssignments.id, row.assignment.id))
+  await recordAudit({
+    userId: input.actorUserId, userEmail: input.actorEmail ?? undefined, action: "update", entityType: ENTITY,
+    entityId: row.assignment.id, worksiteId: input.worksiteId,
+    oldState: { validTo: closedTo }, newState: { validTo: row.endDate },
+    reason: "Traslado anulado: el equipo vuelve a su contrato",
+  }, tx)
+  return 1
+}
+
+/**
  * ¿Puede cambiarse el contrato sin dejar equipos colgando? Devuelve `null` si sí,
  * o el mensaje que ve quien edita. Lo usan Facturación y la faena antes de
  * guardar un contrato con equipos asignados.

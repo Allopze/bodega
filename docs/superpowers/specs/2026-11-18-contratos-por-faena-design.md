@@ -85,7 +85,13 @@ faenas porque son contratos de Santa Fe.
   faena lo hace `lib/services/mantencion/equipment.ts` (mueve los mapeos con
   `moveProviderMappingsWithVehicleTx`); hay otros escritores de
   `fuel_vehicles` (`update(fuelVehicles)` aparece en 7 archivos). Se administran
-  con `mant:equipment:manage`. `service_equipment` (monogas, alcotest…) no entra.
+  con `mant:equipment:manage`.
+  *Nota de integración (2026-11-19):* desde el traslado de equipos
+  (`feat/traslado-equipos-faena`, fusionado a main) la faena sólo cambia por
+  `transferVehiclesTx` (`lib/services/fleet-transfers.ts`). Ese traslado cierra
+  el contrato de origen el día anterior a la fecha (`relocateVehicleWorksiteTx`),
+  y su anulación lo devuelve (`revertVehicleRelocationTx`), con el mismo
+  criterio con que reabre la estadía de origen. `service_equipment` (monogas, alcotest…) no entra.
 - **Costo por equipo.** Lo arma `lib/services/operational-control.ts` para el
   Panel operacional (`/control-operacional`):
   - combustible: monto del libro del proveedor (`fuel_provider_transactions`,

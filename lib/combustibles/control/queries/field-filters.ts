@@ -2,6 +2,7 @@ import type { Session } from "next-auth"
 import { and, eq, inArray, ne, sql, type AnyColumn, type SQL } from "drizzle-orm"
 import { fuelTaeSubmissions } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { stayWorksiteOnDaySql } from "@/lib/fleet/stays-sql"
 import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
 import { mandanteWorksitesSql, selectedMonthKeys, type ControlFilters } from "../filters"
 
@@ -54,6 +55,15 @@ export function isoTextDaySql(column: AnyColumn): SQL {
     when ${column} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ]' then (${isoInstantSql(column)} at time zone 'America/Santiago')::date
     when ${column} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' then left(${column}, 10)::date
   end`
+}
+
+/**
+ * Faena en que estaba el equipo el día civil chileno de un instante guardado como
+ * texto ISO (`fuel_meter_readings.occurred_at`). `isoTextDaySql` devuelve un `date`
+ * y las estadías guardan el día como texto, de ahí el `to_char`.
+ */
+export function stayWorksiteOnIsoTextDaySql(vehicleId: AnyColumn, occurredAt: AnyColumn): SQL<string | null> {
+  return stayWorksiteOnDaySql(vehicleId, sql`to_char(${isoTextDaySql(occurredAt)}, 'YYYY-MM-DD')`)
 }
 
 /**

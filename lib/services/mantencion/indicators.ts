@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql, type AnyColumn, type SQL } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelVehicleOperationalIntervals, fuelVehicles, mantWorkOrders } from "@/db/schema"
+import { fuelVehicleOperationalIntervals, fuelVehicles, fuelVehicleWorksiteIntervals, mantWorkOrders } from "@/db/schema"
 import { worksiteScopeSqlFor } from "@/lib/auth/scope"
 import { bucketKey, isPartialBucket, listBuckets, type DateRange, type IndicatorGranularity } from "@/lib/indicators/period"
 import { MANT_EQUIPMENT_STATES, type MantEquipmentState } from "@/lib/mantencion/types"
@@ -181,6 +181,36 @@ export function outOfServiceDaysInWindows(
     }
     return ms / 86_400_000
   })
+}
+
+export interface OperationalIntervalInStay extends OperationalInterval {
+  /** Primer día de la estadía (`YYYY-MM-DD`); `null` = desde siempre. */
+  stayStartedOn: string | null
+  /** Último día de la estadía, inclusivo; `null` = la vigente. */
+  stayEndedOn: string | null
+}
+
+/**
+ * Recorta cada intervalo a la estadía con la que se une: inicio = el mayor entre el del intervalo y el
+ * comienzo del día `stayStartedOn`; fin = el menor entre el del intervalo (`null` = abierto) y el comienzo
+ * del día siguiente a `stayEndedOn`. Lo que queda vacío (no solapa) se descarta. El resultado alimenta a
+ * `outOfServiceDaysInWindows` sin cambios.
+ */
+export function clipToStays(rows: readonly OperationalIntervalInStay[]): OperationalInterval[] {
+  const clipped: OperationalInterval[] = []
+  for (const row of rows) {
+    const stayStart = row.stayStartedOn ? chileDayStartInstant(row.stayStartedOn) : null
+    const stayEnd = row.stayEndedOn ? chileDayStartInstant(addDaysToPlainDate(row.stayEndedOn, 1)) : null
+    const startMs = Math.max(Date.parse(row.startedAt), stayStart ? Date.parse(stayStart) : -Infinity)
+    const endMs = Math.min(row.endedAt ? Date.parse(row.endedAt) : Infinity, stayEnd ? Date.parse(stayEnd) : Infinity)
+    if (endMs <= startMs) continue
+    clipped.push({
+      startedAt: new Date(startMs).toISOString(),
+      // Abierto sólo si ni el intervalo ni la estadía tienen fin.
+      endedAt: Number.isFinite(endMs) ? new Date(endMs).toISOString() : null,
+    })
+  }
+  return clipped
 }
 
 export interface PautaCompliance {
@@ -450,19 +480,30 @@ export async function loadOutOfService(viewer: MantViewer, query: MantIndicatorQ
   const latest = chart.to > query.to ? chart.to : query.to
   const rangeStart = chileDayStartInstant(earliest)
   const rangeEnd = chileDayStartInstant(addDaysToPlainDate(latest, 1))
-  const intervals = await db.select({
+  // Cada intervalo se une con las estadías del equipo que lo solapan y se recorta a la intersección: un
+  // día detenido cuenta en la faena donde estaba el equipo ese día (el del traslado, en la nueva), y el
+  // alcance y el filtro de faena miden esa faena, no la actual. La estadía sin inicio es «desde siempre» y
+  // sin fin es la vigente; `ended_on` es inclusivo, así que el corte es el inicio del día siguiente.
+  const rows = await db.select({
     startedAt: fuelVehicleOperationalIntervals.startedAt,
     endedAt: fuelVehicleOperationalIntervals.endedAt,
+    stayStartedOn: fuelVehicleWorksiteIntervals.startedOn,
+    stayEndedOn: fuelVehicleWorksiteIntervals.endedOn,
   })
     .from(fuelVehicleOperationalIntervals)
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelVehicleOperationalIntervals.vehicleId))
+    .innerJoin(fuelVehicleWorksiteIntervals, eq(fuelVehicleWorksiteIntervals.vehicleId, fuelVehicleOperationalIntervals.vehicleId))
     .where(and(
       eq(fuelVehicles.isActive, true),
       inArray(fuelVehicleOperationalIntervals.status, ["mantencion", "fuera_servicio"]),
-      worksiteScopeSqlFor(fleetScopeFor(viewer, query.worksiteId), fuelVehicles.worksiteId),
+      worksiteScopeSqlFor(fleetScopeFor(viewer, query.worksiteId), fuelVehicleWorksiteIntervals.worksiteId),
       lt(fuelVehicleOperationalIntervals.startedAt, rangeEnd),
       or(isNull(fuelVehicleOperationalIntervals.endedAt), gte(fuelVehicleOperationalIntervals.endedAt, rangeStart)),
+      // La estadía debe tocar el rango: texto contra texto (fechas civiles).
+      or(isNull(fuelVehicleWorksiteIntervals.startedOn), lte(fuelVehicleWorksiteIntervals.startedOn, latest)),
+      or(isNull(fuelVehicleWorksiteIntervals.endedOn), gte(fuelVehicleWorksiteIntervals.endedOn, earliest)),
     ))
+  const intervals = clipToStays(rows)
   const keys = listBuckets(chart.from, chart.to, chart.granularity)
   const range = { from: chart.from, to: chart.to }
   const windows = [

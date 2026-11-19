@@ -26,7 +26,13 @@ export interface TaeAccessConfig {
   worksite: { id: string; name: string }
   loadingPoint: { id: string; name: string; type: string } | null
   vehicles: FieldLoadVehicle[]
-  supplyMedia: Array<{ id: string; name: string }>
+  /**
+   * `name` es el nombre de pantalla (`supplyMediumNameSql`); `matchName` es el que está en el catálogo.
+   * La sugerencia por lugar de carga compara con `matchName`: el nombre de pantalla puede cambiar sin que
+   * el lugar («Surtidor TAE») deje de nombrar a su medio. Opcional: una configuración guardada sin
+   * conexión antes de existir este campo no lo trae.
+   */
+  supplyMedia: Array<{ id: string; name: string; matchName?: string }>
 }
 
 export type TaeSubmissionRow = typeof fuelTaeSubmissions.$inferSelect

@@ -25,6 +25,7 @@ test.describe("Contratos de faena", () => {
   test("contratos de faena: crear, asignar y ver el costo", async ({ page }) => {
     await page.goto("/admin/faenas")
     await page.getByRole("link", { name: "Faena E2E", exact: true }).click()
+    await page.waitForURL(/\/admin\/faenas\/[^/]+$/)
     await expectPageTitle(page, "Faena E2E")
 
     // Contrato nuevo con su mandante creado en línea.

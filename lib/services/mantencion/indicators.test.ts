@@ -4,6 +4,7 @@ import {
   bucketLastDay,
   bucketWindow,
   buildWorkOrderSeries,
+  clipToStays,
   outOfServiceDaysInWindows,
   pautaCompliance,
   percentChange,
@@ -169,5 +170,28 @@ describe("percentChange", () => {
     expect(percentChange(5, 10)).toBe(-50)
     expect(percentChange(0, 10)).toBe(-100)
     expect(percentChange(4, 0)).toBeNull()
+  })
+})
+
+describe("clipToStays", () => {
+  // Chile en noviembre es UTC-3: el 15-11 local empieza a las 03:00Z.
+  const op = { startedAt: "2026-11-12T03:00:00Z", endedAt: "2026-11-19T03:00:00Z" }
+
+  it("recorta a la estadía: el último día es inclusivo y el primero ya cuenta en la faena nueva", () => {
+    const old = clipToStays([{ ...op, stayStartedOn: null, stayEndedOn: "2026-11-14" }])
+    const next = clipToStays([{ ...op, stayStartedOn: "2026-11-15", stayEndedOn: null }])
+    expect(old).toEqual([{ startedAt: "2026-11-12T03:00:00.000Z", endedAt: "2026-11-15T03:00:00.000Z" }])
+    expect(next).toEqual([{ startedAt: "2026-11-15T03:00:00.000Z", endedAt: "2026-11-19T03:00:00.000Z" }])
+  })
+
+  it("descarta lo que no solapa con la estadía", () => {
+    expect(clipToStays([{ ...op, stayStartedOn: null, stayEndedOn: "2026-11-11" }])).toEqual([])
+    expect(clipToStays([{ ...op, stayStartedOn: "2026-11-19", stayEndedOn: null }])).toEqual([])
+  })
+
+  it("un intervalo abierto sigue abierto sólo en la estadía vigente", () => {
+    const open = { startedAt: "2026-11-12T03:00:00Z", endedAt: null }
+    expect(clipToStays([{ ...open, stayStartedOn: "2026-11-15", stayEndedOn: null }])).toEqual([{ startedAt: "2026-11-15T03:00:00.000Z", endedAt: null }])
+    expect(clipToStays([{ ...open, stayStartedOn: null, stayEndedOn: "2026-11-14" }])).toEqual([{ startedAt: "2026-11-12T03:00:00.000Z", endedAt: "2026-11-15T03:00:00.000Z" }])
   })
 })

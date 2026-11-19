@@ -11,7 +11,7 @@ import { canAccessWorksite, worksiteScopeSql } from "@/lib/auth/scope"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { nanoid } from "@/lib/id"
 import { setVehicleOperationalStatus } from "@/lib/services/fleet"
-import { relocateVehicleWorksiteTx } from "@/lib/services/fleet-relocation"
+import { USE_TRANSFER_MESSAGE } from "@/lib/services/fleet-transfers"
 import { lockVehicleSeries, recomputeVehicles } from "@/lib/combustibles/control/projection-series"
 import { projectWithStaleDecisions, SERIES_START_INSTANT } from "@/lib/combustibles/control/stale-decisions"
 import { parseFleetXlsx } from "@/lib/combustibles/fleet-xlsx-import"
@@ -258,9 +258,10 @@ export async function updateFuelVehicleAction(
   if (!canManageFuelVehicleWorksite(session, existing.worksiteId)) {
     return { ok: false, message: "No puedes gestionar vehículos para esta faena" }
   }
-  if (parsed.data.worksiteId && !canManageFuelVehicleWorksite(session, parsed.data.worksiteId)) {
-    return { ok: false, message: "No puedes gestionar vehículos para esta faena" }
-  }
+  // La faena sólo cambia por «Trasladar equipos»: la edición del padrón nunca la escribe. Se ignora la
+  // que llegue en el formulario (puede venir vieja si el equipo se trasladó con la hoja abierta); el
+  // equipo sigue en la que tiene en la base. La importación del padrón, en cambio, sí rechaza el cambio.
+  const { id: _, worksiteId: _submittedWorksiteId, ...parsedData } = parsed.data
   const serialTaken = await serialNumberTaken(parsed.data.serialNumber, id)
   if (serialTaken) return serialTaken
   const canChangeProfile = canChangeMaintenanceProfile(session, existing.worksiteId)
@@ -270,7 +271,6 @@ export async function updateFuelVehicleAction(
     const equipmentTypeId = parsed.data.equipmentTypeId ?? existing.equipmentTypeId
     const equipmentType = await db.query.fuelEquipmentTypes.findFirst({ where: eq(fuelEquipmentTypes.id, equipmentTypeId) })
     if (!equipmentType) return { ok: false, message: "El tipo de equipo no existe" }
-    const { id: _, ...parsedData } = parsed.data
     const { compatibleProductIds, operationalStatusReason, ...data } = vehicleValues(parsedData, equipmentType.slug)
     const statusChanged = data.operationalStatus !== undefined && data.operationalStatus !== existing.operationalStatus
     if (statusChanged && !operationalStatusReason) {
@@ -294,7 +294,7 @@ export async function updateFuelVehicleAction(
         brandId: formData.has("brandId") ? String(formData.get("brandId")) : undefined,
         model: data.model === undefined ? (existing.model ?? "") : (data.model ?? ""),
         year: data.year ?? existing.year ?? null,
-        worksiteId: data.worksiteId ?? existing.worksiteId,
+        worksiteId: existing.worksiteId,
       }, { canChangeProfile })
       if (identity && !identity.ok) throw new MaintenanceIdentityRejected(identity.fieldErrors)
       if (identity) {
@@ -317,10 +317,6 @@ export async function updateFuelVehicleAction(
           { userId: session.user.id, userEmail: session.user.email ?? undefined },
           async () => { await recomputeVehicles(tx, [id]) },
         )
-      }
-      // La sincronización atribuye por la faena de la asignación de proveedor, no por la del vehículo.
-      if (data.worksiteId && data.worksiteId !== existing.worksiteId) {
-        await relocateVehicleWorksiteTx(tx, { vehicleId: id, worksiteId: data.worksiteId, actorUserId: session.user.id, actorEmail: session.user.email })
       }
       if (statusChanged) {
         await setVehicleOperationalStatus(tx, {
@@ -518,6 +514,10 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
       errors.push({ rowIndex: row.rowIndex, field: "PATENTE", message: "El vehículo existente no puede ser administrado desde tu alcance" })
       return []
     }
+    if (existing && existing.worksiteId !== worksite.id) {
+      errors.push({ rowIndex: row.rowIndex, field: "FAENA", message: USE_TRANSFER_MESSAGE })
+      return []
+    }
     return [{ ...row, worksiteId: worksite.id, existing, equipmentTypeSlug: fuelEquipmentTypeSlug(row.type) }]
   })
 
@@ -584,14 +584,13 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
             errors.push({ rowIndex: row.rowIndex, field: IMPORT_COLUMN_BY_FIELD[field] ?? "CODIGO", message: `Equipo de Mantención: ${message}` })
             continue
           }
+          // La faena no se escribe: una fila con otra faena se rechazó arriba (sólo cambia por traslado).
+          const { worksiteId: _worksiteId, ...identityValues } = values
           const rowValues = identity
-            ? { ...values, code: identity.resolved.code, plate: identity.resolved.plate, brand: identity.resolved.brand.name, model: identity.resolved.model, year: identity.resolved.year }
-            : values
+            ? { ...identityValues, code: identity.resolved.code, plate: identity.resolved.plate, brand: identity.resolved.brand.name, model: identity.resolved.model, year: identity.resolved.year }
+            : identityValues
           updated++
           await tx.update(fuelVehicles).set({ ...rowValues, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, row.existing.id))
-          if (row.existing.worksiteId !== row.worksiteId) {
-            await relocateVehicleWorksiteTx(tx, { vehicleId: row.existing.id, worksiteId: row.worksiteId, actorUserId: session.user.id, actorEmail: session.user.email })
-          }
           if (identity) {
             maintenanceUpdated = true
             await applyFleetIdentity(tx, { userId: session.user.id, email: session.user.email ?? null }, identity.current, identity.resolved, "padron_import")

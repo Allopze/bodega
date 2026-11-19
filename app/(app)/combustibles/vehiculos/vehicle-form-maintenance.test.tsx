@@ -110,3 +110,45 @@ describe("un guardado rechazado no borra lo escrito (CatalogFormSheet)", () => {
     expect(sent.get("model")).toBe("FH 540")
   })
 })
+
+// La faena de un equipo existente ya no se elige en el padrón: sólo cambia por «Trasladar equipos».
+vi.mock("@/components/fleet/transfer/transfer-button", () => ({
+  TransferButton: ({ initialVehicleId, label }: { initialVehicleId?: string; label?: string }) => (
+    <button type="button" data-vehicle={initialVehicleId}>{label}</button>
+  ),
+}))
+
+describe("padrón: la faena es de sólo lectura al editar", () => {
+  function renderWith(maintenance: PadronMaintenance | null, canTransfer: boolean) {
+    return render(
+      <VehicleForm
+        open
+        onClose={vi.fn()}
+        worksites={[{ id: "ws-1", name: "Arauco" }]}
+        users={[]}
+        equipmentTypes={[{ id: "t-km", name: "Camión", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter", isActive: true }]}
+        suppliers={[]}
+        products={[{ id: "fuel-diesel", name: "Diésel", unit: "L", isActive: true }]}
+        editVehicle={{ ...VEHICLE, maintenance }}
+        maintenanceBrands={[{ id: "b-volvo", name: "Volvo", isActive: true }]}
+        canTransfer={canTransfer}
+      />,
+    )
+  }
+
+  for (const [label, maintenance] of [["en Mantención", MAINTENANCE], ["fuera de Mantención", null]] as const) {
+    it(`${label}: muestra el nombre, no envía la faena (puede quedar vieja tras un traslado) y no ofrece un selector`, () => {
+      renderWith(maintenance, false)
+      expect(screen.getByText("Arauco")).toBeDefined()
+      expect(hidden("worksiteId")).toBeNull()
+      expect(document.querySelector('[name="worksiteId"]')).toBeNull()
+      expect(screen.queryByRole("combobox", { name: /Faena/ })).toBeNull()
+      expect(screen.queryByRole("button", { name: "Trasladar" })).toBeNull()
+    })
+
+    it(`${label}: con permiso de traslado ofrece «Trasladar» con el equipo marcado`, () => {
+      renderWith(maintenance, true)
+      expect(screen.getByRole("button", { name: "Trasladar" }).getAttribute("data-vehicle")).toBe("veh-1")
+    })
+  }
+})

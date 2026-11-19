@@ -20,6 +20,11 @@ testGlobal.__db = inMemoryDb
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
+// Este script de una vez corrió en producción ANTES de las estadías por faena y cambia `worksite_id` con un
+// UPDATE directo, que desde la migración 0391 la base rechaza (FLEET_STAY_INVARIANT). No se reescribe: se
+// apaga sólo el trigger de consistencia del vehículo para seguir probando la lógica del script tal como corrió.
+await pg.exec('ALTER TABLE "fuel_vehicles" DISABLE TRIGGER "fuel_vehicles_stays_consistency"')
+
 afterAll(async () => {
   delete testGlobal.__db
   await pg.close()

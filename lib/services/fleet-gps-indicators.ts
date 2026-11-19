@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, desc, eq, gte, inArray, isNotNull, lt, sql, type AnyColumn, type SQL } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql, type AnyColumn, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fleetGpsAlerts,
@@ -10,11 +10,14 @@ import {
   fuelEquipmentTypes,
   fuelMeterReadings,
   fuelTelemetryDaily,
+  fuelVehicleWorksiteIntervals,
   fuelVehicles,
   worksites,
 } from "@/db/schema"
 import { can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { stayWorksiteOnIsoTextDaySql } from "@/lib/combustibles/control/queries/field-filters"
+import { stayWorksiteOnDaySql } from "@/lib/fleet/stays-sql"
 import { maxMeterRatePerDayOf, meterSeriesSegments, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
 import { getIdleFleetMonths, listIdleVehicles } from "@/lib/combustibles/control/queries/idle"
 import type { ControlFilters } from "@/lib/combustibles/control/filters"
@@ -165,15 +168,37 @@ const chileDay = (column: SQL | AnyColumn) =>
   sql<string>`to_char((${column} at time zone 'America/Santiago'), 'YYYY-MM-DD')`
 
 /**
- * Equipos del alcance que cuentan como flota: los que no están dados de baja (igual que
+ * Equipos que cuentan como flota: los que no están dados de baja (igual que
  * `gpsCross.totalVehicles` del Panel). «Inactivo» no es un valor de `operational_status`
  * (operativo, mantencion, fuera_servicio): el Panel lo deriva de `is_active = false`, así que
  * el filtro va sobre `is_active`.
+ *
+ * El alcance y la faena elegida NO se miden por la faena actual del equipo sino por la del día
+ * de cada dato (`stayWorksiteOnDaySql`): un equipo trasladado cuenta sus viajes, alertas y lecturas
+ * anteriores en la faena donde estaba. Esta condición sólo deja pasar a los equipos activos; el
+ * filtro por faena lo aplica cada consulta sobre su propio día.
  */
-function vehicleScope(session: Session, worksiteId?: string): SQL | undefined {
+const ACTIVE_VEHICLE = eq(fuelVehicles.isActive, true)
+
+/**
+ * Equipos que pertenecieron al alcance (y a la faena elegida) en algún momento de la ventana
+ * `[fromDay, toDay]`: los de la faena actual más los que estuvieron en ella y ya se fueron. La
+ * lista de «Uso de la flota» necesita a los segundos para repartir lo que recorrieron allí.
+ */
+function vehiclesInScopeDuring(session: Session, worksiteId: string | undefined, fromDay: string, toDay: string): SQL | undefined {
+  const stayScope = worksiteScopeSql(session, sql`i.worksite_id`, worksiteId)
   return and(
-    worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId),
-    eq(fuelVehicles.isActive, true),
+    ACTIVE_VEHICLE,
+    or(
+      worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId),
+      sql`exists (
+        select 1 from ${fuelVehicleWorksiteIntervals} i
+        where i.vehicle_id = "fuel_vehicles"."id"
+          and ${stayScope ?? sql`true`}
+          and (i.started_on is null or i.started_on <= ${toDay})
+          and (i.ended_on is null or i.ended_on >= ${fromDay})
+      )`,
+    ),
   )
 }
 
@@ -249,6 +274,13 @@ export interface GpsMeterReadingRow {
   meterType: string
   occurredAt: string
   value: number | string
+  /**
+   * Faena en que estaba el equipo el día de la lectura (su estadía), no la actual. Sin ella
+   * (filas armadas a mano) el día cuenta en la faena actual del equipo.
+   */
+  worksiteId?: string | null
+  /** La faena del día está dentro del alcance del rol y de la faena elegida. Sin ella, sí. */
+  inScope?: boolean
 }
 
 const TOP_VEHICLES = 8
@@ -261,9 +293,21 @@ export function buildGpsUsage(input: {
   linkedExtra: ReadonlySet<string>
   rule: { config: string | null }
   period: GpsIndicatorsInput
+  /** Nombre de cada faena, para rotular el reparto por faena (las faenas de días pasados no están en la lista de equipos). */
+  worksiteNames?: ReadonlyMap<string, string>
 }): GpsUsageIndicators {
   const { vehicles, meterRows, linkedExtra, rule, period } = input
   const vehicleById = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle]))
+  // Faena y alcance de cada equipo-día, según la lectura de ese día: el avance de un día cuenta
+  // en la faena donde estaba el equipo ESE día y sólo si esa faena está en el alcance.
+  const dayContext = new Map<string, { worksiteId: string | null; inScope: boolean }>()
+  for (const row of meterRows) {
+    if (!row.vehicleId) continue
+    dayContext.set(`${row.vehicleId}|${todayInChile(row.occurredAt)}`, {
+      worksiteId: row.worksiteId === undefined ? (vehicleById.get(row.vehicleId)?.worksiteId ?? null) : row.worksiteId,
+      inScope: row.inScope ?? true,
+    })
+  }
 
   // Series por equipo, fuente y medidor (ya llegan ordenadas por día).
   const series = new Map<string, MeterSeriesPoint[]>()
@@ -273,11 +317,14 @@ export function buildGpsUsage(input: {
   const anyReadingVehicles = new Set<string>()
   for (const row of meterRows) {
     if (!row.vehicleId || !vehicleById.has(row.vehicleId)) continue
-    anyReadingVehicles.add(row.vehicleId)
+    // La serie lleva TODAS las lecturas del equipo, también las de días en otra faena: el avance
+    // de un día sale del par con la lectura anterior, y saltarse días de otra faena lo inflaría.
     const key = `${row.vehicleId}|${row.meterType}|${row.source}`
     const list = series.get(key) ?? []
     list.push({ value: Number(row.value), occurredAt: row.occurredAt })
     series.set(key, list)
+    if (row.inScope === false) continue
+    anyReadingVehicles.add(row.vehicleId)
     const day = todayInChile(row.occurredAt)
     if (day >= period.from && day <= period.to) {
       readingVehicles.add(row.vehicleId)
@@ -290,6 +337,8 @@ export function buildGpsUsage(input: {
   const bucketKeys = listBuckets(period.chart.from, period.chart.to, period.chart.granularity)
   const buckets = new Map(bucketKeys.map((key) => [key, { key, km: 0, hours: 0 }]))
   const perVehicle = new Map<string, { km: number; hours: number }>()
+  /** Lo mismo por faena del día: `faena|equipo`. */
+  const perWorksiteVehicle = new Map<string, { worksiteId: string; vehicleId: string; km: number; hours: number }>()
   const km = { current: 0, previous: 0 }
   const hours = { current: 0, previous: 0 }
 
@@ -307,6 +356,8 @@ export function buildGpsUsage(input: {
       const total = meterType === "odometer" ? km : hours
       const field = meterType === "odometer" ? "km" : "hours"
       for (const { day, advance } of dailyAdvanceFromSeries(points, maxPerDay)) {
+        const context = dayContext.get(`${vehicle.id}|${day}`)
+        if (context && !context.inScope) continue
         // La serie y las cifras son comprobaciones independientes: un día puede estar en la
         // ventana del gráfico, en el período, en el anterior, o en varios a la vez.
         if (day >= period.chart.from && day <= period.chart.to) {
@@ -318,6 +369,10 @@ export function buildGpsUsage(input: {
           const acc = perVehicle.get(vehicle.id) ?? { km: 0, hours: 0 }
           acc[field] += advance
           perVehicle.set(vehicle.id, acc)
+          const worksiteId = context?.worksiteId ?? vehicle.worksiteId
+          const cell = perWorksiteVehicle.get(`${worksiteId}|${vehicle.id}`) ?? { worksiteId, vehicleId: vehicle.id, km: 0, hours: 0 }
+          cell[field] += advance
+          perWorksiteVehicle.set(`${worksiteId}|${vehicle.id}`, cell)
         } else if (day >= period.previous.from && day <= period.previous.to) {
           total.previous += advance
         }
@@ -340,13 +395,18 @@ export function buildGpsUsage(input: {
     }]
   })
 
+  // El reparto por faena suma lo que cada equipo hizo en cada faena, día a día: un equipo trasladado
+  // aparece en las dos, con lo que recorrió en cada una. Los rótulos de equipo siguen con la faena actual.
+  const worksiteNameOf = (worksiteId: string) =>
+    input.worksiteNames?.get(worksiteId) ?? vehicles.find((vehicle) => vehicle.worksiteId === worksiteId)?.worksiteName ?? worksiteId
   const byWorksiteMap = new Map<string, GpsWorksiteUsage>()
-  for (const row of usageRows) {
-    const acc = byWorksiteMap.get(row.worksiteId) ?? { worksiteId: row.worksiteId, name: row.worksiteName, km: 0, hours: 0, vehicles: 0 }
-    acc.km += row.km
-    acc.hours += row.hours
+  for (const cell of perWorksiteVehicle.values()) {
+    if (cell.km <= 0 && cell.hours <= 0) continue
+    const acc = byWorksiteMap.get(cell.worksiteId) ?? { worksiteId: cell.worksiteId, name: worksiteNameOf(cell.worksiteId), km: 0, hours: 0, vehicles: 0 }
+    acc.km += cell.km
+    acc.hours += cell.hours
     acc.vehicles += 1
-    byWorksiteMap.set(row.worksiteId, acc)
+    byWorksiteMap.set(cell.worksiteId, acc)
   }
 
   const byCode = (a: GpsVehicleUsage, b: GpsVehicleUsage) => (a.code ?? a.plate).localeCompare(b.code ?? b.plate, "es")
@@ -371,7 +431,9 @@ export function buildGpsUsage(input: {
 /** «Uso de la flota»: km y horas de motor por balde, faena y equipo, con el período anterior para la variación. */
 export async function getGpsUsageIndicators(session: Session, input: GpsIndicatorsInput): Promise<GpsUsageIndicators> {
   if (!can(session, "flota:view")) throw new Error("Sin permisos para ver los indicadores GPS")
-  const scope = vehicleScope(session, input.worksiteId)
+  // Equipos que estuvieron en el alcance durante la ventana que se lee (la lectura previa del primer día incluida).
+  const windowFrom = addDaysToPlainDate(earliestDay(input), -1)
+  const scope = vehiclesInScopeDuring(session, input.worksiteId, windowFrom, input.to)
 
   const vehicleRows = await db
     .select({
@@ -397,9 +459,14 @@ export async function getGpsUsageIndicators(session: Session, input: GpsIndicato
   // anterior (los dos terminan en `to`); así la serie larga no suma una consulta por cada
   // rango, y `buildGpsUsage` reparte cada día entre serie, período y anterior. Se parte un
   // día antes: el par que abre el primer día necesita su lectura previa.
-  const { start, end } = instantRange(addDaysToPlainDate(earliestDay(input), -1), input.to)
+  const { start, end } = instantRange(windowFrom, input.to)
   const dayExpr = chileDay(sql`${fuelMeterReadings.occurredAt}::timestamptz`)
-  const [meterRows, ruleRows, positionRows, linkRows, telemetryRows] = await Promise.all([
+  // Faena del día de la lectura (no la actual) y si cae en el alcance: se traen TODAS las lecturas de los
+  // equipos y el alcance se aplica por día en la agregación, porque filtrar en la consulta dejaría pares
+  // de lecturas que saltan los días de otra faena.
+  const readingWorksite = stayWorksiteOnIsoTextDaySql(fuelMeterReadings.vehicleId, fuelMeterReadings.occurredAt)
+  const readingInScope = worksiteScopeSql(session, readingWorksite, input.worksiteId) ?? sql`true`
+  const [meterRows, ruleRows, positionRows, linkRows, telemetryRows, worksiteRows] = await Promise.all([
     db.selectDistinctOn(
       [fuelMeterReadings.vehicleId, fuelMeterReadings.source, fuelMeterReadings.meterType, dayExpr],
       {
@@ -408,6 +475,8 @@ export async function getGpsUsageIndicators(session: Session, input: GpsIndicato
         meterType: fuelMeterReadings.meterType,
         occurredAt: fuelMeterReadings.occurredAt,
         value: fuelMeterReadings.value,
+        worksiteId: readingWorksite,
+        inScope: sql<boolean>`coalesce(${readingInScope}, false)`,
       },
     )
       .from(fuelMeterReadings)
@@ -429,6 +498,7 @@ export async function getGpsUsageIndicators(session: Session, input: GpsIndicato
     db.selectDistinct({ vehicleId: fleetGpsDeviceLinks.vehicleId }).from(fleetGpsDeviceLinks)
       .where(and(eq(fleetGpsDeviceLinks.status, "linked"), inArray(fleetGpsDeviceLinks.vehicleId, vehicleIds))),
     db.selectDistinct({ vehicleId: fuelTelemetryDaily.vehicleId }).from(fuelTelemetryDaily).where(inArray(fuelTelemetryDaily.vehicleId, vehicleIds)),
+    db.select({ id: worksites.id, name: worksites.name }).from(worksites),
   ])
 
   const linkedExtra = new Set<string>()
@@ -440,6 +510,7 @@ export async function getGpsUsageIndicators(session: Session, input: GpsIndicato
     linkedExtra,
     rule: { config: ruleRows[0]?.config ?? null },
     period: input,
+    worksiteNames: new Map(worksiteRows.map((row) => [row.id, row.name])),
   })
 }
 
@@ -606,13 +677,16 @@ export function buildGpsAlertAggregates(input: {
  */
 export async function getGpsDrivingIndicators(session: Session, input: GpsIndicatorsInput): Promise<GpsDrivingIndicators> {
   if (!can(session, "flota:view") || !can(session, "flota:view_gps_history")) throw new Error("Sin permisos para ver el historial GPS")
-  const scope = vehicleScope(session, input.worksiteId)
   // Un solo rango, la unión de la ventana del gráfico y el período anterior (terminan en `to`):
   // ambas consultas agrupan por día, así que `buildGpsAlertAggregates` y el bucle de viajes
   // reparten cada día entre serie, período y anterior sin volver a la base.
   const { start, end } = instantRange(earliestDay(input), input.to)
   const tripDay = chileDay(fleetGpsTrips.startedAt)
   const alertDay = chileDay(fleetGpsAlerts.occurredAt)
+  // Alcance y faena elegida por la faena del equipo el día del viaje o la alerta, no la actual: tras un
+  // traslado cada uno cuenta donde ocurrió. El día es el civil chileno (`tripDay`/`alertDay`).
+  const tripScope = worksiteScopeSql(session, stayWorksiteOnDaySql(fleetGpsTrips.vehicleId, tripDay), input.worksiteId)
+  const alertScope = worksiteScopeSql(session, stayWorksiteOnDaySql(fleetGpsAlerts.vehicleId, alertDay), input.worksiteId)
 
   const [tripRows, alertRows] = await Promise.all([
     db.select({
@@ -622,7 +696,7 @@ export async function getGpsDrivingIndicators(session: Session, input: GpsIndica
     })
       .from(fleetGpsTrips)
       .innerJoin(fuelVehicles, eq(fuelVehicles.id, fleetGpsTrips.vehicleId))
-      .where(and(scope, isNotNull(fleetGpsTrips.vehicleId), gte(fleetGpsTrips.startedAt, start), lt(fleetGpsTrips.startedAt, end)))
+      .where(and(ACTIVE_VEHICLE, tripScope, isNotNull(fleetGpsTrips.vehicleId), gte(fleetGpsTrips.startedAt, start), lt(fleetGpsTrips.startedAt, end)))
       .groupBy(tripDay),
     // El título nombra al dispositivo, así que se agrupa por equipo, día y título: las
     // alertas repetidas el mismo día se cuentan en la base y no una por una.
@@ -638,7 +712,7 @@ export async function getGpsDrivingIndicators(session: Session, input: GpsIndica
       .from(fleetGpsAlerts)
       .innerJoin(fuelVehicles, eq(fuelVehicles.id, fleetGpsAlerts.vehicleId))
       .innerJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
-      .where(and(scope, isNotNull(fleetGpsAlerts.vehicleId), gte(fleetGpsAlerts.occurredAt, start), lt(fleetGpsAlerts.occurredAt, end)))
+      .where(and(ACTIVE_VEHICLE, alertScope, isNotNull(fleetGpsAlerts.vehicleId), gte(fleetGpsAlerts.occurredAt, start), lt(fleetGpsAlerts.occurredAt, end)))
       .groupBy(fleetGpsAlerts.vehicleId, alertDay, fleetGpsAlerts.title, fuelVehicles.code, fuelVehicles.plate, fuelEquipmentTypes.name),
   ])
 

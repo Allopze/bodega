@@ -73,11 +73,9 @@ vi.mock("@/lib/id", () => ({
   nanoid: () => "veh-new",
 }))
 
-// El traslado de faena pasa por `relocateVehicleWorksiteTx`, que mueve los
-// mapeos del proveedor y cierra la asignación de contrato en una sola llamada.
-const mockMoveProviderMappings = vi.fn(async (..._args: unknown[]) => ({ movedMappings: 0, closedAssignments: 0 }))
-vi.mock("@/lib/services/fleet-relocation", () => ({
-  relocateVehicleWorksiteTx: (...args: unknown[]) => mockMoveProviderMappings(...args),
+const mockMoveProviderMappings = vi.fn(async (..._args: unknown[]) => 0)
+vi.mock("@/lib/combustibles/provider-mappings", () => ({
+  moveProviderMappingsWithVehicleTx: (...args: unknown[]) => mockMoveProviderMappings(...args),
 }))
 
 const mockGetFleetAdminSettings = vi.fn(async () => ({ warningDays: 30, defaultVehicleStatus: "mantencion" }))
@@ -137,16 +135,15 @@ describe("fuel vehicle actions worksite scope", () => {
     expect(mockInsertValues).not.toHaveBeenCalled()
   })
 
-  it("rejects moving a vehicle to a worksite outside the user's scope", async () => {
-    mockCanAccessWorksite
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(false)
+  it("ignores a submitted worksite on update: the scope check is on the vehicle's own faena", async () => {
+    mockCanAccessWorksite.mockReturnValue(true)
 
     const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({ id: "veh-1", worksiteId: "ws-2" }))
 
-    expect(result.ok).toBe(false)
-    expect(result.message).toMatch(/faena/i)
-    expect(mockUpdateSet).not.toHaveBeenCalled()
+    expect(result.ok).toBe(true)
+    expect(mockCanAccessWorksite).not.toHaveBeenCalledWith(expect.anything(), "ws-2")
+    expect(mockUpdateSet).toHaveBeenCalled()
+    expect(mockUpdateSet.mock.calls[0]![0]).not.toHaveProperty("worksiteId")
   })
 
   it("rejects deactivating a vehicle outside the user's scope", async () => {
@@ -237,11 +234,13 @@ describe("updateFuelVehicleAction governance fields", () => {
 // La sincronización atribuye el consumo por la faena de la asignación de
 // proveedor, no por la del vehículo: trasladar el vehículo tiene que llevarla.
 describe("updateFuelVehicleAction worksite transfer", () => {
-  it("moves the provider mappings when the vehicle changes worksite", async () => {
+  it("ignores a different worksite: the padrón edit never writes the faena", async () => {
     const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({ id: "veh-1", worksiteId: "ws-2" }))
 
     expect(result.ok).toBe(true)
-    expect(mockMoveProviderMappings).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ vehicleId: "veh-1", worksiteId: "ws-2", actorUserId: "user-1" }))
+    expect(mockUpdateSet).toHaveBeenCalled()
+    expect(mockUpdateSet.mock.calls[0]![0]).not.toHaveProperty("worksiteId")
+    expect(mockMoveProviderMappings).not.toHaveBeenCalled()
   })
 
   it("leaves the provider mappings alone when the worksite does not change", async () => {
