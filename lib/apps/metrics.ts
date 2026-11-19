@@ -27,6 +27,10 @@ export interface EntityActivityRow {
 export interface EntityUserRow { entityType: string; userId: string }
 export interface EntityLastRow { entityType: string; lastAt: string }
 export interface ModuleAccessRow { moduleId: string; users: number }
+/** Visitas de la ventana por app (`app_visits`). */
+export interface AppVisitRow { moduleId: string; visits: number; lastVisitAt: string | null }
+/** Pares persona–app con al menos una visita en la ventana. */
+export interface AppVisitorRow { moduleId: string; userId: string }
 
 export interface CronJobRow {
   jobName:       string
@@ -52,11 +56,18 @@ export interface IntegrationHealth extends AppCronJob {
 export interface AppOverview extends AppDef {
   enabled:          boolean
   usersWithAccess:  number
+  /** Personas que abrieron la app o registraron algo en ella en la ventana. */
   activeUsers:      number
+  /** Personas con movimientos (altas o cambios) en la ventana. */
+  movementUsers:    number
   movements:        number
+  /** Entradas a la app en la ventana (ver `lib/services/app-visits.ts`). */
+  visits:           number
   /** Movimientos por semana, de la más antigua a la actual (`TREND_WEEKS` puntos). */
   trend:            number[]
+  /** Lo más reciente entre el último movimiento y la última visita. */
   lastActivityAt:   string | null
+  lastMovementAt:   string | null
   idle:             boolean
   integrations:     IntegrationHealth[]
   /** Peor estado de sus integraciones; `none` si no tiene. */
@@ -67,8 +78,10 @@ export interface AppsOverview {
   apps: AppOverview[]
   /** Movimientos de la ventana cuyo `entity_type` no tiene app asignada. */
   unassigned: { movements: number; entityTypes: string[] }
-  /** Personas distintas con movimientos en la ventana, en cualquier app. */
+  /** Personas distintas que abrieron alguna app o registraron algo en la ventana. */
   totalActiveUsers: number
+  /** Primer día con visitas registradas; null si todavía no hay ninguna. */
+  visitsTrackedSince: string | null
   generatedAt: string
 }
 
@@ -110,12 +123,21 @@ export function trendWeeks(currentWeekStart: string): string[] {
   })
 }
 
+function latest(left: string | null, right: string | null): string | null {
+  if (!left) return right
+  if (!right) return left
+  return new Date(left).getTime() >= new Date(right).getTime() ? left : right
+}
+
 export function buildAppsOverview(input: {
   activity:        EntityActivityRow[]
   users:           EntityUserRow[]
   last:            EntityLastRow[]
   access:          ModuleAccessRow[]
   cron:            CronJobRow[]
+  visits?:         AppVisitRow[]
+  visitors?:       AppVisitorRow[]
+  visitsTrackedSince?: string | null
   enabledModuleIds: Set<string>
   /** Lunes de la semana en curso, en la zona del negocio. */
   currentWeekStart: string
@@ -158,6 +180,16 @@ export function buildAppsOverview(input: {
     activeUsers.set(appId, set)
   }
 
+  const movementUsers = new Map([...activeUsers].map(([appId, set]) => [appId, set.size]))
+  for (const row of input.visitors ?? []) {
+    everyActiveUser.add(row.userId)
+    const set = activeUsers.get(row.moduleId) ?? new Set<string>()
+    set.add(row.userId)
+    activeUsers.set(row.moduleId, set)
+  }
+  const visitsByApp = new Map((input.visits ?? []).map((row) => [row.moduleId, row]))
+  const trackedSince = input.visitsTrackedSince ?? null
+
   const lastActivity = new Map<string, string>()
   for (const row of input.last) {
     const appId = appForEntityType(row.entityType)
@@ -182,17 +214,27 @@ export function buildAppsOverview(input: {
         failures7d: row?.failures7d ?? 0,
       }
     })
-    const lastActivityAt = lastActivity.get(app.id) ?? null
+    const lastMovementAt = lastActivity.get(app.id) ?? null
+    const visit = visitsByApp.get(app.id)
+    const lastActivityAt = latest(lastMovementAt, visit?.lastVisitAt ?? null)
+    const recentlyUsed = lastActivityAt !== null && new Date(lastActivityAt).getTime() >= idleBefore
+    // Sin movimientos ni visitas en 30 días. Una app de sólo lectura sólo puede
+    // estar «sin uso» cuando las visitas llevan 30 días registrándose: antes, su
+    // cero no significa nada.
+    const visitsCoverWindow = trackedSince !== null && new Date(`${trackedSince}T00:00:00Z`).getTime() <= idleBefore
+    const idle = !recentlyUsed && (!app.activityNote || visitsCoverWindow)
     return {
       ...app,
       enabled: input.enabledModuleIds.has(app.id),
       usersWithAccess: access.get(app.id) ?? 0,
       activeUsers: activeUsers.get(app.id)?.size ?? 0,
+      movementUsers: movementUsers.get(app.id) ?? 0,
       movements: movements.get(app.id) ?? 0,
+      visits: visit?.visits ?? 0,
       trend: trend.get(app.id) ?? Array<number>(TREND_WEEKS).fill(0),
       lastActivityAt,
-      // Una app de sólo lectura no deja movimientos: «sin uso» no aplica.
-      idle: !app.activityNote && (lastActivityAt === null || new Date(lastActivityAt).getTime() < idleBefore),
+      lastMovementAt,
+      idle,
       integrations,
       integrationStatus: worstStatus(integrations.map((integration) => integration.status)),
     }
@@ -202,6 +244,7 @@ export function buildAppsOverview(input: {
     apps,
     unassigned: { movements: unassignedMovements, entityTypes: [...unassignedTypes].sort() },
     totalActiveUsers: everyActiveUser.size,
+    visitsTrackedSince: trackedSince,
     generatedAt: input.now.toISOString(),
   }
 }

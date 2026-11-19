@@ -16,6 +16,7 @@ import { and, desc, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { auditLog, cronRuns, permissions, rolePermissions, userPermissions, userRoles, users, worksites } from "@/db/schema"
 import { getNavigationToggleState } from "@/lib/services/module-toggles"
+import { getAppVisitWindow } from "@/lib/services/app-visits"
 import { todayInChile } from "@/lib/utils"
 import { APP_CRON_JOBS, appForEntityType, cronJobsForApp } from "@/lib/apps/catalog"
 import {
@@ -110,7 +111,7 @@ export async function getAppsOverview(now: Date = new Date()): Promise<AppsOverv
   const trendSince = isoDaysAgo(now, (TREND_WEEKS + 1) * 7)
   const windowStart = isoDaysAgo(now, ACTIVITY_WINDOW_DAYS)
 
-  const [activity, userRows, last, access, cron, toggles] = await Promise.all([
+  const [activity, userRows, last, access, cron, toggles, visitWindow] = await Promise.all([
     db.select({
       entityType: auditLog.entityType,
       weekStart: chileWeek,
@@ -130,6 +131,7 @@ export async function getAppsOverview(now: Date = new Date()): Promise<AppsOverv
     readModuleAccess(),
     readCronRows(now),
     getNavigationToggleState(),
+    getAppVisitWindow(ACTIVITY_WINDOW_DAYS, now),
   ])
 
   return buildAppsOverview({
@@ -138,6 +140,9 @@ export async function getAppsOverview(now: Date = new Date()): Promise<AppsOverv
     last,
     access,
     cron,
+    visits: visitWindow.visits,
+    visitors: visitWindow.visitors,
+    visitsTrackedSince: visitWindow.trackedSince,
     enabledModuleIds: toggles.enabledModuleIds,
     currentWeekStart,
     now,

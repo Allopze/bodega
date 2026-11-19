@@ -25,6 +25,10 @@ vi.mock("next-auth/react", () => ({
 vi.mock("./notification-bell", () => ({
   NotificationBell: () => <div aria-label="Notificaciones" />,
 }))
+// El lanzador pide sus recientes con react-query; aquí sólo importa que exista.
+vi.mock("./app-launcher", () => ({
+  AppLauncher: () => <button type="button" aria-label="Apps" />,
+}))
 
 function makeSession(permissions: string[] = []): Session {
   return {
