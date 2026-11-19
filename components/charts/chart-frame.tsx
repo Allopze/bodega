@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { StableHeadline } from "@/components/charts/stable-headline"
 
 /**
  * Cabecera común de un gráfico del tablero, sin superficie propia (el panel la
@@ -23,7 +24,7 @@ export function ChartFrame({
   children: ReactNode
 }) {
   return (
-    <div className="flex h-full min-w-0 flex-col p-5">
+    <div data-chart-frame className="flex h-full min-w-0 flex-col p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-eyebrow text-[var(--color-text)]">{title}</h3>
@@ -31,7 +32,8 @@ export function ChartFrame({
         </div>
         {aside && <div className="shrink-0">{aside}</div>}
       </div>
-      {headline && <div className="mt-3 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">{headline}</div>}
+      {/* Al apuntar, cada gráfico reescribe el titular; `StableHeadline` impide que eso mueva el gráfico. */}
+      {headline && <StableHeadline>{headline}</StableHeadline>}
       <div className="mt-4 min-w-0 flex-1">{children}</div>
     </div>
   )
