@@ -2,6 +2,7 @@ import type { Session } from "next-auth"
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
+  contracts,
   fleetVehicleDocuments,
   fuelAnomalyRules,
   fuelEquipmentTypes,
@@ -21,6 +22,7 @@ import { expiredDocumentTypes, resolveNextExpiryDate } from "@/lib/validation/fl
 import { getAssetFuelSummary, type AssetFuelSummary } from "@/lib/combustibles/control/queries/asset-fuel-summary"
 import { getVehiclePurchaseSummary, type VehiclePurchaseSummary } from "@/lib/services/purchasing-module/vehicle-purchase-summary"
 import { logger } from "@/lib/logger"
+import { listAssignmentWindows } from "@/lib/services/contracts/assignments"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import { loadMergedGpsByVehicle } from "@/lib/services/fleet-gps-latest"
 import { maxMeterRatePerDayOf, meterSeriesAdvance, meterSeriesCoversPeriod, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
@@ -59,6 +61,13 @@ export type OperationalAsset = {
   typeName?: string | null
   worksiteId: string
   worksiteName: string
+  /**
+   * Contrato vigente del equipo el último día del período (`period.to`), según
+   * `contract_vehicle_assignments`; `null` sin contrato ese día y para los
+   * instrumentos de servicio (no son flota).
+   */
+  contractId: string | null
+  contractName: string | null
   /** Valor crudo de la columna `operational_status` (`operativo`, `mantencion`,
    *  `fuera_servicio`); sólo se usa para filtros server-side y búsqueda
    *  cliente. La UI debe pintar `operationalStatusLabel`. */
@@ -298,6 +307,27 @@ export interface OperationalGpsCross {
   prevention: { overdueCapaAssets: number; overdueCapaTotal: number; operatingWithOverdueCapa: number }
 }
 
+/**
+ * Contrato que cubre a cada equipo el día `day` (inclusivo en ambos extremos).
+ * Un equipo sin ventana ese día no aparece en el mapa.
+ */
+async function loadContractsAtPeriodEnd(vehicleIds: string[], day: string): Promise<Map<string, { id: string; name: string }>> {
+  const result = new Map<string, { id: string; name: string }>()
+  if (vehicleIds.length === 0) return result
+  const windows = await listAssignmentWindows(vehicleIds, day, day)
+  const covering = windows.filter((window) => window.validFrom <= day && (window.validTo === null || window.validTo >= day))
+  if (covering.length === 0) return result
+  const names = await db.select({ id: contracts.id, name: contracts.name })
+    .from(contracts)
+    .where(inArray(contracts.id, [...new Set(covering.map((window) => window.contractId))]))
+  const nameById = new Map(names.map((contract) => [contract.id, contract.name]))
+  for (const window of covering) {
+    const name = nameById.get(window.contractId)
+    if (name !== undefined) result.set(window.vehicleId, { id: window.contractId, name })
+  }
+  return result
+}
+
 /** Read model común: unifica navegación y métricas sin borrar las diferencias de dominio. */
 export async function getOperationalControlHub(
   session: Session,
@@ -487,6 +517,16 @@ export async function getOperationalControlHub(
   const purchaseUnavailable = purchaseSummaryPending !== null && purchaseSummary === null
   const purchaseByVehicle = purchaseSummary ?? new Map<string, VehiclePurchaseSummary>()
 
+  // Contrato vigente de cada equipo al cierre del período: una consulta de
+  // ventanas para todos y una de nombres, nunca una por vehículo. Degrada como
+  // el resto del panel: si falla, la columna queda en «Sin contrato» y la
+  // página anuncia que «contratos» no cargó.
+  const contractByVehicle = (await settleAttention(
+    "contratos",
+    () => loadContractsAtPeriodEnd(vehicles.map((vehicle) => vehicle.id), period.to),
+    degradedSources,
+  )) ?? new Map<string, { id: string; name: string }>()
+
   // La serie de medidores GPS se filtra por instantes de día chileno: el
   // período es una fecha civil, no un corte UTC.
   const gpsPeriodStart = chileDayStartInstant(period.from)
@@ -632,6 +672,8 @@ export async function getOperationalControlHub(
       typeName: vehicle.typeName ?? vehicle.type,
       worksiteId: vehicle.worksiteId,
       worksiteName: vehicle.worksiteName,
+      contractId: contractByVehicle.get(vehicle.id)?.id ?? null,
+      contractName: contractByVehicle.get(vehicle.id)?.name ?? null,
       operationalStatus: rawStatus,
       operationalStatusLabel: vehicle.isActive
         ? formatFuelVehicleStatus(vehicle.operationalStatus)
@@ -707,6 +749,9 @@ export async function getOperationalControlHub(
     name: instrument.name,
     worksiteId: instrument.worksiteId,
     worksiteName: instrument.worksiteName,
+    // Los instrumentos de servicio no son flota: no se asignan a contratos.
+    contractId: null,
+    contractName: null,
     operationalStatus: instrument.isActive ? "operativo" : "inactivo",
     operationalStatusLabel: instrument.isActive ? "Operativo" : "Inactivo",
     stateMismatch: false,
