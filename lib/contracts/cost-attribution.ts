@@ -9,7 +9,7 @@
  * «Por repartir».
  */
 
-export type CostComponent = "fuel" | "workOrders" | "purchases"
+export type CostComponent = "fuel" | "purchases"
 
 /** Una partida de costo de un equipo en un día (o en un mes, si `spansMonth`). */
 export interface DatedCost {
@@ -41,7 +41,7 @@ export interface WorksiteAttribution {
 }
 
 export function emptySums(): ComponentSums {
-  return { fuel: 0, workOrders: 0, purchases: 0 }
+  return { fuel: 0, purchases: 0 }
 }
 
 function nuevaAtribucion(): WorksiteAttribution {

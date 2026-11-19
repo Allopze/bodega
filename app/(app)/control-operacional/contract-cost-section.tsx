@@ -10,7 +10,6 @@ import { formatCLP, formatDate } from "@/lib/utils"
 /** Columnas de costo en el orden del Panel; cada una sólo existe si la sesión puede ver ese componente. */
 const COMPONENT_COLUMNS: readonly { key: CostComponent; label: string }[] = [
   { key: "fuel", label: "Combustible" },
-  { key: "workOrders", label: "Mano de obra (OT)" },
   { key: "purchases", label: "Compras" },
 ]
 

@@ -49,8 +49,7 @@ function first(value: string | string[] | undefined): string | undefined {
  * 2026-11-14; el usuario pidió que fueran el Panel (`/mantencion/indicadores` redirige acá).
  *
  * Gate: `mant:records:view_*`. «Órdenes de trabajo» sólo se consulta y se
- * pinta con `mant:ot:view_*`: el costo de las OT va con esa misma capacidad (es la que el Panel
- * operacional usa para su columna «Mano de obra / taller (OT)»). Cada consulta degrada sola: si
+ * pinta con `mant:ot:view_*`. Cada consulta degrada sola: si
  * una falla, su bloque no se pinta y el aviso de arriba lo dice, en vez de tumbar la página o
  * mostrar ceros que parecen datos.
  */

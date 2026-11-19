@@ -5,7 +5,6 @@ import { mantWorkOrders } from "@/db/schema"
 import { worksiteScopeSqlFor, serviceWorksiteScope } from "@/lib/auth/scope"
 import { canViewWorkOrders, canViewAllWorkOrders } from "@/lib/operational-control/capabilities"
 import { OT_OPEN_STATUSES, type OtStatus } from "@/lib/mantencion/work-order-states"
-import type { DatedCost } from "@/lib/contracts/cost-attribution"
 import { todayInChile } from "@/lib/utils"
 import { partsPendingExistsSql } from "./parts-requests"
 
@@ -62,8 +61,6 @@ export interface VehicleWorkOrderMetrics {
   /** OT de reparación cerradas en el período, y las horas en taller de ellas (ingreso → salida completos): base del MTTR. */
   repairClosedInPeriod: number
   repairClosedWorkshopHours: number
-  /** Suma del costo cargado en las OT cerradas del período; null si ninguna lo trae. */
-  maintenanceCostInPeriod: number | null
   /** Última salida de taller registrada (cualquier OT vigente del equipo). */
   lastExitAt: string | null
   /** La OT cerrada más reciente del equipo (por fecha de cierre). */
@@ -112,9 +109,8 @@ function periodBoundsSql(period: WorkOrderPeriod) {
 }
 
 /**
- * Una OT cerrada dentro del período: UNA sola definición, compartida por las
- * cifras por equipo (`closedInPeriod`, `maintenanceCostInPeriod`…) y por el
- * detalle de costo por día (`getWorkOrderCostByVehicleDay`).
+ * Una OT cerrada dentro del período: UNA sola definición para las cifras por
+ * equipo (`closedInPeriod`…).
  */
 function closedInPeriodSql(period: WorkOrderPeriod): SQL {
   const { start, end } = periodBoundsSql(period)
@@ -168,9 +164,6 @@ export async function getVehicleWorkOrderMetrics(
     workshopHoursInPeriod: sql<number>`${hoursInPeriod}::float8`,
     repairClosedInPeriod: sql<number>`(COUNT(*) FILTER (WHERE ${closedInRange} AND ${mantWorkOrders.repair}))::int`,
     repairClosedWorkshopHours: sql<number>`${repairClosedHours}::float8`,
-    maintenanceCostInPeriod: period
-      ? sql<number | null>`SUM(${mantWorkOrders.totalCost}) FILTER (WHERE ${closedInRange})`
-      : sql<null>`null`,
     lastExitAt: sql<string | null>`MAX(${mantWorkOrders.workshopExitAt})`,
     lastClosedWorkOrderId: sql<string | null>`(ARRAY_AGG(${mantWorkOrders.id} ORDER BY ${mantWorkOrders.closedAt} DESC) FILTER (WHERE ${mantWorkOrders.status} = 'cerrada'))[1]`,
   })
@@ -194,48 +187,9 @@ export async function getVehicleWorkOrderMetrics(
     workshopHoursInPeriod: Number(row.workshopHoursInPeriod),
     repairClosedInPeriod: Number(row.repairClosedInPeriod),
     repairClosedWorkshopHours: Number(row.repairClosedWorkshopHours),
-    maintenanceCostInPeriod: row.maintenanceCostInPeriod == null ? null : Number(row.maintenanceCostInPeriod),
     lastExitAt: isoOrNull(row.lastExitAt),
     lastClosedWorkOrderId: row.lastClosedWorkOrderId ?? null,
   }]))
-}
-
-/**
- * Costo cargado de las OT cerradas del período, por equipo y día de cierre
- * (día civil de Chile). Misma definición que `maintenanceCostInPeriod`: OT
- * `cerrada` con `closed_at` en el período (`closedInPeriodSql`), sin las
- * `anulada` y dentro del alcance de faena de la OT. Una sola consulta agrupada
- * por equipo y día; una OT sin costo cargado no aporta fila (igual que el
- * `SUM` del resumen, que la ignora). `vehicleIds` es opcional: sin él, todos
- * los equipos del alcance.
- */
-export async function getWorkOrderCostByVehicleDay(
-  scope: WorkOrderMetricsScope,
-  options: { period: WorkOrderPeriod; vehicleIds?: readonly string[] },
-): Promise<DatedCost[]> {
-  if (options.vehicleIds?.length === 0) return []
-  const day = sql<string>`to_char((${mantWorkOrders.closedAt} AT TIME ZONE 'America/Santiago')::date, 'YYYY-MM-DD')`
-  const rows = await db.select({
-    vehicleId: mantWorkOrders.vehicleId,
-    day,
-    amount: sql<number>`SUM(${mantWorkOrders.totalCost})::float8`,
-  })
-    .from(mantWorkOrders)
-    .where(and(
-      ne(mantWorkOrders.status, "anulada"),
-      scopeWhere(scope),
-      closedInPeriodSql(options.period),
-      sql`${mantWorkOrders.totalCost} IS NOT NULL`,
-      options.vehicleIds ? inArray(mantWorkOrders.vehicleId, [...options.vehicleIds]) : undefined,
-    ))
-    .groupBy(mantWorkOrders.vehicleId, day)
-  return rows.map((row) => ({
-    vehicleId: row.vehicleId,
-    day: row.day,
-    amount: Number(row.amount),
-    component: "workOrders" as const,
-    spansMonth: false,
-  }))
 }
 
 /** Cifras globales (sin agrupar por equipo): el tile «OT abiertas» y su detalle. */

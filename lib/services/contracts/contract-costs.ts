@@ -14,9 +14,8 @@ import {
 } from "@/lib/contracts/cost-attribution"
 import { getFuelBilledByVehicleDay } from "@/lib/combustibles/control/queries/asset-fuel-summary"
 import { logger } from "@/lib/logger"
-import { canViewPurchaseCosts, canViewWorkOrders } from "@/lib/operational-control/capabilities"
+import { canViewPurchaseCosts } from "@/lib/operational-control/capabilities"
 import { listAssignmentWindows } from "@/lib/services/contracts/assignments"
-import { workOrderMetricsScope, getWorkOrderCostByVehicleDay } from "@/lib/services/mantencion/work-orders/metrics"
 import type { OperationalControlPeriod } from "@/lib/services/operational-control"
 import { getVehiclePurchaseByDay, getWorksitePurchasesWithoutVehicle } from "@/lib/services/purchasing-module/vehicle-purchase-summary"
 
@@ -25,8 +24,8 @@ import { getVehiclePurchaseByDay, getWorksitePurchasesWithoutVehicle } from "@/l
  * docs/superpowers/specs/2026-11-18-contratos-por-faena-design.md § 7).
  *
  * No define costo: reparte las partidas por equipo y día que salen de las MISMAS
- * consultas del costo por equipo del Panel operacional (combustible, OT y
- * compras), con `attributeCosts`. Por eso, sumando todas las faenas, cada
+ * consultas del costo por equipo del Panel operacional (combustible y
+ * compras por OC), con `attributeCosts`. Por eso, sumando todas las faenas, cada
  * componente cuadra con la suma de la columna correspondiente del Panel.
  */
 
@@ -41,7 +40,6 @@ export interface ContractCostRow {
   vehicleCount: number
   /** `null` = el componente no está disponible para la sesión (sin permiso o su consulta falló). */
   fuel: number | null
-  workOrders: number | null
   purchases: number | null
   /** Suma de los componentes disponibles; `null` si no hay ninguno. */
   total: number | null
@@ -66,7 +64,7 @@ export interface ContractCostBreakdown {
   windows: AssignmentWindow[]
 }
 
-const COMPONENTS: readonly CostComponent[] = ["fuel", "workOrders", "purchases"]
+const COMPONENTS: readonly CostComponent[] = ["fuel", "purchases"]
 const collator = new Intl.Collator("es")
 
 function overlapsPeriod(window: AssignmentWindow, period: OperationalControlPeriod): boolean {
@@ -119,12 +117,10 @@ export async function getContractCostBreakdown(
   // Misma disponibilidad que el hub del Panel.
   const wanted: Record<CostComponent, boolean> = {
     fuel: can(session, "combustibles:view") && can(session, "combustibles:view_costs"),
-    workOrders: canViewWorkOrders(session),
     purchases: canViewPurchaseCosts(session),
   }
   const vehicleIds = vehicles.map((vehicle) => vehicle.id)
   const vehicleWorksite = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle.worksiteId]))
-  const workOrderScope = wanted.workOrders ? workOrderMetricsScope(session) : null
 
   const scope = resolveWorksiteScope(session)
   const contractRowsPromise = scope.mode === "none"
@@ -143,22 +139,20 @@ export async function getContractCostBreakdown(
         .where(scope.mode === "all" ? undefined : inArray(contracts.worksiteId, scope.ids))
         .orderBy(asc(worksites.name), asc(contracts.name))
 
-  const [contractRows, windows, fuel, purchases, workOrders, noEquipment] = await Promise.all([
+  const [contractRows, windows, fuel, purchases, noEquipment] = await Promise.all([
     contractRowsPromise,
     listAssignmentWindows(vehicleIds, period.from, period.to),
     wanted.fuel ? settle("combustible", () => getFuelBilledByVehicleDay(session, period, vehicleIds)) : [],
     wanted.purchases ? settle("compras", () => getVehiclePurchaseByDay(session, period, vehicleIds)) : [],
-    workOrderScope ? settle("órdenes de trabajo", () => getWorkOrderCostByVehicleDay(workOrderScope, { period, vehicleIds })) : [],
     wanted.purchases ? settle("compras sin equipo", () => getWorksitePurchasesWithoutVehicle(session, period)) : new Map<string, number>(),
   ])
 
   // Una consulta caída deja su componente sin dato en todas las filas.
   const availability: Record<CostComponent, boolean> = {
     fuel: wanted.fuel && fuel !== null,
-    workOrders: wanted.workOrders && workOrders !== null,
     purchases: wanted.purchases && purchases !== null,
   }
-  const costs: DatedCost[] = [...(fuel ?? []), ...(workOrders ?? []), ...(purchases ?? [])]
+  const costs: DatedCost[] = [...(fuel ?? []), ...(purchases ?? [])]
   const attribution = attributeCosts({ costs, assignments: windows, vehicleWorksite })
 
   // Equipos que tocan el período, por contrato y por faena actual.
@@ -195,7 +189,6 @@ export async function getContractCostBreakdown(
   ): ContractCostRow => ({
     ...base,
     fuel: availability.fuel ? sums.fuel : null,
-    workOrders: availability.workOrders ? sums.workOrders : null,
     purchases: availability.purchases ? sums.purchases : null,
     total: sumOf(sums, availability),
     partial: partialAll,
@@ -241,7 +234,7 @@ export async function getContractCostBreakdown(
     if (withoutEquipment !== 0) {
       rows.push({
         kind: "no_equipment", contractId: null, label: "Compras sin equipo", clientName: null, status: null, vehicleCount: 0,
-        fuel: null, workOrders: null, purchases: withoutEquipment, total: withoutEquipment, partial: false,
+        fuel: null, purchases: withoutEquipment, total: withoutEquipment, partial: false,
       })
     }
 

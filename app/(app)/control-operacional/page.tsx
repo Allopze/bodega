@@ -319,7 +319,6 @@ export default async function OperationalControlPage({
           canViewMaintenance={canViewMaintenance}
           canViewPurchaseCosts={canViewPurchaseCosts}
           canViewCosts={canViewCosts}
-          canViewWorkOrders={canViewWorkOrders}
           canViewCapa={canViewCapa}
           canViewInspections={canViewInspections}
           degradedSources={data.degradedSources}

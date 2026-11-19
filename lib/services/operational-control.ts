@@ -145,18 +145,14 @@ export type OperationalAsset = {
   /** Costo del período según el libro del proveedor (`fuel_provider_transactions`); sólo con `combustibles:view_costs`. */
   fuelBilledAmount: number | null
   /**
-   * Mano de obra / taller externo: Σ `total_cost` de las OT cerradas del período, que
-   * jefatura carga a mano. No incluye los repuestos ni los servicios comprados por OC
-   * (van en `purchaseAmount`). $0 si el equipo no tiene OT cerradas con costo en el
-   * período; `null` sólo sin la capacidad de OT o si su consulta falló.
-   */
-  maintenanceCost: number | null
-  /**
    * Σ líneas de OC (no anuladas) emitidas en el período, de las solicitudes de repuestos o
    * servicios vinculadas al equipo. `null` sin `purchasing:view` o si la consulta falló.
    */
   purchaseAmount: number | null
-  /** Combustible + mano de obra + compras; `null` si falta cualquiera de las tres series. */
+  /**
+   * Combustible + compras; `null` si falta cualquiera de las dos series. La OT no lleva
+   * costo (decisión 2026-11-17): la mano de obra no entra.
+   */
   totalCost: number | null
   /** Horas de motor en vacío del período; `null` sin `combustibles:view`. */
   idleHours: number | null
@@ -615,19 +611,14 @@ export async function getOperationalControlHub(
     const maintenance = maintenanceByVehicle.get(vehicle.id)
     const workOrder = workOrdersByVehicle?.get(vehicle.id)
     const fuelBilledAmount = canViewFuel && canViewCosts ? fuelValue(fuel?.billedAmount, 0) : null
-    // Sin OT cerradas con costo en el período, la mano de obra del equipo es $0 de
-    // verdad, no un dato faltante (decisión 2026-11-07): antes quedaba `null` y el
-    // «Costo total» salía «—» para casi toda la flota. Sólo es `null` sin la
-    // capacidad de OT o si su consulta falló (`workOrdersByVehicle` en null).
-    const maintenanceCost = workOrdersByVehicle ? (workOrder?.maintenanceCostInPeriod ?? 0) : null
     const purchaseAmount = canViewPurchaseCosts
       ? (purchaseUnavailable ? null : (purchaseByVehicle.get(vehicle.id)?.purchaseAmount ?? 0))
       : null
-    // Un total sólo existe con las tres series: sumar sólo dos y llamarlo «total» lo
+    // Un total sólo existe con las dos series: sumar sólo una y llamarlo «total» lo
     // subestimaría sin avisar. Una serie es `null` sólo sin su capacidad o si su
     // consulta falló; un equipo sin movimientos en una serie aporta $0.
-    const totalCost = fuelBilledAmount != null && maintenanceCost != null && purchaseAmount != null
-      ? fuelBilledAmount + maintenanceCost + purchaseAmount
+    const totalCost = fuelBilledAmount != null && purchaseAmount != null
+      ? fuelBilledAmount + purchaseAmount
       : null
     const gpsAdvanceValue = gpsAdvance.status === "ok" ? gpsAdvance.advance : null
     const gpsPerformanceStatus: GpsPerformanceStatus = gpsAdvance.status !== "ok"
@@ -730,7 +721,6 @@ export async function getOperationalControlHub(
       openAnomalyCases: canViewFuel ? fuelValue(fuel?.openCases, 0) : null,
       criticalOpenAnomalyCases: canViewFuel ? fuelValue(fuel?.criticalOpenCases, 0) : null,
       fuelBilledAmount,
-      maintenanceCost,
       purchaseAmount,
       totalCost,
       idleHours: canViewFuel ? fuelValue(fuel?.idleHours, 0) : null,
@@ -802,7 +792,6 @@ export async function getOperationalControlHub(
     openAnomalyCases: null,
     criticalOpenAnomalyCases: null,
     fuelBilledAmount: null,
-    maintenanceCost: null,
     // Los instrumentos de servicio no son `fuel_vehicles`: sus solicitudes apuntan a
     // `service_equipment`, no al vehículo, y no entran a esta suma.
     purchaseAmount: null,

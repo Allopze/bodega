@@ -59,9 +59,8 @@ const asset: OperationalAsset = {
   openAnomalyCases: 2,
   criticalOpenAnomalyCases: 1,
   fuelBilledAmount: 800000,
-  maintenanceCost: 50000,
   purchaseAmount: 120000,
-  totalCost: 970000,
+  totalCost: 920000,
   idleHours: 4.5,
   idlePct: 22.5,
   litersIdle: 180,
@@ -80,7 +79,7 @@ function keys(cols: ReturnType<typeof buildOperationalAssetExportColumns>) {
 const BASE = ["code", "name", "worksite", "contractName", "status"]
 const INSPECTION_KEYS = ["inspections", "inspectionCompliance", "openFindings", "criticalOpenFindings", "openFindingsWithWorkOrder", "openFindingsWithoutWorkOrder"]
 const FUEL_KEYS = ["gpsPerformance", "gpsPerformanceSource", "fuelLiters", "fuelLoadCount", "lastFuelLoadAt", "fuelPerformance", "flaggedLoads", "openAnomalyCases", "criticalOpenAnomalyCases", "idlePct", "litersIdle"]
-const WORK_ORDER_KEYS = ["openWorkOrders", "inWorkshop", "workshopHours", "maintenanceCost"]
+const WORK_ORDER_KEYS = ["openWorkOrders", "inWorkshop", "workshopHours"]
 const PURCHASE_KEYS = ["purchaseAmount"]
 const FLEET_KEYS = ["nextExpiryDate", "expiredDocuments", "gpsOdometer", "gpsHourMeter", "gpsReportedAt", "gpsFuelLevel", "meterMismatch", "gpsProviders", "gpsMeterProvider"]
 
@@ -98,14 +97,14 @@ describe("buildOperationalAssetExportColumns", () => {
     expect(keys(buildOperationalAssetExportColumns(false, false, false, false, false, true))).toEqual([...BASE, ...WORK_ORDER_KEYS])
   })
 
-  it("«Repuestos y servicios (OC)» sólo con purchasing:view; «Costo total» exige las tres", () => {
-    // Sólo compras: la columna sale sola, sin total (faltan combustible y OT).
+  it("«Repuestos y servicios (OC)» sólo con purchasing:view; «Costo total» exige combustible y compras, no la OT", () => {
+    // Sólo compras: la columna sale sola, sin total (falta combustible).
     expect(keys(buildOperationalAssetExportColumns(false, false, false, false, false, false, true))).toEqual([...BASE, ...PURCHASE_KEYS])
     // Sin purchasing:view no hay columna ni total, aunque combustible y OT estén completos.
     expect(keys(buildOperationalAssetExportColumns(false, true, true, false, false, true, false))).toEqual([
       ...BASE, ...FUEL_KEYS, ...WORK_ORDER_KEYS, "fuelCost",
     ])
-    // Con las tres, la compra va tras la mano de obra y el total cierra la fila.
+    // Con todo, la compra va tras las columnas de OT y el total cierra la fila.
     expect(keys(buildOperationalAssetExportColumns(true, true, true, true, true, true, true))).toEqual([
       ...BASE, ...FLEET_KEYS, ...FUEL_KEYS, ...INSPECTION_KEYS, "overdueCapa", ...WORK_ORDER_KEYS, ...PURCHASE_KEYS, "gpsCostPerUnit", "fuelCost", "totalCost",
     ])
@@ -113,15 +112,19 @@ describe("buildOperationalAssetExportColumns", () => {
     expect(keys(buildOperationalAssetExportColumns(false, false, true, false, false, true, true))).toEqual([
       ...BASE, ...FUEL_KEYS, ...WORK_ORDER_KEYS, ...PURCHASE_KEYS,
     ])
+    // Sin la capacidad de OT el total existe igual: la OT no lleva costo (decisión 2026-11-17).
+    expect(keys(buildOperationalAssetExportColumns(false, true, true, false, false, false, true))).toEqual([
+      ...BASE, ...FUEL_KEYS, ...PURCHASE_KEYS, "gpsCostPerUnit", "fuelCost", "totalCost",
+    ])
   })
 
-  it("rotula la mano de obra, las compras y el total con lo que miden", () => {
-    const headers = Object.fromEntries(
-      buildOperationalAssetExportColumns(true, true, true, true, true, true, true).map((column) => [column.key, column.header]),
-    )
-    expect(headers.maintenanceCost).toBe("Mano de obra / taller (OT)")
+  it("rotula las compras y el total con lo que miden, sin columna de mano de obra", () => {
+    const columns = buildOperationalAssetExportColumns(true, true, true, true, true, true, true)
+    const headers = Object.fromEntries(columns.map((column) => [column.key, column.header]))
+    expect(headers).not.toHaveProperty("maintenanceCost")
+    expect(columns.some((column) => /mano de obra/i.test(column.header))).toBe(false)
     expect(headers.purchaseAmount).toBe("Repuestos y servicios (OC)")
-    expect(headers.totalCost).toBe("Costo total (combustible + mano de obra + compras)")
+    expect(headers.totalCost).toBe("Costo total (combustible + compras)")
   })
 
   it("incluye la columna Contrato después de Faena", () => {
@@ -281,14 +284,17 @@ describe("buildOperationalAssetExportRow", () => {
 
   it("exporta OT abiertas, si está en taller y las horas del período con la capacidad de OT", () => {
     const row = buildOperationalAssetExportRow(asset, false, false, false, false, false, true)
-    expect(row).toMatchObject({ openWorkOrders: 2, inWorkshop: "Sí", workshopHours: 52.5, maintenanceCost: 50000 })
+    expect(row).toMatchObject({ openWorkOrders: 2, inWorkshop: "Sí", workshopHours: 52.5 })
+    expect(row).not.toHaveProperty("maintenanceCost")
     expect(buildOperationalAssetExportRow({ ...asset, inWorkshop: false, workshopHours: 0 }, false, false, false, false, false, true))
       .toMatchObject({ inWorkshop: "No", workshopHours: 0 })
-    // Sin permiso de combustible no hay total: sólo mantención.
+    // Sin permiso de combustible no hay total.
     expect(row).not.toHaveProperty("totalCost")
-    // Con combustible y OT pero sin compras, tampoco: un total de dos series sería engañoso.
+    // Con combustible y OT pero sin compras, tampoco: un total de una sola serie sería engañoso.
     expect(buildOperationalAssetExportRow(asset, true, true, true, true, true, true)).not.toHaveProperty("totalCost")
-    expect(buildOperationalAssetExportRow(asset, true, true, true, true, true, true, true)).toMatchObject({ totalCost: 970000 })
+    expect(buildOperationalAssetExportRow(asset, true, true, true, true, true, true, true)).toMatchObject({ totalCost: 920000 })
+    // Combustible y compras bastan: la capacidad de OT no abre ni cierra el total.
+    expect(buildOperationalAssetExportRow(asset, false, true, true, false, false, false, true)).toMatchObject({ totalCost: 920000 })
   })
 
   it("exporta las compras vinculadas sólo con purchasing:view y un null si la consulta falló", () => {

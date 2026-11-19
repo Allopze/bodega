@@ -13,7 +13,7 @@ import { IDS, seedControlFixtures } from "@/lib/combustibles/control/queries/tes
  *
  * Contra Postgres de verdad: lo que decide la cifra es el SQL de las partidas por
  * día y su reparto en contratos. La prueba central es la cuadratura: sumando
- * todas las faenas, cada componente (combustible, OT, compras) debe dar lo mismo
+ * todas las faenas, cada componente (combustible y compras por OC) debe dar lo mismo
  * que la columna correspondiente del Panel operacional.
  */
 
@@ -99,44 +99,6 @@ async function addFuel(input: { vehicle: string; worksite: string; plate: string
   })
 }
 
-async function addClosedWorkOrder(input: { vehicle: string; worksite: string; totalCost: number; closedAt: string }) {
-  seq += 1
-  await testDb.insert(schema.mantWorkOrders).values({
-    id: `cc-ot-${seq}`,
-    folio: `OT-CC-${seq}`,
-    vehicleId: input.vehicle,
-    worksiteId: input.worksite,
-    equipmentSnapshot: { code: "KA-1", plate: "AA-0001", noPlate: false, type: "Camión", brand: "Scania", model: "R450", year: 2021, worksite: "Faena A", unit: "km" },
-    repair: true,
-    maintenance: false,
-    requestDate: "2026-03-01",
-    requestedByUserId: IDS.user,
-    requesterName: "QA",
-    repairDescription: "Falla de frenos en la cabina",
-    totalCost: input.totalCost,
-    status: "cerrada",
-    assignedToUserId: IDS.user,
-    assignedByUserId: IDS.user,
-    assignedAt: "2026-03-02T12:00:00Z",
-    workshopKind: "interno",
-    workshopEntryAt: "2026-03-03T12:00:00Z",
-    estimatedDeliveryDate: "2026-03-20",
-    startedAt: "2026-03-03T12:00:00Z",
-    startedByUserId: IDS.user,
-    workshopExitAt: "2026-03-10T12:00:00Z",
-    finishedAt: "2026-03-10T12:00:00Z",
-    finishedByUserId: IDS.user,
-    receivedAt: "2026-03-10T12:00:00Z",
-    receiverName: "Pedro Soto",
-    receivedByUserId: IDS.user,
-    receivedRecordedAt: "2026-03-10T12:00:00Z",
-    faenaReceivedAt: input.closedAt,
-    faenaReceiverName: "Admin Contrato",
-    faenaReceivedByUserId: IDS.user,
-    closedAt: input.closedAt,
-  })
-}
-
 /** Una OC con una línea; `vehicle: null` = compra de la faena sin equipo. */
 async function addPurchase(input: { worksite: string; vehicle: string | null; issuedAt: string; subtotal: number }) {
   seq += 1
@@ -197,12 +159,6 @@ beforeAll(async () => {
   // vC: sin contrato.
   await addFuel({ vehicle: IDS.vC, worksite: IDS.wsC, plate: "CC-0003", date: "2026-03-05", amount: 40_000 })
 
-  // Órdenes de trabajo cerradas.
-  await addClosedWorkOrder({ vehicle: IDS.vA, worksite: IDS.wsA, totalCost: 30_000, closedAt: "2026-03-12T15:00:00Z" })
-  await addClosedWorkOrder({ vehicle: IDS.vA, worksite: IDS.wsA, totalCost: 10_000, closedAt: "2026-03-20T15:00:00Z" })
-  await addClosedWorkOrder({ vehicle: IDS.vB, worksite: IDS.wsB, totalCost: 5_000, closedAt: "2026-03-10T15:00:00Z" })
-  await addClosedWorkOrder({ vehicle: IDS.vC, worksite: IDS.wsC, totalCost: 7_000, closedAt: "2026-03-02T15:00:00Z" })
-
   // Compras con equipo y compras de la faena sin equipo.
   await addPurchase({ worksite: IDS.wsA, vehicle: IDS.vA, issuedAt: "2026-03-10T15:00:00.000Z", subtotal: 100_000 })
   await addPurchase({ worksite: IDS.wsA, vehicle: IDS.vA, issuedAt: "2026-03-25T15:00:00.000Z", subtotal: 20_000 })
@@ -235,22 +191,20 @@ describe("getContractCostBreakdown", () => {
     const panel = (pick: (asset: (typeof vehicles)[number]) => number | null) => vehicles.reduce((acc, asset) => acc + (pick(asset) ?? 0), 0)
 
     expect(sum((row) => row.fuel)).toBe(panel((asset) => asset.fuelBilledAmount))
-    expect(sum((row) => row.workOrders)).toBe(panel((asset) => asset.maintenanceCost))
     expect(sum((row) => row.purchases)).toBe(panel((asset) => asset.purchaseAmount))
     // Los montos sembrados no son cero: la igualdad no es trivial.
     expect(panel((asset) => asset.fuelBilledAmount)).toBe(1_590_000)
-    expect(panel((asset) => asset.maintenanceCost)).toBe(52_000)
     expect(panel((asset) => asset.purchaseAmount)).toBe(144_000)
 
     const rowOf = (worksiteId: string, kind: string, contractId?: string) =>
       breakdown.worksites.find((w) => w.worksiteId === worksiteId)?.rows.find((r) => r.kind === kind && (contractId === undefined || r.contractId === contractId))
-    // El cambio de contrato del 15 de marzo parte las cargas diarias, las OT y las compras de vA.
-    expect(rowOf(IDS.wsA, "contract", C_A1)).toMatchObject({ fuel: 200_000, workOrders: 30_000, purchases: 100_000, total: 330_000, partial: false })
-    expect(rowOf(IDS.wsA, "contract", C_A2)).toMatchObject({ fuel: 50_000, workOrders: 10_000, purchases: 20_000, total: 80_000 })
+    // El cambio de contrato del 15 de marzo parte las cargas diarias y las compras de vA.
+    expect(rowOf(IDS.wsA, "contract", C_A1)).toMatchObject({ fuel: 200_000, purchases: 100_000, total: 300_000, partial: false })
+    expect(rowOf(IDS.wsA, "contract", C_A2)).toMatchObject({ fuel: 50_000, purchases: 20_000, total: 70_000 })
     // El agregado mensual que cruza el cambio queda sin repartir, no prorrateado.
-    expect(rowOf(IDS.wsA, "pending")).toMatchObject({ label: "Por repartir", fuel: 1_000_000, workOrders: 0, purchases: 0 })
-    expect(rowOf(IDS.wsB, "contract", C_B1)).toMatchObject({ fuel: 300_000, workOrders: 5_000, purchases: 15_000 })
-    expect(rowOf(IDS.wsC, "unassigned")).toMatchObject({ label: "Sin contrato", fuel: 40_000, workOrders: 7_000, purchases: 9_000, vehicleCount: 1 })
+    expect(rowOf(IDS.wsA, "pending")).toMatchObject({ label: "Por repartir", fuel: 1_000_000, purchases: 0 })
+    expect(rowOf(IDS.wsB, "contract", C_B1)).toMatchObject({ fuel: 300_000, purchases: 15_000 })
+    expect(rowOf(IDS.wsC, "unassigned")).toMatchObject({ label: "Sin contrato", fuel: 40_000, purchases: 9_000, vehicleCount: 1 })
   })
 
   it("omite faenas sin contratos", async () => {
@@ -266,11 +220,11 @@ describe("getContractCostBreakdown", () => {
     const permissions = ALL_PERMISSIONS.filter((permission) => permission !== "combustibles:view_costs")
     const { breakdown } = await breakdownFor(session({ permissions }))
 
-    expect(breakdown.availability).toEqual({ fuel: false, workOrders: true, purchases: true })
+    expect(breakdown.availability).toEqual({ fuel: false, purchases: true })
     const a1 = breakdown.worksites.find((w) => w.worksiteId === IDS.wsA)!.rows.find((r) => r.contractId === C_A1)!
     expect(a1.fuel).toBeNull()
-    // Total = lo conocido (OT + compras), nunca un $0 que parezca completo.
-    expect(a1).toMatchObject({ workOrders: 30_000, purchases: 100_000, total: 130_000, partial: true })
+    // Total = lo conocido (compras), nunca un $0 que parezca completo.
+    expect(a1).toMatchObject({ purchases: 100_000, total: 100_000, partial: true })
     for (const worksite of breakdown.worksites) {
       expect(worksite.partial).toBe(true)
       for (const row of worksite.rows.filter((r) => r.kind !== "no_equipment")) {
@@ -300,7 +254,7 @@ describe("getContractCostBreakdown", () => {
     const a = breakdown.worksites.find((w) => w.worksiteId === IDS.wsA)!
     const noEquipment = a.rows.filter((row) => row.kind === "no_equipment")
     expect(noEquipment).toHaveLength(1)
-    expect(noEquipment[0]).toMatchObject({ label: "Compras sin equipo", contractId: null, fuel: null, workOrders: null, purchases: 70_000, total: 70_000 })
+    expect(noEquipment[0]).toMatchObject({ label: "Compras sin equipo", contractId: null, fuel: null, purchases: 70_000, total: 70_000 })
     // Va al final de la faena y sólo cuando es distinta de cero.
     expect(a.rows.at(-1)?.kind).toBe("no_equipment")
     expect(breakdown.worksites.find((w) => w.worksiteId === IDS.wsB)!.rows.some((row) => row.kind === "no_equipment")).toBe(false)

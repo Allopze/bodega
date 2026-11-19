@@ -10,25 +10,25 @@ const period = { from: "2026-11-01", to: "2026-11-30" }
 
 const row = (overrides: Partial<ContractCostRow> = {}): ContractCostRow => ({
   kind: "contract", contractId: "c1", label: "Movimiento de residuos", clientName: "Maderas Arauco", status: "active",
-  vehicleCount: 6, fuel: 15_100_000, workOrders: 1_000_000, purchases: 5_400_000, total: 21_500_000, partial: false,
+  vehicleCount: 6, fuel: 15_100_000, purchases: 5_400_000, total: 20_500_000, partial: false,
   ...overrides,
 })
 
 const worksite = (overrides: Partial<WorksiteContractCosts> = {}): WorksiteContractCosts => ({
-  worksiteId: "w1", worksiteName: "Cholguan - Arauco", total: 48_200_000, partial: false,
+  worksiteId: "w1", worksiteName: "Cholguan - Arauco", total: 47_300_000, partial: false,
   rows: [
     row(),
-    row({ contractId: "c2", label: "Carga y descarga de madera", vehicleCount: 9, fuel: 14_000_000, workOrders: 0, purchases: 5_800_000, total: 19_800_000 }),
-    row({ kind: "unassigned", contractId: null, label: "Sin contrato", clientName: null, status: null, vehicleCount: 1, fuel: 1_900_000, workOrders: 0, purchases: 500_000, total: 2_400_000 }),
-    row({ kind: "pending", contractId: null, label: "Por repartir", clientName: null, status: null, vehicleCount: 0, fuel: 0, workOrders: 0, purchases: 100_000, total: 100_000 }),
-    row({ kind: "no_equipment", contractId: null, label: "Compras sin equipo", clientName: null, status: null, vehicleCount: 0, fuel: null, workOrders: null, purchases: 4_500_000, total: 4_500_000 }),
+    row({ contractId: "c2", label: "Carga y descarga de madera", vehicleCount: 9, fuel: 14_000_000, purchases: 5_800_000, total: 19_800_000 }),
+    row({ kind: "unassigned", contractId: null, label: "Sin contrato", clientName: null, status: null, vehicleCount: 1, fuel: 1_900_000, purchases: 500_000, total: 2_400_000 }),
+    row({ kind: "pending", contractId: null, label: "Por repartir", clientName: null, status: null, vehicleCount: 0, fuel: 0, purchases: 100_000, total: 100_000 }),
+    row({ kind: "no_equipment", contractId: null, label: "Compras sin equipo", clientName: null, status: null, vehicleCount: 0, fuel: null, purchases: 4_500_000, total: 4_500_000 }),
   ],
   ...overrides,
 })
 
 const breakdown = (overrides: Partial<ContractCostBreakdown> = {}): ContractCostBreakdown => ({
   worksites: [worksite(), worksite({ worksiteId: "w2", worksiteName: "Santa Fe", total: 100_000, rows: [row({ contractId: "c3", label: "Grúas", total: 100_000 })] })],
-  availability: { fuel: true, workOrders: true, purchases: true },
+  availability: { fuel: true, purchases: true },
   contractOptions: [], windows: [],
   ...overrides,
 })
@@ -43,15 +43,15 @@ describe("ContractCostSection", () => {
     const first = tables[0]!
     // Subtotal de la faena en la fila de la faena.
     const worksiteRow = within(first).getByText("Cholguan - Arauco").closest("tr")!
-    expect(worksiteRow.textContent).toContain("48.200.000")
+    expect(worksiteRow.textContent).toContain("47.300.000")
     for (const label of ["Movimiento de residuos", "Carga y descarga de madera", "Sin contrato", "Por repartir", "Compras sin equipo"]) {
       expect(within(first).getByText(label)).toBeTruthy()
     }
     expect(within(first).getAllByText("Maderas Arauco").length).toBeGreaterThan(0)
     expect(within(tables[1]!).getByText("Santa Fe")).toBeTruthy()
-    // Cabeceras de los tres componentes disponibles.
+    // Cabeceras de los componentes disponibles.
     const headers = within(first).getAllByRole("columnheader").map((header) => header.textContent)
-    expect(headers).toEqual(["Contrato", "Mandante", "Equipos", "Combustible", "Mano de obra (OT)", "Compras", "Total"])
+    expect(headers).toEqual(["Contrato", "Mandante", "Equipos", "Combustible", "Compras", "Total"])
   })
 
   it("el nombre del contrato enlaza a ?contrato= conservando el período", () => {
@@ -71,7 +71,7 @@ describe("ContractCostSection", () => {
 
   it("marca «parcial» y muestra — cuando falta un componente", () => {
     const partial = breakdown({
-      availability: { fuel: false, workOrders: true, purchases: true },
+      availability: { fuel: false, purchases: true },
       worksites: [worksite({
         partial: true,
         rows: [row({ fuel: null, total: 6_400_000, partial: true })],
@@ -105,7 +105,7 @@ describe("ContractCostSection", () => {
   it("no se muestra si ningún componente de costo está disponible", () => {
     const { container } = render(
       <ContractCostSection
-        breakdown={breakdown({ availability: { fuel: false, workOrders: false, purchases: false } })}
+        breakdown={breakdown({ availability: { fuel: false, purchases: false } })}
         period={period}
         selectedContractId={null}
       />,

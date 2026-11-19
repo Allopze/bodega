@@ -1,5 +1,4 @@
 import { PGlite } from "@electric-sql/pglite"
-import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import type { Session } from "next-auth"
 import { beforeAll, describe, expect, it, vi } from "vitest"
@@ -33,7 +32,6 @@ const { getUserRbacById } = await import("@/lib/auth/rbac")
 const { getFleetOverview, getFleetVehicleDetail } = await import("@/lib/services/fleet")
 const {
   getVehicleWorkOrderMetrics,
-  getWorkOrderCostByVehicleDay,
   getWorkOrderGlobalMetrics,
   listRecentVehicleWorkOrders,
   meanTimeToRepairHours,
@@ -65,7 +63,6 @@ interface Seed {
   estimated?: string
   closedAt?: string
   createdAt?: string
-  totalCost?: number
 }
 
 /** Una fila que cumple los `check` del estado pedido; cada estado suma lo que el anterior ya exigía. */
@@ -87,7 +84,6 @@ async function insertOt(seed: Seed) {
     requestedByUserId: IDS.jefe,
     requesterName: "Alexis Morales",
     repairDescription: seed.repair === false ? null : "Falla de frenos en la cabina",
-    totalCost: seed.totalCost ?? null,
     status,
     ...(assigned ? { assignedToUserId: who.userId, assignedByUserId: IDS.jefe, assignedAt: "2026-02-21T12:00:00Z" } : {}),
     ...(started ? {
@@ -126,28 +122,27 @@ beforeAll(async () => {
   await insertOt({ id: "ot-sol", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "solicitada", createdAt: "2026-03-01T10:00:00Z" })
   await insertOt({ id: "ot-asig", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "asignada", createdAt: "2026-03-02T10:00:00Z" })
   // En taller desde el 10/03 08:00, sin salida; estimada ya vencida al 25/03.
-  // Abierta con costo: no suma al período hasta que se cierre.
   await insertOt({
-    id: "ot-ejec", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "en_ejecucion", totalCost: 20_000,
+    id: "ot-ejec", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "en_ejecucion",
     entry: "2026-03-10T08:00:00Z", estimated: "2026-03-20", createdAt: "2026-03-03T10:00:00Z",
   })
   // Reparación que cruza el inicio del período: entró el 27/02 12:00 y salió el 02/03 12:00.
   await insertOt({
-    id: "ot-rep", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "cerrada", repair: true, totalCost: 100_000,
+    id: "ot-rep", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "cerrada", repair: true,
     entry: "2026-02-27T12:00:00Z", exit: "2026-03-02T12:00:00Z", closedAt: "2026-03-05T12:00:00Z", createdAt: "2026-02-25T10:00:00Z",
   })
   // Sólo mantención, entera dentro del período: 24 h.
   await insertOt({
-    id: "ot-mant", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "cerrada", repair: false, maintenance: true, totalCost: 50_000,
+    id: "ot-mant", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "cerrada", repair: false, maintenance: true,
     entry: "2026-03-10T00:00:00Z", exit: "2026-03-11T00:00:00Z", closedAt: "2026-03-12T12:00:00Z", createdAt: "2026-03-04T10:00:00Z",
   })
   // Cerrada en febrero: no entra a «cerradas del período» ni suma horas en marzo.
   await insertOt({
-    id: "ot-feb", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "cerrada", repair: true, totalCost: 30_000,
+    id: "ot-feb", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "cerrada", repair: true,
     entry: "2026-02-01T00:00:00Z", exit: "2026-02-02T00:00:00Z", closedAt: "2026-02-05T12:00:00Z", createdAt: "2026-02-01T10:00:00Z",
   })
   // Anulada: no cuenta en nada.
-  await insertOt({ id: "ot-anul", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "anulada", totalCost: 999_999, createdAt: "2026-03-06T10:00:00Z" })
+  await insertOt({ id: "ot-anul", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "anulada", createdAt: "2026-03-06T10:00:00Z" })
 
   // ── MQ-01 (Biodiversa): ya salió del taller, falta recepcionarla ──
   await insertOt({
@@ -253,23 +248,6 @@ describe("getVehicleWorkOrderMetrics", () => {
     expect(meanTimeToRepairHours(0, 0)).toBeNull()
   })
 
-  it("suma el costo de las OT cerradas del período y no el de las abiertas, anuladas o de otro mes", async () => {
-    const truck = (await getVehicleWorkOrderMetrics("all", { period: MARCH, now: NOW })).get(IDS.truckBio)!
-    // `ot-rep` 100.000 + `ot-mant` 50.000; `ot-ejec` sigue abierta y `ot-anul` está anulada.
-    expect(truck.maintenanceCostInPeriod).toBe(150_000)
-
-    const february = (await getVehicleWorkOrderMetrics("all", { period: { from: "2026-02-01", to: "2026-02-28" }, now: NOW })).get(IDS.truckBio)!
-    expect(february.maintenanceCostInPeriod).toBe(30_000)
-
-    // Sin período no hay cifra del período: null, no 0.
-    const noPeriod = (await getVehicleWorkOrderMetrics("all", { now: NOW })).get(IDS.truckBio)!
-    expect(noPeriod.maintenanceCostInPeriod).toBeNull()
-
-    // Equipo sin OT cerrada con costo: null, no 0.
-    const machine = (await getVehicleWorkOrderMetrics("all", { period: MARCH, now: NOW })).get(IDS.machineBio)!
-    expect(machine.maintenanceCostInPeriod).toBeNull()
-  })
-
   it("trae la última salida de taller y la última OT cerrada", async () => {
     const truck = (await getVehicleWorkOrderMetrics("all", { period: MARCH, now: NOW })).get(IDS.truckBio)!
     expect(new Date(truck.lastExitAt!).toISOString()).toBe("2026-03-11T00:00:00.000Z")
@@ -299,60 +277,6 @@ describe("getVehicleWorkOrderMetrics", () => {
   it("se acota a los equipos pedidos, y una lista vacía no consulta nada", async () => {
     expect([...(await getVehicleWorkOrderMetrics("all", { vehicleIds: [IDS.machineBio], now: NOW })).keys()]).toEqual([IDS.machineBio])
     expect((await getVehicleWorkOrderMetrics("all", { vehicleIds: [], now: NOW })).size).toBe(0)
-  })
-})
-
-describe("getWorkOrderCostByVehicleDay", () => {
-  const FEBRERO = { from: "2026-02-01", to: "2026-02-28" }
-
-  it("el costo de OT por día suma lo mismo que maintenanceCostInPeriod", async () => {
-    for (const period of [MARCH, FEBRERO]) {
-      const resumen = await getVehicleWorkOrderMetrics("all", { period, now: NOW })
-      const detalle = await getWorkOrderCostByVehicleDay("all", { period })
-      const porEquipo = new Map<string, number>()
-      for (const r of detalle) porEquipo.set(r.vehicleId, (porEquipo.get(r.vehicleId) ?? 0) + r.amount)
-      for (const [vehicleId, m] of resumen) {
-        // El resumen deja `null` sin OT con costo; el detalle simplemente no trae filas.
-        expect(porEquipo.get(vehicleId) ?? null).toBe(m.maintenanceCostInPeriod)
-      }
-    }
-  })
-
-  it("trae una fila por equipo y día de cierre, sólo de OT cerradas con costo", async () => {
-    const detalle = await getWorkOrderCostByVehicleDay("all", { period: MARCH })
-
-    // `ot-rep` y `ot-mant`; la abierta con costo, la anulada y la de febrero no entran.
-    expect(detalle.map((r) => [r.vehicleId, r.day, r.amount]).sort()).toEqual([
-      [IDS.truckBio, "2026-03-05", 100_000],
-      [IDS.truckBio, "2026-03-12", 50_000],
-    ])
-    expect(detalle.every((r) => r.component === "workOrders" && r.spansMonth === false)).toBe(true)
-  })
-
-  it("el día de cierre es el civil de Chile, no el UTC", async () => {
-    // 02:30 UTC del 1 de abril son las 23:30 del 31 de marzo en Chile (UTC-3).
-    await insertOt({
-      id: "ot-borde", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "cerrada", totalCost: 7_000,
-      entry: "2026-03-30T00:00:00Z", exit: "2026-03-31T00:00:00Z", closedAt: "2026-04-01T02:30:00Z", createdAt: "2026-03-29T10:00:00Z",
-    })
-    try {
-      const marzo = await getWorkOrderCostByVehicleDay("all", { period: MARCH })
-      expect(marzo.find((r) => r.day === "2026-03-31")).toMatchObject({ vehicleId: IDS.truckBio, amount: 7_000 })
-      const abril = await getWorkOrderCostByVehicleDay("all", { period: { from: "2026-04-01", to: "2026-04-30" } })
-      expect(abril).toEqual([])
-      // Y sigue coincidiendo con el resumen del mismo período.
-      const resumen = (await getVehicleWorkOrderMetrics("all", { period: MARCH, now: NOW })).get(IDS.truckBio)!
-      expect(marzo.filter((r) => r.vehicleId === IDS.truckBio).reduce((a, r) => a + r.amount, 0)).toBe(resumen.maintenanceCostInPeriod)
-    } finally {
-      await testDb.delete(schema.mantWorkOrders).where(eq(schema.mantWorkOrders.id, "ot-borde"))
-    }
-  })
-
-  it("respeta el alcance de faena y los equipos pedidos, y una lista vacía no consulta", async () => {
-    expect(await getWorkOrderCostByVehicleDay([IDS.wsCho], { period: MARCH })).toEqual([])
-    expect((await getWorkOrderCostByVehicleDay([IDS.wsBio], { period: MARCH })).length).toBe(2)
-    expect(await getWorkOrderCostByVehicleDay("all", { period: MARCH, vehicleIds: [IDS.machineBio] })).toEqual([])
-    expect(await getWorkOrderCostByVehicleDay("all", { period: MARCH, vehicleIds: [] })).toEqual([])
   })
 })
 

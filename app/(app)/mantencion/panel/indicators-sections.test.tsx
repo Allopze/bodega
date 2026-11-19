@@ -62,7 +62,7 @@ describe("ventana de los gráficos de evolución", () => {
           {...common}
           canExport
           series={[point("2026-10", { created: 3, closed: 1, backlog: 2 }), point("2026-11", { created: 2, repairOnly: 2, partial: true })]}
-          stats={{ closed: 4, closedPrevious: 2, mttrHours: 27, repairClosed: 3, cost: 150_000 }}
+          stats={{ closed: 4, closedPrevious: 2, mttrHours: 27, repairClosed: 3 }}
           byStatus={[{ status: "solicitada", count: 2 }]}
         />
         <PautasSection
@@ -89,7 +89,7 @@ describe("ventana de los gráficos de evolución", () => {
 })
 
 describe("WorkOrdersSection", () => {
-  const stats = { closed: 4, closedPrevious: 2, mttrHours: 27, repairClosed: 3, cost: 150_000 }
+  const stats = { closed: 4, closedPrevious: 2, mttrHours: 27, repairClosed: 3 }
 
   it("una tira de cifras con enlace a /mantencion/ot, variación en texto y sin tiles ni enums crudos", () => {
     const { container } = render(
@@ -102,9 +102,11 @@ describe("WorkOrdersSection", () => {
     )
     const region = screen.getByRole("region", { name: "Órdenes de trabajo" })
     expect(container.querySelectorAll("[data-kpi-card]")).toHaveLength(0)
-    const strip = within(region).getAllByRole("link").filter((link) => (link.getAttribute("href") ?? "").startsWith("/mantencion/ot?") && /OT abiertas|OT cerradas|Tiempo medio|Mano de obra/.test(link.textContent ?? ""))
+    const strip = within(region).getAllByRole("link").filter((link) => (link.getAttribute("href") ?? "").startsWith("/mantencion/ot?") && /OT abiertas|OT cerradas|Tiempo medio/.test(link.textContent ?? ""))
     // Las OT abiertas son el total del gráfico por estado: su cifra va en el titular del gráfico, no repetida en la tira (A5).
-    expect(strip).toHaveLength(3)
+    expect(strip).toHaveLength(2)
+    // La OT no lleva costo (decisión 2026-11-17): la tira no publica mano de obra ni costo alguno.
+    expect(region.textContent).not.toMatch(/Mano de obra|costo/i)
     expect(within(region).queryByRole("link", { name: /^OT abiertas/ })).toBeNull()
     expect(within(region).getByText("de 3 OT abiertas están en «Por asignar», la etapa con más")).toBeTruthy()
     expect(within(region).getByRole("link", { name: /^Órdenes de trabajo/ }).getAttribute("href")).toBe("/mantencion/ot?estado=abiertas")
@@ -128,7 +130,7 @@ describe("WorkOrdersSection", () => {
       <WorkOrdersSection {...common} worksiteId="ws-1" series={[point("2026-11", { created: 1 })]} stats={stats} byStatus={[{ status: "solicitada", count: 1 }]} />,
     )
     const region = screen.getByRole("region", { name: "Órdenes de trabajo" })
-    for (const name of [/^OT cerradas en el período/, /^Tiempo medio/, /^Mano de obra/]) {
+    for (const name of [/^OT cerradas en el período/, /^Tiempo medio/]) {
       expect(within(region).getByRole("link", { name }).getAttribute("href")).toContain("faena=ws-1")
     }
     expect(within(region).getByRole("link", { name: "Por asignar" }).getAttribute("href")).toContain("faena=ws-1")
@@ -136,7 +138,7 @@ describe("WorkOrdersSection", () => {
 
   it("sin ninguna OT muestra un solo vacío con su enlace, sin cifras ni gráficos", () => {
     const { container } = render(
-      <WorkOrdersSection {...common} series={[point("2026-11")]} stats={{ closed: 0, closedPrevious: 0, mttrHours: null, repairClosed: 0, cost: null }} byStatus={[]} />,
+      <WorkOrdersSection {...common} series={[point("2026-11")]} stats={{ closed: 0, closedPrevious: 0, mttrHours: null, repairClosed: 0 }} byStatus={[]} />,
     )
     expect(container.querySelectorAll("[data-kpi-card]")).toHaveLength(0)
     expect(screen.queryByRole("link", { name: /^OT abiertas/ })).toBeNull()
@@ -149,7 +151,7 @@ describe("WorkOrdersSection", () => {
     render(
       <WorkOrdersSection {...common} series={null} stats={null} byStatus={[{ status: "asignada", count: 2 }]} />,
     )
-    expect(screen.getAllByText("Sin dato")).toHaveLength(3)
+    expect(screen.getAllByText("Sin dato")).toHaveLength(2)
     expect(screen.getByText("OT abiertas, todas en «Asignada»")).toBeTruthy()
     expect(screen.queryByTestId("chart-flow")).toBeNull()
     expect(within(screen.getByRole("img", { name: /^OT abiertas hoy por estado/ })).getByText(/Asignada/)).toBeTruthy()
@@ -165,23 +167,13 @@ describe("WorkOrdersSection", () => {
 
   it("sin cierres en el período la cifra dice qué falta en vez de un cero", () => {
     render(
-      <WorkOrdersSection {...common} series={[point("2026-11", { created: 1, backlog: 1 })] } stats={{ closed: 0, closedPrevious: 0, mttrHours: null, repairClosed: 0, cost: null }} byStatus={[{ status: "solicitada", count: 1 }]} />,
+      <WorkOrdersSection {...common} series={[point("2026-11", { created: 1, backlog: 1 })] } stats={{ closed: 0, closedPrevious: 0, mttrHours: null, repairClosed: 0 }} byStatus={[{ status: "solicitada", count: 1 }]} />,
     )
     expect(screen.getByText("Ninguna OT se cerró en el período")).toBeTruthy()
-    // «Sin dato» es una consulta que falló; sin cierres, el costo dice por qué no hay cifra (crítica 2026-11-15).
-    const costo = screen.getByRole("link", { name: /^Mano de obra y taller/ })
-    expect(costo.textContent).toContain("Sin OT cerradas")
-    expect(costo.textContent).not.toContain("Sin dato")
-    expect(screen.getByRole("link", { name: /^Tiempo medio de reparación/ }).textContent).toContain("Sin reparaciones")
-  })
-
-  it("con OT cerradas sin costo cargado, la cifra dice cuántas y dónde se carga", () => {
-    render(
-      <WorkOrdersSection {...common} series={[point("2026-11", { created: 1, closed: 3 })]} stats={{ closed: 3, closedPrevious: 0, mttrHours: 12, repairClosed: 3, cost: null }} byStatus={[{ status: "solicitada", count: 1 }]} />,
-    )
-    const costo = screen.getByRole("link", { name: /^Mano de obra y taller/ })
-    expect(costo.textContent).toContain("Sin costo cargado")
-    expect(costo.textContent).toContain("Ninguna de las 3 OT cerradas trae costo")
+    // «Sin dato» es una consulta que falló; sin reparaciones cerradas, la cifra dice por qué no hay (crítica 2026-11-15).
+    const mttr = screen.getByRole("link", { name: /^Tiempo medio de reparación/ })
+    expect(mttr.textContent).toContain("Sin reparaciones")
+    expect(mttr.textContent).not.toContain("Sin dato")
   })
 })
 

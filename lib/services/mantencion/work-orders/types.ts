@@ -139,8 +139,6 @@ export interface WorkOrderDetail extends WorkOrderListRow {
   unit: MantUnit
   repairDescription: string | null
   observations: string | null
-  /** Costo total de la OT en CLP; null si jefatura no lo cargó. */
-  totalCost: number | null
   requestedByUserId: string
   requestedByName: string
   assignedByName: string | null

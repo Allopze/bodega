@@ -163,18 +163,19 @@ describe("buildPerformanceGlossary", () => {
   it("define horas en taller y tiempo de reparación sólo con la capacidad de OT", () => {
     expect(buildPerformanceGlossary(ALL).map((e) => e.key)).not.toContain("mttr")
     const entries = buildPerformanceGlossary({ canViewFleet: false, canViewWorkOrders: true })
-    expect(entries.map((e) => e.key)).toEqual(["ot-maintenance-cost", "workshop-hours", "mttr"])
-    expect(entries[2]!.definition).toContain("reparación cerradas")
+    expect(entries.map((e) => e.key)).toEqual(["workshop-hours", "mttr"])
+    expect(entries[1]!.definition).toContain("reparación cerradas")
   })
 
-  it("define mano de obra, compras vinculadas y el costo total sólo con sus capacidades", () => {
+  it("define compras vinculadas y el costo total sólo con sus capacidades; la OT no lleva costo", () => {
     const keysOf = (permissions: Parameters<typeof buildPerformanceGlossary>[0]) => buildPerformanceGlossary(permissions).map((e) => e.key)
 
-    // La mano de obra va con la capacidad de OT y ya no se llama «mantención»: los repuestos no están ahí.
-    const labour = buildPerformanceGlossary({ canViewFleet: false, canViewWorkOrders: true }).find((e) => e.key === "ot-maintenance-cost")!
-    expect(labour.term).toBe("Mano de obra / taller externo (OT)")
-    expect(labour.definition).toContain("Los repuestos y servicios comprados por OC van en su propia cifra")
-    expect(labour.definition).toContain("sin OT cerradas en el período marca $0")
+    // La OT no lleva costo (decisión 2026-11-17): ningún término habla de mano de obra.
+    const everything = buildPerformanceGlossary({
+      canViewFleet: true, canViewInspections: true, canViewCapa: true, canViewFuel: true, canViewCosts: true,
+      canViewWorkOrders: true, canViewPurchaseCosts: true, canViewTaeCoverage: true, canViewMaintenance: true,
+    })
+    expect(everything.map((e) => e.term).join("\n")).not.toMatch(/mano de obra/i)
 
     // Las compras vinculadas las abre purchasing:view, sin depender de OT ni de combustible.
     expect(keysOf({ canViewFleet: false, canViewPurchaseCosts: true })).toEqual(["vehicle-purchases"])
@@ -183,13 +184,15 @@ describe("buildPerformanceGlossary", () => {
     expect(purchases.term).toBe("Repuestos y servicios (OC)")
     expect(purchases.definition).toContain("excluyendo OC anuladas")
 
-    // El costo total exige las tres series: OT, costos de combustible y compras.
-    const total = { canViewFleet: false, canViewWorkOrders: true, canViewCosts: true }
-    expect(keysOf(total)).not.toContain("ot-total-cost")
-    expect(keysOf({ ...total, canViewPurchaseCosts: true })).toContain("ot-total-cost")
-    expect(keysOf({ canViewFleet: false, canViewCosts: true, canViewPurchaseCosts: true })).not.toContain("ot-total-cost")
-    const definition = buildPerformanceGlossary({ ...total, canViewPurchaseCosts: true }).find((e) => e.key === "ot-total-cost")!.definition
-    expect(definition).toContain("Combustible del proveedor, mano de obra de OT cerradas y compras vinculadas")
+    // El costo total exige costos de combustible y compras; la capacidad de OT no lo abre ni lo cierra.
+    const total = { canViewFleet: false, canViewCosts: true }
+    expect(keysOf(total)).not.toContain("total-cost")
+    expect(keysOf({ ...total, canViewPurchaseCosts: true })).toContain("total-cost")
+    expect(keysOf({ ...total, canViewWorkOrders: true, canViewPurchaseCosts: true })).toContain("total-cost")
+    expect(keysOf({ canViewFleet: false, canViewWorkOrders: true, canViewPurchaseCosts: true })).not.toContain("total-cost")
+    const definition = buildPerformanceGlossary({ ...total, canViewPurchaseCosts: true }).find((e) => e.key === "total-cost")!.definition
+    expect(definition).toContain("Combustible del proveedor y compras vinculadas")
+    expect(definition).not.toMatch(/mano de obra/i)
     // Un equipo sin movimientos en una serie aporta $0; sólo una consulta fallida deja «—».
     expect(definition).toContain("aporta $0")
     expect(definition).toContain("no se pudo consultar")

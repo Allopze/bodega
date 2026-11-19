@@ -22,7 +22,6 @@ function addContractCostSheet(workbook: import("exceljs").Workbook, breakdown: C
     { header: "Mandante", key: "client", width: 28 },
     { header: "Equipos", key: "vehicles", width: 10 },
     { header: "Combustible", key: "fuel", width: 16 },
-    { header: "Mano de obra (OT)", key: "workOrders", width: 20 },
     { header: "Compras", key: "purchases", width: 16 },
     { header: "Total", key: "total", width: 16 },
     { header: "Parcial", key: "partial", width: 10 },
@@ -36,7 +35,6 @@ function addContractCostSheet(workbook: import("exceljs").Workbook, breakdown: C
         // Las filas de «Por repartir» y «Compras sin equipo» no cuentan equipos.
         vehicles: row.kind === "pending" || row.kind === "no_equipment" ? null : row.vehicleCount,
         fuel: row.fuel,
-        workOrders: row.workOrders,
         purchases: row.purchases,
         total: row.total,
         partial: row.partial ? "Sí" : "No",
@@ -45,7 +43,7 @@ function addContractCostSheet(workbook: import("exceljs").Workbook, breakdown: C
   }
   sheet.getRow(1).font = { bold: true }
   sheet.views = [{ state: "frozen", ySplit: 1 }]
-  for (const key of ["fuel", "workOrders", "purchases", "total"]) sheet.getColumn(key).numFmt = "$#,##0"
+  for (const key of ["fuel", "purchases", "total"]) sheet.getColumn(key).numFmt = "$#,##0"
 }
 
 export async function exportOperationalControlXlsxAction(filters: Partial<OperationalControlPeriod> & { contrato?: string }) {
@@ -87,13 +85,12 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     sheet.getRow(1).font = { bold: true }
     sheet.views = [{ state: "frozen", ySplit: 1 }]
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheet.columns.length } }
-    // Las cuatro cifras en pesos del grupo de costos llevan el mismo formato; cada
+    // Las cifras en pesos del grupo de costos llevan el mismo formato; cada
     // columna sólo existe con la capacidad de su serie (ver `buildOperationalAssetExportColumns`).
     if (showFuelCost) sheet.getColumn("fuelCost").numFmt = "$#,##0"
-    if (canViewWorkOrders) sheet.getColumn("maintenanceCost").numFmt = "$#,##0"
     if (canViewPurchaseCosts) sheet.getColumn("purchaseAmount").numFmt = "$#,##0"
-    if (showFuelCost && canViewWorkOrders && canViewPurchaseCosts) sheet.getColumn("totalCost").numFmt = "$#,##0"
-    if (showFuelCost && canViewWorkOrders && canViewPurchaseCosts) sheet.getColumn("gpsCostPerUnit").numFmt = "$#,##0"
+    if (showFuelCost && canViewPurchaseCosts) sheet.getColumn("totalCost").numFmt = "$#,##0"
+    if (showFuelCost && canViewPurchaseCosts) sheet.getColumn("gpsCostPerUnit").numFmt = "$#,##0"
     if (canViewInspections) sheet.getColumn("inspectionCompliance").numFmt = '0.0"%"'
 
     // Mismos decimales que la pantalla: un float crudo en el Excel se copia

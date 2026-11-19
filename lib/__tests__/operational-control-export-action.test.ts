@@ -55,7 +55,7 @@ beforeEach(() => {
   mocks.hub.mockReset()
   mocks.breakdown.mockReset()
   mocks.breakdown.mockResolvedValue({
-    worksites: [], availability: { fuel: false, workOrders: false, purchases: false }, contractOptions: [], windows: [],
+    worksites: [], availability: { fuel: false, purchases: false }, contractOptions: [], windows: [],
   })
   mocks.requireAnyPermission.mockReset()
   mocks.recordAudit.mockReset()
@@ -183,13 +183,13 @@ describe("exportOperationalControlXlsxAction", () => {
     })
     const breakdown = {
       worksites: [{
-        worksiteId: "w1", worksiteName: "Cholguan - Arauco", total: 3_000_000, partial: false,
+        worksiteId: "w1", worksiteName: "Cholguan - Arauco", total: 2_500_000, partial: false,
         rows: [
-          { kind: "contract", contractId: "c1", label: "Movimiento de residuos", clientName: "Maderas Arauco", status: "active", vehicleCount: 1, fuel: 1_000_000, workOrders: 500_000, purchases: 1_500_000, total: 3_000_000, partial: false },
-          { kind: "unassigned", contractId: null, label: "Sin contrato", clientName: null, status: null, vehicleCount: 1, fuel: 0, workOrders: 0, purchases: 0, total: 0, partial: true },
+          { kind: "contract", contractId: "c1", label: "Movimiento de residuos", clientName: "Maderas Arauco", status: "active", vehicleCount: 1, fuel: 1_000_000, purchases: 1_500_000, total: 2_500_000, partial: false },
+          { kind: "unassigned", contractId: null, label: "Sin contrato", clientName: null, status: null, vehicleCount: 1, fuel: 0, purchases: 0, total: 0, partial: true },
         ],
       }],
-      availability: { fuel: true, workOrders: true, purchases: true },
+      availability: { fuel: true, purchases: true },
       contractOptions: [{ id: "c1", label: "Cholguan - Arauco · Movimiento de residuos" }],
       windows: [{ vehicleId: "v1", contractId: "c1", worksiteId: "w1", validFrom: "2026-01-01", validTo: null }],
     }
@@ -230,14 +230,14 @@ describe("exportOperationalControlXlsxAction", () => {
 
       const sheet = filtered.getWorksheet("Costo por contrato")!
       expect((sheet.getRow(1).values as unknown[]).slice(1)).toEqual([
-        "Faena", "Contrato", "Mandante", "Equipos", "Combustible", "Mano de obra (OT)", "Compras", "Total", "Parcial",
+        "Faena", "Contrato", "Mandante", "Equipos", "Combustible", "Compras", "Total", "Parcial",
       ])
       expect((sheet.getRow(2).values as unknown[]).slice(1)).toEqual([
-        "Cholguan - Arauco", "Movimiento de residuos", "Maderas Arauco", 1, 1_000_000, 500_000, 1_500_000, 3_000_000, "No",
+        "Cholguan - Arauco", "Movimiento de residuos", "Maderas Arauco", 1, 1_000_000, 1_500_000, 2_500_000, "No",
       ])
       expect((sheet.getRow(3).values as unknown[]).slice(1, 3)).toEqual(["Cholguan - Arauco", "Sin contrato"])
-      expect(sheet.getRow(3).getCell(9).value).toBe("Sí")
-      expect(sheet.getRow(2).getCell(8).numFmt).toBe("$#,##0")
+      expect(sheet.getRow(3).getCell(8).value).toBe("Sí")
+      expect(sheet.getRow(2).getCell(7).numFmt).toBe("$#,##0")
       // El desglose se pidió con los vehículos del hub, no con una consulta por equipo.
       expect(mocks.breakdown).toHaveBeenCalledWith(
         session,
@@ -250,7 +250,7 @@ describe("exportOperationalControlXlsxAction", () => {
       const unknown = await exportContract({ contrato: "otro" })
       expect(unknown.getWorksheet("Activos")!.rowCount).toBe(3)
 
-      mocks.breakdown.mockResolvedValue({ ...breakdown, availability: { fuel: false, workOrders: false, purchases: false } })
+      mocks.breakdown.mockResolvedValue({ ...breakdown, availability: { fuel: false, purchases: false } })
       const result = await exportOperationalControlXlsxAction({ from: "2026-07-25", to: "2026-10-22" })
       if (!result.ok) throw new Error(result.message)
       const ExcelJS = await import("exceljs")

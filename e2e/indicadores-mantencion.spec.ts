@@ -57,20 +57,20 @@ test.beforeAll(async () => {
       insert into mant_work_orders (id, folio, vehicle_id, worksite_id, equipment_snapshot, repair, maintenance, request_date, requested_by_user_id, requester_name, repair_description, status)
       values (${randomUUID()}, ${`${FOLIO}0001`}, ${vehicle.id}, ${vehicle.worksite_id}, ${snapshot}, true, false, ${chileDay(-3)}, ${admin.id}, 'QA_Indicadores', 'QA_ Reparación abierta de prueba', 'solicitada')`
 
-    // Cerrada: pedida hace 12 días, 30 h en taller, cerrada hace 5, con costo cargado.
+    // Cerrada: pedida hace 12 días, 30 h en taller, cerrada hace 5.
     const entry = hace(10)
     const exit = new Date(Date.parse(entry) + 30 * 3_600_000).toISOString()
     await sql`
       insert into mant_work_orders (
         id, folio, vehicle_id, worksite_id, equipment_snapshot, repair, maintenance, request_date, requested_by_user_id, requester_name, repair_description,
-        total_cost, status, assigned_to_user_id, assigned_by_user_id, assigned_at,
+        status, assigned_to_user_id, assigned_by_user_id, assigned_at,
         workshop_kind, workshop_entry_at, estimated_delivery_date, started_at, started_by_user_id,
         workshop_exit_at, finished_at, finished_by_user_id,
         received_at, receiver_name, received_by_user_id, received_recorded_at,
         faena_received_at, faena_receiver_name, faena_received_by_user_id, closed_at
       ) values (
         ${randomUUID()}, ${`${FOLIO}0002`}, ${vehicle.id}, ${vehicle.worksite_id}, ${snapshot}, true, false, ${chileDay(-12)}, ${admin.id}, 'QA_Indicadores', 'QA_ Reparación cerrada de prueba',
-        125000, 'cerrada', ${admin.id}, ${admin.id}, ${entry},
+        'cerrada', ${admin.id}, ${admin.id}, ${entry},
         'interno', ${entry}, ${chileDay(-8)}, ${entry}, ${admin.id},
         ${exit}, ${exit}, ${admin.id},
         ${exit}, 'QA_ Recibe Taller', ${admin.id}, ${exit},
@@ -121,7 +121,8 @@ test.describe("Panel de mantención: gráficos", () => {
     await expect(ordenes.getByText(/OT abiertas?(,| están)/).first()).toBeVisible()
     await expect(ordenes.getByRole("link", { name: /OT cerradas en el período/ })).toBeVisible()
     await expect(ordenes.getByRole("link", { name: /Tiempo medio de reparación/ })).toBeVisible()
-    await expect(ordenes.getByRole("link", { name: /Mano de obra y taller/ })).toBeVisible()
+    // La OT no lleva costo (decisión 2026-11-17): la tira no publica mano de obra.
+    await expect(ordenes.getByRole("link", { name: /Mano de obra/ })).toHaveCount(0)
     // Las OT abiertas por estado son un gráfico de barras (la sembrada «Por asignar» cuenta una).
     // Con enlaces por estado el ranking es un grupo con nombre, no una imagen (paso 6: nada interactivo dentro de role=img).
     const porEstado = ordenes.getByRole("group", { name: /^OT abiertas hoy por estado/ })
@@ -154,10 +155,11 @@ test.describe("Panel de mantención: gráficos", () => {
     // Los gráficos no llevan tarjetas de KPI, sólo la tira compacta de cada sección (la franja «Hoy» es aparte).
     await expect(page.locator("[data-kpi-card]")).toHaveCount(0)
     // Con el gráfico «OT abiertas hoy, por estado» a la vista, su total va en su titular y sale de la tira (A5,
-    // crítica 2026-11-15, paso 5): la sección de órdenes tiene entonces tres cifras y no cuatro.
+    // crítica 2026-11-15, paso 5): la sección de órdenes tiene entonces dos cifras y no tres. Desde el
+    // 2026-11-17 la OT no lleva costo, así que «Mano de obra y taller» ya no es una de ellas.
     const nombre = /^OT abiertas hoy por estado/
     const porEstado = await page.getByRole("img", { name: nombre }).or(page.getByRole("group", { name: nombre })).count()
-    const cifras = { "Órdenes de trabajo": porEstado > 0 ? 3 : 4, "Pautas y disponibilidad": 3 } as const
+    const cifras = { "Órdenes de trabajo": porEstado > 0 ? 2 : 3, "Pautas y disponibilidad": 3 } as const
     for (const [region, esperadas] of Object.entries(cifras)) {
       const seccion = page.getByRole("region", { name: region, exact: true })
       const destinos = await seccion.locator("a[data-pressable]").evaluateAll((links) => links.map((link) => link.getAttribute("href")))

@@ -146,7 +146,7 @@ describe("attributeCosts", () => {
   it("la suma de todas las cubetas es igual a la suma de los costos", () => {
     const costs: DatedCost[] = [
       costo("2026-03-05", 1000),
-      costo("2026-03-25", 2000, { component: "workOrders" }),
+      costo("2026-03-25", 2000, { component: "purchases" }),
       costo("2026-04-01", 4000, { spansMonth: true }),
       costo("2026-04-12", 8000, { component: "purchases" }),
       costo("2026-04-20", 16000),
@@ -160,7 +160,7 @@ describe("attributeCosts", () => {
       ],
       vehicleWorksite: new Map([[V, "w-b"]]),
     })
-    const componentes: CostComponent[] = ["fuel", "workOrders", "purchases"]
+    const componentes: CostComponent[] = ["fuel", "purchases"]
     for (const c of componentes) {
       const esperado = costs
         .filter((x) => x.component === c)
@@ -185,6 +185,6 @@ describe("attributeCosts", () => {
   })
 
   it("emptySums parte en cero", () => {
-    expect(emptySums()).toEqual({ fuel: 0, workOrders: 0, purchases: 0 })
+    expect(emptySums()).toEqual({ fuel: 0, purchases: 0 })
   })
 })
