@@ -73,9 +73,11 @@ vi.mock("@/lib/id", () => ({
   nanoid: () => "veh-new",
 }))
 
-const mockMoveProviderMappings = vi.fn(async (..._args: unknown[]) => 0)
-vi.mock("@/lib/combustibles/provider-mappings", () => ({
-  moveProviderMappingsWithVehicleTx: (...args: unknown[]) => mockMoveProviderMappings(...args),
+// El traslado de faena pasa por `relocateVehicleWorksiteTx`, que mueve los
+// mapeos del proveedor y cierra la asignación de contrato en una sola llamada.
+const mockMoveProviderMappings = vi.fn(async (..._args: unknown[]) => ({ movedMappings: 0, closedAssignments: 0 }))
+vi.mock("@/lib/services/fleet-relocation", () => ({
+  relocateVehicleWorksiteTx: (...args: unknown[]) => mockMoveProviderMappings(...args),
 }))
 
 const mockGetFleetAdminSettings = vi.fn(async () => ({ warningDays: 30, defaultVehicleStatus: "mantencion" }))

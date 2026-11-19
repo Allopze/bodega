@@ -5,6 +5,7 @@ import { fuelAnomalyCases, fuelEquipmentLoads, fuelProviderTransactions, fuelVeh
 import { can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { accountableProviderTransactionsWhere } from "@/lib/combustibles/load-status"
+import type { DatedCost } from "@/lib/contracts/cost-attribution"
 import { idlePct } from "../calc/idle"
 import { chileDateSql, countableLoadSql, parseControlFilters, statisticallyValidLoadSql } from "../filters"
 import { dailyTelemetry } from "./idle"
@@ -66,6 +67,69 @@ function emptySummary(vehicleId: string): AssetFuelSummary {
   }
 }
 
+/**
+ * Condiciones del monto facturado por equipo: UNA sola definición, compartida
+ * por el resumen por equipo (`getAssetFuelSummary`) y por el detalle por día
+ * (`getFuelBilledByVehicleDay`), para que el costo por contrato sume
+ * exactamente lo que el Panel muestra por equipo. La consulta que la use debe
+ * unir `fuel_vehicles` (el alcance sigue a la faena ACTUAL del equipo).
+ */
+function billedTransactionsWhere(
+  session: Session,
+  period: { from: string; to: string },
+  ids: readonly string[],
+) {
+  return and(
+    inArray(fuelProviderTransactions.vehicleId, [...ids]),
+    isNotNull(fuelProviderTransactions.vehicleId),
+    worksiteScopeSql(session, fuelVehicles.worksiteId),
+    // `occurred_at` es texto y puede traer hora: se compara el día civil.
+    sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${period.from}`,
+    sql`left(${fuelProviderTransactions.occurredAt}, 10) <= ${period.to}`,
+    accountableProviderTransactionsWhere(),
+  )
+}
+
+/**
+ * Monto facturado por equipo y día, con la misma definición que
+ * `AssetFuelSummary.billedAmount` (ver `billedTransactionsWhere`). Una sola
+ * consulta agrupada por equipo, día y granularidad. Un agregado mensual del
+ * proveedor (`period_aggregate`, p. ej. TCT de Copec) viene fechado el día 1 del
+ * mes y se marca `spansMonth`: cubre todo el mes y no tiene fin de período.
+ * Sin `combustibles:view_costs` devuelve `[]`.
+ */
+export async function getFuelBilledByVehicleDay(
+  session: Session,
+  period: { from: string; to: string },
+  vehicleIds: readonly string[],
+): Promise<DatedCost[]> {
+  if (!can(session, "combustibles:view_costs")) return []
+  const ids = [...new Set(vehicleIds)]
+  if (ids.length === 0) return []
+  const day = sql<string>`left(${fuelProviderTransactions.occurredAt}, 10)`
+  const rows = await db.select({
+    vehicleId: fuelProviderTransactions.vehicleId,
+    day,
+    granularity: fuelProviderTransactions.granularity,
+    amount: sql<number>`COALESCE(SUM(${fuelProviderTransactions.amount}), 0)::float8`,
+  })
+    .from(fuelProviderTransactions)
+    .innerJoin(fuelVehicles, eq(fuelProviderTransactions.vehicleId, fuelVehicles.id))
+    .where(billedTransactionsWhere(session, period, ids))
+    .groupBy(fuelProviderTransactions.vehicleId, day, fuelProviderTransactions.granularity)
+  return rows.flatMap((row) =>
+    row.vehicleId
+      ? [{
+          vehicleId: row.vehicleId,
+          day: row.day,
+          amount: Number(row.amount ?? 0),
+          component: "fuel" as const,
+          spansMonth: row.granularity === "period_aggregate",
+        }]
+      : [],
+  )
+}
+
 export async function getAssetFuelSummary(
   session: Session,
   period: { from: string; to: string },
@@ -119,15 +183,7 @@ export async function getAssetFuelSummary(
           // El costo sigue al equipo: la faena histórica de la transacción puede
           // ser otra (equipo trasladado) o venir nula, y no debe borrar el monto.
           .innerJoin(fuelVehicles, eq(fuelProviderTransactions.vehicleId, fuelVehicles.id))
-          .where(and(
-            inArray(fuelProviderTransactions.vehicleId, ids),
-            isNotNull(fuelProviderTransactions.vehicleId),
-            worksiteScopeSql(session, fuelVehicles.worksiteId),
-            // `occurred_at` es texto y puede traer hora: se compara el día civil.
-            sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${period.from}`,
-            sql`left(${fuelProviderTransactions.occurredAt}, 10) <= ${period.to}`,
-            accountableProviderTransactionsWhere(),
-          ))
+          .where(billedTransactionsWhere(session, period, ids))
           .groupBy(fuelProviderTransactions.vehicleId)
       : Promise.resolve([] as Array<{ vehicleId: string; billedAmount: number }>),
     // Última lectura con medidor: es la que se contrasta con la telemetría.

@@ -11,7 +11,7 @@ import { canAccessWorksite, worksiteScopeSql } from "@/lib/auth/scope"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { nanoid } from "@/lib/id"
 import { setVehicleOperationalStatus } from "@/lib/services/fleet"
-import { moveProviderMappingsWithVehicleTx } from "@/lib/combustibles/provider-mappings"
+import { relocateVehicleWorksiteTx } from "@/lib/services/fleet-relocation"
 import { lockVehicleSeries, recomputeVehicles } from "@/lib/combustibles/control/projection-series"
 import { projectWithStaleDecisions, SERIES_START_INSTANT } from "@/lib/combustibles/control/stale-decisions"
 import { parseFleetXlsx } from "@/lib/combustibles/fleet-xlsx-import"
@@ -320,7 +320,7 @@ export async function updateFuelVehicleAction(
       }
       // La sincronización atribuye por la faena de la asignación de proveedor, no por la del vehículo.
       if (data.worksiteId && data.worksiteId !== existing.worksiteId) {
-        await moveProviderMappingsWithVehicleTx(tx, { vehicleId: id, worksiteId: data.worksiteId, actorUserId: session.user.id, actorEmail: session.user.email })
+        await relocateVehicleWorksiteTx(tx, { vehicleId: id, worksiteId: data.worksiteId, actorUserId: session.user.id, actorEmail: session.user.email })
       }
       if (statusChanged) {
         await setVehicleOperationalStatus(tx, {
@@ -590,7 +590,7 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
           updated++
           await tx.update(fuelVehicles).set({ ...rowValues, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, row.existing.id))
           if (row.existing.worksiteId !== row.worksiteId) {
-            await moveProviderMappingsWithVehicleTx(tx, { vehicleId: row.existing.id, worksiteId: row.worksiteId, actorUserId: session.user.id, actorEmail: session.user.email })
+            await relocateVehicleWorksiteTx(tx, { vehicleId: row.existing.id, worksiteId: row.worksiteId, actorUserId: session.user.id, actorEmail: session.user.email })
           }
           if (identity) {
             maintenanceUpdated = true

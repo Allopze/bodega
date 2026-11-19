@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 
 /*
  * Equipos de mantención (§10) contra Postgres de verdad: alta, incorporación de
@@ -541,5 +542,23 @@ describe("las asignaciones de proveedor siguen al equipo cuando cambia de faena"
     const { active, closed } = await activeMapping("DFGH56")
     expect(active).toEqual([expect.objectContaining({ worksiteId: WS.arauco, vehicleId: "veh-flota-map", version: 2 })])
     expect(closed).toEqual([expect.objectContaining({ worksiteId: WS.cholguan, version: 1 })])
+  })
+
+  // Contratos por faena: el contrato de un equipo es de la faena donde está. Incorporar a Mantención un
+  // vehículo de la flota en otra faena lo traslada (applyCreate); la planilla de Mantención nunca
+  // traslada (fleetConflicts) y el padrón XLSX lo cubre el test estático de llamadores.
+  it("mover un equipo de faena al incorporarlo cierra su asignación de contrato", async () => {
+    const vehicleId = "veh-flota-ctr"
+    await testDb.insert(schema.fuelVehicles).values({ id: vehicleId, plate: "DFGH57", code: "KA-712", type: "test-camion", equipmentTypeId: T.km, worksiteId: WS.cholguan, isActive: true })
+    await testDb.insert(schema.clients).values({ id: "cl-ctr", rut: "76123456-0", name: "Maderas Arauco S.A." })
+    await testDb.insert(schema.contracts).values({ id: "c-ctr", code: "CTR-2026-0001", clientId: "cl-ctr", name: "Movimiento de residuos", worksiteId: WS.cholguan, billingCycle: "none" })
+    await testDb.insert(schema.contractVehicleAssignments).values({ id: "a-ctr", contractId: "c-ctr", vehicleId, validFrom: "2020-01-01" })
+
+    await createdId(await createEquipment(actor, input({ code: "KA-712", plate: "DFGH-57", worksiteId: WS.arauco })))
+
+    const [vehicle] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, vehicleId))
+    expect(vehicle?.worksiteId).toBe(WS.arauco)
+    const [assignment] = await testDb.select().from(schema.contractVehicleAssignments).where(eq(schema.contractVehicleAssignments.id, "a-ctr"))
+    expect(assignment?.validTo).toBe(addDaysToPlainDate(todayInChile(), -1))
   })
 })

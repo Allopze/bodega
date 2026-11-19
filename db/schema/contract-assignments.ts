@@ -10,7 +10,7 @@
  *
  * Vigencia: `valid_from` y `valid_to` son días civiles de Chile (`YYYY-MM-DD`)
  * y AMBOS son inclusivos; `valid_to` nulo = vigente. Misma convención que
- * `fuel_tae_vehicle_mappings`: al reemplazar una asignación, la anterior cierra
+ * `fuel_provider_mappings`: al reemplazar una asignación, la anterior cierra
  * el día previo al nuevo `valid_from`.
  *
  * Invariantes que la base no puede expresar sola y sostiene el servicio

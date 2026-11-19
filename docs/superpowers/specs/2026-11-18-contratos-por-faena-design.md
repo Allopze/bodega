@@ -80,7 +80,7 @@ faenas porque son contratos de Santa Fe.
   desde `start_date`. Ver § 9, punto abierto 1.
 - **Equipos.** Los equipos con costo son `fuel_vehicles` (flota y maquinaria;
   ~142 en prod). `fuel_vehicles.worksite_id` es sólo la faena **actual**, sin
-  historia. La única historia con fechas es `fuel_tae_vehicle_mappings`
+  historia. La única historia con fechas es `fuel_provider_mappings`
   (patente → equipo → faena) de la integración de combustible. El cambio de
   faena lo hace `lib/services/mantencion/equipment.ts` (mueve los mapeos con
   `moveProviderMappingsWithVehicleTx`); hay otros escritores de
@@ -165,7 +165,7 @@ datos reales que migrar):
 | `contract_id` | FK `contracts`, `restrict` | |
 | `vehicle_id` | FK `fuel_vehicles`, `restrict` | |
 | `valid_from` | text `YYYY-MM-DD` | día civil de Chile, inclusivo |
-| `valid_to` | text `YYYY-MM-DD` nulo | **inclusivo** (último día); nulo = vigente. Misma convención que `fuel_tae_vehicle_mappings`: al cerrar, `valid_to` = día anterior al nuevo `valid_from` |
+| `valid_to` | text `YYYY-MM-DD` nulo | **inclusivo** (último día); nulo = vigente. Misma convención que `fuel_provider_mappings`: al cerrar, `valid_to` = día anterior al nuevo `valid_from` |
 | `reason` | text nulo | |
 | `created_by_user_id`, `created_at`, `updated_at` | | auditoría también en `recordAudit` |
 
@@ -350,7 +350,7 @@ formulario. Sin cambios de esquema ni en `pending.ts`.
 - Inventario de escritores de `fuel_vehicles.worksite_id` (`update(fuelVehicles)`
   aparece en 7 archivos, incluido `lib/combustibles/copec-day-split.ts`) y su
   cierre de asignación.
-- Al asignar con fecha pasada, avisar (no bloquear) si `fuel_tae_vehicle_mappings`
+- Al asignar con fecha pasada, avisar (no bloquear) si `fuel_provider_mappings`
   muestra al equipo en otra faena en parte de ese intervalo.
 - Paridad de permisos y navegación (`modules/registry.ts`, `modules/permissions.ts`,
   manifiestos) para la ruta nueva; no se crean permisos nuevos en v1.

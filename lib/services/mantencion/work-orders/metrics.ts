@@ -5,6 +5,7 @@ import { mantWorkOrders } from "@/db/schema"
 import { worksiteScopeSqlFor, serviceWorksiteScope } from "@/lib/auth/scope"
 import { canViewWorkOrders, canViewAllWorkOrders } from "@/lib/operational-control/capabilities"
 import { OT_OPEN_STATUSES, type OtStatus } from "@/lib/mantencion/work-order-states"
+import type { DatedCost } from "@/lib/contracts/cost-attribution"
 import { todayInChile } from "@/lib/utils"
 import { partsPendingExistsSql } from "./parts-requests"
 
@@ -97,6 +98,29 @@ function scopeWhere(scope: WorkOrderMetricsScope, worksiteId?: string): SQL | un
   return worksiteScopeSqlFor(scope, mantWorkOrders.worksiteId, worksiteId)
 }
 
+/**
+ * Límites del período en hora de Chile: desde la medianoche chilena del primer
+ * día hasta la medianoche chilena siguiente al último. Sin la zona explícita
+ * `::date` se leería en la de la sesión de Postgres (UTC en producción) y el
+ * recorte se movería 3–4 horas según el servidor.
+ */
+function periodBoundsSql(period: WorkOrderPeriod) {
+  return {
+    start: sql`(${period.from}::date)::timestamp AT TIME ZONE 'America/Santiago'`,
+    end: sql`((${period.to}::date + 1)::timestamp AT TIME ZONE 'America/Santiago')`,
+  }
+}
+
+/**
+ * Una OT cerrada dentro del período: UNA sola definición, compartida por las
+ * cifras por equipo (`closedInPeriod`, `maintenanceCostInPeriod`…) y por el
+ * detalle de costo por día (`getWorkOrderCostByVehicleDay`).
+ */
+function closedInPeriodSql(period: WorkOrderPeriod): SQL {
+  const { start, end } = periodBoundsSql(period)
+  return sql`${mantWorkOrders.status} = 'cerrada' AND ${mantWorkOrders.closedAt} >= ${start} AND ${mantWorkOrders.closedAt} < ${end}`
+}
+
 /** Una expresión de fecha puede volver como `Date` o como texto según el driver. */
 function isoOrNull(value: unknown): string | null {
   if (value == null) return null
@@ -122,16 +146,11 @@ export async function getVehicleWorkOrderMetrics(
   const nowIso = (options.now ?? new Date()).toISOString()
   const now = sql`${nowIso}::timestamptz`
 
-  // El período son días civiles chilenos: se acota desde la medianoche de Chile
-  // del primer día hasta la medianoche de Chile siguiente al último. Sin la zona
-  // explícita `::date` se leería en la de la sesión de Postgres (UTC en
-  // producción) y el recorte se movería 3–4 horas según el servidor.
   const period = options.period
-  const periodStart = period ? sql`(${period.from}::date)::timestamp AT TIME ZONE 'America/Santiago'` : null
-  const periodEnd = period ? sql`((${period.to}::date + 1)::timestamp AT TIME ZONE 'America/Santiago')` : null
-  const closedInRange = period
-    ? sql`${mantWorkOrders.status} = 'cerrada' AND ${mantWorkOrders.closedAt} >= ${periodStart} AND ${mantWorkOrders.closedAt} < ${periodEnd}`
-    : sql`false`
+  const bounds = period ? periodBoundsSql(period) : null
+  const periodStart = bounds?.start ?? null
+  const periodEnd = bounds?.end ?? null
+  const closedInRange = period ? closedInPeriodSql(period) : sql`false`
   const hasEntry = sql`${mantWorkOrders.workshopEntryAt} IS NOT NULL`
   const hoursInPeriod = period
     ? sql`COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(${mantWorkOrders.workshopExitAt}, ${now}), ${periodEnd}) - GREATEST(${mantWorkOrders.workshopEntryAt}, ${periodStart}))) / 3600) FILTER (WHERE ${hasEntry} AND ${mantWorkOrders.workshopEntryAt} < ${periodEnd} AND COALESCE(${mantWorkOrders.workshopExitAt}, ${now}) > ${periodStart}), 0)`
@@ -179,6 +198,44 @@ export async function getVehicleWorkOrderMetrics(
     lastExitAt: isoOrNull(row.lastExitAt),
     lastClosedWorkOrderId: row.lastClosedWorkOrderId ?? null,
   }]))
+}
+
+/**
+ * Costo cargado de las OT cerradas del período, por equipo y día de cierre
+ * (día civil de Chile). Misma definición que `maintenanceCostInPeriod`: OT
+ * `cerrada` con `closed_at` en el período (`closedInPeriodSql`), sin las
+ * `anulada` y dentro del alcance de faena de la OT. Una sola consulta agrupada
+ * por equipo y día; una OT sin costo cargado no aporta fila (igual que el
+ * `SUM` del resumen, que la ignora). `vehicleIds` es opcional: sin él, todos
+ * los equipos del alcance.
+ */
+export async function getWorkOrderCostByVehicleDay(
+  scope: WorkOrderMetricsScope,
+  options: { period: WorkOrderPeriod; vehicleIds?: readonly string[] },
+): Promise<DatedCost[]> {
+  if (options.vehicleIds?.length === 0) return []
+  const day = sql<string>`to_char((${mantWorkOrders.closedAt} AT TIME ZONE 'America/Santiago')::date, 'YYYY-MM-DD')`
+  const rows = await db.select({
+    vehicleId: mantWorkOrders.vehicleId,
+    day,
+    amount: sql<number>`SUM(${mantWorkOrders.totalCost})::float8`,
+  })
+    .from(mantWorkOrders)
+    .where(and(
+      ne(mantWorkOrders.status, "anulada"),
+      scopeWhere(scope),
+      closedInPeriodSql(options.period),
+      sql`${mantWorkOrders.totalCost} IS NOT NULL`,
+      options.vehicleIds ? inArray(mantWorkOrders.vehicleId, [...options.vehicleIds]) : undefined,
+    ))
+    .groupBy(mantWorkOrders.vehicleId, day)
+  return rows.map((row) => ({
+    vehicleId: row.vehicleId,
+    day: row.day,
+    amount: Number(row.amount),
+    component: "workOrders" as const,
+    spansMonth: false,
+  }))
 }
 
 /** Cifras globales (sin agrupar por equipo): el tile «OT abiertas» y su detalle. */

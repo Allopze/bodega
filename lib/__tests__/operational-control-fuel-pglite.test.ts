@@ -15,7 +15,7 @@ g.__db = testDb
 vi.mock("@/db", () => ({ get db() { return g.__db } }))
 vi.mock("server-only", () => ({}))
 
-const { getAssetFuelSummary } = await import("@/lib/combustibles/control/queries/asset-fuel-summary")
+const { getAssetFuelSummary, getFuelBilledByVehicleDay } = await import("@/lib/combustibles/control/queries/asset-fuel-summary")
 
 function session(options: { global?: boolean; worksiteIds?: string[]; costs?: boolean } = {}): Session {
   return {
@@ -32,6 +32,13 @@ function session(options: { global?: boolean; worksiteIds?: string[]; costs?: bo
 
 const MARCH = { from: "2026-03-01", to: "2026-03-31" }
 const APRIL = { from: "2026-04-01", to: "2026-04-30" }
+// Período que no empieza el día 1: deja fuera el agregado de marzo y entra el de abril.
+const MID = { from: "2026-03-15", to: "2026-04-20" }
+
+// Equipos extra para el detalle por día: vD sólo trae agregados mensuales del
+// proveedor; vE trae un agregado de marzo que su propio detalle de marzo anula.
+const VD = "afs-veh-d"
+const VE = "afs-veh-e"
 
 let seq = 0
 
@@ -115,6 +122,7 @@ async function addProviderTransaction(input: {
   date: string
   amount: number
   quantity?: number
+  plate?: string
   status?: "accepted" | "pending" | "rejected" | "excluded" | "superseded"
 }) {
   txSeq += 1
@@ -129,12 +137,41 @@ async function addProviderTransaction(input: {
     payloadHash: `afs-ph-${txSeq}`,
     worksiteId: input.worksite,
     vehicleId: input.vehicle,
-    sourcePlate: "AA-0001",
+    sourcePlate: input.plate ?? "AA-0001",
     occurredAt: input.date,
     quantity: input.quantity ?? 100,
     amount: input.amount,
     status: input.status ?? "accepted",
     granularity: "transaction",
+  })
+}
+
+/** Agregado mensual del proveedor (TCT): fila `period_aggregate` fechada el día 1 del mes. */
+async function addMonthlyAggregate(input: {
+  vehicle: string
+  worksite: string
+  plate: string
+  date: string
+  amount: number
+}) {
+  txSeq += 1
+  await testDb.insert(schema.fuelProviderTransactions).values({
+    id: `afs-tx-${txSeq}`,
+    syncRunId: "afs-run",
+    provider: "copec",
+    sourceAccount: "tct:diesel",
+    identityKey: `afs-idk-${txSeq}`,
+    fingerprint: `afs-fp-${txSeq}`,
+    sourceRowKey: `afs-row-${txSeq}`,
+    payloadHash: `afs-ph-${txSeq}`,
+    worksiteId: input.worksite,
+    vehicleId: input.vehicle,
+    sourcePlate: input.plate,
+    occurredAt: input.date,
+    quantity: 500,
+    amount: input.amount,
+    status: "accepted",
+    granularity: "period_aggregate",
   })
 }
 
@@ -193,6 +230,17 @@ beforeAll(async () => {
   await addProviderTransaction({ vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-02-28T15:00:00.000Z", amount: 77777 })
   await addProviderTransaction({ vehicle: IDS.vB, worksite: IDS.wsB, date: "2026-03-06T15:00:00.000Z", amount: 21000 })
   await addProviderTransaction({ vehicle: IDS.vC, worksite: IDS.wsC, date: "2026-03-07T15:00:00.000Z", amount: 31000 })
+
+  // Detalle por día: vD sólo con agregados mensuales (marzo 7.000, abril 9.000);
+  // vE con una carga de marzo y un agregado de marzo que ese detalle anula.
+  await testDb.insert(schema.fuelVehicles).values([
+    { id: VD, plate: "DD-0004", code: "KD-4", type: "x", equipmentTypeId: IDS.eqType, meterType: "hour_meter", performanceUnit: "liters_per_hour", worksiteId: IDS.wsA },
+    { id: VE, plate: "EE-0005", code: "KE-5", type: "x", equipmentTypeId: IDS.eqType, meterType: "hour_meter", performanceUnit: "liters_per_hour", worksiteId: IDS.wsA },
+  ])
+  await addMonthlyAggregate({ vehicle: VD, worksite: IDS.wsA, plate: "DD-0004", date: "2026-03-01", amount: 7000 })
+  await addMonthlyAggregate({ vehicle: VD, worksite: IDS.wsA, plate: "DD-0004", date: "2026-04-01", amount: 9000 })
+  await addMonthlyAggregate({ vehicle: VE, worksite: IDS.wsA, plate: "EE-0005", date: "2026-03-01", amount: 6000 })
+  await addProviderTransaction({ vehicle: VE, worksite: IDS.wsA, date: "2026-03-20T15:00:00.000Z", amount: 500, plate: "EE-0005" })
 
   // Telemetría de A y B en marzo: el % en vacío se recalcula desde las horas.
   await testDb.insert(schema.fuelTelemetryDaily).values([
@@ -281,5 +329,66 @@ describe("getAssetFuelSummary", () => {
       criticalOpenCases: 0,
       billedAmount: null,
     })
+  })
+})
+
+describe("getFuelBilledByVehicleDay", () => {
+  const TODOS = [IDS.vA, IDS.vB, IDS.vC, VD, VE]
+
+  async function sumasPorEquipo(s: Session, period: { from: string; to: string }) {
+    const rows = await getFuelBilledByVehicleDay(s, period, TODOS)
+    const out = new Map<string, number>()
+    for (const r of rows) out.set(r.vehicleId, (out.get(r.vehicleId) ?? 0) + r.amount)
+    return out
+  }
+
+  it.each([
+    ["MARCH", MARCH],
+    ["MID", MID],
+  ])("el detalle por día suma lo mismo que el resumen por equipo (%s)", async (_nombre, period) => {
+    const resumen = await getAssetFuelSummary(session(), period, TODOS)
+    const detalle = await sumasPorEquipo(session(), period)
+    for (const id of TODOS) {
+      const esperado = resumen.get(id)?.billedAmount ?? null
+      // El resumen deja `null` sin montos; el detalle simplemente no trae filas.
+      expect(detalle.get(id) ?? null).toBe(esperado)
+    }
+    // El período sí trae algo: la prueba no es una igualdad vacía.
+    expect([...detalle.values()].reduce((a, b) => a + b, 0)).toBeGreaterThan(0)
+  })
+
+  it("el período que no empieza el día 1 deja fuera el agregado de marzo y entra el de abril", async () => {
+    const detalle = await sumasPorEquipo(session(), MID)
+    expect(detalle.get(VD)).toBe(9000)
+    expect(detalle.get(IDS.vA)).toBeUndefined()
+  })
+
+  it("marca los agregados mensuales como spansMonth", async () => {
+    const rows = await getFuelBilledByVehicleDay(session(), MARCH, [VD, VE, IDS.vA])
+    const vd = rows.filter((r) => r.vehicleId === VD)
+    expect(vd).toEqual([
+      { vehicleId: VD, day: "2026-03-01", amount: 7000, component: "fuel", spansMonth: true },
+    ])
+    // vE: el agregado de marzo lo anula su propio detalle; queda sólo la carga diaria.
+    expect(rows.filter((r) => r.vehicleId === VE)).toEqual([
+      { vehicleId: VE, day: "2026-03-20", amount: 500, component: "fuel", spansMonth: false },
+    ])
+    const va = rows.filter((r) => r.vehicleId === IDS.vA)
+    expect(va.every((r) => r.spansMonth === false && r.component === "fuel")).toBe(true)
+    expect(va.map((r) => r.day).sort()).toEqual(["2026-03-05", "2026-03-10"])
+  })
+
+  it("sin combustibles:view_costs no devuelve partidas", async () => {
+    expect(await getFuelBilledByVehicleDay(session({ costs: false }), MARCH, TODOS)).toEqual([])
+  })
+
+  it("el alcance por faena recorta los equipos ajenos, igual que el resumen", async () => {
+    const rows = await getFuelBilledByVehicleDay(session({ global: false, worksiteIds: [IDS.wsA] }), MARCH, TODOS)
+    expect(rows.some((r) => r.vehicleId === IDS.vB || r.vehicleId === IDS.vC)).toBe(false)
+    expect(rows.some((r) => r.vehicleId === IDS.vA)).toBe(true)
+  })
+
+  it("sin equipos devuelve una lista vacía", async () => {
+    expect(await getFuelBilledByVehicleDay(session(), MARCH, [])).toEqual([])
   })
 })

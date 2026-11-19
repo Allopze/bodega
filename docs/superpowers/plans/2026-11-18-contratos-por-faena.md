@@ -173,7 +173,7 @@ export async function listVehicleAssignmentHistory(vehicleId: string, client?: D
      - an earlier open one → close it with `validTo = addDaysToPlainDate(validFrom, -1)`.
   4. Insert the new one with `validTo = contract.endDate ?? null`.
   5. `recordAudit({ action: "create", entityType: "contract_vehicle_assignment", entityId, worksiteId, newState }, tx)`.
-- Warning: if `fuel_tae_vehicle_mappings` place the vehicle in another worksite at some point of `[validFrom, todayInChile()]`, add `"${code}: el mapeo de combustible lo ubica en otra faena entre ${desde} y ${hasta}"`.
+- Warning: if `fuel_provider_mappings` place the vehicle in another worksite at some point of `[validFrom, todayInChile()]`, add `"${code}: el mapeo de combustible lo ubica en otra faena entre ${desde} y ${hasta}"`.
 - `closeContractAssignmentsOnRelocationTx`:
   - closes the open one with `validTo = addDaysToPlainDate(effectiveFrom, -1)`;
   - deletes the ones with `validFrom >= effectiveFrom`;

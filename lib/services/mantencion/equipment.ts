@@ -4,7 +4,7 @@ import {
   fuelEquipmentTypes, fuelVehicleOperationalIntervals, fuelVehicles, mantEquipmentProfiles, worksites,
 } from "@/db/schema"
 import { isUniqueViolation } from "@/lib/action-error"
-import { moveProviderMappingsWithVehicleTx } from "@/lib/combustibles/provider-mappings"
+import { relocateVehicleWorksiteTx } from "@/lib/services/fleet-relocation"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
@@ -121,7 +121,7 @@ export async function applyCreate(
     await tx.update(fuelVehicles).set({ ...(origin === "fleet" ? fleetSafe : sharedValues), updatedAt: now }).where(eq(fuelVehicles.id, vehicleId))
     // Incorporar puede cambiar la faena del vehículo: sus asignaciones de proveedor lo siguen.
     if (row && row.worksiteId !== resolved.worksite.id) {
-      await moveProviderMappingsWithVehicleTx(tx, { vehicleId, worksiteId: resolved.worksite.id, actorUserId: actor.userId, actorEmail: actor.email })
+      await relocateVehicleWorksiteTx(tx, { vehicleId, worksiteId: resolved.worksite.id, actorUserId: actor.userId, actorEmail: actor.email })
     }
   } else {
     // `meterType` y `performanceUnit` sólo se siembran en el alta: son editables por vehículo.
@@ -251,7 +251,7 @@ export async function applyUpdate(
   }).where(eq(mantEquipmentProfiles.vehicleId, current.vehicleId))
   // La sincronización atribuye por la faena de la asignación de proveedor, no por la del vehículo.
   if (EQUIPMENT_FIELD_LABELS.worksite in changes) {
-    await moveProviderMappingsWithVehicleTx(tx, { vehicleId: current.vehicleId, worksiteId: resolved.worksite.id, actorUserId: actor.userId, actorEmail: actor.email })
+    await relocateVehicleWorksiteTx(tx, { vehicleId: current.vehicleId, worksiteId: resolved.worksite.id, actorUserId: actor.userId, actorEmail: actor.email })
   }
   const action = origin === "import" ? "import" : historyActionFor(changes)
   await writeEquipmentHistory(tx, {
