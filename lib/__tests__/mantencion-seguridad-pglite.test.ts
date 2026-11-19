@@ -436,6 +436,8 @@ describe("A4: administrar equipos no alcanza a las faenas que no se ven", () => 
       ["KA-941X", "ZXCV-11", "Camión", "Scania", null, null, "Cholguán", null, null, null], // patente de KA-941 con otro código
     ]), "equipos.xlsx")
     expect(result).toMatchObject({ ok: true, data: { updated: 0, created: 0, errors: 2 } })
+    // La fila que cambia la faena dice la regla única de la plataforma.
+    expect(result.ok && result.data.errorRows?.[0]?.messages.join(" ")).toContain("Para cambiar de faena usa «Trasladar equipos».")
     // Y una fila que sólo trae el código y la faena actual pasa (sin cambios).
     const same = await commitEquipmentImport(jefe, await workbookBuffer([["KA-941", "ZXCV-11", null, null, null, null, "Cholguán", null, null, null]]), "equipos.xlsx")
     expect(same).toMatchObject({ ok: true, data: { errors: 0 } })

@@ -38,6 +38,26 @@ const MARCH_KM = [
   reading(10_300, "2026-03", 15, 40),
 ]
 
+describe("buildMeterRateSeries · faena del día de cada lectura", () => {
+  const scoped = (value: number, day: number, inScope: boolean): RateReading => ({ ...reading(value, "2026-03", day, 40), inScope })
+
+  it("un par cuenta según la lectura final: A→B→A no empareja las dos lecturas de A saltándose B", () => {
+    // Lecturas en A, A, B, A, A: sólo A está en el alcance. El par 3→4 (B→A) termina en A y cuenta; el 2→3 (A→B) no.
+    const series = build([km([
+      scoped(10_000, 1, true), scoped(10_100, 5, true), scoped(10_200, 10, false), scoped(10_300, 15, true), scoped(10_400, 20, true),
+    ])], ["2026-03"])
+    const march = series.km_per_liter.months[0]!
+    expect(march.segments).toBe(3) // 1→2, 3→4 y 4→5
+    expect(march.discarded).toBe(0)
+    expect(march.measure).toBe(300)
+    expect(series.km_per_liter.readings).toBe(4) // las lecturas de B no cuentan
+  })
+
+  it("sin la marca de alcance todo cuenta", () => {
+    expect(build([km(MARCH_KM)], ["2026-03"]).km_per_liter.months[0]!.segments).toBe(3)
+  })
+})
+
 describe("buildMeterRateSeries · km/L", () => {
   it("el rendimiento del mes es Σkm ÷ ΣL, no el promedio de las razones de cada tramo", () => {
     // 100 km con 10 L (10 km/L), 100 km con 50 L (2 km/L) y 100 km con 40 L (2,5 km/L): la razón de sumas es 300/100 = 3 km/L

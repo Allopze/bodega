@@ -189,6 +189,8 @@ export const pgliteTestFiles = [
   "lib/combustibles/control/queries/seals.test.ts",
   "lib/combustibles/control/queries/reconciliation.test.ts",
   "lib/combustibles/control/queries/idle.test.ts",
+  // Formulario de terreno: el medio sugerido por el lugar de carga sobrevive al renombre de pantalla del medio.
+  "lib/services/fuel-tae/field-config.test.ts",
   "lib/__tests__/fuel-control-imports-pglite.test.ts",
   // VisionLink: cruce por serie, upsert idempotente y fuente separada de los lotes manuales.
   "lib/__tests__/visionlink-sync-pglite.test.ts",
@@ -602,4 +604,29 @@ export const pgliteTestFiles = [
   // Sección «Reportes de equipos» del Panel de mantención: esperados y recibidos por fecha de
   // turno, firmas, horas, fallas abiertas con su antigüedad y alcance por faena.
   "lib/services/mantencion/reporte-equipos-pglite.test.ts",
+  // Estadías por faena: el invariante `fuel_vehicles.worksite_id` = faena de la estadía abierta,
+  // hecho cumplir por triggers diferidos, y las filas GPS que ya no arrastran la faena.
+  "lib/__tests__/fleet-worksite-stays-pglite.test.ts",
+  // Faena del día según la estadía y recorrido del equipo con el traslado que abrió cada una.
+  "lib/__tests__/fleet-stays-pglite.test.ts",
+  // Combustible por la faena del día: ralentí, medidor y mapa de calor de un equipo trasladado a mitad de período.
+  "lib/__tests__/fleet-stays-combustible-pglite.test.ts",
+  // Reconstrucción del recorrido por faena: la evidencia de dónde estuvo el equipo (sólo las
+  // fuentes admitidas, con el día chileno) y el orquestador en seco y con --apply.
+  "lib/__tests__/fleet-stay-evidence-pglite.test.ts",
+  "lib/__tests__/fleet-stay-reconstruction-run-pglite.test.ts",
+  // Servicio de traslado de equipos: la única puerta que cambia la faena (estadías, asignaciones
+  // de proveedor, GPS desde la medianoche chilena, historial de Mantención) y su anulación.
+  "lib/__tests__/fleet-transfers-pglite.test.ts",
+  // Re-verificación de Copec desde el mes de un traslado retroactivo (sólo mueve el inicio hacia atrás).
+  "lib/__tests__/copec-recheck-pglite.test.ts",
+  // Traslado de equipos: casos de anomalía con la faena del evento e importador de consumos por estadía.
+  "lib/__tests__/traslado-anomalias-importador-pglite.test.ts",
+  // «Incorporar desde la flota» a otra faena es un traslado; un UPDATE directo de la faena lo frena la base.
+  "lib/__tests__/mantencion-incorporate-transfer-pglite.test.ts",
+  // Importación de consumos en modo «todas las faenas»: la faena es la del período, no la de hoy.
+  "lib/__tests__/traslado-importador-todas-pglite.test.ts",
+  // Reglas de alertas OnWay tras un traslado: la alerta se procesa en la faena del día en que
+  // ocurrió y una alerta que falla queda bloqueada sin detener la cola.
+  "lib/integrations/onway/onway-automation-pglite.test.ts",
 ]

@@ -26,7 +26,7 @@ async function toggleVehicleActive(_prev: unknown, formData: FormData) {
   return toggleFuelVehicleActiveAction(id, activate, reason)
 }
 
-export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes, suppliers, products, maintenanceBrands }: {
+export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes, suppliers, products, maintenanceBrands, canTransfer = false }: {
   vehicles: VehicleRow[]
   worksites: Array<{ id: string; name: string }>
   users: Array<{ id: string; name: string }>
@@ -35,6 +35,7 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
   products: Array<{ id: string; name: string; unit: string; isActive: boolean }>
   /** Marcas de Mantención para los vehículos que están en ella (crítica 2026-11-15, paso 4b). */
   maintenanceBrands: PadronBrandOption[]
+  canTransfer?: boolean
 }) {
   const {
     sheetOpen: formOpen,
@@ -327,6 +328,7 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
         products={products}
         editVehicle={editVehicle}
         maintenanceBrands={maintenanceBrands}
+        canTransfer={canTransfer}
       />
     </>
   )

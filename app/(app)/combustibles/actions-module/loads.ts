@@ -24,6 +24,7 @@ import {
 import { logger } from "@/lib/logger"
 import { isNetworkError } from "@/lib/network-error"
 import { safeActionMessage } from "@/lib/action-error"
+import { USE_TRANSFER_MESSAGE, isFleetStayInvariantError } from "@/lib/services/fleet-transfers"
 import type { ActionState } from "@/lib/validation/masters"
 import { optionalNumber } from "./export"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
@@ -105,6 +106,8 @@ async function requireFuelLoadSession(permission: "combustibles:create" | "combu
 export async function dbErrMsg(e: unknown, fallback: string): Promise<string> {
   if (!(e instanceof Error)) return fallback
   if (isNetworkError(e)) return CONN_MSG
+  // Un camino que cambió la faena sin pasar por el traslado: el trigger lo frena al confirmar.
+  if (isFleetStayInvariantError(e)) return USE_TRANSFER_MESSAGE
   // Devolvía `cause.message`, o sea el texto del motor: una violación de FK
   // publicaba el nombre de la constraint en el toast. `safeActionMessage`
   // conserva los errores de negocio y esconde los del driver.

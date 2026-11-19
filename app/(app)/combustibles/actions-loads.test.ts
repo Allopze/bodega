@@ -90,6 +90,7 @@ import {
   registerFuelLoadAction,
   updateFuelLoadAction,
 } from "./actions"
+import { dbErrMsg } from "./actions-module/loads"
 
 // Vehículo por defecto de cada caso: sin esto, un test que lo redefine filtraría
 // su vehículo al resto del archivo (clearAllMocks no revierte implementaciones).
@@ -700,5 +701,24 @@ describe("acciones de carga — contrato de costos", () => {
     expect(result.ok).toBe(true)
     expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({ odometerReading: 5_000 }))
     expect(mockUpdateSet).toHaveBeenCalledWith(expect.not.objectContaining({ totalAmount: expect.anything() }))
+  })
+})
+
+// Un camino olvidado que cambie `fuel_vehicles.worksite_id` por su cuenta lo frena el trigger diferido
+// al confirmar; la acción lo convierte en la regla de negocio, no en «Error al actualizar».
+describe("dbErrMsg: faena cambiada sin traslado", () => {
+  const USE_TRANSFER = "Para cambiar de faena usa «Trasladar equipos»."
+
+  it("traduce el error del trigger", async () => {
+    expect(await dbErrMsg(new Error("FLEET_STAY_INVARIANT: el vehículo veh-1 ..."), "x")).toBe(USE_TRANSFER)
+  })
+
+  it("lo reconoce cuando Drizzle lo envuelve en `cause`", async () => {
+    const wrapped = new Error("Failed query: update ...", { cause: new Error("FLEET_STAY_INVARIANT: ...") })
+    expect(await dbErrMsg(wrapped, "Error al actualizar")).toBe(USE_TRANSFER)
+  })
+
+  it("el resto de los errores conserva su fallback", async () => {
+    expect(await dbErrMsg(new Error("Failed query: x", { cause: new Error("boom") }), "Error al actualizar")).toBe("Error al actualizar")
   })
 })

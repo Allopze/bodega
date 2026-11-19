@@ -1,9 +1,9 @@
 "use server"
 
 import { createHash } from "node:crypto"
-import { and, desc, eq, isNull, ne, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelConsumptionImportRejections, fuelConsumptionRecords, fuelImportBatches, fuelProviderMappings, fuelProviderTransactions, fuelVehicles } from "@/db/schema"
+import { fuelConsumptionImportRejections, fuelConsumptionRecords, fuelImportBatches, fuelProviderMappings, fuelProviderTransactions, fuelVehicles, fuelVehicleWorksiteIntervals } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite, isGlobalRole } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
@@ -71,10 +71,14 @@ async function readImportForm(formData: FormData): Promise<
   return { ok: true, buffer, fileName: file.name, meta: { worksiteId, periodoDesde, periodoHasta, fuente, notas } }
 }
 
-/** Resuelve patente→vehículo respetando el invariante «vehículo y registro comparten
- *  faena», el mismo que exigen linkConsumptionPlateAction y el alta manual de cargas
- *  (actions-module/loads.ts). En "all" la faena se deriva del vehículo, así que ahí no
- *  hay nada que filtrar. Compartido por preview y confirm para que ambos cuenten igual.
+/** Resuelve patente→vehículo respetando el invariante «el equipo estuvo en la faena del
+ *  lote durante el período del lote», el equivalente para un período de lo que exigen
+ *  linkConsumptionPlateAction y el alta manual de cargas (actions-module/loads.ts) para
+ *  un día. No pide que el equipo esté hoy en esa faena: un lote de octubre de la faena A
+ *  debe reconocer un equipo que se trasladó a B el 14-11. Se acepta si alguna estadía
+ *  (`fuel_vehicle_worksite_intervals`) en esa faena se solapa con [desde, hasta]. En "all"
+ *  la faena se deriva del vehículo, así que ahí no hay nada que filtrar. Compartido por
+ *  preview y confirm para que ambos cuenten igual.
  *
  *  El matching va por `plateMatchKey` y no por igualdad exacta: el catálogo guarda
  *  la patente con el formato del alta manual (con o sin guion) y la planilla trae
@@ -88,22 +92,52 @@ async function readImportForm(formData: FormData): Promise<
  *  `fuel_vehicles.plate` es único sobre el texto crudo, así que dos filas pueden
  *  colapsar a la misma clave. Esa clave queda en `null` en vez de elegir una en
  *  silencio: cuál de las dos fichas es la buena es una decisión de catálogo. */
-async function findVehiclesByPlate(plates: string[], worksiteId: string) {
+async function findVehiclesByPlate(plates: string[], worksiteId: string, period: { from: string; to: string }) {
   const byPlateKey = new Map<string, typeof fuelVehicles.$inferSelect | null>()
   if (plates.length === 0) return byPlateKey
   const wanted = new Set(plates.map(plateMatchKey))
   const vehicles = await db.query.fuelVehicles.findMany({
-    where: worksiteId === "all" ? undefined : eq(fuelVehicles.worksiteId, worksiteId),
+    // Inicio nulo = «desde siempre» y término nulo = estadía abierta. Las fechas civiles
+    // son texto YYYY-MM-DD y se comparan como texto.
+    where: worksiteId === "all"
+      ? undefined
+      : sql`${fuelVehicles.id} in (
+          select s.vehicle_id from ${fuelVehicleWorksiteIntervals} s
+          where s.worksite_id = ${worksiteId}
+            and (s.started_on is null or s.started_on <= ${period.to})
+            and (s.ended_on is null or s.ended_on >= ${period.from})
+        )`,
   })
   for (const vehicle of vehicles) {
-    // El invariante de faena se vuelve a comprobar acá y no sólo en el WHERE: es
-    // la regla de negocio del importador, no un detalle de la consulta.
-    if (worksiteId !== "all" && vehicle.worksiteId !== worksiteId) continue
     const key = plateMatchKey(vehicle.plate)
     if (!wanted.has(key)) continue
     byPlateKey.set(key, byPlateKey.has(key) ? null : vehicle)
   }
   return byPlateKey
+}
+
+/** Faenas donde cada vehículo tuvo una estadía que se solapa con [desde, hasta]. En el
+ *  modo "all" el lote se archiva en la faena del equipo DURANTE el período, no en la de hoy:
+ *  `fuel_consumption_records.worksite_id` es la columna en que confía todo el módulo de
+ *  consumos. Con más de una faena en el período no hay una sola respuesta (el equipo se
+ *  trasladó), y la fila se rechaza en vez de adivinar. */
+async function stayWorksitesInPeriod(vehicleIds: string[], period: { from: string; to: string }) {
+  const byVehicle = new Map<string, Set<string>>()
+  if (vehicleIds.length === 0) return byVehicle
+  const rows = await db
+    .select({ vehicleId: fuelVehicleWorksiteIntervals.vehicleId, worksiteId: fuelVehicleWorksiteIntervals.worksiteId })
+    .from(fuelVehicleWorksiteIntervals)
+    .where(and(
+      inArray(fuelVehicleWorksiteIntervals.vehicleId, vehicleIds),
+      sql`(${fuelVehicleWorksiteIntervals.startedOn} is null or ${fuelVehicleWorksiteIntervals.startedOn} <= ${period.to})`,
+      sql`(${fuelVehicleWorksiteIntervals.endedOn} is null or ${fuelVehicleWorksiteIntervals.endedOn} >= ${period.from})`,
+    ))
+  for (const row of rows) {
+    const set = byVehicle.get(row.vehicleId) ?? new Set<string>()
+    set.add(row.worksiteId)
+    byVehicle.set(row.vehicleId, set)
+  }
+  return byVehicle
 }
 
 export interface ConsumptionPreviewData {
@@ -158,7 +192,7 @@ export async function previewConsumptionImportAction(
   ])
 
   const plates = [...new Set(parsed.rows.map((r) => r.patente))]
-  const vehiclesByPlateKey = await findVehiclesByPlate(plates, meta.worksiteId)
+  const vehiclesByPlateKey = await findVehiclesByPlate(plates, meta.worksiteId, { from: meta.periodoDesde, to: meta.periodoHasta })
   const matched = (plate: string) => vehiclesByPlateKey.get(plateMatchKey(plate)) ?? null
 
   return {
@@ -208,7 +242,7 @@ export async function confirmConsumptionImportAction(
   const confirmDuplicates = formData.get("confirmDuplicates") === "true"
 
   const plates = [...new Set(parsed.rows.map((r) => r.patente))]
-  const vehiclesByPlateKey = await findVehiclesByPlate(plates, meta.worksiteId)
+  const vehiclesByPlateKey = await findVehiclesByPlate(plates, meta.worksiteId, { from: meta.periodoDesde, to: meta.periodoHasta })
   const vehicleFor = (plate: string) => vehiclesByPlateKey.get(plateMatchKey(plate)) ?? null
   const rowsByWorksite = new Map<string, typeof parsed.rows>()
   // Antes las filas sin vehículo en "all" desaparecían con `continue`, sin
@@ -216,6 +250,10 @@ export async function confirmConsumptionImportAction(
   // devuelven como error, igual que las filas que el parser ya rechaza.
   const unmatchedErrors: ImportError[] = []
   if (meta.worksiteId === "all") {
+    const stayWorksites = await stayWorksitesInPeriod(
+      [...new Set(parsed.rows.map((r) => vehicleFor(r.patente)?.id).filter((id): id is string => !!id))],
+      { from: meta.periodoDesde, to: meta.periodoHasta },
+    )
     for (const row of parsed.rows) {
       const vehicle = vehicleFor(row.patente)
       if (!vehicle) {
@@ -232,9 +270,21 @@ export async function confirmConsumptionImportAction(
         })
         continue
       }
-      const rows = rowsByWorksite.get(vehicle.worksiteId) ?? []
+      const worksitesInPeriod = stayWorksites.get(vehicle.id)
+      if (worksitesInPeriod && worksitesInPeriod.size > 1) {
+        unmatchedErrors.push({
+          rowIndex: row.rowIndex,
+          field: "PATENTE",
+          patente: row.patente,
+          message: "El equipo cambió de faena en el período: impórtalo por faena.",
+        })
+        continue
+      }
+      // La estadía del período manda; la faena actual sólo es el respaldo si no hay estadía.
+      const rowWorksiteId = worksitesInPeriod ? [...worksitesInPeriod][0]! : vehicle.worksiteId
+      const rows = rowsByWorksite.get(rowWorksiteId) ?? []
       rows.push(row)
-      rowsByWorksite.set(vehicle.worksiteId, rows)
+      rowsByWorksite.set(rowWorksiteId, rows)
     }
     if (rowsByWorksite.size === 0) {
       return { ok: false, message: "No hay patentes vinculadas a una faena; registra los vehículos antes de importar todas las faenas" }
@@ -431,7 +481,19 @@ export async function linkConsumptionPlateAction(_prev: ActionState, formData: F
 
   const vehicle = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, vehicleId) })
   if (!vehicle) return { ok: false, message: "Vehículo no encontrado" }
-  if (vehicle.worksiteId !== batch.worksiteId) {
+  // Misma regla que findVehiclesByPlate: basta una estadía en la faena del lote que se
+  // solape con el período del lote (el equipo pudo trasladarse después).
+  const stayInBatchWorksite = await db
+    .select({ id: fuelVehicleWorksiteIntervals.id })
+    .from(fuelVehicleWorksiteIntervals)
+    .where(and(
+      eq(fuelVehicleWorksiteIntervals.vehicleId, vehicle.id),
+      eq(fuelVehicleWorksiteIntervals.worksiteId, batch.worksiteId),
+      sql`(${fuelVehicleWorksiteIntervals.startedOn} is null or ${fuelVehicleWorksiteIntervals.startedOn} <= ${batch.periodoHasta})`,
+      sql`(${fuelVehicleWorksiteIntervals.endedOn} is null or ${fuelVehicleWorksiteIntervals.endedOn} >= ${batch.periodoDesde})`,
+    ))
+    .limit(1)
+  if (stayInBatchWorksite.length === 0) {
     return { ok: false, message: "El vehículo no pertenece a la faena del lote" }
   }
 

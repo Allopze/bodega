@@ -4,10 +4,11 @@ import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
 import { fuelVehicleProducts, fuelVehicles } from "@/db/schema"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import type { PadronBrandOption } from "@/lib/mantencion/padron-identity"
 import { logger } from "@/lib/logger"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 import { loadPadronMaintenance } from "@/lib/services/mantencion/padron-identity"
 import { loadVehicleFormCatalogs, type VehicleFormCatalogs } from "@/app/(app)/combustibles/vehiculos/form-catalogs"
 import type { VehicleForEdit } from "@/app/(app)/combustibles/vehiculos/vehicle-form"
@@ -16,6 +17,7 @@ export interface VehicleEditPayload {
   vehicle: VehicleForEdit
   catalogs: VehicleFormCatalogs
   maintenanceBrands: PadronBrandOption[]
+  canTransfer: boolean
 }
 
 export type VehicleEditLoadResult = { ok: true; data: VehicleEditPayload } | { ok: false; message: string }
@@ -42,6 +44,7 @@ export async function loadVehicleEditAction(vehicleId: string): Promise<VehicleE
     if (!vehicle) return { ok: false, message: "Ese vehículo ya no existe. Recarga la página." }
     if (!canAccessWorksite(session, vehicle.worksiteId)) return { ok: false, message: "No puedes editar vehículos de esta faena." }
 
+    const canTransfer = can(session, "flota:transfer") && await isRouteOperational("/flota/traslados")
     const [catalogs, products, maintenance] = await Promise.all([
       loadVehicleFormCatalogs(session),
       db.select({ productId: fuelVehicleProducts.productId }).from(fuelVehicleProducts).where(eq(fuelVehicleProducts.vehicleId, id)),
@@ -80,6 +83,7 @@ export async function loadVehicleEditAction(vehicleId: string): Promise<VehicleE
         },
         catalogs,
         maintenanceBrands: maintenance.brands,
+        canTransfer,
       },
     }
   } catch (error) {

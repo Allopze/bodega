@@ -10,6 +10,7 @@ export const flotaModule = {
     "flota:view_gps_driver",
     "flota:manage_licenses",
     "flota:export",
+    "flota:transfer",
   ] as const,
 
   permissionMeta: {
@@ -22,6 +23,7 @@ export const flotaModule = {
     // Decisión 2026-11-15: el Excel de Vehículos y de los Indicadores GPS es opt-in, como en el resto de
     // la plataforma. Al estrenarse se copia de `flota:view` (`PERMISSION_MIRRORS` en lib/auth/bootstrap.ts).
     "flota:export": { id: "p-flot-export", description: "Exportar a Excel los vehículos y los indicadores GPS" },
+    "flota:transfer": { id: "p-flot-transfer", description: "Trasladar equipos entre faenas y anular traslados" },
   },
 
   nav: [
@@ -43,6 +45,16 @@ export const flotaModule = {
           label:    "Vehículos",
           href:     "/flota",
           iconName: "Truck",
+          permissions: ["flota:view"],
+          group:    "Flota",
+        },
+        {
+          // El permiso para registrar un traslado es `flota:transfer`; ver la lista basta para abrir la
+          // pantalla (historial y Excel). Hasta que un administrador lo habilite, el interruptor del
+          // submódulo lo oculta del menú.
+          label:    "Traslados",
+          href:     "/flota/traslados",
+          iconName: "ArrowsLeftRight",
           permissions: ["flota:view"],
           group:    "Flota",
         },
@@ -97,5 +109,8 @@ export const flotaModule = {
     { roleSlug: "administrador", permission: "flota:export" },
     { roleSlug: "jefe_mantencion", permission: "flota:export" },
     { roleSlug: "jefa_chome", permission: "flota:export" },
+    { roleSlug: "administrador", permission: "flota:transfer" },
+    { roleSlug: "jefe_mantencion", permission: "flota:transfer" },
+    { roleSlug: "jefa_chome", permission: "flota:transfer" },
   ],
 } as const satisfies ModuleManifest

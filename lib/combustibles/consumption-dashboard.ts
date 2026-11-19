@@ -344,7 +344,9 @@ export async function getWorksiteEquipmentMatrix(session: Session, filters: Cons
   })
     .from(fuelConsumptionRecords)
     .innerJoin(fuelVehicles, eq(fuelConsumptionRecords.vehicleId, fuelVehicles.id))
-    .innerJoin(worksites, eq(fuelVehicles.worksiteId, worksites.id))
+    // La faena del registro (la del lote que lo trajo), no la actual del equipo: un equipo trasladado a mitad
+    // de período aporta una celda por faena en que consumió.
+    .innerJoin(worksites, eq(fuelConsumptionRecords.worksiteId, worksites.id))
     .where(where)
     .groupBy(worksites.name, fuelVehicles.code, fuelConsumptionRecords.patente)
     .orderBy(desc(sql`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`))

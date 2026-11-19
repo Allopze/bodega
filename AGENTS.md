@@ -417,6 +417,15 @@ Rules until the migration is properly resumed:
 - See `modules/README.md` for the reconciliation plan.
 <!-- END:source-of-truth -->
 
+# Faena de un equipo: sólo por traslado
+
+La faena de un vehículo existente (`fuel_vehicles.worksite_id`) cambia ÚNICAMENTE con
+`transferVehiclesTx` (`lib/services/fleet-transfers.ts`): cierra y abre la estadía, mueve las
+asignaciones de proveedor y deja folio, motivo y auditoría. Un `UPDATE` directo (acción, importador
+o script de una vez) falla por diseño al confirmar con `FLEET_STAY_INVARIANT`; las acciones lo
+traducen con `isFleetStayInvariantError` a «Para cambiar de faena usa «Trasladar equipos».»
+(`USE_TRANSFER_MESSAGE`). No agregues un camino que escriba la faena por su cuenta.
+
 <!-- BEGIN:authorization-navigation -->
 # Authorization and Navigation Parity
 

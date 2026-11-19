@@ -73,7 +73,7 @@ export async function buildFieldLoadConfig(worksiteId: string, loadingPointId: s
       columns: { id: true, code: true, plate: true, type: true, meterType: true, tankCapacityLiters: true },
       orderBy: [fuelVehicles.code, fuelVehicles.plate],
     }),
-    db.select({ id: fuelSupplyMedia.id, name: supplyMediumNameSql() }).from(fuelSupplyMedia)
+    db.select({ id: fuelSupplyMedia.id, name: supplyMediumNameSql(), matchName: fuelSupplyMedia.name }).from(fuelSupplyMedia)
       .where(eq(fuelSupplyMedia.isActive, true)).orderBy(asc(fuelSupplyMedia.sortOrder), asc(fuelSupplyMedia.name)),
   ])
   if (!worksite || (loadingPointId && !point)) throw new Error("El enlace TAE está incompleto")

@@ -9,6 +9,7 @@ import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { parseControlFilters } from "@/lib/combustibles/control/filters"
 import { describeFuelPeriod } from "@/lib/combustibles/period/parse"
+import { SUPPLY_MEDIUM_CHANNEL_LABELS } from "@/lib/combustibles/source-labels"
 
 const pg = new PGlite()
 const testDb = drizzle(pg, { schema }) as unknown as DB
@@ -147,10 +148,11 @@ describe("vista general", () => {
     expect(get("2026-03", "fsm-cmpc")).toBe(232)
     expect(get("2026-05", "fsm-tae")).toBe(10)
     expect(rows.some((row) => row.month === "2025-06")).toBe(false)
-    // Un medio llamado con la sigla de su canal Copec se muestra con el nombre del canal; los demás, como se escribieron.
+    // Un medio llamado con la sigla de su canal Copec se muestra con el nombre de su canal (el de la carga del
+    // equipo, no el tipo de tarjeta de Pagos: con TAE carga desde la vasija); los demás, como se escribieron.
     const nameOf = (mediumId: string) => rows.find((row) => row.mediumId === mediumId)?.mediumName
-    expect(nameOf("fsm-tae")).toBe("Tarjeta Copec de abastecimiento")
-    expect(nameOf("fsm-tct")).toBe("Tarjeta Copec de equipos")
+    expect(nameOf("fsm-tae")).toBe(SUPPLY_MEDIUM_CHANNEL_LABELS.TAE)
+    expect(nameOf("fsm-tct")).toBe(SUPPLY_MEDIUM_CHANNEL_LABELS.TCT)
     expect(nameOf("fsm-cmpc")).toBe("Surtidor CMPC")
   })
 

@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { fuelVehicles } from "@/db/schema"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 import { loadPadronMaintenance } from "@/lib/services/mantencion/padron-identity"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -27,6 +28,7 @@ export async function FuelVehiclesCatalogPage() {
     // Los que están en Mantención se editan con sus reglas (crítica 2026-11-15, paso 4b).
     loadPadronMaintenance(session),
   ])
+  const canTransfer = can(session, "flota:transfer") && await isRouteOperational("/flota/traslados")
   const { worksites: formWorksites, users: formUsers, equipmentTypes: formEquipmentTypes, suppliers: formSuppliers, products: formProducts } = catalogs
   const productIdsByVehicle = new Map<string, string[]>()
   for (const item of compatibility) productIdsByVehicle.set(item.vehicleId, [...(productIdsByVehicle.get(item.vehicleId) ?? []), item.productId])
@@ -52,6 +54,7 @@ export async function FuelVehiclesCatalogPage() {
         suppliers={formSuppliers}
         products={formProducts}
         maintenanceBrands={maintenance.brands}
+        canTransfer={canTransfer}
       />
     </PageContainer>
   )

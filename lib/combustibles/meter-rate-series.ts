@@ -46,6 +46,12 @@ export const MIN_RATE_SEGMENTS = 3
 export interface RateReading extends MeterSeriesPoint {
   /** Litros de la carga de esta lectura; `null` si el informe no los trae. */
   liters: number | null
+  /**
+   * ¿La faena del equipo el día de esta lectura está dentro del alcance y de los filtros? Omitido = sí. La serie
+   * lleva TODAS las lecturas del equipo (también las de días en otra faena): un par se arma con la lectura
+   * anterior sea cual sea su faena y cuenta en la faena de SU lectura final.
+   */
+  inScope?: boolean
 }
 
 export interface RateVehicle {
@@ -170,12 +176,15 @@ export function buildMeterRateSeries(input: BuildMeterRateInput): Record<Perform
 
   for (const vehicle of vehicles) {
     const { unit } = vehicle
-    readings[unit] += vehicle.readings.filter((point) => inRange(point.occurredAt)).length
+    readings[unit] += vehicle.readings.filter((point) => inRange(point.occurredAt) && point.inScope !== false).length
 
     for (const segment of meterSeriesSegments(vehicle.readings, vehicle.maxPerDay)) {
       if (segment.status === "reset") continue
       const month = monthOf(segment.to.occurredAt)
       if (!inRange(segment.to.occurredAt)) continue
+      // El avance de un par es de la faena donde estaba el equipo el día de su lectura final (como en el uso de GPS):
+      // un par que cruza un traslado cuenta en la faena nueva, y A→B→A no empareja dos lecturas de A salteándose B.
+      if ((segment.to as RateReading).inScope === false) continue
       const bucket = bucketOf(unit, month)
 
       if (segment.status === "discarded") { bucket.discarded += 1; continue }
