@@ -24,6 +24,8 @@ export type VisionLinkErrorCode =
   | "VISIONLINK_HTTP_ERROR"
   | "VISIONLINK_BAD_RESPONSE"
   | "VISIONLINK_TIMEOUT"
+  /** La paginación no terminó dentro del tope: los datos están incompletos y no se deben guardar como completos. */
+  | "VISIONLINK_TRUNCATED"
 
 export class VisionLinkClientError extends Error {
   constructor(readonly code: VisionLinkErrorCode, readonly status?: number) {
@@ -232,7 +234,11 @@ interface RawSegment {
  * La primera respuesta trae hasta 100 tramos y un `nextSegmentUrl`; esa URL
  * trae el resto, paginado con `responseMetadata.nextCursor` (se agrega como
  * `cursor` a la misma URL). Un tramo puede repetirse entre páginas: el resultado
- * viene deduplicado por inicio + tipo. Se corta en `MAX_PAGES`.
+ * viene deduplicado por inicio + tipo.
+ *
+ * Si la paginación no termina en `MAX_PAGES` páginas, o una URL se repite, lanza
+ * `VISIONLINK_TRUNCATED` en vez de devolver lo juntado: quien sincroniza guardaría
+ * días incompletos como conocidos (horas en 0 que en realidad no llegaron).
  *
  * Se sigue `nextSegmentUrl` sólo si apunta al mismo servidor: el token no debe
  * salir de Cat si la respuesta trae otra cosa.
@@ -251,11 +257,15 @@ export async function fetchVisionLinkSegments(
   first.searchParams.set("endDate", query.endDate)
 
   const segments = new Map<string, VisionLinkSegment>()
+  const visited = new Set<string>()
   let base = first
   let next: URL | null = first
   let pages = 0
-  while (next && pages < MAX_PAGES) {
-    const response = await request(fetchImpl, next.toString(), {
+  while (next) {
+    const url = next.toString()
+    if (pages >= MAX_PAGES || visited.has(url)) throw new VisionLinkClientError("VISIONLINK_TRUNCATED")
+    visited.add(url)
+    const response = await request(fetchImpl, url, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     })
     if (response.status === 401 || response.status === 403) {

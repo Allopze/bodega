@@ -6,17 +6,20 @@
  *   tsx scripts/backfill-visionlink-hourly.ts --from=2026-10-01 [--to=2026-11-19]
  *
  * `--from` es obligatorio (`YYYY-MM-DD`); `--to` es hoy por defecto. El rango se
- * parte solo en ventanas de 28 días (la API acepta hasta un mes por consulta) y
- * es idempotente: repetirlo deja las mismas filas. Usa las credenciales
+ * parte solo en ventanas de 7 días (`SEGMENT_WINDOW_DAYS`) y es idempotente: repetirlo deja las mismas filas. Usa las credenciales
  * guardadas en la plataforma (o el `.env`) y NO las imprime: sólo el resumen y,
  * por equipo que falló, el código de error del cliente.
  *
  * Cada día del rango son unas 10–20 llamadas por equipo: un backfill largo
  * gasta cupo del proveedor (50.000 llamadas al día), así que conviene hacerlo
  * por tramos de unas semanas.
+ *
+ * Toma el mismo candado que el cron horario (`fuel-visionlink-hourly`): si coincide con
+ * una corrida, no arranca y lo dice, en vez de pisar las mismas filas.
  */
 import { loadVisionLinkConfig } from "@/lib/integrations/visionlink/visionlink-settings"
 import { syncVisionLinkHourly } from "@/lib/integrations/visionlink/visionlink-hourly-sync"
+import { withCronLock } from "@/lib/services/cron-lock"
 import { todayInChile } from "@/lib/utils"
 
 function argValue(name: string): string | undefined {
@@ -41,7 +44,9 @@ async function main() {
   if (!config.hasCredentials) throw new Error("VisionLink no tiene credenciales: configúralas en Combustibles › Ajustes › Integraciones.")
 
   console.log(`Tramos por hora de VisionLink: ${from} a ${to}…`)
-  const result = await syncVisionLinkHourly(config, { from, to })
+  const outcome = await withCronLock("fuel-visionlink-hourly", () => syncVisionLinkHourly(config, { from, to }), { ledger: false })
+  if ("skipped" in outcome) throw new Error("Hay una corrida de tramos en curso (cron horario): vuelve a intentarlo en unos minutos.")
+  const result = outcome
   console.log(JSON.stringify(result, null, 2))
   if (result.failedVehicles.length > 0) process.exitCode = 1
 }

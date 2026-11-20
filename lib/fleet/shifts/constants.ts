@@ -24,8 +24,11 @@ export const HOURLY_LOOKBACK_DAYS = 2
 /** Marca con que se consultan los tramos (`makeSerialNumbers=CAT|<serie>`): toda la flota VisionLink es Cat. */
 export const VISIONLINK_MAKE = "CAT"
 
-/** La API de tramos acepta hasta un mes por consulta. */
-export const SEGMENT_WINDOW_DAYS = 28
+/**
+ * Días por consulta de tramos. La API acepta hasta un mes, pero un día con doble turno trae
+ * ~300–450 tramos (100 por página): con 7 días quedan ~30 páginas, bajo el tope del cliente.
+ */
+export const SEGMENT_WINDOW_DAYS = 7
 
 /** Fuente de las filas por hora que trae la API (la misma que el resumen diario). */
 export const HOURLY_SOURCE = "visionlink-api"

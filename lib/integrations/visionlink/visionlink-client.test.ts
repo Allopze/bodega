@@ -219,11 +219,23 @@ describe("fetchVisionLinkSegments", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 
-  it("corta en el tope de páginas si el cursor no termina", async () => {
+  it("si la paginación no termina en el tope, lanza TRUNCATED en vez de devolver datos incompletos", async () => {
+    let page = 0
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(token()).mockImplementation(async () => {
+      page += 1
+      return json({ assetOperationDateInfo: [], responseMetadata: { nextCursor: `c${page}` } })
+    })
+    const error = await fetchVisionLinkSegments(credentials, query, { fetchImpl }).catch((caught: unknown) => caught)
+    expect((error as VisionLinkClientError).code).toBe("VISIONLINK_TRUNCATED")
+    expect(fetchImpl.mock.calls.length).toBeLessThanOrEqual(50 + 1)
+  })
+
+  it("si una URL se repite (nextSegmentUrl en cada página), lanza TRUNCATED", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(token()).mockImplementation(async () =>
-      json({ assetOperations: [{ assetOperationDateInfo: [], nextSegmentUrl: NEXT }], assetOperationDateInfo: [], responseMetadata: { nextCursor: "again" } }))
-    await fetchVisionLinkSegments(credentials, query, { fetchImpl })
-    expect(fetchImpl.mock.calls.length).toBeLessThanOrEqual(51 + 1)
+      json({ assetOperations: [{ assetOperationDateInfo: [], nextSegmentUrl: NEXT }] }))
+    const error = await fetchVisionLinkSegments(credentials, query, { fetchImpl }).catch((caught: unknown) => caught)
+    expect((error as VisionLinkClientError).code).toBe("VISIONLINK_TRUNCATED")
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
   })
 
   it("una respuesta sin forma de tramos es BAD_RESPONSE", async () => {

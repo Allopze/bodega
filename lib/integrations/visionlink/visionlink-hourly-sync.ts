@@ -56,16 +56,22 @@ export async function syncVisionLinkHourly(
   const from = options.from ?? addDaysToPlainDate(to, -((options.lookbackDays ?? HOURLY_LOOKBACK_DAYS) - 1))
   const days = daysBetween(from, to)
 
-  const vehicles = await db.select({ id: fuelVehicles.id, code: fuelVehicles.code, serialNumber: fuelVehicles.serialNumber })
+  const vehicles = await db.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, serialNumber: fuelVehicles.serialNumber })
     .from(fuelVehicles)
     .where(isNotNull(fuelVehicles.serialNumber))
 
   const result: SyncVisionLinkHourlyResult = { from, to, vehicles: vehicles.length, segments: 0, hoursWritten: 0, failedVehicles: [] }
+  // Se consulta un día de más a cada lado (sin pasar de hoy): no se sabe con certeza si la API lee
+  // `startDate`/`endDate` en hora del equipo o en UTC, y un tramo que cruza la medianoche debe llegar
+  // entero. Las horas fuera de `[from, to]` se descartan abajo, así que el margen no escribe nada de más.
+  const queryFrom = addDaysToPlainDate(from, -1)
+  const todayChile = todayInChile(now())
+  const queryTo = addDaysToPlainDate(to, 1) <= todayChile ? addDaysToPlainDate(to, 1) : to
 
   for (const vehicle of vehicles) {
     try {
       const segments = new Map<string, VisionLinkSegment>()
-      for (const window of splitRange(from, to, SEGMENT_WINDOW_DAYS)) {
+      for (const window of splitRange(queryFrom, queryTo, SEGMENT_WINDOW_DAYS)) {
         const fetched = await fetchVisionLinkSegments(credentials, {
           serialNumber: vehicle.serialNumber!, startDate: window.startDate, endDate: window.endDate, make: VISIONLINK_MAKE,
         }, { fetchImpl: options.fetchImpl })
@@ -128,7 +134,7 @@ export async function syncVisionLinkHourly(
     } catch (error) {
       const errorCode = error instanceof VisionLinkClientError ? error.code : "VISIONLINK_HOURLY_SYNC_FAILED"
       logger.error("[visionlink-hourly] Falló un equipo", { vehicleCode: vehicle.code, errorCode })
-      result.failedVehicles.push({ vehicleCode: vehicle.code, errorCode })
+      result.failedVehicles.push({ vehicleCode: vehicle.code ?? vehicle.plate, errorCode })
     }
   }
 

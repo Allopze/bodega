@@ -121,10 +121,10 @@ describe("syncVisionLinkHourly (PostgreSQL)", () => {
       ])
     }
     expect(await hourlyRows(cr51)).toEqual([])
-    // Una consulta por equipo con serie (el rango cabe en una ventana) y con la marca CAT.
+    // Una consulta por equipo con serie (el rango, con un día de margen a cada lado sin pasar de hoy, cabe en una ventana) y con la marca CAT.
     const queried = calls.filter((url) => url.pathname.includes("assetOperations"))
     expect(queried.map((url) => url.searchParams.get("makeSerialNumbers")).sort()).toEqual(["CAT|DKJ30153", "CAT|M5K05314"])
-    expect(queried[0]!.searchParams.get("startDate")).toBe("2026-11-18")
+    expect(queried[0]!.searchParams.get("startDate")).toBe("2026-11-17")
     expect(queried[0]!.searchParams.get("endDate")).toBe("2026-11-19")
   })
 
