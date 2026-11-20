@@ -422,3 +422,47 @@ Cada punto tiene su prueba en la tarea que es dueña del código: punto 1 en las
   - Mantención (sin cambio).
   Revisar la consola y la red. Dejar el informe en `qa/reports/` con lo verificado y lo no recorrido.
 - [ ] **Step 6:** Commit `test(flota): cobertura y recorrido del uso personal`.
+
+---
+
+## Apéndice A: SQL a mano de la migración (trigger contra solapes)
+
+La migración de la Task 1 es **provisional** mientras la 0396 de `feat/turnos-ralenti` no esté en
+`main` (acuerdo con la sesión coordinadora, 2026-11-20). Al regenerarla sobre `main`:
+
+1. Descartar los cambios locales de la migración provisional (`.sql`, snapshot, journal y
+   checksums), hacer `git merge main` y correr `npm run db:generate`.
+2. Anexar al `.sql` generado, tal cual, el bloque de abajo.
+3. `node scripts/verify-migration-chain.mjs --update-checksums`, comprobar que `npm run db:generate`
+   responde «No schema changes» y correr `npm run db:verify-migrations`.
+
+Nunca aplicar la provisional con `db:migrate`/`db:push` sobre una base compartida (`bodega_dev`, la
+E2E de :55432, plataforma-dev de :3001): su `when` haría saltar en silencio la 0396 de turnos.
+
+```sql
+--> statement-breakpoint
+-- Uso personal: sin solapes entre períodos del mismo equipo (inclusivos; término nulo = abierto).
+-- Bloquea la fila del equipo para que dos altas simultáneas no pasen las dos el chequeo.
+CREATE OR REPLACE FUNCTION "fuel_vehicle_personal_use_no_overlap"() RETURNS trigger AS $$
+DECLARE
+  v_other record;
+BEGIN
+  PERFORM 1 FROM "fuel_vehicles" WHERE "id" = NEW."vehicle_id" FOR UPDATE;
+  SELECT "started_on", "ended_on" INTO v_other FROM "fuel_vehicle_personal_use_periods"
+  WHERE "vehicle_id" = NEW."vehicle_id"
+    AND "id" <> NEW."id"
+    AND "started_on" <= coalesce(NEW."ended_on", '9999-12-31')
+    AND coalesce("ended_on", '9999-12-31') >= NEW."started_on"
+  LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION 'PERSONAL_USE_OVERLAP: el equipo % ya tiene un uso personal desde % hasta %', NEW."vehicle_id", v_other."started_on", coalesce(v_other."ended_on", '(en curso)');
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "fuel_vehicle_personal_use_no_overlap" ON "fuel_vehicle_personal_use_periods";
+--> statement-breakpoint
+CREATE TRIGGER "fuel_vehicle_personal_use_no_overlap" BEFORE INSERT OR UPDATE ON "fuel_vehicle_personal_use_periods"
+FOR EACH ROW EXECUTE FUNCTION "fuel_vehicle_personal_use_no_overlap"();
+```

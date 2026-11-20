@@ -635,4 +635,17 @@ export const pgliteTestFiles = [
   // Reglas de alertas OnWay tras un traslado: la alerta se procesa en la faena del día en que
   // ocurrió y una alerta que falla queda bloqueada sin detener la cola.
   "lib/integrations/onway/onway-automation-pglite.test.ts",
+  // Uso personal de equipos: tabla y trigger contra solapes, regla común (SQL), servicio con
+  // auditoría, combustible/OC/km/litros/rendimiento de gestión sin esos días, y pagos intactos.
+  "lib/__tests__/personal-use-schema-pglite.test.ts",
+  "lib/__tests__/personal-use-sql-pglite.test.ts",
+  "lib/__tests__/fleet-personal-use-pglite.test.ts",
+  "lib/__tests__/personal-use-fuel-sql-pglite.test.ts",
+  "lib/__tests__/asset-fuel-summary-personal-use-pglite.test.ts",
+  "lib/__tests__/vehicle-purchase-personal-use-pglite.test.ts",
+  "lib/__tests__/fleet-gps-indicators-personal-use-pglite.test.ts",
+  "lib/__tests__/fuel-management-views-personal-use-pglite.test.ts",
+  "lib/__tests__/fuel-liters-personal-use-pglite.test.ts",
+  "lib/__tests__/performance-personal-use-pglite.test.ts",
+  "lib/__tests__/personal-use-payments-unchanged-pglite.test.ts",
 ]
