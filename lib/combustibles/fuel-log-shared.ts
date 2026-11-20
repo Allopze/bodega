@@ -190,6 +190,11 @@ export interface FuelLogRow {
   reviewFlagged: boolean | null
   /** Primer motivo de la marca (código de `FLAG_REASONS`). */
   reviewFlagReason: string | null
+  /**
+   * La carga cae en un día de uso personal de su equipo. Es una marca de registro: la fila se
+   * muestra igual y entra en el total; sólo los agregados de gestión dejan de contarla.
+   */
+  personalUse: boolean
 }
 
 /** `origen` de la URL de la ficha en que abre cada fuente de una fila de Cargas. */

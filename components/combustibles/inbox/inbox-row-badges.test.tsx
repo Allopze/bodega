@@ -84,4 +84,17 @@ describe("InboxRowBadges", () => {
 
     expect(container.firstElementChild).toHaveClass("mb-2", "flex", "flex-wrap")
   })
+
+  it("una carga de un día de uso personal lleva la marca «Uso personal», sin ocultarse", () => {
+    render(<InboxRowBadges label="Lectura menor a la anterior" kind="carga" personalUse />)
+
+    expect(screen.getByText("Uso personal")).toBeInTheDocument()
+    expect(screen.getByText("Lectura menor a la anterior")).toBeInTheDocument()
+  })
+
+  it("sin uso personal no hay marca", () => {
+    render(<InboxRowBadges label="Lectura menor a la anterior" kind="carga" />)
+
+    expect(screen.queryByText("Uso personal")).not.toBeInTheDocument()
+  })
 })

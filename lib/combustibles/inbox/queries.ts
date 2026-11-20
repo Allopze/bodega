@@ -22,6 +22,7 @@ import {
   worksites,
 } from "@/db/schema"
 import { can } from "@/lib/auth/can"
+import { loadInPersonalUseSql } from "@/lib/combustibles/personal-use-fuel-sql"
 import { serviceWorksiteScope, worksiteScopeSqlFor } from "@/lib/auth/scope"
 import { getAnomalyCases, type AnomalyCaseRow } from "@/lib/combustibles/anomaly-cases"
 import { readableCaseText, readableCaseValue } from "@/lib/combustibles/case-text"
@@ -242,6 +243,7 @@ const cargaSelect = {
   taeSubmittedAt: fuelTaeSubmissions.submittedAt,
   taeBackdateReason: fuelTaeSubmissions.backdateReason,
   previousReading: previousReadingSql,
+  personalUse: loadInPersonalUseSql(),
 }
 
 async function fetchCargaRaw(where: SQL | undefined, order: SQL[], limit: number, offset: number) {
@@ -348,6 +350,7 @@ function cargaToRow(raw: CargaRaw, ranges: Map<string, RangeInfo>, session: Sess
     waitingSince: iso(raw.createdAt),
     severity: null,
     assignee: null,
+    personalUse: Boolean(raw.personalUse),
     decided: decidedStatus
       ? { outcome: raw.reviewStatus === "approved" ? "Cuenta" : "No cuenta", byName: raw.reviewerName, at: iso(raw.reviewedAt ?? raw.createdAt), note: raw.reviewNote }
       : null,

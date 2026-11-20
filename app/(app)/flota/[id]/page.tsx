@@ -28,7 +28,8 @@ import {
 import { formatDate, formatQty } from "@/lib/utils"
 import { openVehicleFicha } from "./_ficha/access"
 import { fuelPendingText, openOrdersText } from "./_ficha/summary-text"
-import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaTabs } from "./_ficha/ficha-chrome"
+import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaPersonalUseBadge, VehicleFichaTabs } from "./_ficha/ficha-chrome"
+import { listPersonalUsePeriods } from "@/lib/services/fleet-personal-use"
 
 export const metadata: Metadata = { title: "Vehículo" }
 
@@ -58,6 +59,8 @@ export default async function VehicleSummaryPage({ params, searchParams }: { par
   const sp = await searchParams
   const { session, ctx } = await openVehicleFicha(id)
   if (ctx.areas.length === 1) redirect(withSearchParams(vehicleFichaHref(id, ctx.areas[0]!), sp))
+  // Insignia «En uso personal» de la cabecera: informativa, no tumba la página si falla.
+  const personalUsePeriods = await listPersonalUsePeriods(id).catch(() => [])
 
   const has = (area: VehicleFichaArea) => ctx.areas.includes(area)
   const fuelPeriod = has("combustible") ? await resolveFuelPeriodForPage(session, sp) : null
@@ -71,7 +74,7 @@ export default async function VehicleSummaryPage({ params, searchParams }: { par
   const flotaHref = vehicleFichaHref(id, "flota")
   return (
     <PageContainer width="workbench">
-      <PageHeader title={ctx.label} description={vehicleFichaDescription(ctx)} breadcrumb={vehicleFichaBreadcrumb(ctx, "resumen")} actions={<VehicleFichaEditAction ctx={ctx} />} />
+      <PageHeader title={ctx.label} description={vehicleFichaDescription(ctx)} breadcrumb={vehicleFichaBreadcrumb(ctx, "resumen")} actions={<><VehicleFichaPersonalUseBadge periods={personalUsePeriods} /><VehicleFichaEditAction ctx={ctx} /></>} />
       <VehicleFichaTabs ctx={ctx} active="resumen" />
 
       <Card>

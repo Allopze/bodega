@@ -5,6 +5,7 @@ import { fuelEquipmentLoads, fuelEquipmentTypes, fuelOperationRecords, fuelVehic
 import { statisticallyValidLoadSql, buildLoadWhere, type ControlFilters } from "./filters"
 import { FLAG_REASONS, type FlagReason, type LoadSource, type PerformanceUnit, type ReviewStatus } from "./contracts"
 import { fuelLoadHrefFromEquipmentLoad } from "@/lib/combustibles/routes"
+import { loadInPersonalUseSql } from "@/lib/combustibles/personal-use-fuel-sql"
 
 /**
  * Cola de cargas marcadas por estado (ControlFilters). La pantalla «Por revisar»
@@ -58,6 +59,11 @@ export interface ReviewQueueRow {
   reviewNote: string | null
   reviewerName: string | null
   reviewedAt: string | null
+  /**
+   * La carga cae en un día de uso personal de su equipo. Es una marca de registro: la cola la
+   * muestra y cuenta igual; sólo los agregados de gestión dejan de contarla.
+   */
+  personalUse: boolean
 }
 
 export interface ReviewQueueResult {
@@ -124,6 +130,7 @@ export async function getReviewQueue(
       reviewNote: fuelEquipmentLoads.reviewNote,
       reviewerName: users.name,
       reviewedAt: fuelEquipmentLoads.reviewedAt,
+      personalUse: loadInPersonalUseSql().as("personal_use"),
     })
     .from(fuelEquipmentLoads)
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
@@ -173,6 +180,7 @@ export async function getReviewQueue(
       reviewNote: row.reviewNote,
       reviewerName: row.reviewerName,
       reviewedAt: row.reviewedAt,
+      personalUse: row.personalUse,
     }
   })
 

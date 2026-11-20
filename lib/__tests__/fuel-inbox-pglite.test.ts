@@ -872,4 +872,22 @@ describe("casos en lote", () => {
       .toEqual({ ok: true, closed: 1, message: "Caso resuelto" })
     expect((await getFuelInboxCaseGroups(globalSession(), MARCH, pending(CASES))).totalGroups).toBe(0)
   })
+
+  it("una carga de un día de uso personal sigue en la bandeja, marcada «Uso personal»", async () => {
+    const before = await getFuelInbox(globalSession(), MARCH, pending({ kind: "carga", pageSize: 100 }))
+    const target = before.rows.find((row) => row.kind === "carga" && row.vehicleId)!
+    expect(before.rows.every((row) => row.personalUse === false)).toBe(true)
+
+    await inMemoryDb.insert(schema.fuelVehiclePersonalUsePeriods).values({
+      id: "inbox-pu-1", vehicleId: target.vehicleId!, startedOn: "2026-02-01", endedOn: "2026-03-31",
+    })
+    try {
+      const after = await getFuelInbox(globalSession(), MARCH, pending({ kind: "carga", pageSize: 100 }))
+      expect(after.rows.map((row) => row.key)).toEqual(before.rows.map((row) => row.key))
+      expect(after.rows.find((row) => row.key === target.key)!.personalUse).toBe(true)
+      expect(after.rows.filter((row) => row.vehicleId !== target.vehicleId).every((row) => row.personalUse === false)).toBe(true)
+    } finally {
+      await inMemoryDb.delete(schema.fuelVehiclePersonalUsePeriods).where(eq(schema.fuelVehiclePersonalUsePeriods.id, "inbox-pu-1"))
+    }
+  })
 })

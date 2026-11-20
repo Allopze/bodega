@@ -114,7 +114,7 @@ export function InboxList({ rows, view, userId, today }: { rows: FuelInboxRow[];
                 ) : null}
 
                 <div className="min-w-0">
-                  <InboxRowBadges className="mb-1" label={row.title} kind={row.kind} severity={row.severity} decided={row.decided} fresh={fresh} />
+                  <InboxRowBadges className="mb-1" label={row.title} kind={row.kind} severity={row.severity} decided={row.decided} fresh={fresh} personalUse={row.personalUse} />
                   <p className="truncate text-sm font-semibold text-[var(--color-text)]">{row.equipmentLabel}</p>
                   {row.worksiteName ? <p className="truncate text-xs text-[var(--color-text-muted)]">{row.worksiteName}</p> : null}
                 </div>

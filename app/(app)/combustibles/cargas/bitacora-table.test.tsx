@@ -20,7 +20,7 @@ function row(overrides: Partial<EnrichedRow> = {}): EnrichedRow {
     sealRemoved: null, sealInstalled: null, evidenceCount: 4, notes: null, statusLabel: "submitted",
     createdByName: null, updatedByName: null, createdAt: null, updatedAt: null,
     anomalyCount: null, reviewMark: null, reviewMarkNotes: null, reviewMarkId: null, reviewMarkedBy: null,
-    origin: "qr", worksiteId: "w-1", vehicleId: "veh-1", equipmentLoadId: "el-1", reviewFlagged: null, reviewFlagReason: null,
+    origin: "qr", worksiteId: "w-1", vehicleId: "veh-1", equipmentLoadId: "el-1", reviewFlagged: null, reviewFlagReason: null, personalUse: false,
     hrefs: {
       detail: "/combustibles/cargas/terreno/tae-1",
       equipment: "/combustibles/consumo/equipos/veh-1",
@@ -92,6 +92,27 @@ describe("BitacoraTable: columna «Pendiente» y «Cómo llegó»", () => {
     expect(screen.getAllByText("Planilla de cargas").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Importada").length).toBeGreaterThan(0)
     expect(screen.queryByText("importado")).not.toBeInTheDocument()
+  })
+})
+
+describe("BitacoraTable: marca «Uso personal»", () => {
+  it("una carga de un día de uso personal lo dice, sin ocultar la fila", () => {
+    const rows = [row(), row({ id: "tae-2", detailId: "tae-2", equipmentCode: "CC-2", personalUse: true })]
+    render(<BitacoraTable rows={rows} canViewPersonal />)
+
+    // Una por vista (la tabla y las tarjetas del celular comparten el DOM): sólo la fila marcada la lleva.
+    const table = screen.getByRole("table")
+    expect(within(table).getAllByText("Uso personal")).toHaveLength(1)
+    expect(within(table).getAllByRole("row")).toHaveLength(rows.length + 1)
+    expect(within(table).getAllByText("Uso personal")[0]!.closest("tr")!.textContent).toContain("CC-2")
+    // La carga marcada sigue en la lista con sus litros: la marca no cambia lo que muestra.
+    expect(within(table).getAllByText("40 L")).toHaveLength(2)
+  })
+
+  it("sin uso personal no hay marca", () => {
+    render(<BitacoraTable rows={[row()]} canViewPersonal />)
+
+    expect(screen.queryByText("Uso personal")).not.toBeInTheDocument()
   })
 })
 

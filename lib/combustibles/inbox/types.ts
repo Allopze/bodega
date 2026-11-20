@@ -82,6 +82,8 @@ export interface FuelInboxRow {
   href: string | null
   /** La sesión puede decidirlo (permiso + alcance). */
   canAct: boolean
+  /** Carga de un día de uso personal del equipo (sólo `kind="carga"`): se muestra marcada, no se oculta. */
+  personalUse?: boolean
 }
 
 /** Estado de un caso que todavía espera a una persona. */

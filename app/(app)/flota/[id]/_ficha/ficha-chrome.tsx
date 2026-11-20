@@ -1,6 +1,8 @@
 import type { BreadcrumbItem } from "@/components/ui/page-header"
+import { Badge } from "@/components/ui/badge"
 import { SectionNav } from "@/components/ui/section-nav"
 import { FLEET_STATE_META } from "@/components/states/state-badge"
+import type { PersonalUsePeriod } from "@/lib/fleet/personal-use"
 import { FUEL_PERIOD_PARAMS } from "@/lib/combustibles/period/types"
 import { VEHICLE_FICHA_TAB_LABELS, vehicleFichaHref, type VehicleFichaTab } from "@/lib/routing/vehicle-ficha"
 import type { VehicleFichaContext } from "@/lib/services/vehicle-ficha"
@@ -66,4 +68,17 @@ export function VehicleFichaTabs({ ctx, active }: { ctx: VehicleFichaContext; ac
  */
 export function VehicleFichaEditAction({ ctx }: { ctx: VehicleFichaContext }) {
   return ctx.canEditVehicle ? <VehicleEditButton vehicleId={ctx.vehicle.id} /> : null
+}
+
+/**
+ * «En uso personal», en la cabecera de la ficha: el equipo está hoy con el dueño (hay un período
+ * abierto) y por eso no suma costos ni consumo en las cifras de gestión. Un período ya cerrado
+ * no dice nada aquí: está en la tarjeta «Uso personal». Sin período abierto, nada.
+ *
+ * Recibe los períodos y no los carga: este archivo lo importan las cuatro pestañas y sus pruebas, y
+ * leer de la base aquí se lo llevaría a todas. `Badge variant="warning"` ya pinta el texto con el
+ * token `-ink`.
+ */
+export function VehicleFichaPersonalUseBadge({ periods }: { periods: ReadonlyArray<Pick<PersonalUsePeriod, "endedOn">> }) {
+  return periods.some((period) => period.endedOn === null) ? <Badge variant="warning">En uso personal</Badge> : null
 }
