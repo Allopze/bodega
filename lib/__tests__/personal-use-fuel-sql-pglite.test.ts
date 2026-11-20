@@ -47,12 +47,12 @@ async function addTx(input: { vehicle: string | null; occurredAt: string; amount
   return `pf-tx-${seq}`
 }
 
-async function addLoad(id: string, vehicleId: string, day: string, liters: number) {
+async function addLoad(id: string, vehicleId: string, day: string, liters: number, meterReading: number | null = null) {
   const sub = submission({ vehicleId, loadedAt: `${day}T15:00:00.000Z`, submittedAt: `${day}T15:00:00.000Z` })
   await testDb.insert(schema.fuelTaeSubmissions).values(sub)
   await testDb.insert(L).values({
     id, source: "field", taeSubmissionId: sub.id, vehicleId, worksiteId: IDS.wsA, occurredAt: `${day}T15:00:00.000Z`,
-    month: day.slice(0, 7), liters, performanceUnit: "liters_per_hour", performanceValue: 10, performanceStatus: "computed", reviewStatus: "ok",
+    month: day.slice(0, 7), liters, meterReading, performanceUnit: "liters_per_hour", performanceValue: 10, performanceStatus: "computed", reviewStatus: "ok",
   })
 }
 
@@ -90,6 +90,12 @@ beforeAll(async () => {
   await addLoad("pf-l-12", IDS.vA, "2026-10-12", 200)
   await addLoad("pf-l-22", IDS.vA, "2026-10-22", 300)
   await addLoad("pf-l-28", IDS.vA, "2026-10-28", 400)
+
+  // vB en septiembre: lectura el 05, uso personal 08–09, carga SIN lectura el 10 y con lectura el 18.
+  await testDb.insert(schema.fuelVehiclePersonalUsePeriods).values({ id: "pf-pu-b-sep", vehicleId: IDS.vB, startedOn: "2026-09-08", endedOn: "2026-09-09" })
+  await addLoad("pf-lb-05", IDS.vB, "2026-09-05", 50, 1000)
+  await addLoad("pf-lb-10", IDS.vB, "2026-09-10", 50, null)
+  await addLoad("pf-lb-18", IDS.vB, "2026-09-18", 50, 1200)
 
   await testDb.insert(schema.fuelTelemetryDaily).values(["2026-10-08", "2026-10-15", "2026-10-25"].map((day, i) => ({
     id: `pf-tel-${i}`, vehicleId: IDS.vA, source: "visionlink", day, month: "2026-10", operatingHours: 8, idleHours: 2, litersWorking: 60, litersIdle: 10,
@@ -134,6 +140,16 @@ describe("cargas en terreno", () => {
       .from(L).where(eq(L.vehicleId, IDS.vA))
     const tainted = rows.filter((r) => r.tainted).map((r) => r.id).sort()
     expect(tainted).toEqual(["pf-l-12", "pf-l-22"])
+  })
+})
+
+describe("rendimiento contra la lectura anterior", () => {
+  it("una carga sin lectura en medio no tapa el uso personal: la del 18 se mide contra la del 05", async () => {
+    const rows = await testDb.select({ id: L.id, tainted: performanceTaintedByPersonalUseSql() })
+      .from(L).where(eq(L.vehicleId, IDS.vB))
+    const tainted = rows.filter((r) => r.tainted).map((r) => r.id).sort()
+    expect(tainted).toContain("pf-lb-18")
+    expect(tainted).not.toContain("pf-lb-05")
   })
 })
 

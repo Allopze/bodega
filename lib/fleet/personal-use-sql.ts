@@ -1,5 +1,6 @@
 import { getTableName, is, Column, sql, type AnyColumn, type SQL } from "drizzle-orm"
 import { fuelVehiclePersonalUsePeriods as periods } from "@/db/schema"
+import { todayInChile } from "@/lib/utils"
 
 /**
  * Uso personal de equipos, la regla común en SQL (la de memoria está en
@@ -15,7 +16,9 @@ import { fuelVehiclePersonalUsePeriods as periods } from "@/db/schema"
  *   Para un instante ISO en texto usa `to_char(isoTextDaySql(col), 'YYYY-MM-DD')`;
  *   para un `timestamptz`, `to_char(chileDateSql(col), 'YYYY-MM-DD')`.
  *
- * Un período abierto (`ended_on` nulo) cubre hasta el final del rango consultado.
+ * Un período abierto (`ended_on` nulo) cubre hasta hoy (`today`, el día de Chile
+ * al armar la consulta; las pruebas lo fijan). Días futuros no tienen datos, así
+ * que el predicado por día no necesita el tope; los conteos y la fracción sí.
  */
 export function qualified(column: AnyColumn | SQL): SQL {
   return is(column, Column)
@@ -44,11 +47,11 @@ export function notPersonalUseOnDaySql(vehicleId: AnyColumn | SQL, day: SQL): SQ
   return sql<boolean>`not ${personalUseOnDaySql(vehicleId, day)}`
 }
 
-/** Días de uso personal del equipo dentro de `from..to` (inclusivos). */
-export function personalUseDaysInSql(vehicleId: AnyColumn | SQL, from: SQL, to: SQL): SQL<number> {
+/** Días de uso personal del equipo dentro de `from..to` (inclusivos); un período abierto cuenta hasta `today`. */
+export function personalUseDaysInSql(vehicleId: AnyColumn | SQL, from: SQL, to: SQL, today: string = todayInChile()): SQL<number> {
   return sql<number>`coalesce((
     select sum(greatest(0,
-      least((${to})::date, coalesce(pu.pu_to, ${to})::date)
+      least((${to})::date, coalesce(pu.pu_to, ${today})::date)
       - greatest((${from})::date, pu.pu_from::date) + 1
     ))
     from ${PERIODS} pu
@@ -59,13 +62,23 @@ export function personalUseDaysInSql(vehicleId: AnyColumn | SQL, from: SQL, to: 
 /**
  * Fracción de `from..to` que queda fuera del uso personal, en [0, 1]. Para
  * prorratear un registro por período (TCT mensual, consumo con
- * `periodo_desde/hasta`): monto × fracción. Sin equipo, 1.
+ * `periodo_desde/hasta`): monto × fracción. Se mide sobre los días transcurridos
+ * (`to` topado en `today`): Copec reescribe el registro del mes en curso a la
+ * fecha cada día. Sin equipo, con fechas que no son `YYYY-MM-DD` o con un rango
+ * vacío o futuro, 1: el registro cuenta entero y la consulta no se cae.
  */
-export function keptFractionSql(vehicleId: AnyColumn | SQL, from: SQL, to: SQL): SQL<number> {
+export function keptFractionSql(vehicleId: AnyColumn | SQL, from: SQL, to: SQL, today: string = todayInChile()): SQL<number> {
+  // Cast seguro: un texto que no es fecha da null (y la fracción 1) en vez de tumbar la consulta.
+  // Postgres pliega constantes al planificar, así que el cast va dentro de su propio CASE.
+  const safeDate = (value: SQL) => sql`(case when (${value}) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then (${value})::date end)`
+  const fromDate = safeDate(from)
+  const end = sql`least(${safeDate(to)}, ${today}::date)`
   return sql<number>`(case
     when ${qualified(vehicleId)} is null then 1::numeric
+    when ${fromDate} is null or ${end} is null or ${end} < ${fromDate} then 1::numeric
     else greatest(0::numeric, least(1::numeric,
-      1 - ${personalUseDaysInSql(vehicleId, from, to)}::numeric / (((${to})::date - (${from})::date) + 1)
+      1 - ${personalUseDaysInSql(vehicleId, sql`to_char(${fromDate}, 'YYYY-MM-DD')`, sql`to_char(${end}, 'YYYY-MM-DD')`, today)}::numeric
+        / ((${end} - ${fromDate}) + 1)
     ))
   end)`
 }

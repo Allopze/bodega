@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { StateBadge } from "@/components/states/state-badge"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -46,6 +47,9 @@ function PurchaseRow({ record, canOpenRequests, canOpenOrders, canOpenSpareParts
           ? <Code href={canOpenOrders ? `/compras/${record.orderId}` : null}>{record.orderCode}</Code>
           : <span className="text-xs text-[var(--color-text-subtle)]">Sin OC</span>}
         {record.workOrderFolio && <span className="text-xs text-[var(--color-text-muted)]">OT {record.workOrderFolio}</span>}
+        {record.personalUse && (
+          <Badge variant="warning" size="sm" title="El equipo estaba en uso personal ese día: no suma en costos de gestión.">Uso personal</Badge>
+        )}
       </div>
     </li>
   )

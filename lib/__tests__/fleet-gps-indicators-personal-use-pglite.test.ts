@@ -137,3 +137,38 @@ describe("viajes (conducción)", () => {
     expect(raw).toHaveLength(4)
   })
 })
+
+describe("alertas GPS (excesos de velocidad)", () => {
+  const alert = (key: string, vehicleId: string, worksiteId: string, occurredAt: string) => ({
+    id: `alert-pu-${key}`, provider: "onway", externalDeviceId: `dev-${key}`, externalEventKey: `evt-${key}`, vehicleId, worksiteId,
+    alertType: "speeding", title: "Exceso de velocidad", occurredAt,
+  })
+
+  beforeAll(async () => {
+    await testDb.insert(schema.fleetGpsAlerts).values([
+      alert("a1", IDS.vA, IDS.wsA, "2026-11-03T15:00:00.000Z"),
+      // 23:30 del 3 de noviembre en Chile (UTC-3): es del día 3, no del 4.
+      alert("a2", IDS.vA, IDS.wsA, "2026-11-04T02:30:00.000Z"),
+      alert("a3", IDS.vA, IDS.wsA, "2026-11-06T15:00:00.000Z"),
+      alert("b1", IDS.vB, IDS.wsB, "2026-11-04T15:00:00.000Z"),
+    ])
+  })
+
+  it("los excesos de los días de uso personal no entran al ranking; los de fuera sí", async () => {
+    const before = await getGpsDrivingIndicators(session, period)
+    expect(before.speeding.current).toBe(4)
+    expect(before.topSpeeding.map((row) => [row.vehicleId, row.count])).toEqual([[IDS.vA, 3], [IDS.vB, 1]])
+    await markPersonalUse(IDS.vA, "2026-11-03", "2026-11-03")
+    const after = await getGpsDrivingIndicators(session, period)
+    // Salen a1 y a2 (el de las 23:30 del 3 es del 3); queda a3 (día 6) y b1.
+    expect(after.speeding.current).toBe(2)
+    expect(after.alertTotals.speeding).toBe(2)
+    expect(after.topSpeeding.map((row) => [row.vehicleId, row.count])).toEqual([[IDS.vA, 1], [IDS.vB, 1]])
+  })
+
+  it("el registro crudo de alertas sigue en la base", async () => {
+    await markPersonalUse(IDS.vA, "2026-11-03", "2026-11-03")
+    const raw = await testDb.select({ id: schema.fleetGpsAlerts.id }).from(schema.fleetGpsAlerts).where(eq(schema.fleetGpsAlerts.vehicleId, IDS.vA))
+    expect(raw).toHaveLength(3)
+  })
+})

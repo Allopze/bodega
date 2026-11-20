@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest"
 vi.mock("@/db", () => ({ db: {} }))
 vi.mock("@/db/schema", () => ({
   fuelOperationRecords: {}, fuelVehicles: {}, fuelEquipmentTypes: {}, worksites: {}, fuelVehiclePersonalUsePeriods: {},
+  fuelEquipmentLoads: {}, fuelProviderTransactions: {},
 }))
 vi.mock("@/lib/auth/scope", () => ({ worksiteScopeSql: () => undefined }))
 

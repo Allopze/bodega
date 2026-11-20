@@ -9,7 +9,7 @@ function record(overrides: Partial<VehiclePurchaseRecord> = {}): VehiclePurchase
     requestItemId: "item-1", requestId: "req-1", requestCode: "REP-2026-0042", requestType: "repuestos",
     itemName: "Filtro hidráulico", productId: null, sku: null, partNumber: null, isSparePart: false, quantity: 2, unitOfMeasure: "unidad", itemStatus: "purchased", itemStatusLabel: "Pendiente de recepción",
     workOrderId: "ot-1", workOrderFolio: "OT-BIO-0007", requestedAt: "2026-11-02T15:00:00.000Z", requesterName: "Alexis Morales",
-    orderId: "oc-1", orderCode: "OC-2026-0310", orderStatus: "sent", unitPrice: 20_000, subtotal: 40_000, ...overrides,
+    orderId: "oc-1", orderCode: "OC-2026-0310", orderStatus: "sent", unitPrice: 20_000, subtotal: 40_000, personalUse: false, ...overrides,
   }
 }
 
@@ -49,6 +49,19 @@ describe("«Repuestos y servicios comprados»", () => {
     expect(row.textContent).toContain("Alexis Morales")
     // Con compras, el botón pasa a la cabecera de la tarjeta.
     expect(screen.getByRole("link", { name: "Pedir repuestos" }).getAttribute("href")).toBe(NEW_REQUEST)
+  })
+
+  it("marca «Uso personal» la compra emitida en un período de uso personal, sin ocultarla ni tocar el costo", () => {
+    render(<VehiclePurchasesCard records={[record({ personalUse: true })]} canOpenRequests canOpenOrders newRequestHref={null} />)
+    const row = screen.getByRole("listitem")
+    const badge = within(row).getByText("Uso personal")
+    expect(badge.closest("[title]")?.getAttribute("title")).toBe("El equipo estaba en uso personal ese día: no suma en costos de gestión.")
+    expect(row.textContent).toContain("$40.000")
+  })
+
+  it("sin uso personal no hay marca", () => {
+    render(<VehiclePurchasesCard records={[record()]} canOpenRequests canOpenOrders newRequestHref={null} />)
+    expect(screen.queryByText("Uso personal")).toBeNull()
   })
 
   it("sin permiso para abrir solicitudes u órdenes, los códigos son texto y no enlace", () => {

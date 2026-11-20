@@ -173,11 +173,12 @@ describe("vista general del control", () => {
 })
 
 describe("TAE", () => {
-  it("litros y cargas por punto de suministro pierden las del período", async () => {
+  it("Cuadratura › Sellos ve TODAS las cargas por punto de suministro, también las del uso personal", async () => {
+    // `getTaeGroupedTotals` sólo alimenta Cuadratura › Sellos: es cuadratura, no gestión (anti-objetivo 1).
     const rows = await getTaeGroupedTotals(globalSession(), { from: OCT.from, to: OCT.to }, "loadingPoint")
     expect(rows).toHaveLength(1)
-    expect(rows[0]!.liters).toBe(870)
-    expect(rows[0]!.count).toBe(4)
+    expect(rows[0]!.liters).toBe(1070)
+    expect(rows[0]!.count).toBe(5)
   })
 })
 

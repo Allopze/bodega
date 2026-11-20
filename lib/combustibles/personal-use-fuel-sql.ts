@@ -1,5 +1,5 @@
 import { sql, type SQL } from "drizzle-orm"
-import { fuelEquipmentLoads, fuelProviderTransactions, fuelVehiclePersonalUsePeriods } from "@/db/schema"
+import { fuelEquipmentLoads, fuelOperationRecords, fuelProviderTransactions, fuelVehiclePersonalUsePeriods } from "@/db/schema"
 import { isoTextDaySql } from "@/lib/combustibles/control/queries/field-filters"
 import { keptFractionSql, notPersonalUseOnDaySql, personalUseOnDaySql, qualified } from "@/lib/fleet/personal-use-sql"
 
@@ -69,7 +69,8 @@ export function loadNotInPersonalUseSql(): SQL<boolean> {
 
 /**
  * El rendimiento de la carga (`performance_value`) está contaminado por el uso
- * personal: algún día entre la carga contable anterior del equipo y esta carga,
+ * personal: algún día entre la carga anterior CON LECTURA del equipo (o, si no hay
+ * ninguna con lectura, la contable anterior) y esta carga,
  * ambos inclusivos, cae en un período. Cubre las cargas DENTRO del período y la
  * PRIMERA DESPUÉS, cuyo valor se calculó contra una lectura de antes y por eso
  * incluye los km del uso personal. Sus litros sí cuentan en el consumo.
@@ -81,7 +82,7 @@ export function performanceTaintedByPersonalUseSql(): SQL<boolean> {
   const vehicle = qualified(fuelEquipmentLoads.vehicleId)
   const occurredAt = qualified(fuelEquipmentLoads.occurredAt)
   const loadDay = sql`(${occurredAt} at time zone 'America/Santiago')::date`
-  const previousDay = sql`coalesce((
+  const previous = (withReading: boolean) => sql`(
     select max((l2.occurred_at at time zone 'America/Santiago')::date)
     from ${fuelEquipmentLoads} l2
     where l2.vehicle_id = ${vehicle}
@@ -89,7 +90,11 @@ export function performanceTaintedByPersonalUseSql(): SQL<boolean> {
       and l2.voided_at is null
       and l2.duplicate_of_id is null
       and l2.review_status <> 'rejected'
-  ), ${loadDay})`
+      ${withReading ? sql`and l2.meter_reading is not null` : sql``}
+  )`
+  // El rendimiento se mide contra la lectura anterior: una carga sin lectura en medio no la tapa.
+  // Sin ninguna anterior con lectura (datos sin medidor), la carga contable anterior.
+  const previousDay = sql`coalesce(${previous(true)}, ${previous(false)}, ${loadDay})`
   return sql<boolean>`exists (
     select 1 from (
       select vehicle_id as pu_vehicle, started_on as pu_from, ended_on as pu_to
@@ -98,5 +103,31 @@ export function performanceTaintedByPersonalUseSql(): SQL<boolean> {
     where pu.pu_vehicle = ${vehicle}
       and pu.pu_from::date <= ${loadDay}
       and coalesce(pu.pu_to::date, ${loadDay}) >= ${previousDay}
+  )`
+}
+
+/**
+ * Lo mismo que `performanceTaintedByPersonalUseSql` para la planilla operacional
+ * (`fuel_operation_records`, con `fecha` en texto `YYYY-MM-DD` y el rendimiento ya
+ * informado): el registro cae en un período, o es el primero después y su
+ * rendimiento se midió contra el registro anterior con rendimiento, de antes del
+ * período. Sus litros siguen contando; sólo su rendimiento sale de promedios,
+ * comparaciones y detectores.
+ */
+export function operationPerformanceTaintedByPersonalUseSql(): SQL<boolean> {
+  const vehicle = qualified(fuelOperationRecords.vehicleId)
+  const fecha = qualified(fuelOperationRecords.fecha)
+  const previous = sql`(
+    select max(r2.fecha) from ${fuelOperationRecords} r2
+    where r2.vehicle_id = ${vehicle} and r2.fecha < ${fecha} and r2.rendimiento is not null
+  )`
+  return sql<boolean>`exists (
+    select 1 from (
+      select vehicle_id as pu_vehicle, started_on as pu_from, ended_on as pu_to
+      from ${fuelVehiclePersonalUsePeriods}
+    ) pu
+    where pu.pu_vehicle = ${vehicle}
+      and pu.pu_from <= ${fecha}
+      and coalesce(pu.pu_to, ${fecha}) >= coalesce(${previous}, ${fecha})
   )`
 }

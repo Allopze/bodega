@@ -60,6 +60,8 @@ function shiftIdlePct(row: ShiftRow): number | null {
 
 /** Ralentí del equipo en el día completo: una barra, o el motivo de que no haya cifra. */
 function DayIdleCell({ row, target }: { row: EquipmentDayRow; target: number }) {
+  // El día del dueño no es operación: sin barra de ralentí, que parecería una cifra de gestión.
+  if (row.personalUse) return <Badge variant="outline" title="El equipo estuvo en uso personal: este día no cuenta en las horas ni en el ralentí.">Uso personal</Badge>
   switch (row.summary.signal) {
     case "sin_telemetria": return <span className="text-xs text-[var(--color-text-muted)]">Sin VisionLink</span>
     case "pendiente": return <Badge variant="info" title="Alguna hora del día aún no llega de VisionLink.">Pendiente de datos</Badge>

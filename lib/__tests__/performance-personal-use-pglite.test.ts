@@ -170,6 +170,19 @@ describe("rendimiento antes y después de la salida de taller", () => {
 
   it("el registro de un día de uso personal no cuenta para juzgar la salida de taller", async () => {
     await markPersonalUse(IDS.vA, "2026-10-12", "2026-10-16")
+    // El del 15 cae en el período; el del 25 es el primero después (se midió contra el del 15).
+    expect(await impact()).toMatchObject({ avgBefore: 4, avgAfter: null })
+  })
+
+  it("tampoco el primer registro después del período: su rendimiento incluye los km del dueño", async () => {
+    const { eq } = await import("drizzle-orm")
+    await testDb.delete(schema.fuelVehiclePersonalUsePeriods).where(eq(schema.fuelVehiclePersonalUsePeriods.vehicleId, IDS.vA))
+    // Período 11–12 sin registros adentro: el del 15 se midió contra el del 10 y cruza el período.
+    await markPersonalUse(IDS.vA, "2026-10-11", "2026-10-12")
     expect(await impact()).toMatchObject({ avgBefore: 4, avgAfter: 6 })
+    const { operationPerformanceTaintedByPersonalUseSql } = await import("@/lib/combustibles/personal-use-fuel-sql")
+    const rows = await testDb.select({ id: schema.fuelOperationRecords.id, tainted: operationPerformanceTaintedByPersonalUseSql() })
+      .from(schema.fuelOperationRecords).where(eq(schema.fuelOperationRecords.vehicleId, IDS.vA))
+    expect(rows.filter((row) => row.tainted).map((row) => row.id)).toEqual(["pp-op-2"])
   })
 })

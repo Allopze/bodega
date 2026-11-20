@@ -23,6 +23,7 @@ import { accountableProviderTransactionsWhere, accountableFuelLoadsWhere } from 
 import { countableLoadSql } from "./control/filters"
 import { loadNotInPersonalUseSql, providerTxKeptWhereSql } from "./personal-use-fuel-sql"
 import { notPersonalUseOnDaySql, personalUseDaysInSql } from "@/lib/fleet/personal-use-sql"
+import { operationPerformanceTaintedByPersonalUseSql } from "@/lib/combustibles/personal-use-fuel-sql"
 import { stayWorksiteOnIsoTextDaySql } from "./control/queries/field-filters"
 import { DEFAULT_OUTLIER_THRESHOLD_STDDEVS, MIN_CONCLUSIVE_SAMPLE, flagOutliers } from "./performance-statistics"
 import { buildFuelVariationCandidates, candidateTouchesCutoff, fuelVariationProductLabel } from "./fuel-variation"
@@ -281,9 +282,9 @@ async function getOperationPerformanceObservations(rowLimit: number, cursor?: st
       inArray(fuelOperationRecords.vehicleId, vehicleIds),
       isNotNull(fuelOperationRecords.rendimiento),
       sql`${fuelVehicles.performanceUnit} <> 'not_applicable'`,
-      // Uso personal: lo que rindió el equipo un día que no operó para la empresa no es un
-      // punto de su historial ni del grupo. `fecha` ya es el día civil (`YYYY-MM-DD`).
-      notPersonalUseOnDaySql(fuelOperationRecords.vehicleId, sql`${fuelOperationRecords.fecha}`),
+      // Uso personal: lo que rindió el equipo un día que no operó para la empresa, o el primer
+      // registro después (medido contra uno de antes), no es un punto de su historial ni del grupo.
+      sql`not ${operationPerformanceTaintedByPersonalUseSql()}`,
     ))
     .orderBy(fuelOperationRecords.vehicleId, fuelOperationRecords.id)
     .limit(BATCH_SCAN_ROW_LIMIT)

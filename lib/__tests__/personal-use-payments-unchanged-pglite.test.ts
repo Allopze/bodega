@@ -12,7 +12,7 @@ import { IDS, filtersFor, globalSession, seedControlFixtures, submission } from 
 /**
  * Anti-objetivo 1 de la spec del uso personal: marcar un período NO cambia lo que
  * se le paga a Copec o a un proveedor. La cuadratura (flujo de reconciliación y
- * cruce por medio), su resumen por mandante y lo que falta pagar dan exactamente
+ * cruce por medio), su resumen por mandante, Sellos y lo que falta pagar dan exactamente
  * lo mismo con y sin períodos marcados (Review Focus 5).
  */
 
@@ -27,6 +27,7 @@ const { getMediumCross, getReconciliationFlow } = await import("@/lib/combustibl
 const { getMandantesReconciliationSummary } = await import("@/lib/combustibles/control/queries/reconciliation-summary")
 const { getPayablesSummary } = await import("@/lib/combustibles/payables-summary")
 const { resolveFuelPeriod, currentMonthPeriod } = await import("@/lib/combustibles/period")
+const { getTaeGroupedTotals } = await import("@/lib/combustibles/tae-dashboard")
 
 const costSession = {
   user: { id: IDS.user, isGlobal: true, roles: [], worksiteIds: [], permissions: ["combustibles:view", "combustibles:view_costs"] },
@@ -52,6 +53,9 @@ async function snapshot() {
     cross: await getMediumCross(globalSession(), filters),
     summary: await getMandantesReconciliationSummary(globalSession(), period),
     payables: await getPayablesSummary(costSession, period),
+    // Cuadratura › Sellos: litros por punto de carga, supervisor y conductor.
+    sealsByPoint: await getTaeGroupedTotals(costSession, { from: "2026-03-01", to: "2026-03-31" }, "loadingPoint"),
+    sealsBySupervisor: await getTaeGroupedTotals(costSession, { from: "2026-03-01", to: "2026-03-31" }, "supervisor"),
   }
 }
 

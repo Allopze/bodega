@@ -56,8 +56,21 @@ describe("personalUseDaysInSql / keptFractionSql", () => {
     expect(Number(await one(keptFractionSql(V.id, sql`'2026-10-01'`, sql`'2026-10-31'`)))).toBeCloseTo(21 / 31, 10)
   })
 
-  it("un período abierto cuenta hasta el final del rango", async () => {
-    expect(Number(await one(personalUseDaysInSql(V.id, sql`'2026-10-01'`, sql`'2026-10-31'`), "v-2"))).toBe(7)
+  it("un período abierto cuenta hasta hoy, no hasta el final del rango", async () => {
+    expect(Number(await one(personalUseDaysInSql(V.id, sql`'2026-10-01'`, sql`'2026-10-31'`, "2026-11-20"), "v-2"))).toBe(7)
+    expect(Number(await one(personalUseDaysInSql(V.id, sql`'2026-10-01'`, sql`'2026-10-31'`, "2026-10-28"), "v-2"))).toBe(4)
+  })
+
+  it("un registro del mes en curso se prorratea sobre los días transcurridos", async () => {
+    // Hoy 28-10, abierto desde el 25: 4 días personales de 28 transcurridos.
+    expect(Number(await one(keptFractionSql(V.id, sql`'2026-10-01'`, sql`'2026-10-31'`, "2026-10-28"), "v-2"))).toBeCloseTo(24 / 28, 10)
+  })
+
+  it("un registro con período inválido o al revés se conserva entero, sin romper la consulta", async () => {
+    // Texto tipado, como las columnas `periodo_desde/hasta` (un literal sin tipo lo convierte el analizador).
+    expect(Number(await one(keptFractionSql(V.id, sql`'2026-10-10'::text`, sql`'2026-10-09'::text`)))).toBe(1)
+    expect(Number(await one(keptFractionSql(V.id, sql`'no-es-fecha'::text`, sql`'2026-10-31'::text`)))).toBe(1)
+    expect(Number(await one(keptFractionSql(V.id, sql`null::text`, sql`'2026-10-31'::text`)))).toBe(1)
   })
 
   it("sin equipo la fracción es 1", async () => {

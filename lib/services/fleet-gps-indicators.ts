@@ -736,7 +736,16 @@ export async function getGpsDrivingIndicators(session: Session, input: GpsIndica
       .from(fleetGpsAlerts)
       .innerJoin(fuelVehicles, eq(fuelVehicles.id, fleetGpsAlerts.vehicleId))
       .innerJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
-      .where(and(ACTIVE_VEHICLE, alertScope, isNotNull(fleetGpsAlerts.vehicleId), gte(fleetGpsAlerts.occurredAt, start), lt(fleetGpsAlerts.occurredAt, end)))
+      .where(and(
+        ACTIVE_VEHICLE,
+        alertScope,
+        isNotNull(fleetGpsAlerts.vehicleId),
+        gte(fleetGpsAlerts.occurredAt, start),
+        lt(fleetGpsAlerts.occurredAt, end),
+        // Uso personal: los excesos y demás alertas de esos días (día de Chile, el mismo de `alertDay`) no entran
+        // al ranking de la faena. Monitoreo GPS y el historial crudo de alertas no cambian.
+        notPersonalUseOnDaySql(fleetGpsAlerts.vehicleId, alertDay),
+      ))
       .groupBy(fleetGpsAlerts.vehicleId, alertDay, fleetGpsAlerts.title, fuelVehicles.code, fuelVehicles.plate, fuelEquipmentTypes.name),
   ])
 

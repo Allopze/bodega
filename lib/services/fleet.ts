@@ -17,9 +17,8 @@ import { recordAudit } from "@/lib/audit"
 import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/scope"
 import { can } from "@/lib/auth/can"
 import { accountableProviderTransactionsWhere, providerLoadCountSql } from "@/lib/combustibles/load-status"
-import { providerTxKeptAmountSql, providerTxKeptQuantitySql, providerTxKeptWhereSql } from "@/lib/combustibles/personal-use-fuel-sql"
+import { providerTxKeptAmountSql, providerTxKeptQuantitySql, providerTxKeptWhereSql, operationPerformanceTaintedByPersonalUseSql } from "@/lib/combustibles/personal-use-fuel-sql"
 import { isPersonalUseDay } from "@/lib/fleet/personal-use"
-import { notPersonalUseOnDaySql } from "@/lib/fleet/personal-use-sql"
 import { loadPersonalUseIndex } from "@/lib/services/fleet-personal-use"
 import { OPEN_ANOMALY_CASE_STATUSES } from "@/lib/combustibles/anomaly-labels"
 import { acceptedMeterResetSql } from "@/lib/combustibles/meter-reset-sql"
@@ -638,9 +637,9 @@ export async function getWorkOrderConsumptionImpact(
   }).from(mantWorkOrders).leftJoin(fuelOperationRecords, and(
     eq(fuelOperationRecords.vehicleId, mantWorkOrders.vehicleId),
     isNotNull(fuelOperationRecords.rendimiento),
-    // Uso personal: el rendimiento de un día en que el dueño tenía el equipo no cuenta para
-    // juzgar la salida de taller (`fecha` ya es el día civil chileno, `YYYY-MM-DD`).
-    notPersonalUseOnDaySql(fuelOperationRecords.vehicleId, sql`${fuelOperationRecords.fecha}`),
+    // Uso personal: el rendimiento de un día en que el dueño tenía el equipo, o del primer
+    // registro después (se midió contra uno de antes), no cuenta para juzgar la salida de taller.
+    sql`not ${operationPerformanceTaintedByPersonalUseSql()}`,
     // `fecha` es texto «YYYY-MM-DD»: se compara contra `to_char`, que
     // devuelve el mismo formato, para que ambos extremos queden inclusivos.
     sql`${fuelOperationRecords.fecha} >= to_char(${exitDate} - (${WORK_ORDER_IMPACT_WINDOW_DAYS} * INTERVAL '1 day'), 'YYYY-MM-DD')`,

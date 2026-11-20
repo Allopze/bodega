@@ -11,7 +11,6 @@ import { fuelTaeLoadingPoints, fuelTaeSubmissions } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { canViewFuelPersonalData } from "@/lib/combustibles/fuel-log"
 import { PERSONAL_DATA_LABEL } from "@/lib/combustibles/fuel-log-shared"
-import { notPersonalUseOnDaySql } from "@/lib/fleet/personal-use-sql"
 
 export type TaeGroupDimension = "driver" | "supervisor" | "loadingPoint"
 
@@ -36,12 +35,6 @@ export async function getTaeGroupedTotals(session: Session, filters: TaeDashboar
     sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date >= ${filters.from}::date`,
     sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date <= ${filters.to}::date`,
     ne(fuelTaeSubmissions.status, "voided"),
-    // Litros y cargas por conductor, supervisor y punto son gestión: una carga de un día de uso personal
-    // del equipo no suma. El día es el de Chile (`loaded_at` es un instante); sin equipo vinculado cuenta.
-    notPersonalUseOnDaySql(
-      fuelTaeSubmissions.vehicleId,
-      sql`to_char((${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date, 'YYYY-MM-DD')`,
-    ),
   )
 
   if (dimension === "loadingPoint") {

@@ -24,7 +24,7 @@ import path from "node:path"
 const ROOT = process.cwd()
 
 /** Las fuentes de §5.3 (y su telemetría, viajes y lecturas, para km, horas y ralentí). */
-const SOURCE_TABLES = /\b(fuelProviderTransactions|fuelEquipmentLoads|fuelConsumptionRecords|fuelLoads|purchaseOrderItems|fuelTelemetryDaily|fuelOperationRecords|fuelTaeSubmissions|fleetGpsTrips|fuelMeterReadings)\b/
+const SOURCE_TABLES = /\b(fuelProviderTransactions|fuelEquipmentLoads|fuelConsumptionRecords|fuelLoads|purchaseOrderItems|purchaseRequestItems|fuelTelemetryDaily|fuelTelemetryHourly|fuelOperationRecords|fuelTaeSubmissions|fleetGpsTrips|fuelMeterReadings)\b/
 const AGGREGATE = /\b(sum|avg)\(/i
 /** La regla común: SQL, memoria, combustible o el filtro de litros de gestión. */
 const COMMON_RULE = /@\/lib\/fleet\/personal-use(-sql)?"|@\/lib\/combustibles\/personal-use-fuel-sql"|\bbuildManagementLoadWhere\b|@\/lib\/services\/fleet-personal-use"/
@@ -46,13 +46,14 @@ const MANAGEMENT_FILES = [
   "lib/combustibles/consumption-dashboard.ts",
   "lib/combustibles/fuel-control-overview.ts",
   "lib/combustibles/operations-dashboard.ts",
-  "lib/combustibles/tae-dashboard.ts",
   "lib/combustibles/control/queries/overview.ts",
   "lib/combustibles/control/queries/performance.ts",
   "lib/combustibles/control/queries/meter-rates.ts",
   "lib/combustibles/control/queries/idle.ts",
   "lib/combustibles/control/queries/idle-comparison.ts",
   "lib/combustibles/equipment/get-equipment-file.ts",
+  // Turnos y ralentí: agrega en memoria (no lo detecta el escaneo de sum/avg), por eso va explícito.
+  "lib/services/fleet-shifts-views.ts",
   // Detectores: el uso personal no abre casos
   "lib/combustibles/anomaly-detector.ts",
   "lib/services/fuel-tae/anomalies.ts",
@@ -63,6 +64,8 @@ const RECORD_FILES = [
   "lib/combustibles/fuel-log.ts",
   "lib/combustibles/inbox/queries.ts",
   "lib/combustibles/control/review-queue.ts",
+  // Compras de la ficha: lista OC por equipo, con la marca.
+  "lib/services/vehicle-purchase-history.ts",
 ]
 
 /** Agregan sobre esas tablas pero NO son gestión de costos/consumo por equipo. */
@@ -78,6 +81,7 @@ const EXEMPT_FILES: Record<string, string> = {
   "lib/combustibles/payables-summary.ts": "lo que falta pagar",
   "lib/combustibles/tae-copec-reconciliation.ts": "conciliación TAE ↔ Copec",
   "lib/combustibles/tae-import-ledger.ts": "libro de importación TAE",
+  "lib/combustibles/tae-dashboard.ts": "Cuadratura › Sellos (litros por punto, supervisor y conductor)",
   "lib/services/deliveries-void.ts": "bodega (entregas)",
   "lib/services/deliveries-worker-stock.ts": "bodega (stock del trabajador)",
   "lib/services/dispatch-guides.ts": "bodega (guías de despacho)",
@@ -88,6 +92,8 @@ const EXEMPT_FILES: Record<string, string> = {
   "lib/services/purchasing-module/receiving.ts": "recepción de OC (bodega)",
   "lib/services/request-status-reconciliation.ts": "estado de solicitudes",
   "lib/services/stock-availability.ts": "bodega (stock)",
+  "lib/services/dashboard-metrics.ts": "conteo de solicitudes de compra pendientes (Inicio)",
+  "app/(app)/reportes/page.tsx": "conteos de compras por estado (reportes)",
 }
 
 /** Pagos, conciliaciones y Mantención: ven TODO, nunca importan la regla. */
@@ -108,6 +114,7 @@ const PAYMENT_FILES = [
   "lib/combustibles/fuel-cycle.ts",
   "lib/combustibles/open-period.ts",
   "lib/combustibles/load-status.ts",
+  "lib/combustibles/tae-dashboard.ts",
   "lib/services/operational-control-sources.ts",
   "lib/services/dte-portal/reconciliation.ts",
   "lib/services/dte-portal/folio-match.ts",

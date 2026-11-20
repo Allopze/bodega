@@ -1,6 +1,7 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { sql } from "drizzle-orm"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
@@ -294,6 +295,90 @@ describe("grilla de equipos", () => {
     const row = view.rows.find((r) => r.vehicleId === V_MOVED)
     expect(row).toBeDefined()
     expect(row!.cells.every((c) => c.kind === "vacio")).toBe(true)
+  })
+})
+
+describe("uso personal del dueño", () => {
+  // Faena C (otras pruebas listan la A). Tres días con 8 h de motor cada uno: 09-01, 09-02 y 09-03.
+  const V_PU = "veh-sv-pu"
+  const DAYS = ["2026-09-01", "2026-09-02", "2026-09-03"]
+  const PERIOD_ID = "pu-sv-1"
+
+  beforeAll(async () => {
+    await testDb.insert(schema.fuelVehicles).values({
+      id: V_PU, plate: "SV-0006", code: "SV-P", serialNumber: "SN-P", worksiteId: IDS.wsC,
+      type: "x", equipmentTypeId: IDS.eqType, meterType: "hour_meter", performanceUnit: "liters_per_hour",
+    })
+    for (const day of DAYS) {
+      await addHours(V_PU, day, range(8, 16), { idle: 600, working: 3000 })
+      await addFetch(V_PU, day)
+      await addDaily(V_PU, day, 10, 30)
+    }
+    // El 09-02 es del dueño; ese día el equipo también tiene un turno registrado (sigue siendo un registro).
+    await testDb.insert(schema.fuelVehiclePersonalUsePeriods).values({ id: PERIOD_ID, vehicleId: V_PU, startedOn: "2026-09-02", endedOn: "2026-09-02" })
+    await addShift(V_PU, "2026-09-02", 8, 16, W_LUIS, "Luis Soto")
+    await addShift(V_PU, "2026-09-01", 8, 16, W_ANA, "Ana Pérez")
+  })
+
+  const rowOf = async (day: string) => (await getShiftDayView([IDS.wsC], day)).vehicles.find((v) => v.vehicleId === V_PU)!
+
+  it("en la vista diaria el día del dueño queda marcado y no avisa «sin turno»", async () => {
+    // Sin turnos que cubran las horas: un día normal sí avisa, el personal no.
+    await testDb.update(schema.fleetOperationShifts).set({ voidedAt: "2026-09-10T00:00:00Z", voidedBy: IDS.user, voidReason: "QA" })
+      .where(sql`${schema.fleetOperationShifts.vehicleId} = ${V_PU}`)
+    try {
+      const normal = await rowOf("2026-09-03")
+      expect(normal.personalUse).toBe(false)
+      expect(normal.summary.warnUnassigned).toBe(true)
+
+      const personal = await rowOf("2026-09-02")
+      expect(personal.personalUse).toBe(true)
+      expect(personal.summary.unassignedEngineHours).toBeCloseTo(8)
+      expect(personal.summary.warnUnassigned).toBe(false)
+    } finally {
+      await testDb.update(schema.fleetOperationShifts).set({ voidedAt: null, voidedBy: null, voidReason: null })
+        .where(sql`${schema.fleetOperationShifts.vehicleId} = ${V_PU}`)
+    }
+  })
+
+  it("los turnos registrados ese día siguen en la vista diaria", async () => {
+    const view = await getShiftDayView([IDS.wsC], "2026-09-02")
+    expect(view.shifts.filter((s) => s.vehicleId === V_PU)).toHaveLength(1)
+    expect(view.vehicles.find((v) => v.vehicleId === V_PU)?.shiftsCount).toBe(1)
+  })
+
+  it("la grilla marca la celda y no suma el día a los totales de la fila ni a los litros en vacío", async () => {
+    const view = await getEquipmentGridView([IDS.wsC], { from: "2026-09-01", to: "2026-09-03" })
+    const row = view.rows.find((r) => r.vehicleId === V_PU)!
+    expect(row.cells.map((c) => [c.day.slice(8), c.kind])).toEqual([["01", "pct"], ["02", "uso_personal"], ["03", "pct"]])
+    expect(row.engineHours).toBeCloseTo(16)
+    expect(row.idlePct).toBeCloseTo(600 / 3600)
+
+    const liters = view.idleLiters.find((l) => l.vehicleCode === "SV-P")!
+    expect(liters.byDay["2026-09-02"]).toBeNull()
+    expect(liters).toMatchObject({ idleLiters: 20, totalLiters: 80, idleShare: 0.25 })
+  })
+
+  it("el ranking de operadores no cuenta el turno de un día de uso personal", async () => {
+    const { ranking } = await getOperatorRankingView([IDS.wsC], { from: "2026-09-01", to: "2026-09-03", vehicleId: V_PU })
+    expect(ranking.rows.map((r) => [r.operatorWorkerId, r.shifts])).toEqual([[W_ANA, 1]])
+    expect(ranking.total.shifts).toBe(1)
+  })
+
+  it("quitar el período devuelve el día a los totales", async () => {
+    await testDb.delete(schema.fuelVehiclePersonalUsePeriods).where(sql`${schema.fuelVehiclePersonalUsePeriods.id} = ${PERIOD_ID}`)
+    try {
+      expect((await rowOf("2026-09-02")).personalUse).toBe(false)
+      const view = await getEquipmentGridView([IDS.wsC], { from: "2026-09-01", to: "2026-09-03" })
+      const row = view.rows.find((r) => r.vehicleId === V_PU)!
+      expect(row.cells.map((c) => c.kind)).toEqual(["pct", "pct", "pct"])
+      expect(row.engineHours).toBeCloseTo(24)
+      expect(view.idleLiters.find((l) => l.vehicleCode === "SV-P")).toMatchObject({ idleLiters: 30, totalLiters: 120 })
+      const { ranking } = await getOperatorRankingView([IDS.wsC], { from: "2026-09-01", to: "2026-09-03", vehicleId: V_PU })
+      expect(ranking.total.shifts).toBe(2)
+    } finally {
+      await testDb.insert(schema.fuelVehiclePersonalUsePeriods).values({ id: PERIOD_ID, vehicleId: V_PU, startedOn: "2026-09-02", endedOn: "2026-09-02" })
+    }
   })
 })
 

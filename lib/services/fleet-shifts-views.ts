@@ -20,7 +20,9 @@ import { HOURLY_SOURCE, shiftPresetLabel } from "@/lib/fleet/shifts/constants"
 import { daysBetween } from "@/lib/fleet/shifts/hours"
 import { loadVehicleTelemetry } from "@/lib/fleet/shifts/telemetry-loader"
 import type { PlainDate, ShiftWindow } from "@/lib/fleet/shifts/types"
+import { isPersonalUseDay } from "@/lib/fleet/personal-use"
 import { stayWorksiteOnDaySql } from "@/lib/fleet/stays-sql"
+import { loadPersonalUseIndex } from "@/lib/services/fleet-personal-use"
 import { getIdleTarget } from "@/lib/services/fleet-shifts"
 import { addDaysToPlainDate, chileDayStartInstant } from "@/lib/utils"
 
@@ -34,6 +36,9 @@ import { addDaysToPlainDate, chileDayStartInstant } from "@/lib/utils"
  * - Ninguna cifra se calcula aquí: salen de `summarizeShift`, `summarizeEquipmentDay` y
  *   `rankOperators`, que suman las mismas filas por hora.
  * - El número de consultas no depende del número de equipos ni de días.
+ * - Un día de uso personal del dueño (`loadPersonalUseIndex`) no suma horas, ralentí ni litros en
+ *   ningún total, no dispara «sin turno» y se pinta como «Uso personal». Los turnos registrados ese
+ *   día siguen siendo registros (se listan), pero el ranking de operadores no los promedia.
  */
 
 export type ShiftScope = string[] | "all"
@@ -62,6 +67,8 @@ export interface EquipmentDayRow {
   hasVisionLink: boolean
   operationalStatus: "operativo" | "mantencion" | "fuera_servicio"
   dayMark: { reason: string; notes: string } | null
+  /** El día está dentro de un período de uso personal del dueño. */
+  personalUse: boolean
   shiftsCount: number
   summary: EquipmentDaySummary
 }
@@ -69,7 +76,7 @@ export interface EquipmentDayRow {
 export interface GridCell {
   day: string
   /** `sin_dato`: hubo motor pero el equipo no distingue ralentí de trabajo (ConnectPro: sólo tramos «running»). */
-  kind: "pct" | "detenido" | "sin_dato" | "fs" | "sp" | "ss" | "vacio"
+  kind: "pct" | "detenido" | "sin_dato" | "fs" | "sp" | "ss" | "uso_personal" | "vacio"
   pct: number | null
   engineHours: number
 }
@@ -340,9 +347,10 @@ export async function getShiftDayView(
   vehicleRows.sort((a, b) => byLabel.compare(vehicleLabel(a), vehicleLabel(b)))
 
   const ids = vehicleRows.map((vehicle) => vehicle.id)
-  const [telemetry, intervals] = await Promise.all([
+  const [telemetry, intervals, personalUse] = await Promise.all([
     loadVehicleTelemetry(ids, day, day),
     loadStateIntervals(ids, day, day),
+    loadPersonalUseIndex(ids),
   ])
   const bounds = dayBoundsMs(day)
   const markByVehicle = new Map(marks.map((mark) => [mark.vehicleId, mark]))
@@ -353,14 +361,17 @@ export async function getShiftDayView(
     const tele = teleOf(telemetry, vehicle.id)
     const state = stateOnDay(intervals.get(vehicle.id), bounds)
     const mark = markByVehicle.get(vehicle.id)
+    const personal = isPersonalUseDay(personalUse, vehicle.id, day)
     return {
       vehicleId: vehicle.id,
       vehicleCode: vehicleLabel(vehicle),
       hasVisionLink: tele.linked,
       operationalStatus: state?.status ?? "operativo",
       dayMark: mark ? { reason: mark.reason, notes: mark.notes } : null,
+      personalUse: personal,
       shiftsCount: countByVehicle.get(vehicle.id)?.length ?? 0,
-      summary: summarizeEquipmentDay(day, windowByVehicle.get(vehicle.id) ?? [], tele, { outOfService: state !== null }),
+      // El uso personal se trata como fuera de servicio para el aviso: el dueño no tiene turno que registrar.
+      summary: summarizeEquipmentDay(day, windowByVehicle.get(vehicle.id) ?? [], tele, { outOfService: state !== null || personal }),
     }
   })
 
@@ -393,8 +404,14 @@ export async function getOperatorRankingView(
   if (hasNoScope(scope)) return { target, ranking: rankOperators([]) }
 
   // Un turno cuenta por su fecha de inicio: un 22–06 del último día entra entero aunque sus horas pasen al siguiente.
-  const shifts = await loadShifts(scope, q)
-  const telemetry = await loadVehicleTelemetry(unique(shifts.map((shift) => shift.vehicleId)), q.from, q.to)
+  const loaded = await loadShifts(scope, q)
+  const vehicleIds = unique(loaded.map((shift) => shift.vehicleId))
+  const [telemetry, personalUse] = await Promise.all([
+    loadVehicleTelemetry(vehicleIds, q.from, q.to),
+    loadPersonalUseIndex(vehicleIds),
+  ])
+  // Un turno de un día de uso personal no entra al promedio de su operador: son horas del dueño.
+  const shifts = loaded.filter((shift) => !isPersonalUseDay(personalUse, shift.vehicleId, shift.shiftDate))
   const ranking = rankOperators(shifts.map((shift) => ({
     operatorWorkerId: shift.operatorWorkerId,
     operatorName: shift.operatorName,
@@ -456,9 +473,10 @@ export async function getEquipmentGridView(
   const ids = shown.map((vehicle) => vehicle.id)
   if (ids.length === 0) return { ...empty, days }
 
-  const [telemetry, intervals, dailyRows] = await Promise.all([
+  const [telemetry, intervals, personalUse, dailyRows] = await Promise.all([
     loadVehicleTelemetry(ids, first, last),
     loadStateIntervals(ids, first, last),
+    loadPersonalUseIndex(ids),
     db.select({
       vehicleId: fuelTelemetryDaily.vehicleId,
       day: fuelTelemetryDaily.day,
@@ -495,15 +513,20 @@ export async function getEquipmentGridView(
       }
       const state = stateOnDay(intervals.get(vehicle.id), boundsByDay.get(day)!)
       const mark = markByVehicleDay.get(`${vehicle.id}|${day}`)
-      const summary = summarizeEquipmentDay(day, vehicleShifts, tele, { outOfService: state !== null })
-      engineHours += summary.engineHours
-      idleHours += summary.idleHours
-      workingHours += summary.workingHours
+      const personal = isPersonalUseDay(personalUse, vehicle.id, day)
+      const summary = summarizeEquipmentDay(day, vehicleShifts, tele, { outOfService: state !== null || personal })
+      // El día del dueño se pinta pero no suma a las horas ni al % del período.
+      if (!personal) {
+        engineHours += summary.engineHours
+        idleHours += summary.idleHours
+        workingHours += summary.workingHours
+      }
 
       // Estado y marca van antes que «sin señal»: un equipo en taller o sin operación programada no
       // transmite, y esa es la explicación, no una falla de la telemetría.
       let kind: GridCell["kind"]
       if (!tele.linked) kind = "vacio"
+      else if (personal) kind = "uso_personal"
       else if (state && summary.idlePct === null) kind = "fs"
       else if (mark && summary.idlePct === null) kind = "sp"
       else if (summary.signal === "sin_senal") kind = "ss"
@@ -511,7 +534,7 @@ export async function getEquipmentGridView(
       else if (summary.engineHours === 0) kind = "detenido"
       else if (summary.idlePct === null) kind = "sin_dato"
       else kind = "pct"
-      cells.push({ day, kind, pct: kind === "pct" ? summary.idlePct : null, engineHours: summary.engineHours })
+      cells.push({ day, kind, pct: kind === "pct" ? summary.idlePct : null, engineHours: personal ? 0 : summary.engineHours })
 
       if (state) {
         stoppedDays.push({ day, vehicleCode: vehicle.label, source: "estado", label: STATE_LABEL[state.status], notes: state.reason, engineHours: summary.engineHours })
@@ -543,7 +566,7 @@ export async function getEquipmentGridView(
     let litersTotal = 0
     let hasData = false
     for (const day of days) {
-      const row = visible(vehicle.id, day) ? vehicleDaily.get(day) : undefined
+      const row = visible(vehicle.id, day) && !isPersonalUseDay(personalUse, vehicle.id, day) ? vehicleDaily.get(day) : undefined
       if (!row || row.litersIdle === null) {
         byDay[day] = null
         continue

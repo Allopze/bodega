@@ -72,11 +72,18 @@ export function personalUseDaysIn(index: PersonalUseIndex, vehicleId: string, fr
   return days
 }
 
-/** Fracción de `from..to` que queda fuera del uso personal, en [0, 1]. */
+/**
+ * Fracción de `from..to` que queda fuera del uso personal, en [0, 1]. Se mide
+ * sobre los días ya transcurridos (`to` topado en hoy): un registro del mes en
+ * curso (Copec lo reescribe a la fecha cada día) trae el monto hasta hoy, no del
+ * mes entero.
+ */
 export function keptFraction(index: PersonalUseIndex, vehicleId: string, from: string, to: string, today?: string): number {
-  if (to < from) return 1
-  const length = dayNumber(to) - dayNumber(from) + 1
-  const kept = 1 - personalUseDaysIn(index, vehicleId, from, to, today) / length
+  const cap = today ?? todayInChile()
+  const end = to < cap ? to : cap
+  if (end < from) return 1
+  const length = dayNumber(end) - dayNumber(from) + 1
+  const kept = 1 - personalUseDaysIn(index, vehicleId, from, end, cap) / length
   return Math.min(1, Math.max(0, kept))
 }
 

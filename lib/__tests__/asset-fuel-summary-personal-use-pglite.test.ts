@@ -120,6 +120,11 @@ describe("getAssetFuelSummary sin uso personal", () => {
     expect(entry.performanceValue).toBeCloseTo(25, 6) // promedio de 10 (día 5) y 40 (día 28)
   })
 
+  it("el conteo de cargas omite la del período, igual que los litros y la ficha", async () => {
+    const entry = (await getAssetFuelSummary(session(), OCTOBER, [IDS.vA])).get(IDS.vA)!
+    expect(entry.loadCount).toBe(3) // 05, 22 y 28; la del 12 es de uso personal
+  })
+
   it("quitar el período devuelve las cifras de antes: nada queda cacheado", async () => {
     const before = (await getAssetFuelSummary(session(), OCTOBER, [IDS.vA])).get(IDS.vA)!
     await testDb.delete(schema.fuelVehiclePersonalUsePeriods).where(eq(schema.fuelVehiclePersonalUsePeriods.id, "afp-pu-a"))

@@ -96,7 +96,7 @@ describe("vista Día", () => {
   }
   const vehicle = {
     vehicleId: "veh-1", vehicleCode: "GR-11", hasVisionLink: true, operationalStatus: "operativo" as const,
-    dayMark: null, shiftsCount: 1,
+    dayMark: null, shiftsCount: 1, personalUse: false,
     summary: { ...summary, assignedEngineHours: 6, unassignedEngineHours: 2.5, warnUnassigned: true, signal: "ok" as const },
   }
   const base = { day: "2026-11-19", target: 0.3, vehicles: [vehicle], formVehicles: [], formOperators: [] }
@@ -107,6 +107,13 @@ describe("vista Día", () => {
     expect(screen.queryByRole("button", { name: "Guardar turno" })).toBeNull()
     expect(screen.getByText("2,5 h de motor sin turno")).toBeTruthy()
     expect(screen.getAllByText("En meta").length).toBeGreaterThan(0)
+  })
+
+  it("un día de uso personal dice «Uso personal» y no avisa horas de motor sin turno", () => {
+    const personal = { ...vehicle, personalUse: true, summary: { ...vehicle.summary, warnUnassigned: false } }
+    render(<ShiftDayView {...base} vehicles={[personal]} shifts={[]} canManage={false} />)
+    expect(screen.getByText("Uso personal")).toBeTruthy()
+    expect(screen.queryByText(/de motor sin turno/)).toBeNull()
   })
 
   it("quien gestiona ve el formulario, editar, anular y la marca del día", () => {

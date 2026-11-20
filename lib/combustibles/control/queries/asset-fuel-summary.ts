@@ -159,7 +159,7 @@ export async function getAssetFuelSummary(
       // Los litros de gestión no suman el día de uso personal (la cantidad de cargas y la
       // última carga son registros y no cambian).
       liters: sql<number>`COALESCE(SUM(${fuelEquipmentLoads.liters}) FILTER (WHERE ${countableLoadSql} AND ${loadNotInPersonalUseSql()}), 0)::float8`,
-      loadCount: sql<number>`(COUNT(*) FILTER (WHERE ${countableLoadSql}))::int`,
+      loadCount: sql<number>`(COUNT(*) FILTER (WHERE ${countableLoadSql} AND ${loadNotInPersonalUseSql()}))::int`,
       lastLoadAt: sql<string | null>`(MAX(${fuelEquipmentLoads.occurredAt}) FILTER (WHERE ${countableLoadSql}))::text`,
       // Promedio de las cargas con rendimiento calculado y revisión resuelta.
       // Es el mismo criterio de `getEquipmentStats` y de la ficha del equipo:

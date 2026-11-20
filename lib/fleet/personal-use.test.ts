@@ -51,6 +51,15 @@ describe("personalUseDaysIn / keptFraction", () => {
     expect(keptFraction(index, "v9", "2026-09-01", "2026-09-30")).toBe(1)
   })
 
+  it("un registro del mes en curso se prorratea sobre los días transcurridos, no sobre el mes entero", () => {
+    // Hoy 25-11, período abierto desde el 21-11: 5 días personales de 25 transcurridos.
+    expect(keptFraction(index, "v1", "2026-11-01", "2026-11-30", "2026-11-25")).toBeCloseTo(20 / 25, 10)
+  })
+
+  it("un rango que aún no empieza se conserva entero", () => {
+    expect(keptFraction(index, "v1", "2026-12-01", "2026-12-31", "2026-11-25")).toBe(1)
+  })
+
   it("un rango dentro del período no conserva nada", () => {
     expect(keptFraction(index, "v1", "2026-10-12", "2026-10-14")).toBe(0)
   })

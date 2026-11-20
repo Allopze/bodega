@@ -14,6 +14,7 @@ import type { PatenteRankingRow, RendimientoRow } from "./consumption-dashboard"
 import { flagOutliers as flagOutliersGeneric } from "./performance-statistics"
 import { can } from "@/lib/auth/can"
 import { notPersonalUseOnDaySql } from "@/lib/fleet/personal-use-sql"
+import { operationPerformanceTaintedByPersonalUseSql } from "@/lib/combustibles/personal-use-fuel-sql"
 
 export interface OperationsSummary {
   totalLitros: number
@@ -83,6 +84,8 @@ export async function getOperationsSummary(session: Session, filters: Operations
     notPersonalUseOnDaySql(fuelOperationRecords.vehicleId, sql`${fuelOperationRecords.fecha}`),
   )
 
+  const performanceCounted = sql`${fuelOperationRecords.rendimiento} is not null and not ${operationPerformanceTaintedByPersonalUseSql()}`
+
   const [[totals], byEquipoRaw, porFaenaRaw, porProveedorRaw] = await Promise.all([
     db.select({
       totalLitros: sql<number>`coalesce(sum(${fuelOperationRecords.liters}), 0)`,
@@ -101,9 +104,11 @@ export async function getOperationsSummary(session: Session, filters: Operations
       // como rendimiento 0 real: un equipo con la mitad de sus cargas sin
       // lectura mostraba la mitad de su rendimiento. Se promedian sólo las
       // cargas que sí lo traen.
-      rendimiento: sql<number>`case when coalesce(sum(${fuelOperationRecords.liters}) filter (where ${fuelOperationRecords.rendimiento} is not null), 0) > 0
-        then sum(${fuelOperationRecords.rendimiento} * ${fuelOperationRecords.liters}) filter (where ${fuelOperationRecords.rendimiento} is not null)
-             / sum(${fuelOperationRecords.liters}) filter (where ${fuelOperationRecords.rendimiento} is not null)
+      // El primer registro después de un uso personal se midió contra uno de antes: su
+      // rendimiento trae los km del dueño y no entra al promedio (sus litros sí cuentan).
+      rendimiento: sql<number>`case when coalesce(sum(${fuelOperationRecords.liters}) filter (where ${performanceCounted}), 0) > 0
+        then sum(${fuelOperationRecords.rendimiento} * ${fuelOperationRecords.liters}) filter (where ${performanceCounted})
+             / sum(${fuelOperationRecords.liters}) filter (where ${performanceCounted})
         else 0 end`,
       vehicleId: sql<string | null>`max(${fuelOperationRecords.vehicleId})`,
       // Unidad del rendimiento de la patente. No se agrega al groupBy a propósito:
