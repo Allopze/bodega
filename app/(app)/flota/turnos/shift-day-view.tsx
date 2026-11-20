@@ -45,8 +45,17 @@ function turnoLabel(row: ShiftRow): string {
 }
 
 /** Los números de un turno sin telemetría no existen: «—» en vez de ceros que parecen medidas. */
+/** Horas de un turno: sin telemetría o con horas aún sin llegar no hay cifra (una parcial se leería como final). */
 function hoursCell(row: ShiftRow, value: number): string {
-  return row.summary.status === "sin_telemetria" ? "—" : formatHoursValue(value)
+  return row.summary.status === "sin_telemetria" || row.summary.status === "pendiente" ? "—" : formatHoursValue(value)
+}
+
+/**
+ * % de ralentí de un turno: sólo cuando el turno cuenta (en meta o sobre meta). Uno pendiente mostraría un %
+ * parcial con la barra en el color de «en meta», y uno sin uso, un % de minutos sueltos que no entra al ranking.
+ */
+function shiftIdlePct(row: ShiftRow): number | null {
+  return row.summary.status === "en_meta" || row.summary.status === "sobre_meta" ? row.summary.idlePct : null
 }
 
 /** Ralentí del equipo en el día completo: una barra, o el motivo de que no haya cifra. */
@@ -173,6 +182,7 @@ export function ShiftDayView({ day, target, vehicles, shifts, formVehicles, form
               compact
               title="No hay equipos que mostrar este día"
               description="Aquí aparecen los equipos con VisionLink de tus faenas y los que tengan turnos o marcas ese día."
+              action={canManage ? <Button type="button" onClick={() => openForm(null)}>Registrar turno</Button> : undefined}
             />
           </div>
         )}
@@ -214,7 +224,7 @@ export function ShiftDayView({ day, target, vehicles, shifts, formVehicles, form
                 </div>
                 <ShiftStatusBadge status={row.summary.status} />
               </div>
-              <div className="mt-3"><IdleBar pct={row.summary.idlePct} target={target} /></div>
+              <div className="mt-3"><IdleBar pct={shiftIdlePct(row)} target={target} /></div>
               <dl className="mt-3 grid grid-cols-3 gap-x-3 text-xs">
                 <div><dt className="text-[var(--color-text-subtle)]">Motor</dt><dd className="font-mono tabular-nums">{hoursCell(row, row.summary.engineHours)} h</dd></div>
                 <div><dt className="text-[var(--color-text-subtle)]">Trabajo</dt><dd className="font-mono tabular-nums">{hoursCell(row, row.summary.workingHours)} h</dd></div>
@@ -232,7 +242,7 @@ export function ShiftDayView({ day, target, vehicles, shifts, formVehicles, form
               <TableCellNum>{hoursCell(row, row.summary.engineHours)}</TableCellNum>
               <TableCellNum>{hoursCell(row, row.summary.workingHours)}</TableCellNum>
               <TableCellNum>{hoursCell(row, row.summary.idleHours)}</TableCellNum>
-              <TableCell><IdleBar pct={row.summary.idlePct} target={target} /></TableCell>
+              <TableCell><IdleBar pct={shiftIdlePct(row)} target={target} /></TableCell>
               <TableCell><ShiftStatusBadge status={row.summary.status} /></TableCell>
               <TableCell className="text-right">{rowActions(row)}</TableCell>
             </TableRow>

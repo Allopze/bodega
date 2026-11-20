@@ -257,6 +257,18 @@ describe("summarizeEquipmentDay", () => {
     expect(summarizeEquipmentDay(day, [], emptyTele({ linked: false }), { outOfService: false }).signal).toBe("sin_telemetria")
   })
 
+  it("sin motor y sin resumen diario consultado es pendiente, no motor detenido", () => {
+    const awaitingDaily = teleFor([day], [], { dailyFetchedAt: new Map(), dailyRowDays: new Set() })
+    expect(summarizeEquipmentDay(day, [], awaitingDaily, { outOfService: false }).signal).toBe("pendiente")
+  })
+
+  it("un turno sin motor en un día que el diario descartó pero con tramos es sin uso, no sin señal", () => {
+    // ConnectPro: el diario descarta el día (ralentí > funcionamiento) y no deja fila, pero hubo motor de 06 a 14.
+    const discarded = teleFor([day], [[{ day, hour: 9 }, { idle: 1 * H, working: 2 * H }]], { dailyRowDays: new Set() })
+    const afternoon: ShiftWindow = { shiftDate: day, startHour: 14, endHour: 22 }
+    expect(summarizeShift(afternoon, discarded, TARGET).status).toBe("sin_uso")
+  })
+
   it("un día sin fila diaria pero con motor no es sin señal", () => {
     const some = teleFor([day], [[{ day, hour: 9 }, { idle: 1 * H }]], { dailyRowDays: new Set() })
     expect(summarizeEquipmentDay(day, [], some, { outOfService: false }).signal).toBe("ok")

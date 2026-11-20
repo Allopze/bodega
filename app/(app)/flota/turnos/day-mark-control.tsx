@@ -24,8 +24,9 @@ const REASON_OPTIONS = [
 const MAX_NOTES = 500
 
 /**
- * Marca de un equipo en un día: «Sin operación programada» u «Otro motivo», con notas. Quita las horas del
- * equipo de la cuenta de «motor sin turno». Una avería o una mantención no se marcan aquí: es el estado del
+ * Marca de un equipo en un día: «Sin operación programada» u «Otro motivo», con notas. No apaga el aviso de
+ * «motor sin turno»: un equipo sin operación programada que igual tuvo motor es justo lo que hay que mirar
+ * (sólo mantención y fuera de servicio lo apagan). Una avería o una mantención no se marcan aquí: es el estado del
  * equipo, que se cambia en su ficha (el enlace va dentro del mismo panel para no duplicar ese flujo).
  */
 export function DayMarkControl({ vehicleId, vehicleCode, day, mark }: {

@@ -86,6 +86,21 @@ function allHoursKnown(keys: readonly HourKey[], tele: VehicleTelemetry): boolea
   return keys.every((key) => isHourKnown(key, tele.segmentsFetchedAt.get(key.day)))
 }
 
+/**
+ * El equipo transmitió ese día: hay fila del resumen diario o algún tramo con motor. Lo
+ * segundo importa porque el sync diario descarta días inconsistentes (ralentí mayor que el
+ * funcionamiento, típico de ConnectPro) y los deja sin fila aunque el equipo sí transmitió:
+ * leer eso como «Sin señal» contradiría los tramos del mismo día.
+ */
+function dayTransmitted(day: PlainDate, tele: VehicleTelemetry): boolean {
+  if (tele.dailyRowDays.has(day)) return true
+  for (let hour = 0; hour < 24; hour++) {
+    const seconds = tele.hours.get(hourKeyId({ day, hour }))
+    if (seconds && seconds.idle + seconds.working + seconds.running > 0) return true
+  }
+  return false
+}
+
 export function summarizeShift(shift: ShiftWindow, tele: VehicleTelemetry, target: number = IDLE_TARGET_DEFAULT): HoursTotals & { status: ShiftStatus } {
   if (!tele.linked) return { ...ZERO_TOTALS, status: "sin_telemetria" }
   const keys = shiftHourKeys(shift)
@@ -95,7 +110,7 @@ export function summarizeShift(shift: ShiftWindow, tele: VehicleTelemetry, targe
 
   let status: ShiftStatus
   if (!allHoursKnown(keys, tele) || (noEngine && days.some((day) => !tele.dailyFetchedAt.has(day)))) status = "pendiente"
-  else if (noEngine && days.some((day) => !tele.dailyRowDays.has(day))) status = "sin_senal"
+  else if (noEngine && days.some((day) => !dayTransmitted(day, tele))) status = "sin_senal"
   else if (totals.engineHours < MIN_ENGINE_HOURS) status = "sin_uso"
   else if (totals.idlePct === null) status = "sin_dato_ralenti"
   else status = totals.idlePct > target ? "sobre_meta" : "en_meta"
@@ -122,7 +137,9 @@ export function summarizeEquipmentDay(
   let signal: EquipmentDaySignal
   if (!tele.linked) signal = "sin_telemetria"
   else if (!allHoursKnown(dayKeys, tele)) signal = "pendiente"
-  else if (totals.engineHours === 0 && tele.dailyFetchedAt.has(day) && !tele.dailyRowDays.has(day)) signal = "sin_senal"
+  // Sin motor en todo el día: «detenido» o «sin señal» sólo lo decide el resumen diario ya consultado.
+  else if (totals.engineHours === 0 && !tele.dailyFetchedAt.has(day)) signal = "pendiente"
+  else if (totals.engineHours === 0 && !dayTransmitted(day, tele)) signal = "sin_senal"
   else signal = "ok"
 
   return {

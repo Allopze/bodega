@@ -67,7 +67,7 @@ export function ShiftForm({
   const [vehicleId, setVehicleId] = React.useState(editing?.vehicleId ?? "")
   const [startHour, setStartHour] = React.useState<number | null>(editing?.startHour ?? null)
   const [endHour, setEndHour] = React.useState<number | null>(editing?.endHour ?? null)
-  const [turno, setTurno] = React.useState(turnoOf(editing?.startHour ?? null, editing?.endHour ?? null))
+  const [turno, setTurno] = React.useState(() => turnoOf(editing?.startHour ?? null, editing?.endHour ?? null))
   const [operatorId, setOperatorId] = React.useState(editing?.operatorWorkerId ?? "")
   const [notes, setNotes] = React.useState(editing?.notes ?? "")
   const [touched, setTouched] = React.useState(false)
