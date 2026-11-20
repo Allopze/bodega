@@ -21,6 +21,8 @@ import { detectCorruptEvidence, getReusedEvidence } from "./evidence-management"
 import { fuelOperationOccurredAtSql } from "./fuel-log"
 import { accountableProviderTransactionsWhere, accountableFuelLoadsWhere } from "./load-status"
 import { countableLoadSql } from "./control/filters"
+import { loadNotInPersonalUseSql, providerTxKeptWhereSql } from "./personal-use-fuel-sql"
+import { notPersonalUseOnDaySql, personalUseDaysInSql } from "@/lib/fleet/personal-use-sql"
 import { stayWorksiteOnIsoTextDaySql } from "./control/queries/field-filters"
 import { DEFAULT_OUTLIER_THRESHOLD_STDDEVS, MIN_CONCLUSIVE_SAMPLE, flagOutliers } from "./performance-statistics"
 import { buildFuelVariationCandidates, candidateTouchesCutoff, fuelVariationProductLabel } from "./fuel-variation"
@@ -279,6 +281,9 @@ async function getOperationPerformanceObservations(rowLimit: number, cursor?: st
       inArray(fuelOperationRecords.vehicleId, vehicleIds),
       isNotNull(fuelOperationRecords.rendimiento),
       sql`${fuelVehicles.performanceUnit} <> 'not_applicable'`,
+      // Uso personal: lo que rindió el equipo un día que no operó para la empresa no es un
+      // punto de su historial ni del grupo. `fecha` ya es el día civil (`YYYY-MM-DD`).
+      notPersonalUseOnDaySql(fuelOperationRecords.vehicleId, sql`${fuelOperationRecords.fecha}`),
     ))
     .orderBy(fuelOperationRecords.vehicleId, fuelOperationRecords.id)
     .limit(BATCH_SCAN_ROW_LIMIT)
@@ -460,6 +465,14 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
     updatedAt: fuelConsumptionRecords.updatedAt,
     worksiteId: fuelConsumptionRecords.worksiteId,
     equipmentTypeSlug: fuelEquipmentTypes.slug,
+    // Días del registro (`periodo_desde..periodo_hasta`) en uso personal del equipo. Un registro
+    // con alguno no se compara: su consumo ya viene recortado por la fracción de días en los
+    // agregados de gestión y no es comparable con un período entero.
+    personalUseDays: personalUseDaysInSql(
+      fuelConsumptionRecords.vehicleId,
+      sql`${fuelConsumptionRecords.periodoDesde}`,
+      sql`${fuelConsumptionRecords.periodoHasta}`,
+    ),
   })
     .from(fuelConsumptionRecords)
     .leftJoin(fuelVehicles, eq(fuelConsumptionRecords.vehicleId, fuelVehicles.id))
@@ -478,7 +491,12 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
     cantidad: Number(row.cantidad),
     createdAt: String(row.createdAt),
     updatedAt: String(row.updatedAt),
+    personalUseDays: Number(row.personalUseDays ?? 0),
   }))
+  // Los registros tocados por el uso personal se QUITAN DE LOS CANDIDATOS, no de la serie: si
+  // se quitaran de la lista, el período anterior y el posterior pasarían por consecutivos y
+  // abrirían un caso por una variación que nadie observó.
+  const touchedByPersonalUse = new Set(records.filter((row) => row.personalUseDays > 0).map((row) => row.id))
   const variation = buildFuelVariationCandidates(records, (equipmentTypeSlug) => thresholdPctOf(rule, 50, equipmentTypeSlug ?? undefined))
   unclassifiedRecords = variation.unclassifiedRecords
 
@@ -494,6 +512,7 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
   for (const candidate of variation.candidates) {
     const { previous: prev, current: curr, changePct: pct, thresholdPct, product } = candidate
     if (!candidateTouchesCutoff(candidate, scanFromMs)) continue
+    if (touchedByPersonalUse.has(prev.id) || touchedByPersonalUse.has(curr.id)) continue
     scanned++
     const legacyReference = `${curr.vehicleId}:${curr.periodoDesde}`
     if (activeLegacyReferences.has(legacyReference)) {
@@ -574,6 +593,12 @@ const detectConsumptionWhileInactive: DetectorFn = async (rule) => {
           eq(fuelTaeSubmissions.vehicleId, v.vehicleId),
           ne(fuelTaeSubmissions.status, "voided"),
           gt(fuelTaeSubmissions.loadedAt, interval.startedAt),
+          // Uso personal: una carga de un día que el dueño tenía el equipo no es consumo estando
+          // inactivo para la operación. Día calendario de Chile.
+          notPersonalUseOnDaySql(
+            fuelTaeSubmissions.vehicleId,
+            sql`to_char((${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date, 'YYYY-MM-DD')`,
+          ),
         ))
         .limit(1),
       db.select({ id: fuelProviderTransactions.id })
@@ -582,6 +607,7 @@ const detectConsumptionWhileInactive: DetectorFn = async (rule) => {
           eq(fuelProviderTransactions.vehicleId, v.vehicleId),
           isNotNull(fuelProviderTransactions.vehicleId),
           accountableProviderTransactionsWhere(),
+          providerTxKeptWhereSql(),
           sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${startedOn}`,
         ))
         .limit(1),
@@ -590,6 +616,7 @@ const detectConsumptionWhileInactive: DetectorFn = async (rule) => {
         .where(and(
           eq(fuelEquipmentLoads.vehicleId, v.vehicleId),
           countableLoadSql,
+          loadNotInPersonalUseSql(),
           gt(fuelEquipmentLoads.occurredAt, interval.startedAt),
         ))
         .limit(1),
@@ -630,6 +657,8 @@ const detectUnusualSupplier: DetectorFn = async (rule) => {
     .where(and(
       isNotNull(fuelVehicles.usualFuelSupplierId),
       inArray(fuelLoads.vehicleId, page.ids),
+      // Uso personal: `load_date` ya es el día civil (`YYYY-MM-DD`).
+      notPersonalUseOnDaySql(fuelLoads.vehicleId, sql`${fuelLoads.loadDate}`),
     ))
     // La página es por vehículo y el orden dentro de ella es determinista.
     .orderBy(fuelLoads.vehicleId, fuelLoads.id)

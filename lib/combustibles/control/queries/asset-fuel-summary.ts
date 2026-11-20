@@ -5,6 +5,12 @@ import { fuelAnomalyCases, fuelEquipmentLoads, fuelProviderTransactions, fuelVeh
 import { can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { accountableProviderTransactionsWhere } from "@/lib/combustibles/load-status"
+import {
+  loadNotInPersonalUseSql,
+  performanceTaintedByPersonalUseSql,
+  providerTxKeptAmountSql,
+  providerTxKeptWhereSql,
+} from "@/lib/combustibles/personal-use-fuel-sql"
 import type { DatedCost } from "@/lib/contracts/cost-attribution"
 import { idlePct } from "../calc/idle"
 import { chileDateSql, countableLoadSql, parseControlFilters, statisticallyValidLoadSql } from "../filters"
@@ -73,6 +79,10 @@ function emptySummary(vehicleId: string): AssetFuelSummary {
  * (`getFuelBilledByVehicleDay`), para que el costo por contrato sume
  * exactamente lo que el Panel muestra por equipo. La consulta que la use debe
  * unir `fuel_vehicles` (el alcance sigue a la faena ACTUAL del equipo).
+ *
+ * Uso personal: la transacción cuyo día de Chile cae en un período del equipo no
+ * suma (`providerTxKeptWhereSql`), y el TCT mensual suma sólo la fracción de días
+ * fuera del período (`providerTxKeptAmountSql`, que quien sume `amount` debe usar).
  */
 function billedTransactionsWhere(
   session: Session,
@@ -87,6 +97,7 @@ function billedTransactionsWhere(
     sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${period.from}`,
     sql`left(${fuelProviderTransactions.occurredAt}, 10) <= ${period.to}`,
     accountableProviderTransactionsWhere(),
+    providerTxKeptWhereSql(),
   )
 }
 
@@ -111,7 +122,7 @@ export async function getFuelBilledByVehicleDay(
     vehicleId: fuelProviderTransactions.vehicleId,
     day,
     granularity: fuelProviderTransactions.granularity,
-    amount: sql<number>`COALESCE(SUM(${fuelProviderTransactions.amount}), 0)::float8`,
+    amount: sql<number>`COALESCE(SUM(${providerTxKeptAmountSql()}), 0)::float8`,
   })
     .from(fuelProviderTransactions)
     .innerJoin(fuelVehicles, eq(fuelProviderTransactions.vehicleId, fuelVehicles.id))
@@ -145,14 +156,17 @@ export async function getAssetFuelSummary(
   const [loadRows, caseRows, costRows, meterRows, idleRows] = await Promise.all([
     db.select({
       vehicleId: fuelEquipmentLoads.vehicleId,
-      liters: sql<number>`COALESCE(SUM(${fuelEquipmentLoads.liters}) FILTER (WHERE ${countableLoadSql}), 0)::float8`,
+      // Los litros de gestión no suman el día de uso personal (la cantidad de cargas y la
+      // última carga son registros y no cambian).
+      liters: sql<number>`COALESCE(SUM(${fuelEquipmentLoads.liters}) FILTER (WHERE ${countableLoadSql} AND ${loadNotInPersonalUseSql()}), 0)::float8`,
       loadCount: sql<number>`(COUNT(*) FILTER (WHERE ${countableLoadSql}))::int`,
       lastLoadAt: sql<string | null>`(MAX(${fuelEquipmentLoads.occurredAt}) FILTER (WHERE ${countableLoadSql}))::text`,
       // Promedio de las cargas con rendimiento calculado y revisión resuelta.
       // Es el mismo criterio de `getEquipmentStats` y de la ficha del equipo:
       // cada carga válida pesa igual. La eficiencia ponderada del período es
-      // otra métrica y no se mezcla con ésta.
-      performanceValue: sql<number | null>`(AVG(${fuelEquipmentLoads.performanceValue}) FILTER (WHERE ${statisticallyValidLoadSql}))::float8`,
+      // otra métrica y no se mezcla con ésta. Se omiten las cargas del uso personal y la
+      // primera después: su rendimiento incluye los km del período.
+      performanceValue: sql<number | null>`(AVG(${fuelEquipmentLoads.performanceValue}) FILTER (WHERE ${statisticallyValidLoadSql} AND NOT ${performanceTaintedByPersonalUseSql()}))::float8`,
       flaggedLoads: sql<number>`(COUNT(*) FILTER (WHERE ${fuelEquipmentLoads.reviewStatus} = 'flagged' AND ${isNull(fuelEquipmentLoads.voidedAt)}))::int`,
     })
       .from(fuelEquipmentLoads)
@@ -177,7 +191,7 @@ export async function getAssetFuelSummary(
     canViewCosts
       ? db.select({
           vehicleId: fuelProviderTransactions.vehicleId,
-          billedAmount: sql<number>`COALESCE(SUM(${fuelProviderTransactions.amount}), 0)::float8`,
+          billedAmount: sql<number>`COALESCE(SUM(${providerTxKeptAmountSql()}), 0)::float8`,
         })
           .from(fuelProviderTransactions)
           // El costo sigue al equipo: la faena histórica de la transacción puede

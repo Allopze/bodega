@@ -7,6 +7,7 @@ import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableCell, TableRow } from "@/components/ui/table"
+import { Tooltip } from "@/components/ui/tooltip"
 import { formatCLP, formatDate, formatDateTime } from "@/lib/utils"
 import { EQUIPMENT_STATE_LABEL } from "@/lib/mantencion/format"
 import { meterSourceLabel } from "@/lib/combustibles/meter-source"
@@ -147,6 +148,22 @@ const COLUMNS = (showMeterMismatch: boolean, canViewCosts: boolean, canViewInspe
 
 const SEARCH_KEYS = ["code", "name", "worksiteName", "contractName", "operationalStatusLabel"] as const
 
+/**
+ * «Excluye N días de uso personal»: avisa que las cifras de la fila no suman los días en que el
+ * dueño se llevó el equipo. Sólo con N > 0. El tooltip dice qué se deja fuera; `tabIndex` lo hace
+ * alcanzable con teclado.
+ */
+function PersonalUseNote({ days }: { days: number }) {
+  if (days <= 0) return null
+  return (
+    <Tooltip content="Su combustible, compras, litros y km de esos días no se suman" side="top">
+      <span tabIndex={0} className="mt-0.5 block w-fit text-2xs text-[var(--color-text-muted)] underline decoration-dotted underline-offset-2">
+        {days === 1 ? "Excluye 1 día de uso personal" : `Excluye ${days} días de uso personal`}
+      </span>
+    </Tooltip>
+  )
+}
+
 /** El contrato vigente del equipo al cierre del período, o «Sin contrato» en tono apagado. */
 function ContractLabel({ asset }: { asset: OperationalAsset }) {
   return asset.contractName
@@ -196,7 +213,10 @@ export function OperationalAssetsTable({
   const renderMobileCard = (asset: OperationalAsset) => (
     <article className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <div className="flex items-start justify-between gap-3">
-        <VehicleIdentity code={asset.code} plate={asset.plate} type={asset.typeName} />
+        <div className="min-w-0">
+          <VehicleIdentity code={asset.code} plate={asset.plate} type={asset.typeName} />
+          <PersonalUseNote days={asset.personalUseDays} />
+        </div>
         <StateBadge entity="fleet" state={asset.operationalStatus} />
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
@@ -263,6 +283,7 @@ export function OperationalAssetsTable({
     <TableRow key={asset.key}>
       <TableCell>
         <VehicleIdentity code={asset.code} plate={asset.plate} type={asset.typeName} href={assetHref(asset)} />
+        <PersonalUseNote days={asset.personalUseDays} />
       </TableCell>
       <TableCell>{asset.worksiteName}</TableCell>
       <TableCell><ContractLabel asset={asset} /></TableCell>

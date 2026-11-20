@@ -4,6 +4,8 @@ import { nanoid } from "@/lib/id"
 import { requiredEvidenceKinds } from "@/lib/combustibles/field-load-rules"
 import { maxLoadsOf, requiredEvidenceCountOf, severityOf, windowHoursOf } from "@/lib/combustibles/anomaly-detector"
 import { fuelAnomalyCases, fuelAnomalyRules, fuelTaeEvidence, fuelTaeSubmissions, fuelVehicles } from "@/db/schema"
+import { personalUseOnDaySql } from "@/lib/fleet/personal-use-sql"
+import { todayInChile } from "@/lib/utils"
 import type { TaeSubmissionRow } from "./types"
 
 const WEEKDAY_ISO: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }
@@ -186,8 +188,16 @@ export async function detectTaeAnomaliesInTx(
       columns: { worksiteId: true, operatingSchedule: true, plate: true },
     })
 
+    // Un día de uso personal del equipo (el dueño se lo llevó) no abre casos por usarlo fuera de
+    // la operación: ni «faena distinta» ni «fuera de horario». Las reglas de integridad del dato
+    // (sellos, lecturas, evidencia) y el exceso de cargas siguen igual.
+    const [personal] = await tx.select({
+      inUse: personalUseOnDaySql(fuelVehicles.id, sql`${todayInChile(submission.loadedAt)}`),
+    }).from(fuelVehicles).where(eq(fuelVehicles.id, submission.vehicleId)).limit(1)
+    const inPersonalUse = personal?.inUse === true
+
     // Carga en faena distinta de la asignada al equipo
-    if (vehicle && vehicle.worksiteId !== submission.worksiteId) {
+    if (vehicle && !inPersonalUse && vehicle.worksiteId !== submission.worksiteId) {
       const rule = await tx.select({ id: fuelAnomalyRules.id, severity: fuelAnomalyRules.severity }).from(fuelAnomalyRules).where(and(eq(fuelAnomalyRules.code, "carga_faena_distinta"), eq(fuelAnomalyRules.isActive, true))).limit(1)
       if (rule[0]) {
         await tx.insert(fuelAnomalyCases).values({
@@ -199,7 +209,7 @@ export async function detectTaeAnomaliesInTx(
     }
 
     // Carga fuera del horario operativo declarado del equipo
-    if (vehicle?.operatingSchedule && isOutsideOperatingSchedule(submission.loadedAt, vehicle.operatingSchedule)) {
+    if (vehicle?.operatingSchedule && !inPersonalUse && isOutsideOperatingSchedule(submission.loadedAt, vehicle.operatingSchedule)) {
       const rule = await tx.select({ id: fuelAnomalyRules.id, severity: fuelAnomalyRules.severity }).from(fuelAnomalyRules).where(and(eq(fuelAnomalyRules.code, "carga_fuera_horario"), eq(fuelAnomalyRules.isActive, true))).limit(1)
       if (rule[0]) {
         await tx.insert(fuelAnomalyCases).values({

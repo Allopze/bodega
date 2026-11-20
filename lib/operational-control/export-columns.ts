@@ -41,6 +41,9 @@ export function buildOperationalAssetExportColumns(
     { header: "Faena", key: "worksite", width: 24 },
     { header: "Contrato", key: "contractName", width: 28 },
     { header: "Estado", key: "status", width: 18 },
+    // Días del período con el equipo en uso personal: su combustible, compras, litros y km no suman
+    // en las cifras de la hoja. Va con las columnas base porque afecta a todas las cifras de la fila.
+    { header: "Días de uso personal excluidos", key: "personalUseDays", width: 22 },
     ...(canViewFleet
       ? [
           { header: "Próximo vencimiento", key: "nextExpiryDate", width: 18 },
@@ -137,6 +140,7 @@ export function buildOperationalAssetExportRow(
     worksite: asset.worksiteName,
     contractName: asset.contractName ?? "Sin contrato",
     status: asset.operationalStatusLabel,
+    personalUseDays: asset.personalUseDays,
     ...(canViewFleet
       ? {
           nextExpiryDate: asset.nextExpiryDate,
