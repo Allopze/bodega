@@ -11,6 +11,8 @@
 
 const TOKEN_URL = "https://login.microsoftonline.com/ceb177bf-013b-49ab-8a9c-4abce32afc1e/oauth2/v2.0/token"
 const UTILIZATION_URL = "https://services.cat.com/catDigital/utilizationHistory/v1/utilization"
+const ASSET_OPERATIONS_URL = "https://services.cat.com/catDigital/assetOperationHistory/v2/assetOperations"
+const API_HOST = "services.cat.com"
 const REQUEST_TIMEOUT_MS = 30_000
 const TOKEN_MARGIN_MS = 5 * 60_000
 /** Tope de páginas por consulta: con 500 registros por página es holgado, y corta un cursor que nunca termina. */
@@ -62,6 +64,16 @@ export interface VisionLinkDailyUtilization {
 export interface VisionLinkUtilization {
   equipmentHeader?: VisionLinkEquipmentHeader | null
   dailyUtilizations?: VisionLinkDailyUtilization[] | null
+}
+
+/** Un tramo de operación de un equipo (Asset Operations): el motor en un estado entre dos instantes UTC. */
+export interface VisionLinkSegment {
+  /** UTC, sin la `Z` final (`2026-11-20T14:32:51`): se lee con `parseVisionLinkUtc`. */
+  startStateUtc: string
+  endStateUtc: string
+  durationSeconds: number
+  /** `idle`, `working` o `running`; quien consume decide qué hacer con otro valor. */
+  segmentType: string
 }
 
 type FetchLike = typeof fetch
@@ -197,4 +209,106 @@ export async function fetchVisionLinkUtilization(
     equipmentHeader: header,
     dailyUtilizations: [...days.values()].sort((a, b) => (a.assetLocalDate ?? "").localeCompare(b.assetLocalDate ?? "")),
   }))
+}
+
+interface SegmentsPage {
+  assetOperations?: unknown
+  assetOperationDateInfo?: unknown
+  responseMetadata?: { nextCursor?: unknown } | null
+}
+
+interface RawSegment {
+  startStateUtc?: unknown
+  endStateUtc?: unknown
+  durationSeconds?: unknown
+  segmentType?: unknown
+}
+
+/**
+ * Tramos de operación (idle / working / running) de UN equipo entre `startDate` y
+ * `endDate` (`YYYY-MM-DD`, ambos inclusive; la API acepta hasta un mes por
+ * consulta, quien llama parte el rango). Sólo existen con el motor encendido.
+ *
+ * La primera respuesta trae hasta 100 tramos y un `nextSegmentUrl`; esa URL
+ * trae el resto, paginado con `responseMetadata.nextCursor` (se agrega como
+ * `cursor` a la misma URL). Un tramo puede repetirse entre páginas: el resultado
+ * viene deduplicado por inicio + tipo. Se corta en `MAX_PAGES`.
+ *
+ * Se sigue `nextSegmentUrl` sólo si apunta al mismo servidor: el token no debe
+ * salir de Cat si la respuesta trae otra cosa.
+ */
+export async function fetchVisionLinkSegments(
+  credentials: VisionLinkCredentials,
+  query: { serialNumber: string; startDate: string; endDate: string; make?: string },
+  options: { fetchImpl?: FetchLike; now?: () => number } = {},
+): Promise<VisionLinkSegment[]> {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const token = await accessToken(credentials, fetchImpl, options.now ?? Date.now)
+
+  const first = new URL(ASSET_OPERATIONS_URL)
+  first.searchParams.set("makeSerialNumbers", `${(query.make ?? "CAT").trim().toUpperCase()}|${query.serialNumber.trim()}`)
+  first.searchParams.set("startDate", query.startDate)
+  first.searchParams.set("endDate", query.endDate)
+
+  const segments = new Map<string, VisionLinkSegment>()
+  let base = first
+  let next: URL | null = first
+  let pages = 0
+  while (next && pages < MAX_PAGES) {
+    const response = await request(fetchImpl, next.toString(), {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    })
+    if (response.status === 401 || response.status === 403) {
+      cachedToken = null
+      throw new VisionLinkClientError("VISIONLINK_AUTH_FAILED", response.status)
+    }
+    if (response.status === 429) throw new VisionLinkClientError("VISIONLINK_RATE_LIMITED", 429)
+    if (!response.ok) throw new VisionLinkClientError("VISIONLINK_HTTP_ERROR", response.status)
+
+    const body = await response.json().catch(() => null) as SegmentsPage | null
+    if (!body || (!Array.isArray(body.assetOperations) && !Array.isArray(body.assetOperationDateInfo))) {
+      throw new VisionLinkClientError("VISIONLINK_BAD_RESPONSE")
+    }
+
+    const lists: unknown[] = []
+    let nextSegmentUrl: string | null = null
+    for (const operation of Array.isArray(body.assetOperations) ? body.assetOperations as Array<Record<string, unknown> | null> : []) {
+      if (Array.isArray(operation?.assetOperationDateInfo)) lists.push(operation.assetOperationDateInfo)
+      if (!nextSegmentUrl && typeof operation?.nextSegmentUrl === "string" && operation.nextSegmentUrl) nextSegmentUrl = operation.nextSegmentUrl
+    }
+    if (Array.isArray(body.assetOperationDateInfo)) lists.push(body.assetOperationDateInfo)
+    for (const list of lists) {
+      for (const raw of list as RawSegment[]) {
+        if (typeof raw?.startStateUtc !== "string" || typeof raw.endStateUtc !== "string" || typeof raw.segmentType !== "string") continue
+        segments.set(`${raw.startStateUtc}|${raw.segmentType}`, {
+          startStateUtc: raw.startStateUtc,
+          endStateUtc: raw.endStateUtc,
+          durationSeconds: Number(raw.durationSeconds) || 0,
+          segmentType: raw.segmentType,
+        })
+      }
+    }
+
+    pages++
+    const cursor = body.responseMetadata?.nextCursor
+    if (nextSegmentUrl) {
+      let target: URL
+      try {
+        target = new URL(nextSegmentUrl, base)
+      } catch {
+        throw new VisionLinkClientError("VISIONLINK_BAD_RESPONSE")
+      }
+      if (target.protocol !== "https:" || target.hostname !== API_HOST) throw new VisionLinkClientError("VISIONLINK_BAD_RESPONSE")
+      target.searchParams.delete("cursor")
+      base = target
+      next = target
+    } else if (typeof cursor === "string" && cursor.length > 0) {
+      const target = new URL(base)
+      target.searchParams.set("cursor", cursor)
+      next = target
+    } else {
+      next = null
+    }
+  }
+  return [...segments.values()].sort((a, b) => a.startStateUtc.localeCompare(b.startStateUtc))
 }

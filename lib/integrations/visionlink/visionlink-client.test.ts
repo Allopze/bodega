@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { fetchVisionLinkUtilization, resetVisionLinkTokenCache, verifyVisionLinkCredentials, VisionLinkClientError } from "./visionlink-client"
+import { fetchVisionLinkSegments, fetchVisionLinkUtilization, resetVisionLinkTokenCache, verifyVisionLinkCredentials, VisionLinkClientError } from "./visionlink-client"
 
 const credentials = { clientId: "client-id", clientSecret: "client-secret" }
 const range = { startDate: "2026-10-16", endDate: "2026-10-29" }
@@ -137,5 +137,98 @@ describe("verifyVisionLinkCredentials", () => {
     const { message } = error as VisionLinkClientError
     expect(message).toBe("VISIONLINK_AUTH_FAILED (HTTP 401)")
     expect(message).not.toContain("client-secret")
+  })
+})
+
+const seg = (startStateUtc: string, segmentType: string, durationSeconds = 600) => ({
+  startStateUtc, endStateUtc: startStateUtc.replace(/:\d\d$/, ":59"), durationSeconds, segmentType,
+})
+
+describe("fetchVisionLinkSegments", () => {
+  beforeEach(() => resetVisionLinkTokenCache())
+  const query = { serialNumber: "DKJ30153", startDate: "2026-11-18", endDate: "2026-11-18" }
+  const NEXT = "https://services.cat.com/catDigital/assetOperationHistory/v2/assetOperations/segments?id=xyz&startDate=2026-11-18&endDate=2026-11-18"
+
+  it("arma makeSerialNumbers con CAT por defecto y sigue nextSegmentUrl y el cursor", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(token())
+      .mockResolvedValueOnce(json({
+        assetOperations: [{ equipmentHeader: { serialNumber: "DKJ30153" }, assetOperationDateInfo: [seg("2026-11-18T08:00:00", "idle")], nextSegmentUrl: NEXT }],
+        responseMetadata: {},
+      }))
+      .mockResolvedValueOnce(json({ assetOperationDateInfo: [seg("2026-11-18T09:00:00", "working")], responseMetadata: { nextCursor: "abc" } }))
+      .mockResolvedValueOnce(json({ assetOperationDateInfo: [seg("2026-11-18T10:00:00", "running")], responseMetadata: {} }))
+
+    const result = await fetchVisionLinkSegments(credentials, query, { fetchImpl })
+
+    const first = new URL(String(fetchImpl.mock.calls[1]![0]))
+    expect(first.pathname).toBe("/catDigital/assetOperationHistory/v2/assetOperations")
+    expect(first.searchParams.get("makeSerialNumbers")).toBe("CAT|DKJ30153")
+    expect(first.searchParams.get("startDate")).toBe("2026-11-18")
+    expect(first.searchParams.get("endDate")).toBe("2026-11-18")
+    expect(String(fetchImpl.mock.calls[2]![0])).toBe(NEXT)
+    const third = new URL(String(fetchImpl.mock.calls[3]![0]))
+    expect(third.searchParams.get("cursor")).toBe("abc")
+    expect(third.searchParams.get("id")).toBe("xyz")
+    expect(result.map((s) => s.segmentType)).toEqual(["idle", "working", "running"])
+    expect(result[0]).toEqual({ startStateUtc: "2026-11-18T08:00:00", endStateUtc: "2026-11-18T08:00:59", durationSeconds: 600, segmentType: "idle" })
+  })
+
+  it("usa la marca indicada", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(token()).mockResolvedValueOnce(json({ assetOperations: [] }))
+    await fetchVisionLinkSegments(credentials, { ...query, make: "KOM" }, { fetchImpl })
+    expect(new URL(String(fetchImpl.mock.calls[1]![0])).searchParams.get("makeSerialNumbers")).toBe("KOM|DKJ30153")
+  })
+
+  it("deduplica un tramo repetido entre páginas", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(token())
+      .mockResolvedValueOnce(json({
+        assetOperations: [{ assetOperationDateInfo: [seg("2026-11-18T08:00:00", "idle")], nextSegmentUrl: NEXT }],
+        responseMetadata: {},
+      }))
+      .mockResolvedValueOnce(json({
+        assetOperationDateInfo: [seg("2026-11-18T08:00:00", "idle"), seg("2026-11-18T08:00:00", "working")],
+        responseMetadata: {},
+      }))
+    const result = await fetchVisionLinkSegments(credentials, query, { fetchImpl })
+    expect(result.map((s) => s.segmentType)).toEqual(["idle", "working"])
+  })
+
+  it("un equipo sin tramos devuelve []", async () => {
+    const withEmptyList = vi.fn<typeof fetch>().mockResolvedValueOnce(token()).mockResolvedValueOnce(json({ assetOperations: [], responseMetadata: {} }))
+    expect(await fetchVisionLinkSegments(credentials, query, { fetchImpl: withEmptyList })).toEqual([])
+    resetVisionLinkTokenCache()
+    const withoutSegments = vi.fn<typeof fetch>().mockResolvedValueOnce(token()).mockResolvedValueOnce(json({ assetOperations: [{ equipmentHeader: {} }] }))
+    expect(await fetchVisionLinkSegments(credentials, query, { fetchImpl: withoutSegments })).toEqual([])
+  })
+
+  it("un 429 lanza VISIONLINK_RATE_LIMITED", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(token()).mockResolvedValueOnce(json({}, 429))
+    const error = await fetchVisionLinkSegments(credentials, query, { fetchImpl }).catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(VisionLinkClientError)
+    expect((error as VisionLinkClientError).code).toBe("VISIONLINK_RATE_LIMITED")
+  })
+
+  it("no sigue una nextSegmentUrl hacia otro servidor (el token no sale de Cat)", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(token())
+      .mockResolvedValueOnce(json({ assetOperations: [{ assetOperationDateInfo: [], nextSegmentUrl: "https://evil.example.com/x" }] }))
+    const error = await fetchVisionLinkSegments(credentials, query, { fetchImpl }).catch((caught: unknown) => caught)
+    expect((error as VisionLinkClientError).code).toBe("VISIONLINK_BAD_RESPONSE")
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it("corta en el tope de páginas si el cursor no termina", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(token()).mockImplementation(async () =>
+      json({ assetOperations: [{ assetOperationDateInfo: [], nextSegmentUrl: NEXT }], assetOperationDateInfo: [], responseMetadata: { nextCursor: "again" } }))
+    await fetchVisionLinkSegments(credentials, query, { fetchImpl })
+    expect(fetchImpl.mock.calls.length).toBeLessThanOrEqual(51 + 1)
+  })
+
+  it("una respuesta sin forma de tramos es BAD_RESPONSE", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(token()).mockResolvedValueOnce(json({ foo: 1 }))
+    const error = await fetchVisionLinkSegments(credentials, query, { fetchImpl }).catch((caught: unknown) => caught)
+    expect((error as VisionLinkClientError).code).toBe("VISIONLINK_BAD_RESPONSE")
   })
 })
