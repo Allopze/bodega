@@ -5,18 +5,24 @@ import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
 import { db }                 from "@/db"
 import {
+  dispatchGuides,
   purchaseOrders,
   purchaseRequestItems,
   preventionEmergencyResources,
   receipts,
   receiptItems,
 } from "@/db/schema"
-import { eq, inArray } from "drizzle-orm"
+import { and, asc, eq, inArray, ne } from "drizzle-orm"
 import { requireAuth, can, canAny, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ReceiptForm } from "../receipt-form"
 import type { ReceiptOcItem } from "../receipt-form"
+import { stageHasPending } from "../receipt-remaining"
+import { faenaGuideNotice, pickFaenaGuide } from "../faena-guide"
+import { EmptyState } from "@/components/ui/empty-state"
+import { Button } from "@/components/ui/button"
+import Link from "next/link"
 import { officeWorksiteLabel } from "@/lib/services/dispatch-guides"
 import {
   RECEIVABLE_ORDER_STATUSES,
@@ -147,30 +153,84 @@ export default async function NuevaRecepcionPage({
     }
   })
 
+  const deliveryMode = order.deliveryMode as "via_oficina" | "directo_faena"
+  const worksiteName = order.worksite?.name ?? "faena de la OC"
+
+  /*
+   * Con guía de despacho la faena no se recibe aquí: `registerReceipt` lo
+   * rechaza (ver `faena-guide.ts`). Si además no queda nada que registrar en
+   * oficina, la página entera es ese aviso; si queda, el formulario sólo ofrece
+   * la etapa de oficina y el aviso va junto al selector de etapa.
+   */
+  const faenaGuide = deliveryMode === "directo_faena"
+    ? null
+    : pickFaenaGuide(await db
+        .select({ id: dispatchGuides.id, code: dispatchGuides.code, status: dispatchGuides.status, receiptId: dispatchGuides.receiptId })
+        .from(dispatchGuides)
+        .where(and(eq(dispatchGuides.purchaseOrderId, order.id), ne(dispatchGuides.status, "cancelled")))
+        .orderBy(asc(dispatchGuides.createdAt), asc(dispatchGuides.id)))
+  const faenaNotice = faenaGuide
+    ? faenaGuideNotice(faenaGuide, worksiteName, {
+        viewGuides:    can(session, "warehouse:view_guides"),
+        receiveGuide:  can(session, "warehouse:receive_guide"),
+        dispatchGuide: can(session, "warehouse:dispatch_guide"),
+        viewReceipts:  can(session, "receiving:view"),
+      })
+    : null
+  const officePending = canOfficeForOrder && stageHasPending(items, "office", deliveryMode)
+
+  const header = (
+    <PageHeader
+      title={`Recepción ${order.code}`}
+      description={deliveryMode === "directo_faena"
+        ? "Los productos se reciben directamente en faena; no requieren paso por oficina."
+        : `Registra primero la llegada a ${officeName} y luego la recepción en faena.`}
+      breadcrumb={
+        <Breadcrumbs items={[
+          { label: "Inicio",  href: "/dashboard" },
+          { label: "Recepción",  href: "/recepcion" },
+          { label: "Registrar"                       },
+        ]} />
+      }
+    />
+  )
+
+  if (faenaNotice && !officePending) {
+    return (
+      <PageContainer width="form">
+        {header}
+        <EmptyState
+          align="start"
+          title={faenaNotice.title}
+          description={faenaNotice.description}
+          action={faenaNotice.action && (
+            <Button variant="primary" asChild>
+              <Link href={faenaNotice.action.href}>{faenaNotice.action.label}</Link>
+            </Button>
+          )}
+          secondaryAction={
+            <Button variant="secondary" asChild>
+              <Link href="/recepcion">Volver a Recepción</Link>
+            </Button>
+          }
+        />
+      </PageContainer>
+    )
+  }
+
   return (
     <PageContainer width="workbench">
-      <PageHeader
-        title={`Recepción ${order.code}`}
-        description={order.deliveryMode === "directo_faena"
-          ? "Los productos se reciben directamente en faena; no requieren paso por oficina."
-          : `Registra primero la llegada a ${officeName} y luego la recepción en faena.`}
-        breadcrumb={
-          <Breadcrumbs items={[
-            { label: "Inicio",  href: "/dashboard" },
-            { label: "Recepción",  href: "/recepcion" },
-            { label: "Registrar"                       },
-          ]} />
-        }
-      />
+      {header}
       <ReceiptForm
         purchaseOrderId={order.id}
         orderCode={order.code}
-        orderWorksiteName={order.worksite?.name ?? "faena de la OC"}
+        orderWorksiteName={worksiteName}
         officeName={officeName}
         items={items}
         canOffice={canOfficeForOrder}
-        canFaena={canFaena}
-        deliveryMode={order.deliveryMode as "via_oficina" | "directo_faena"}
+        canFaena={canFaena && !faenaNotice}
+        faenaGuideNotice={faenaNotice}
+        deliveryMode={deliveryMode}
       />
     </PageContainer>
   )

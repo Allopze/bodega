@@ -339,6 +339,49 @@ describe("ReceiptForm", () => {
     })
   })
 
+  // Con `step="0.01"` fijo, cada flecha del campo sumaba o restaba un
+  // centésimo de unidad: un casco se recibía de a 0,01. La unidad de medida
+  // decide el paso, igual que en la OC, la aprobación y la entrega.
+  describe("paso de las cantidades", () => {
+    function renderWith(unitOfMeasure: string) {
+      return render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          officeName="Administración"
+          items={[makeItem({ unitOfMeasure })]}
+          canOffice={true}
+          canFaena={false}
+        />,
+      )
+    }
+
+    it("una unidad contable sube y baja de a 1 en los tres campos, escritorio y móvil", () => {
+      const { container } = renderWith("unidad")
+      const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="number"]'))
+      expect(inputs).toHaveLength(6)
+      for (const input of inputs) {
+        expect(input.step).toBe("1")
+        expect(input.min).toBe("0")
+      }
+      // El teclado del celular no ofrece la coma para una cantidad entera.
+      for (const input of inputs.filter((i) => i.hasAttribute("inputmode"))) {
+        expect(input.getAttribute("inputmode")).toBe("numeric")
+      }
+    })
+
+    it("una unidad divisible conserva el paso de centésimos", () => {
+      const { container } = renderWith("kg")
+      const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="number"]'))
+      expect(inputs).toHaveLength(6)
+      for (const input of inputs) expect(input.step).toBe("0.01")
+      for (const input of inputs.filter((i) => i.hasAttribute("inputmode"))) {
+        expect(input.getAttribute("inputmode")).toBe("decimal")
+      }
+    })
+  })
+
   describe("summary sidebar", () => {
     it("displays pending line count in sidebar", () => {
       render(

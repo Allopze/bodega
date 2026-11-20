@@ -247,7 +247,9 @@ describe("inventario canónico de activos de emergencia", () => {
       purchaseOrderId: "po-extinguisher",
       requestItemId: serviceCase!.requestItemId,
       productId: "prod-srv-recarga-extintor",
-      quantity: 1,
+      // Dos servicios para poder recibir uno parcial: un servicio no se
+      // recibe por mitades (`requiresWholeQuantity`).
+      quantity: 2,
       unitOfMeasure: "servicio",
       unitPrice: null,
       subtotal: null,
@@ -271,7 +273,7 @@ describe("inventario canónico de activos de emergencia", () => {
       worksiteId,
       items: [{
         purchaseOrderItemId: "po-item-extinguisher",
-        quantityReceived: 0.5,
+        quantityReceived: 1,
         maintenanceDate: "2026-09-01",
         nextExpiryDate: "2027-09-01",
       }],
@@ -287,7 +289,7 @@ describe("inventario canónico de activos de emergencia", () => {
       worksiteId,
       items: [{
         purchaseOrderItemId: "po-item-extinguisher",
-        quantityReceived: 0.5,
+        quantityReceived: 1,
         maintenanceDate: "2026-09-01",
         nextExpiryDate: "2027-09-01",
       }],
