@@ -635,4 +635,10 @@ export const pgliteTestFiles = [
   // Reglas de alertas OnWay tras un traslado: la alerta se procesa en la faena del día en que
   // ocurrió y una alerta que falla queda bloqueada sin detener la cola.
   "lib/integrations/onway/onway-automation-pglite.test.ts",
+  // Turnos y ralentí (docs/superpowers/plans/2026-11-20-turnos-ralenti.md): esquema, sync de tramos
+  // por hora, registro de turnos y lecturas de las tres vistas.
+  "lib/fleet/shifts/schema-pglite.test.ts",
+  "lib/integrations/visionlink/visionlink-hourly-sync-pglite.test.ts",
+  "lib/services/fleet-shifts-pglite.test.ts",
+  "lib/services/fleet-shifts-views-pglite.test.ts",
 ]
