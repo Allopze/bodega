@@ -18,7 +18,10 @@ import { can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { stayWorksiteOnIsoTextDaySql } from "@/lib/combustibles/control/queries/field-filters"
 import { stayWorksiteOnDaySql } from "@/lib/fleet/stays-sql"
-import { maxMeterRatePerDayOf, meterSeriesSegments, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
+import { isPersonalUseDay, type PersonalUseIndex } from "@/lib/fleet/personal-use"
+import { notPersonalUseOnDaySql } from "@/lib/fleet/personal-use-sql"
+import { loadPersonalUseIndex } from "@/lib/services/fleet-personal-use"
+import { maxMeterRatePerDayOf, meterSeriesSegments, segmentTouchesExcludedDay, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
 import { getIdleFleetMonths, listIdleVehicles } from "@/lib/combustibles/control/queries/idle"
 import type { ControlFilters } from "@/lib/combustibles/control/filters"
 import { bucketKey, listBuckets, rangeLengthDays, type DateRange, type IndicatorGranularity } from "@/lib/indicators/period"
@@ -91,14 +94,21 @@ export function pickGpsMeterSource(
  * objeta (`meterSeriesSegments`: sin retrocesos ni saltos imposibles, con la cota
  * `maxPerDay`), asignado al día de la lectura que cierra el par. La serie trae una
  * lectura por día chileno.
+ *
+ * `isExcludedDay` (uso personal del equipo): un par que recorre algún día excluido
+ * no se suma —la misma regla de `meterSeriesAdvance`, para que un equipo no
+ * muestre km distintos en dos pantallas de gestión—. Las lecturas no se quitan:
+ * quitarlas haría que el par que salta el hueco sumara los km del uso personal.
  */
 export function dailyAdvanceFromSeries(
   points: readonly MeterSeriesPoint[],
   maxPerDay: number,
+  isExcludedDay?: (day: string) => boolean,
 ): Array<{ day: string; advance: number }> {
   const out: Array<{ day: string; advance: number }> = []
   for (const segment of meterSeriesSegments(points, maxPerDay)) {
     if (segment.status !== "counted" || segment.advance <= 0) continue
+    if (isExcludedDay && segmentTouchesExcludedDay(segment, isExcludedDay)) continue
     out.push({ day: todayInChile(segment.to.occurredAt), advance: segment.advance })
   }
   return out
@@ -295,6 +305,8 @@ export function buildGpsUsage(input: {
   period: GpsIndicatorsInput
   /** Nombre de cada faena, para rotular el reparto por faena (las faenas de días pasados no están en la lista de equipos). */
   worksiteNames?: ReadonlyMap<string, string>
+  /** Períodos de uso personal de los equipos: sus días no suman km ni horas. Sin él, nada se excluye. */
+  personalUse?: PersonalUseIndex
 }): GpsUsageIndicators {
   const { vehicles, meterRows, linkedExtra, rule, period } = input
   const vehicleById = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle]))
@@ -355,7 +367,9 @@ export function buildGpsUsage(input: {
       const maxPerDay = maxMeterRatePerDayOf(rule, meterType === "odometer" ? "km" : "hora", vehicle.typeSlug || undefined)
       const total = meterType === "odometer" ? km : hours
       const field = meterType === "odometer" ? "km" : "hours"
-      for (const { day, advance } of dailyAdvanceFromSeries(points, maxPerDay)) {
+      const personalUse = input.personalUse
+      const isExcludedDay = personalUse ? (day: string) => isPersonalUseDay(personalUse, vehicle.id, day) : undefined
+      for (const { day, advance } of dailyAdvanceFromSeries(points, maxPerDay, isExcludedDay)) {
         const context = dayContext.get(`${vehicle.id}|${day}`)
         if (context && !context.inScope) continue
         // La serie y las cifras son comprobaciones independientes: un día puede estar en la
@@ -453,6 +467,7 @@ export async function getGpsUsageIndicators(session: Session, input: GpsIndicato
 
   if (vehicleRows.length === 0) return buildGpsUsage({ vehicles: [], meterRows: [], linkedExtra: new Set(), rule: { config: null }, period: input })
   const vehicleIds = vehicleRows.map((vehicle) => vehicle.id)
+  const personalUsePromise = loadPersonalUseIndex(vehicleIds)
 
   // Una lectura por equipo, fuente, medidor y día chileno (la última del día), igual
   // que el Panel. Una sola consulta cubre la unión de la ventana del gráfico y el período
@@ -511,6 +526,7 @@ export async function getGpsUsageIndicators(session: Session, input: GpsIndicato
     rule: { config: ruleRows[0]?.config ?? null },
     period: input,
     worksiteNames: new Map(worksiteRows.map((row) => [row.id, row.name])),
+    personalUse: await personalUsePromise,
   })
 }
 
@@ -696,7 +712,15 @@ export async function getGpsDrivingIndicators(session: Session, input: GpsIndica
     })
       .from(fleetGpsTrips)
       .innerJoin(fuelVehicles, eq(fuelVehicles.id, fleetGpsTrips.vehicleId))
-      .where(and(ACTIVE_VEHICLE, tripScope, isNotNull(fleetGpsTrips.vehicleId), gte(fleetGpsTrips.startedAt, start), lt(fleetGpsTrips.startedAt, end)))
+      .where(and(
+        ACTIVE_VEHICLE,
+        tripScope,
+        isNotNull(fleetGpsTrips.vehicleId),
+        gte(fleetGpsTrips.startedAt, start),
+        lt(fleetGpsTrips.startedAt, end),
+        // Uso personal: los viajes de esos días (día de Chile, el mismo de `tripDay`) no son operación.
+        notPersonalUseOnDaySql(fleetGpsTrips.vehicleId, tripDay),
+      ))
       .groupBy(tripDay),
     // El título nombra al dispositivo, así que se agrupa por equipo, día y título: las
     // alertas repetidas el mismo día se cuentan en la base y no una por una.

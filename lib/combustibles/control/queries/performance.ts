@@ -1,10 +1,11 @@
 import type { Session } from "next-auth"
-import { and, asc, eq, sql } from "drizzle-orm"
+import { and, asc, eq, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelEquipmentLoads, fuelEquipmentTypes, fuelVehicles, worksites } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { PerformanceUnit } from "@/lib/combustibles/control/contracts"
-import { buildLoadWhere, chileDateSql, countableLoadSql, equipmentMatchSql, loadPerformanceUnitSql, statisticallyValidLoadSql, type ControlFilters } from "@/lib/combustibles/control/filters"
+import { buildManagementLoadWhere, chileDateSql, countableLoadSql, equipmentMatchSql, loadPerformanceUnitSql, statisticallyValidLoadSql, type ControlFilters } from "@/lib/combustibles/control/filters"
+import { performanceTaintedByPersonalUseSql } from "@/lib/combustibles/personal-use-fuel-sql"
 import { WORSE_PERFORMANCE_THRESHOLD_PCT, coefficientOfVariation, deltaPct, isWorsePerformance, periodStartPlainDate, shiftPlainDateByMonths } from "@/lib/combustibles/control/view-helpers"
 import { resolvePagination, type PaginationState } from "@/lib/pagination"
 import { toNullableNumber, toNumber } from "./shared"
@@ -22,6 +23,16 @@ export const EXPORT_ROW_LIMIT = 10_000
 /** Cargas válidas mínimas para decir que un equipo «rinde peor»: con una sola, el promedio es esa carga. */
 export const MIN_SAMPLES_FOR_WORSE = 2
 const MEASURABLE_UNITS = sql`${loadPerformanceUnitSql} in ('km_per_liter', 'liters_per_hour')`
+
+/**
+ * Carga que entra a promedios y desviaciones de GESTIÓN: la estadísticamente válida
+ * que además no está contaminada por el uso personal. Su `performance_value` se calculó
+ * contra la lectura de la carga anterior: las cargas dentro de un período de uso
+ * personal y la PRIMERA después incluyen los km/horas del dueño y no dicen cómo
+ * rinde la operación. Sus litros sí cuentan en el consumo (se excluyen sólo por día,
+ * con `buildManagementLoadWhere`).
+ */
+const managementValidLoadSql: SQL = and(statisticallyValidLoadSql, sql`not ${performanceTaintedByPersonalUseSql()}`)!
 
 /* ── R-02: por faena ─────────────────────────────────────────────────────── */
 
@@ -50,7 +61,7 @@ export async function getWorksiteStats(session: Session, filters: ControlFilters
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
     .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
     .innerJoin(worksites, eq(worksites.id, fuelEquipmentLoads.worksiteId))
-    .where(and(buildLoadWhere(session, filters), statisticallyValidLoadSql, MEASURABLE_UNITS))
+    .where(and(buildManagementLoadWhere(session, filters), managementValidLoadSql, MEASURABLE_UNITS))
     .groupBy(worksites.id, worksites.name, loadPerformanceUnitSql)
     .orderBy(asc(worksites.name), asc(loadPerformanceUnitSql))
   return rows.map((row) => {
@@ -77,7 +88,7 @@ export async function getReviewExclusions(session: Session, filters: ControlFilt
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
     .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
     .where(and(
-      buildLoadWhere(session, filters),
+      buildManagementLoadWhere(session, filters),
       countableLoadSql,
       eq(fuelEquipmentLoads.reviewStatus, "flagged"),
       eq(fuelEquipmentLoads.performanceStatus, "computed"),
@@ -132,7 +143,7 @@ export interface EquipmentStatsPage {
 function equipmentCtes(session: Session, filters: ControlFilters) {
   const perf = fuelEquipmentLoads.performanceValue
   // El equipo (`filters.equipment`) solo acota la lista, NO el cálculo del modelo.
-  const base = buildLoadWhere(session, { ...filters, equipment: undefined })
+  const base = buildManagementLoadWhere(session, { ...filters, equipment: undefined })
   const periodStart = periodStartPlainDate(filters)
   const historyStart = shiftPlainDateByMonths(periodStart, -12)
   const scope = worksiteScopeSql(session, fuelEquipmentLoads.worksiteId)
@@ -151,9 +162,9 @@ function equipmentCtes(session: Session, filters: ControlFilters) {
       family: sql<string | null>`${fuelEquipmentTypes.performanceFamily}`.as("family"),
       worksiteName: sql<string | null>`${worksites.name}`.as("worksite_name"),
       modelKey: sql<string | null>`case when nullif(trim(${fuelVehicles.brand}), '') is null or nullif(trim(${fuelVehicles.model}), '') is null then null else lower(trim(${fuelVehicles.brand})) || '|' || lower(trim(${fuelVehicles.model})) || '|' || ${loadPerformanceUnitSql} end`.as("model_key"),
-      n: sql<number>`(count(*) filter (where ${statisticallyValidLoadSql}))::int`.as("n"),
-      sumPerf: sql<number>`coalesce(sum(${perf}) filter (where ${statisticallyValidLoadSql}), 0)::float8`.as("sum_perf"),
-      sd: sql<number | null>`(stddev_samp(${perf}) filter (where ${statisticallyValidLoadSql}))::float8`.as("sd"),
+      n: sql<number>`(count(*) filter (where ${managementValidLoadSql}))::int`.as("n"),
+      sumPerf: sql<number>`coalesce(sum(${perf}) filter (where ${managementValidLoadSql}), 0)::float8`.as("sum_perf"),
+      sd: sql<number | null>`(stddev_samp(${perf}) filter (where ${managementValidLoadSql}))::float8`.as("sd"),
     })
       .from(fuelEquipmentLoads)
       .innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
@@ -175,7 +186,7 @@ function equipmentCtes(session: Session, filters: ControlFilters) {
   const historyMeanSql = sql<number | null>`(
       select avg(${fuelEquipmentLoads.performanceValue})::float8 from ${fuelEquipmentLoads}
       where ${fuelEquipmentLoads.vehicleId} = ${pv.vehicleId}
-        and ${statisticallyValidLoadSql}
+        and ${managementValidLoadSql}
         ${scope ? sql`and ${scope}` : sql``}
         and (${fuelEquipmentLoads.performanceUnit} is null or ${fuelEquipmentLoads.performanceUnit} = ${pv.unit})
         and ${chileDateSql(fuelEquipmentLoads.occurredAt)} >= ${historyStart}::date

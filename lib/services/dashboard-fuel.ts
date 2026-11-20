@@ -19,6 +19,7 @@ import { worksiteScopeSql } from "@/lib/auth/scope"
 import { MONTH_LABELS, addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { can } from "@/lib/auth/can"
 import { accountableProviderTransactionsWhere, providerLoadCountSql } from "@/lib/combustibles/load-status"
+import { providerTxKeptAmountSql, providerTxKeptQuantitySql, providerTxKeptWhereSql } from "@/lib/combustibles/personal-use-fuel-sql"
 import { monthsWithoutProviderData } from "@/lib/combustibles/copec-coverage"
 import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
 
@@ -99,14 +100,19 @@ export async function getFuelMonthlyTrend(session: Session, months = 6, worksite
   // `occurred_at` es texto ISO: el mes son sus 7 primeros caracteres (como en Analítica y en el módulo de combustibles).
   const monthSql = sql<string>`left(${t.occurredAt}, 7)`
 
+  // Uso personal: las transacciones de los días de uso personal no suman, pero se excluyen DENTRO de
+  // la suma (FILTER) y no en el WHERE: un mes cuyas únicas transacciones fueron de uso personal sigue
+  // teniendo fila y `monthsWithoutProviderData` no lo toma por un hueco del proveedor. El TCT mensual
+  // pasa el filtro y sus sumas lo prorratean por días.
+  const kept = providerTxKeptWhereSql()
   const [rows, coverage] = await Promise.all([
     db
       .select({
         month: monthSql,
-        liters: sql<number>`COALESCE(SUM(${t.quantity}), 0)`,
-        amount: canViewCosts ? sql<number>`COALESCE(SUM(${t.amount}), 0)` : sql<null>`null`,
+        liters: sql<number>`COALESCE(SUM(${providerTxKeptQuantitySql()}) FILTER (WHERE ${kept}), 0)`,
+        amount: canViewCosts ? sql<number>`COALESCE(SUM(${providerTxKeptAmountSql()}) FILTER (WHERE ${kept}), 0)` : sql<null>`null`,
         // Un agregado mensual TCT vale las cargas de su `detalle`, no una.
-        loads: sql<number>`COALESCE(SUM(${providerLoadCountSql()}), 0)`,
+        loads: sql<number>`COALESCE(SUM(${providerLoadCountSql()}) FILTER (WHERE ${kept}), 0)`,
       })
       .from(t)
       .where(and(

@@ -17,6 +17,10 @@ import { recordAudit } from "@/lib/audit"
 import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/scope"
 import { can } from "@/lib/auth/can"
 import { accountableProviderTransactionsWhere, providerLoadCountSql } from "@/lib/combustibles/load-status"
+import { providerTxKeptAmountSql, providerTxKeptQuantitySql, providerTxKeptWhereSql } from "@/lib/combustibles/personal-use-fuel-sql"
+import { isPersonalUseDay } from "@/lib/fleet/personal-use"
+import { notPersonalUseOnDaySql } from "@/lib/fleet/personal-use-sql"
+import { loadPersonalUseIndex } from "@/lib/services/fleet-personal-use"
 import { OPEN_ANOMALY_CASE_STATUSES } from "@/lib/combustibles/anomaly-labels"
 import { acceptedMeterResetSql } from "@/lib/combustibles/meter-reset-sql"
 import { getFuelProviderCoverageGaps } from "@/lib/combustibles/coverage-notice-data"
@@ -164,8 +168,12 @@ export async function getFleetOverview(
   // facturada— tiene 0 filas en producción. El alcance es el del EQUIPO, no el de la faena
   // histórica de la transacción: un equipo trasladado conserva su combustible y las filas con
   // `worksite_id` nulo (que el resolvedor de patentes no pudo atribuir) no desaparecen.
+  //
+  // Uso personal: la transacción de un día de uso personal del equipo no suma (el TCT mensual se
+  // prorratea por días en las sumas de abajo), igual que los km: costo por km sale de los dos.
   const providerWhere = and(
     accountableProviderTransactionsWhere(),
+    providerTxKeptWhereSql(),
     gte(fuelProviderTransactions.occurredAt, since),
     worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId),
     vehicleIds ? inArray(fuelProviderTransactions.vehicleId, [...vehicleIds]) : undefined,
@@ -182,8 +190,8 @@ export async function getFleetOverview(
     canViewFuel ? db
       .select({
         vehicleId: fuelProviderTransactions.vehicleId,
-        totalFuelAmount: canViewCosts ? sql<number>`COALESCE(SUM(${fuelProviderTransactions.amount}), 0)` : sql<null>`null`,
-        totalLiters: sql<number>`COALESCE(SUM(${fuelProviderTransactions.quantity}), 0)`,
+        totalFuelAmount: canViewCosts ? sql<number>`COALESCE(SUM(${providerTxKeptAmountSql()}), 0)` : sql<null>`null`,
+        totalLiters: sql<number>`COALESCE(SUM(${providerTxKeptQuantitySql()}), 0)`,
         // Un agregado mensual TCT vale las cargas de su `detalle`, no una.
         loadCount: sql<number>`COALESCE(SUM(${providerLoadCountSql()}), 0)`,
       })
@@ -295,6 +303,8 @@ export async function getFleetOverview(
   ])
 
   const fuelByVehicle = new Map(fuelRows.map((row) => [row.vehicleId, row]))
+  // Uso personal: el avance del medidor no suma los días del dueño (misma regla que el gasto de arriba).
+  const personalUse = canViewFuel ? await loadPersonalUseIndex(vehicles.map((vehicle) => vehicle.id)) : null
   // Puntos por equipo + fuente + medidor. La consulta viene ordenada por fecha;
   // la fuente se elige después, una sola por equipo y medidor, para no encadenar
   // calibraciones distintas.
@@ -393,11 +403,12 @@ export async function getFleetOverview(
     // sólo con pares que el detector de anomalías no objetaría: un retroceso sin reset aceptado
     // no se suma, así que nunca sale negativo ni absurdo. `meterSeriesIncomplete` avisa que hubo
     // pares descartados y la cifra es una cota inferior.
+    const isExcludedDay = personalUse ? (day: string) => isPersonalUseDay(personalUse, vehicle.id, day) : undefined
     const km = vehicle.performanceUnit === "km_per_liter"
-      ? meterSeriesAdvance(series?.odometer ?? [], maxMeterRatePerDayOf(jumpRule, "km", vehicle.equipmentType?.slug))
+      ? meterSeriesAdvance(series?.odometer ?? [], maxMeterRatePerDayOf(jumpRule, "km", vehicle.equipmentType?.slug), isExcludedDay)
       : null
     const hours = vehicle.performanceUnit === "liters_per_hour"
-      ? meterSeriesAdvance(series?.hour_meter ?? [], maxMeterRatePerDayOf(jumpRule, "hora", vehicle.equipmentType?.slug))
+      ? meterSeriesAdvance(series?.hour_meter ?? [], maxMeterRatePerDayOf(jumpRule, "hora", vehicle.equipmentType?.slug), isExcludedDay)
       : null
     // Cruce que faltaba: el gasto del proveedor y el recorrido ya están en la
     // misma fila, pero nadie los dividía. Se informa en la unidad del equipo
@@ -542,13 +553,15 @@ export async function getFleetOverviewPage(
     }),
     // Mismo origen y misma regla que el detalle por vehículo de arriba (libro del proveedor, C-9).
     canViewFuel && matchingIds.length > 0 ? db.select({
-      totalAmount: canViewCosts ? sql<number>`COALESCE(SUM(${fuelProviderTransactions.amount}), 0)` : sql<null>`null`,
-      totalLiters: sql<number>`COALESCE(SUM(${fuelProviderTransactions.quantity}), 0)`,
+      totalAmount: canViewCosts ? sql<number>`COALESCE(SUM(${providerTxKeptAmountSql()}), 0)` : sql<null>`null`,
+      totalLiters: sql<number>`COALESCE(SUM(${providerTxKeptQuantitySql()}), 0)`,
     })
       .from(fuelProviderTransactions)
       .innerJoin(fuelVehicles, eq(fuelProviderTransactions.vehicleId, fuelVehicles.id))
       .where(and(
         accountableProviderTransactionsWhere(),
+        // Uso personal: mismo criterio que el detalle por equipo de `getFleetOverview`.
+        providerTxKeptWhereSql(),
         sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${since}`,
         // Mismo criterio: el total de la página sigue al equipo.
         worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId),
@@ -625,6 +638,9 @@ export async function getWorkOrderConsumptionImpact(
   }).from(mantWorkOrders).leftJoin(fuelOperationRecords, and(
     eq(fuelOperationRecords.vehicleId, mantWorkOrders.vehicleId),
     isNotNull(fuelOperationRecords.rendimiento),
+    // Uso personal: el rendimiento de un día en que el dueño tenía el equipo no cuenta para
+    // juzgar la salida de taller (`fecha` ya es el día civil chileno, `YYYY-MM-DD`).
+    notPersonalUseOnDaySql(fuelOperationRecords.vehicleId, sql`${fuelOperationRecords.fecha}`),
     // `fecha` es texto «YYYY-MM-DD»: se compara contra `to_char`, que
     // devuelve el mismo formato, para que ambos extremos queden inclusivos.
     sql`${fuelOperationRecords.fecha} >= to_char(${exitDate} - (${WORK_ORDER_IMPACT_WINDOW_DAYS} * INTERVAL '1 day'), 'YYYY-MM-DD')`,

@@ -7,7 +7,9 @@ import { monthsWithoutProviderData } from "@/lib/combustibles/copec-coverage"
 import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
 import { acceptedMeterResetSql } from "@/lib/combustibles/meter-reset-sql"
 import { buildMeterRateSeries, chileMonthOf, isPartialMonth, type MeterRateSeries, type RateReading, type RateVehicle } from "@/lib/combustibles/meter-rate-series"
-import { maxMeterRatePerDayOf } from "@/lib/combustibles/meter-series"
+import { maxMeterRatePerDayOf, meterSeriesSegments, segmentTouchesExcludedDay } from "@/lib/combustibles/meter-series"
+import { isPersonalUseDay } from "@/lib/fleet/personal-use"
+import { loadPersonalUseIndex } from "@/lib/services/fleet-personal-use"
 import type { PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import { loadPerformanceControlContext } from "@/lib/combustibles/control/settings"
 import { mandanteWorksitesSql, type ControlFilters } from "@/lib/combustibles/control/filters"
@@ -104,6 +106,7 @@ export async function getMeterRateSeries(
 
   // Una serie por equipo: el odómetro de un equipo de km/L y el horómetro de uno de L/h. La otra serie del mismo
   // equipo no se mira (Flota hace igual): nadie la ve en su fila.
+  const personalUse = await loadPersonalUseIndex(rows.flatMap((row) => row.vehicleId ? [row.vehicleId] : []))
   const series = new Map<string, RateVehicle>()
   for (const row of rows) {
     if (!row.vehicleId) continue
@@ -129,6 +132,11 @@ export async function getMeterRateSeries(
     }
     vehicle.readings.push(reading)
   }
+  // Uso personal: el par que recorre algún día del dueño no entra al rendimiento (ni sus km ni sus litros).
+  // Las lecturas se conservan —quitarlas haría que el par que salta el hueco sumara los km del uso personal— y
+  // el par se descarta marcando su lectura final fuera de alcance, que es como `buildMeterRateSeries` omite
+  // sin contar un par ajeno a lo que se mira.
+  for (const vehicle of series.values()) markPersonalUseSegments(vehicle, (day) => isPersonalUseDay(personalUse, vehicle.vehicleId, day))
 
   // Un mes del que la integración no trajo nada no puede decir «no se recorrió»: es un hueco (C-4). Las lecturas
   // salen del mismo informe de Copec, así que un mes con lecturas ya tiene respaldo aunque la cobertura no lo diga.
@@ -147,4 +155,17 @@ export async function getMeterRateSeries(
     partialMonth: isPartialMonth(lastMonth, to, today) ? lastMonth : null,
     limits: { maxKmPerLiter: control.settings.maxKmPerLiter, maxLitersPerHour: control.settings.maxLitersPerHour },
   })
+}
+
+/**
+ * Deja `inScope: false` en la lectura final de cada par contado que recorre un día de uso personal del equipo
+ * (`segmentTouchesExcludedDay`, la regla de `meterSeriesAdvance`). Sólo pares que `meterSeriesSegments` cuenta:
+ * un par objetado o un reset siguen su camino y no cambian.
+ */
+function markPersonalUseSegments(vehicle: RateVehicle, isExcludedDay: (day: string) => boolean): void {
+  const touched = new Set<RateReading>()
+  for (const segment of meterSeriesSegments(vehicle.readings, vehicle.maxPerDay)) {
+    if (segment.status === "counted" && segmentTouchesExcludedDay(segment, isExcludedDay)) touched.add(segment.to as RateReading)
+  }
+  for (const reading of touched) reading.inScope = false
 }
