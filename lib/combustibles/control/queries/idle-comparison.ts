@@ -34,7 +34,7 @@ export interface LitersPerHourComparisonRow {
 }
 
 export async function getLitersPerHourComparison(session: Session | null, filters: ControlFilters): Promise<LitersPerHourComparisonRow[]> {
-  const d = dailyTelemetry(session, filters)
+  const d = dailyTelemetry(session, filters, "exclude")
   const [telemetry, loads] = await Promise.all([
     db.select({
       vehicleId: d.vehicleId,

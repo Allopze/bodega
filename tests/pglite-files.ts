@@ -653,6 +653,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/vehicle-purchase-personal-use-pglite.test.ts",
   "lib/__tests__/fleet-gps-indicators-personal-use-pglite.test.ts",
   "lib/__tests__/fuel-management-views-personal-use-pglite.test.ts",
+  "lib/__tests__/fleet-analytics-personal-use-pglite.test.ts",
   "lib/__tests__/fuel-liters-personal-use-pglite.test.ts",
   "lib/__tests__/performance-personal-use-pglite.test.ts",
   "lib/__tests__/personal-use-payments-unchanged-pglite.test.ts",

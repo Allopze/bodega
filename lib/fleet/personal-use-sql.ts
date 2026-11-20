@@ -10,26 +10,33 @@ import { fuelVehiclePersonalUsePeriods as periods } from "@/db/schema"
  * Mismo contrato que `stayWorksiteOnDaySql` (`./stays-sql.ts`):
  * - `vehicleId` es la columna (o expresión) del equipo en la consulta que la usa.
  *   Una columna se emite **siempre calificada**; si pasas una expresión `SQL`,
- *   califícala tú.
+ *   califícala tú (`qualified(col)`): va dentro de una subconsulta correlacionada.
  * - `day`, `from` y `to` son **texto `YYYY-MM-DD`** del día calendario de Chile.
  *   Para un instante ISO en texto usa `to_char(isoTextDaySql(col), 'YYYY-MM-DD')`;
  *   para un `timestamptz`, `to_char(chileDateSql(col), 'YYYY-MM-DD')`.
  *
  * Un período abierto (`ended_on` nulo) cubre hasta el final del rango consultado.
  */
-function qualified(vehicleId: AnyColumn | SQL): SQL {
-  return is(vehicleId, Column)
-    ? sql`${sql.identifier(getTableName(vehicleId.table))}.${sql.identifier(vehicleId.name)}`
-    : vehicleId
+export function qualified(column: AnyColumn | SQL): SQL {
+  return is(column, Column)
+    ? sql`${sql.identifier(getTableName(column.table))}.${sql.identifier(column.name)}`
+    : column
 }
+
+/**
+ * Los períodos se leen con columnas renombradas (`pu_vehicle`, `pu_from`, `pu_to`):
+ * así una expresión de la consulta externa sin calificar (`created_at`, `id`,
+ * `vehicle_id`…) no puede resolverse en silencio contra una columna del período.
+ */
+const PERIODS = sql`(select vehicle_id as pu_vehicle, started_on as pu_from, ended_on as pu_to from ${periods})`
 
 /** ¿El equipo estaba en uso personal ese día? */
 export function personalUseOnDaySql(vehicleId: AnyColumn | SQL, day: SQL): SQL<boolean> {
   return sql<boolean>`exists (
-    select 1 from ${periods} pu
-    where pu.vehicle_id = ${qualified(vehicleId)}
-      and pu.started_on <= ${day}
-      and (pu.ended_on is null or pu.ended_on >= ${day})
+    select 1 from ${PERIODS} pu
+    where pu.pu_vehicle = ${qualified(vehicleId)}
+      and pu.pu_from <= ${day}
+      and (pu.pu_to is null or pu.pu_to >= ${day})
   )`
 }
 
@@ -41,11 +48,11 @@ export function notPersonalUseOnDaySql(vehicleId: AnyColumn | SQL, day: SQL): SQ
 export function personalUseDaysInSql(vehicleId: AnyColumn | SQL, from: SQL, to: SQL): SQL<number> {
   return sql<number>`coalesce((
     select sum(greatest(0,
-      least((${to})::date, coalesce(pu.ended_on, ${to})::date)
-      - greatest((${from})::date, pu.started_on::date) + 1
+      least((${to})::date, coalesce(pu.pu_to, ${to})::date)
+      - greatest((${from})::date, pu.pu_from::date) + 1
     ))
-    from ${periods} pu
-    where pu.vehicle_id = ${qualified(vehicleId)}
+    from ${PERIODS} pu
+    where pu.pu_vehicle = ${qualified(vehicleId)}
   ), 0)::int`
 }
 

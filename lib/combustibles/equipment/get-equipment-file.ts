@@ -357,7 +357,7 @@ async function getLitersByMonth(session: Session, vehicle: EquipmentFileVehicle,
 /* ── Motor en vacío ──────────────────────────────────────────────────────── */
 
 async function getIdle(session: Session, vehicle: EquipmentFileVehicle, period: ResolvedFuelPeriod): Promise<EquipmentFileIdle | null> {
-  const d = dailyTelemetry(session, controlFiltersFromPeriod(period))
+  const d = dailyTelemetry(session, controlFiltersFromPeriod(period), "exclude")
   // Los totales y la serie salen del mismo `dailyTelemetry` (un registro por equipo y día, ya dentro del alcance de faena):
   // el gráfico diario y las cifras de arriba no pueden discrepar.
   const [[row], days] = await Promise.all([

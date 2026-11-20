@@ -2,6 +2,7 @@ import type { Session } from "next-auth"
 import { and, eq, inArray, isNull, or, sql, type SQL, type SQLWrapper } from "drizzle-orm"
 import { fuelEquipmentLoads, fuelEquipmentTypes, fuelVehicles } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { notPersonalUseOnDaySql, qualified } from "@/lib/fleet/personal-use-sql"
 import { codeYear } from "@/lib/utils"
 import { PERFORMANCE_FAMILIES, type PerformanceFamily, type PerformanceUnit } from "./contracts"
 
@@ -168,6 +169,17 @@ export function buildLoadWhere(session: Session | null, filters: ControlFilters)
     filters.supplyMediumId ? eq(fuelEquipmentLoads.supplyMediumId, filters.supplyMediumId) : undefined,
     equipmentMatchSql(fuelVehicles.code, fuelVehicles.plate, filters.equipment),
   ) ?? sql`true`
+}
+
+/**
+ * `buildLoadWhere` para los agregados de GESTIÓN (litros del Panel, indicadores,
+ * rendimiento, ficha del equipo): además deja fuera las cargas de los días de uso
+ * personal del equipo (`lib/fleet/personal-use-sql.ts`). La cola de revisión, la
+ * bitácora y los listados siguen con `buildLoadWhere`: ven todas las cargas.
+ */
+export function buildManagementLoadWhere(session: Session | null, filters: ControlFilters): SQL {
+  const loadDay = sql`to_char((${qualified(fuelEquipmentLoads.occurredAt)} at time zone 'America/Santiago')::date, 'YYYY-MM-DD')`
+  return and(buildLoadWhere(session, filters), notPersonalUseOnDaySql(fuelEquipmentLoads.vehicleId, loadDay)) ?? sql`true`
 }
 
 /** Joins que `buildLoadWhere` necesita, para no repetirlos en cada consulta. */

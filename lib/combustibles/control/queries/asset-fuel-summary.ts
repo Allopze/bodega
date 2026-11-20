@@ -140,7 +140,7 @@ export async function getAssetFuelSummary(
   if (ids.length === 0) return out
 
   const canViewCosts = can(session, "combustibles:view_costs")
-  const telemetry = dailyTelemetry(session, parseControlFilters({ desde: period.from, hasta: period.to }))
+  const telemetry = dailyTelemetry(session, parseControlFilters({ desde: period.from, hasta: period.to }), "exclude")
 
   const [loadRows, caseRows, costRows, meterRows, idleRows] = await Promise.all([
     db.select({
