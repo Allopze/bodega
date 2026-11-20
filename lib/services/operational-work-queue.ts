@@ -7,11 +7,12 @@
  */
 import type { Session } from "next-auth"
 import { canActOnQueueSource } from "./work-queue-eligibility"
-import { and, eq, inArray, notInArray, or, sql, type SQL } from "drizzle-orm"
+import { and, asc, eq, inArray, notInArray, or, sql, type SQL } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
   billingInvoices,
+  dispatchGuides,
   pdtpActivities,
   pdtpActivitySchedule,
   pdtpActivityWorksiteAssignees,
@@ -69,6 +70,7 @@ import {
 import { resolvePdtpFulfillmentTarget } from "@/lib/services/pdtp/fulfillment"
 import { pdtpExecutableInstancesQueueSql } from "@/lib/services/pdtp/executable-instances"
 import type { OperationalModule } from "@/lib/work-queue.types"
+import type { OcActiveGuideStatus } from "@/lib/work-queue-builders"
 
 const DEFAULT_PAGE_SIZE = 50
 const MAX_PAGE_SIZE = 100
@@ -78,6 +80,36 @@ const CHILE_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
   month: "2-digit",
   day: "2-digit",
 })
+
+/**
+ * Guía de despacho «viva» de una OC: la que todavía tiene un paso pendiente.
+ * Es la misma definición que usan la bandeja de Recepción y el detalle de la OC
+ * (`OcActiveGuideStatus`).
+ *
+ * Una OC vía oficina con guía viva no se recibe en faena por el formulario
+ * genérico: `registerReceipt` lo rechaza («La recepción final debe cotejarse
+ * con la guía …»). La cola mandaba igual ahí, y en ese formulario el botón
+ * «Registrar recepción en faena» no podía guardar nunca (OC-2026-0065,
+ * 2026-11-20; ese día eran 19 de las 22 OC por recibir en faena).
+ */
+const LIVE_GUIDE_STATUSES = ["draft", "dispatched", "partially_received"] as const satisfies readonly OcActiveGuideStatus[]
+/** Despachada o con llegada parcial: lo que falta es confirmar en faena. */
+const GUIDE_STATUSES_TO_CONFIRM = ["dispatched", "partially_received"] as const satisfies readonly OcActiveGuideStatus[]
+// Los mismos verbos que la bandeja de Recepción y el detalle de la OC (ADQ-11,
+// `receiptGuideActionLabel` en app/(app)/recepcion/recepcion-table.helpers.ts).
+const GUIDE_CTA_CONFIRM_ARRIVAL = "Confirmar llegada a faena"
+const GUIDE_CTA_COMPLETE_DISPATCH = "Completar despacho"
+
+/** Id de la primera guía de la OC en esos estados, o NULL si no hay. */
+function liveGuideIdSql(statuses: readonly OcActiveGuideStatus[]): SQL {
+  return sql`(
+    SELECT ${dispatchGuides.id} FROM ${dispatchGuides}
+    WHERE ${dispatchGuides.purchaseOrderId} = ${purchaseOrders.id}
+      AND ${inArray(dispatchGuides.status, [...statuses])}
+    ORDER BY ${dispatchGuides.createdAt}, ${dispatchGuides.id}
+    LIMIT 1
+  )`
+}
 
 /**
  * OC sin ninguna factura adjunta.
@@ -344,6 +376,36 @@ export async function getOperationalDetailWorkItem(
   // manda. La proyección evita reimplementar el conciliador en esta lectura.
   const invoicePending = hasPermission(session, "purchasing:send_order") && order.invoiceNeedsWork
 
+  // Misma regla que la rama SQL `receive_worksite` (ver `liveGuideIdSql`): con
+  // una guía viva la faena se recibe por la guía, no por el formulario.
+  const directFaena = order.deliveryMode === "directo_faena"
+  const faenaPending = directFaena
+    ? DIRECT_FAENA_RECEIVABLE_STATUSES.has(order.status)
+    : FAENA_RECEIVABLE_STATUSES.has(order.status)
+  const liveGuides = faenaPending && !directFaena
+    ? await db
+        .select({ id: dispatchGuides.id, status: dispatchGuides.status })
+        .from(dispatchGuides)
+        .where(and(
+          eq(dispatchGuides.purchaseOrderId, order.id),
+          inArray(dispatchGuides.status, [...LIVE_GUIDE_STATUSES]),
+        ))
+        .orderBy(asc(dispatchGuides.createdAt), asc(dispatchGuides.id))
+    : []
+  const guideToConfirm = liveGuides.find((guide) => guide.status !== "draft")
+  const guideToDispatch = liveGuides.find((guide) => guide.status === "draft")
+  const faenaStage = !faenaPending
+    ? null
+    : liveGuides.length === 0
+      ? hasPermission(session, "receiving:register_faena")
+        ? { actionKey: "receive_worksite" as const, module: "recepciones" as const, statusLabel: "Pendiente de faena", title: `Recibir ${order.code} en faena`, ctaLabel: "Registrar recepción", createdAt: order.sentAt ?? order.createdAt, href: `/recepcion/nueva?oc=${order.id}` }
+        : null
+      : guideToConfirm && hasPermission(session, "warehouse:receive_guide")
+        ? { actionKey: "receive_worksite" as const, module: "recepciones" as const, statusLabel: "Pendiente de faena", title: `Recibir ${order.code} en faena`, ctaLabel: GUIDE_CTA_CONFIRM_ARRIVAL, createdAt: order.sentAt ?? order.createdAt, href: `/bodega/guias/${guideToConfirm.id}` }
+        : guideToDispatch && hasPermission(session, "warehouse:dispatch_guide")
+          ? { actionKey: "dispatch_guide" as const, module: "recepciones" as const, statusLabel: "Guía en borrador", title: `Despachar ${order.code} a faena`, ctaLabel: GUIDE_CTA_COMPLETE_DISPATCH, createdAt: order.sentAt ?? order.createdAt, href: `/bodega/guias/${guideToDispatch.id}` }
+          : null
+
   const stage = order.status === "draft" && hasPermission(session, "purchasing:send_order")
     ? { actionKey: "issue" as const, module: "compras" as const, statusLabel: "OC en borrador", title: `Emitir OC ${order.code}`, ctaLabel: "Emitir OC", createdAt: order.createdAt }
     : OFFICE_RECEIVABLE_STATUSES.has(order.status) && order.deliveryMode !== "directo_faena" && hasPermission(session, "receiving:register_office")
@@ -352,8 +414,8 @@ export async function getOperationalDetailWorkItem(
         // de la cola ya apuntaba aquí — el detalle mandaba a /compras y por eso
         // el mismo pendiente llevaba a /forbidden al abrirlo.
         ? { actionKey: "receive_office" as const, module: "recepciones" as const, statusLabel: "Recepción en oficina", title: `Registrar llegada de ${order.code}`, ctaLabel: "Registrar llegada", createdAt: order.sentAt ?? order.createdAt, href: `/recepcion/nueva?oc=${order.id}` }
-        : ((order.deliveryMode === "directo_faena" ? DIRECT_FAENA_RECEIVABLE_STATUSES.has(order.status) : FAENA_RECEIVABLE_STATUSES.has(order.status)) && hasPermission(session, "receiving:register_faena"))
-          ? { actionKey: "receive_worksite" as const, module: "recepciones" as const, statusLabel: "Pendiente de faena", title: `Recibir ${order.code} en faena`, ctaLabel: "Registrar recepción", createdAt: order.sentAt ?? order.createdAt, href: `/recepcion/nueva?oc=${order.id}` }
+        : faenaStage
+          ? faenaStage
           : invoicePending
             ? order.invoiceReconciliationStatus === "needs_review"
               ? { actionKey: "invoice" as const, module: "compras" as const, statusLabel: "Conciliación pendiente", title: `Revisar conciliación de ${order.code}`, ctaLabel: "Revisar conciliación", createdAt: order.sentAt ?? order.createdAt, href: `/compras/${order.id}?tab=facturacion` }
@@ -781,12 +843,26 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     ${orderBase} AND ${purchaseOrders.deliveryMode} <> 'directo_faena'
       AND ${purchaseOrders.status} IN ('sent', 'partially_office_received')
   `)
+  const viaOfficeAwaitingFaena = sql`${purchaseOrders.deliveryMode} <> 'directo_faena'
+    AND ${purchaseOrders.status} IN ('partially_office_received', 'office_received', 'partially_received')`
   if (hasPermission(session, "receiving:register_faena")) add("recepciones", sql`
     SELECT ${orderFields('receive_worksite', 'recepciones', sql`CONCAT('Recibir ', ${purchaseOrders.code}, ' en faena')`, 'Pendiente de faena', sql`CONCAT('/recepcion/nueva?oc=', ${purchaseOrders.id})`, 'Registrar recepción', sql`COALESCE(${purchaseOrders.sentAt}, ${purchaseOrders.createdAt}::text)`)}
     ${orderBase} AND (
       (${purchaseOrders.deliveryMode} = 'directo_faena' AND ${purchaseOrders.status} IN ('sent', 'partially_received'))
-      OR (${purchaseOrders.deliveryMode} <> 'directo_faena' AND ${purchaseOrders.status} IN ('partially_office_received', 'office_received', 'partially_received'))
+      OR (${viaOfficeAwaitingFaena} AND ${liveGuideIdSql(LIVE_GUIDE_STATUSES)} IS NULL)
     )
+  `)
+  // Con una guía viva el mismo pendiente se resuelve en la guía, y lo resuelve
+  // quien puede hacer lo que ella pide: confirmar la llegada, o despacharla si
+  // sigue en borrador. `actionKey` se conserva en la de faena: es la misma tarea
+  // con otro destino, y las asignaciones de la cola se guardan por esa llave.
+  if (hasPermission(session, "warehouse:receive_guide")) add("recepciones", sql`
+    SELECT ${orderFields('receive_worksite', 'recepciones', sql`CONCAT('Recibir ', ${purchaseOrders.code}, ' en faena')`, 'Pendiente de faena', sql`CONCAT('/bodega/guias/', ${liveGuideIdSql(GUIDE_STATUSES_TO_CONFIRM)})`, GUIDE_CTA_CONFIRM_ARRIVAL, sql`COALESCE(${purchaseOrders.sentAt}, ${purchaseOrders.createdAt}::text)`)}
+    ${orderBase} AND ${viaOfficeAwaitingFaena} AND ${liveGuideIdSql(GUIDE_STATUSES_TO_CONFIRM)} IS NOT NULL
+  `)
+  if (hasPermission(session, "warehouse:dispatch_guide")) add("recepciones", sql`
+    SELECT ${orderFields('dispatch_guide', 'recepciones', sql`CONCAT('Despachar ', ${purchaseOrders.code}, ' a faena')`, 'Guía en borrador', sql`CONCAT('/bodega/guias/', ${liveGuideIdSql(["draft"])})`, GUIDE_CTA_COMPLETE_DISPATCH, sql`COALESCE(${purchaseOrders.sentAt}, ${purchaseOrders.createdAt}::text)`)}
+    ${orderBase} AND ${viaOfficeAwaitingFaena} AND ${liveGuideIdSql(["draft"])} IS NOT NULL
   `)
   // Llegó mercadería y la OC sigue sin factura. Sin esta fuente nadie perseguía
   // el adjuntar. Una OC cerrada sólo reaparece si tiene diferencias pendientes.

@@ -15,8 +15,9 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { toast } from "@/lib/toast"
-import { quantityStep, requiresWholeQuantity } from "@/lib/utils"
+import { quantityStep } from "@/lib/utils"
 import { cancelGuideAction, dispatchGuideAction, receiveGuideAction } from "../actions"
+import { blockingSummary, lineIssue, pendingQuantity, quantityError, reasonError } from "./guide-reconciliation"
 
 interface GuideActionsProps {
   guideId: string
@@ -48,7 +49,7 @@ interface GuideActionsProps {
  */
 /** Lo que falta por recibir de cada línea, como texto para los inputs. */
 function pendingQuantities(items: NonNullable<GuideActionsProps["reconciliationItems"]>): Record<string, string> {
-  return Object.fromEntries(items.map((item) => [item.id, String(Math.max(0, item.quantity - (item.receivedQuantity ?? 0)))]))
+  return Object.fromEntries(items.map((item) => [item.id, String(pendingQuantity(item))]))
 }
 
 export function GuideActions({
@@ -93,16 +94,12 @@ export function GuideActions({
     // Una GDI enlazada ya cotejada tiene acumuladores en la OC; el backend
     // rechaza su anulación para no borrar historia ni desincronizar estados.
     && !(reconciliationItems.length > 0 && (status === "partially_received" || status === "received"))
-  // Este diálogo no es un `<form>`: el navegador no valida el `step`, así que
-  // la fracción en una unidad contable se bloquea acá (y en el servidor).
-  const isFractionalCount = (item: { unitOfMeasure: string }, received: number) =>
-    requiresWholeQuantity(item.unitOfMeasure) && Number.isFinite(received) && !Number.isInteger(received)
-  const hasInvalidReconciliation = reconciliationItems.some((item) => {
-    const received = Number(receivedQuantities[item.id])
-    const remaining = Math.max(0, item.quantity - (item.receivedQuantity ?? 0))
-    const difference = remaining - received
-    return !Number.isFinite(received) || received < 0 || received > remaining || isFractionalCount(item, received) || (difference > 1e-9 && (differenceReasons[item.id]?.trim().length ?? 0) < 5)
-  })
+  // Lo que impide confirmar, nombrando cada línea: el botón gris solo no
+  // explicaba nada (ver `guide-reconciliation.ts`). Este diálogo no es un
+  // `<form>`: el navegador no valida el `step`, así que la fracción en una
+  // unidad contable también se bloquea ahí (y en el servidor).
+  const reconciliationBlockers = blockingSummary(reconciliationItems, receivedQuantities, differenceReasons)
+  const hasInvalidReconciliation = reconciliationBlockers !== null
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -199,9 +196,9 @@ export function GuideActions({
               </div>
               {reconciliationItems.map((item) => {
                 const received = Number(receivedQuantities[item.id])
-                const remaining = Math.max(0, item.quantity - (item.receivedQuantity ?? 0))
+                const remaining = pendingQuantity(item)
                 const hasDifference = Number.isFinite(received) && received < remaining
-                const fractional = isFractionalCount(item, received)
+                const issue = lineIssue(item, receivedQuantities[item.id], differenceReasons[item.id])
                 const step = quantityStep(item.unitOfMeasure)
                 return (
                   <div key={item.id} className="grid gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] p-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
@@ -212,24 +209,25 @@ export function GuideActions({
                         {(item.receivedQuantity ?? 0) > 0 && ` · ya confirmado: ${item.receivedQuantity} ${item.unitOfMeasure}`}
                       </p>
                     </div>
-                    <Field label="Recibido en faena" htmlFor={`gdi-recibido-${item.id}`} error={fractional ? "Va en cantidades enteras" : undefined}>
+                    <Field label="Recibido en faena" htmlFor={`gdi-recibido-${item.id}`} error={quantityError(item, issue)}>
                       <Input
                         id={`gdi-recibido-${item.id}`}
+                        error={Boolean(quantityError(item, issue))}
                         type="number"
                         inputMode={step === 1 ? "numeric" : "decimal"}
                         min={0}
                         max={remaining}
                         step={step}
-                        error={fractional}
                         value={receivedQuantities[item.id] ?? ""}
                         onChange={(event) => setReceivedQuantities((current) => ({ ...current, [item.id]: event.target.value }))}
                       />
                     </Field>
                     {hasDifference && (
                       <div className="sm:col-span-2">
-                        <Field label="Motivo de la diferencia" htmlFor={`gdi-diferencia-${item.id}`} required hint="Mínimo 5 caracteres.">
+                        <Field label="Motivo de la diferencia" htmlFor={`gdi-diferencia-${item.id}`} required hint="Mínimo 5 caracteres." error={reasonError(issue)}>
                           <Input
                             id={`gdi-diferencia-${item.id}`}
+                            error={Boolean(reasonError(issue))}
                             value={differenceReasons[item.id] ?? ""}
                             onChange={(event) => setDifferenceReasons((current) => ({ ...current, [item.id]: event.target.value }))}
                             placeholder="Ej.: faltó una caja en la entrega"
@@ -242,11 +240,19 @@ export function GuideActions({
               })}
             </div>
           )}
+          {/* La región existe aunque esté vacía: un `role="status"` que aparece
+              junto con su texto no siempre se anuncia. */}
+          {reconciliationItems.length > 0 && (
+            <p id="gdi-confirmar-pendiente" role="status" className={reconciliationBlockers ? "mt-4 text-sm text-[var(--color-danger)]" : "sr-only"}>
+              {reconciliationBlockers}
+            </p>
+          )}
           <DialogFooter>
             <Button variant="secondary" onClick={() => setReceiveOpen(false)} disabled={pending}>Cancelar</Button>
             <Button
               loading={pending}
               disabled={pending || hasInvalidReconciliation}
+              aria-describedby={reconciliationBlockers ? "gdi-confirmar-pendiente" : undefined}
               onClick={() => handle(
                 () => receiveGuideAction(
                   guideId,
