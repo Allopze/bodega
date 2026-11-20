@@ -1,4 +1,4 @@
-import { and, between, eq, ne, or, sql } from "drizzle-orm"
+import { and, between, eq, inArray, ne, or, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { fleetOperationDayMarks, fleetOperationShifts, fuelVehicles, systemSettings, workers } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
@@ -122,6 +122,11 @@ async function saveShift(
     before = await lockedShift(tx, mode.shiftId)
     if (!before) return fail(SHIFT_NOT_FOUND_MESSAGE)
     if (before.voidedAt) return fail("No se puede editar un turno anulado.")
+    // Si el turno cambia de equipo, se bloquean los dos equipos en orden de id: dos ediciones
+    // cruzadas (A→B y B→A) al mismo tiempo no se traban esperándose una a la otra.
+    if (before.vehicleId !== input.vehicleId) {
+      await tx.execute(sql`select id from ${fuelVehicles} where ${inArray(fuelVehicles.id, [before.vehicleId, input.vehicleId])} order by id for update`)
+    }
     // Quien edita debe poder ver el turno tal como estaba.
     const previousVehicle = await lockVehicle(tx, before.vehicleId, before.shiftDate)
     if (!previousVehicle || !inScope(actor.scope, previousVehicle.worksiteOnDay)) return fail(NO_ACCESS_MESSAGE)
@@ -139,8 +144,12 @@ async function saveShift(
     worksiteId: workers.worksiteId,
     isActive: workers.isActive,
   }).from(workers).where(eq(workers.id, input.operatorWorkerId))
-  if (!operator || !operator.isActive || !inScope(actor.scope, operator.worksiteId)) return fail(OPERATOR_MESSAGE)
-  const operatorName = `${operator.firstName} ${operator.lastName}`.trim()
+  // Al editar sin cambiar de operador no se vuelve a validar: un turno histórico (importado, o de
+  // alguien que ya se fue de la faena) debe poder corregirse en horas o notas. Conserva su nombre.
+  const keepsOperator = before !== null && before.operatorWorkerId === input.operatorWorkerId
+  if (!operator) return fail(OPERATOR_MESSAGE)
+  if (!keepsOperator && (!operator.isActive || !inScope(actor.scope, operator.worksiteId))) return fail(OPERATOR_MESSAGE)
+  const operatorName = keepsOperator && before ? before.operatorNameSnapshot : `${operator.firstName} ${operator.lastName}`.trim()
 
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`shift-operator:${operator.id}`}))`)
 

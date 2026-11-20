@@ -122,6 +122,31 @@ describe("registro de turnos", () => {
     expect(audit.map((a) => a.action).sort()).toEqual(["create", "update"])
   })
 
+  it("un turno histórico con operador dado de baja se corrige en horas sin cambiar el operador", async () => {
+    // Un turno importado cuyo operador después quedó inactivo (baja en Talana).
+    const shiftId = "shift-historico-baja"
+    await testDb.insert(schema.fleetOperationShifts).values({
+      id: shiftId, vehicleId: IDS.vA, shiftDate: "2026-10-20", startHour: 6, endHour: 18,
+      operatorWorkerId: OP_OFF, operatorNameSnapshot: "Off Baja (histórico)", createdBy: IDS.user, updatedBy: IDS.user,
+    })
+    const result = await updateShift(ADMIN, shiftId, input({ shiftDate: "2026-10-20", startHour: 6, endHour: 14, operatorWorkerId: OP_OFF }))
+    expect(result).toEqual({ ok: true, shiftId })
+    const [row] = await testDb.select().from(schema.fleetOperationShifts).where(eq(schema.fleetOperationShifts.id, shiftId))
+    expect(row?.endHour).toBe(14)
+    expect(row?.operatorNameSnapshot).toBe("Off Baja (histórico)")
+    // Cambiarle el operador a alguien inactivo sigue rechazado.
+    const other = await mustCreate(ADMIN, input({ shiftDate: "2026-10-21", startHour: 6, endHour: 14 }))
+    expect((await updateShift(ADMIN, other, input({ shiftDate: "2026-10-21", startHour: 6, endHour: 14, operatorWorkerId: OP_OFF }))).ok).toBe(false)
+  })
+
+  it("mover un turno a otro equipo funciona y valida el equipo nuevo", async () => {
+    const shiftId = await mustCreate(ADMIN, input({ shiftDate: "2026-10-25", startHour: 6, endHour: 14 }))
+    const result = await updateShift(ADMIN, shiftId, input({ vehicleId: IDS.vB, shiftDate: "2026-10-25", startHour: 6, endHour: 14 }))
+    expect(result).toEqual({ ok: true, shiftId })
+    const [row] = await testDb.select().from(schema.fleetOperationShifts).where(eq(schema.fleetOperationShifts.id, shiftId))
+    expect(row?.vehicleId).toBe(IDS.vB)
+  })
+
   it("editar hacia el horario de otro turno del mismo equipo sí choca", async () => {
     await mustCreate(ADMIN, input({ shiftDate: "2026-11-04", startHour: 6, endHour: 14, operatorWorkerId: OP_ANA }))
     const second = await mustCreate(ADMIN, input({ shiftDate: "2026-11-04", startHour: 14, endHour: 22, operatorWorkerId: OP_LUIS }))
