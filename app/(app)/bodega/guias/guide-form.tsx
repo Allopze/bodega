@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
-import { formatQty } from "@/lib/utils"
+import { formatQty, quantityStep, requiresWholeQuantity } from "@/lib/utils"
 import type {
   GuideFormInitialValues,
   GuideProductOption,
@@ -146,7 +146,10 @@ export function GuideForm({
   const exceedsStock = (productId: string) =>
     (requestedByProduct.get(productId) ?? 0) > (productById.get(productId)?.available ?? 0)
   const overStock = items.filter((item) => exceedsStock(item.productId))
-  const invalidQuantity = items.some((item) => !(Number(item.quantity) > 0))
+  // Medio casco no viaja: lo contable va entero, y el servidor lo exige igual.
+  const isFractionalCount = (item: ItemRow) =>
+    requiresWholeQuantity(productById.get(item.productId)?.unitOfMeasure) && !Number.isInteger(Number(item.quantity))
+  const invalidQuantity = items.some((item) => !(Number(item.quantity) > 0) || isFractionalCount(item))
   const canSubmit = !!destinationWorksiteId && items.length > 0 && !invalidQuantity
 
   if (products.length === 0) {
@@ -239,6 +242,10 @@ export function GuideForm({
               const available = product?.available ?? 0
               const quantity = Number(item.quantity)
               const exceeds = exceedsStock(item.productId)
+              const fractional = isFractionalCount(item)
+              // El paso sale de la unidad: con 0.01 fijo cada flecha movía un
+              // centésimo. `min` también, para que la primera flecha caiga en 1.
+              const step = quantityStep(product?.unitOfMeasure)
               return (
                 <li
                   key={item.key}
@@ -253,15 +260,15 @@ export function GuideForm({
                       <p className="text-2xs text-[var(--color-text-muted)]">{item.sourceLabel}</p>
                     )}
                   </div>
-                  <Field label="Cantidad" htmlFor={`gdi-qty-${item.key}`} required error={exceeds ? "Sobre el stock" : undefined}>
+                  <Field label="Cantidad" htmlFor={`gdi-qty-${item.key}`} required error={fractional ? "Va en cantidades enteras" : exceeds ? "Sobre el stock" : undefined}>
                     <Input
                       id={`gdi-qty-${item.key}`}
                       type="number"
-                      inputMode="decimal"
-                      min="0.01"
-                      step="0.01"
+                      inputMode={step === 1 ? "numeric" : "decimal"}
+                      min={step}
+                      step={step}
                       value={item.quantity}
-                      error={exceeds || !(quantity > 0)}
+                      error={exceeds || fractional || !(quantity > 0)}
                       onChange={(event) => updateItem(item.key, { quantity: event.target.value })}
                     />
                   </Field>

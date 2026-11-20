@@ -89,3 +89,50 @@ describe("GuideForm — origen fijo", () => {
     expect(screen.getByRole("button", { name: /guardar borrador/i })).toBeDisabled()
   })
 })
+
+// Con `min="0.01" step="0.01"` fijo, cada flecha movía un centésimo: un casco
+// viajaba de a 0,01. La unidad del producto decide el paso, y una fracción en
+// una unidad contable se marca y no deja guardar.
+describe("GuideForm — paso de las cantidades", () => {
+  const MIXED = [
+    ...PRODUCTS,
+    { productId: "p-cable", sku: "MAT-001", name: "Cable eléctrico", unitOfMeasure: "metro", available: 100 },
+  ]
+
+  function renderWithItems(cascoQuantity = "1") {
+    return render(
+      <GuideForm
+        originWorksiteName="Administración"
+        currentUserName="Bodeguero"
+        worksites={WORKSITES}
+        workers={WORKERS}
+        vehicles={VEHICLES}
+        products={MIXED}
+        action={vi.fn()}
+        initial={{
+          guideId: "g-1", destinationWorksiteId: "ws-faena", dispatcherWorkerId: "", receiverWorkerId: "",
+          vehicleId: "", driverWorkerId: "", notes: "",
+          items: [
+            { productId: "p-casco", quantity: cascoQuantity, unitOfMeasure: "unidad", notes: "" },
+            { productId: "p-cable", quantity: "2.5", unitOfMeasure: "metro", notes: "" },
+          ],
+        }}
+      />,
+    )
+  }
+
+  it("un producto contable sube de a 1 y uno que se mide de a 0,01", () => {
+    renderWithItems()
+    const casco = document.getElementById("gdi-qty-p-casco") as HTMLInputElement
+    const cable = document.getElementById("gdi-qty-p-cable") as HTMLInputElement
+    expect([casco.step, casco.min, casco.getAttribute("inputmode")]).toEqual(["1", "1", "numeric"])
+    expect([cable.step, cable.min, cable.getAttribute("inputmode")]).toEqual(["0.01", "0.01", "decimal"])
+    expect(screen.getByRole("button", { name: /guardar cambios/i })).toBeEnabled()
+  })
+
+  it("una fracción en una unidad contable se marca y no deja guardar", () => {
+    renderWithItems("1.5")
+    expect(screen.getByText("Va en cantidades enteras")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /guardar cambios/i })).toBeDisabled()
+  })
+})

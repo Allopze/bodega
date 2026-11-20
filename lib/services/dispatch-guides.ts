@@ -55,6 +55,7 @@ import {
 } from "@/db/schema"
 import { textSearchSql } from "@/lib/adquisiciones/list-query"
 import { nanoid } from "@/lib/id"
+import { formatQty, requiresWholeQuantity } from "@/lib/utils"
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import { nextCodeTx } from "@/lib/code-sequences"
@@ -274,10 +275,23 @@ async function assertDestination(tx: Tx, officeId: string, destinationWorksiteId
   return destination
 }
 
+/**
+ * Lo que se cuenta viaja entero. La línea trae su propia unidad y el producto
+ * la suya, y no siempre coinciden («unidad» contra «caja»): basta que una sea
+ * contable para exigir un entero. Así una petición armada a mano no se salta
+ * la regla declarando «kg» para un casco.
+ */
+function assertWholeQuantity(name: string, quantity: number, units: Array<string | null | undefined>) {
+  if (Number.isInteger(quantity)) return
+  const countedUnit = units.find((unit) => requiresWholeQuantity(unit))
+  if (countedUnit === undefined) return
+  throw new Error(`${name} se registra en cantidades enteras (${countedUnit}); indicaste ${formatQty(quantity)}.`)
+}
+
 async function assertItemProducts(tx: Tx, items: DispatchGuideInput["items"]) {
   const productIds = [...new Set(items.map((item) => item.productId))]
   const rows = await tx
-    .select({ id: products.id, name: products.name, isActive: products.isActive })
+    .select({ id: products.id, name: products.name, isActive: products.isActive, unitOfMeasure: products.unitOfMeasure })
     .from(products)
     .where(inArray(products.id, productIds))
 
@@ -287,6 +301,11 @@ async function assertItemProducts(tx: Tx, items: DispatchGuideInput["items"]) {
   const inactive = rows.filter((row) => !row.isActive)
   if (inactive.length > 0) {
     throw new Error(`Producto no disponible: ${inactive.map((row) => row.name).join(", ")}`)
+  }
+  const productById = new Map(rows.map((row) => [row.id, row]))
+  for (const item of items) {
+    const product = productById.get(item.productId)!
+    assertWholeQuantity(product.name, item.quantity, [product.unitOfMeasure, item.unitOfMeasure])
   }
 }
 
@@ -760,6 +779,7 @@ async function guideItemsTx(tx: Tx, guideId: string) {
       purchaseOrderItemId: dispatchGuideItems.purchaseOrderItemId,
       receiptItemId: dispatchGuideItems.receiptItemId,
       quantity:  dispatchGuideItems.quantity,
+      unitOfMeasure: dispatchGuideItems.unitOfMeasure,
       quantityReceived: dispatchGuideItems.quantityReceived,
       differenceReason: dispatchGuideItems.differenceReason,
       name:      products.name,
@@ -1092,6 +1112,11 @@ export async function confirmDispatchGuideReceipt(
         if (!Number.isFinite(quantityReceived) || quantityReceived < 0 || quantityReceived > guideItem.quantity) {
           throw new Error(`La cantidad recibida en faena para ${guideItem.name} no es válida`)
         }
+        const poItem = poItemById.get(guideItem.purchaseOrderItemId as string)
+        if (!poItem) throw new Error("La línea de la OC no existe")
+        // Antes que el motivo de la diferencia: «faltó media unidad» no es un
+        // motivo, es una cantidad imposible.
+        assertWholeQuantity(guideItem.name, quantityReceived, [guideItem.unitOfMeasure, poItem.unitOfMeasure])
         const alreadyReceived = guideItem.quantityReceived ?? 0
         const remaining = guideItem.quantity - alreadyReceived
         if (quantityReceived > remaining + 1e-9) {
@@ -1103,8 +1128,6 @@ export async function confirmDispatchGuideReceipt(
         if (difference > 1e-9 && (!differenceReason || differenceReason.length < 5)) {
           throw new Error(`Indica el motivo de la diferencia para ${guideItem.name}`)
         }
-        const poItem = poItemById.get(guideItem.purchaseOrderItemId as string)
-        if (!poItem) throw new Error("La línea de la OC no existe")
         const nextReceived = (poItem.quantityReceived ?? 0) + quantityReceived
         if (nextReceived > poItem.quantity + 1e-9) {
           throw new Error(`La recepción en faena excede la cantidad comprada de ${guideItem.name}`)

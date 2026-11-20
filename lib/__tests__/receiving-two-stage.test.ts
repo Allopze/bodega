@@ -881,3 +881,52 @@ describe("REC-003 — anular una recepción", () => {
       .rejects.toThrow(/No tienes acceso/i)
   })
 })
+
+// El formulario sube y baja de a 1 en unidades contables, pero el servidor
+// aceptaba cualquier `real`: un «1,5» tipeado (o un payload armado a mano)
+// registraba medio casco. La misma lista de `quantityStep` decide aquí.
+describe("cantidades enteras por unidad", () => {
+  it("rechaza una fracción recibida en una unidad contable y no toca la OC", async () => {
+    const { orderId, itemIds } = await makeOrder([3])
+    await expect(registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 1.5 }],
+    })).rejects.toThrow(/cantidades enteras/)
+    const item = await inMemoryDb.query.purchaseOrderItems.findFirst({ where: eq(schema.purchaseOrderItems.id, itemIds[0]!) })
+    expect(item?.quantityOfficeReceived ?? 0).toBe(0)
+    expect(await status(orderId)).toBe("sent")
+  })
+
+  it("también exige enteros en lo rechazado y lo dañado", async () => {
+    const { orderId, itemIds } = await makeOrder([3])
+    await expect(registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 2, quantityRejected: 0.5 }],
+    })).rejects.toThrow(/cantidades enteras/)
+    await expect(registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 2, quantityDamaged: 0.25 }],
+    })).rejects.toThrow(/cantidades enteras/)
+  })
+
+  it("en faena rige la misma regla", async () => {
+    const { orderId, itemIds } = await makeOrder([4], "directo_faena")
+    await expect(registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 0.01 }],
+    })).rejects.toThrow(/cantidades enteras/)
+  })
+
+  it("una unidad que se mide sí admite fracción", async () => {
+    const { orderId, itemIds } = await makeOrder([3])
+    await inMemoryDb.update(schema.purchaseOrderItems)
+      .set({ unitOfMeasure: "kg" })
+      .where(eq(schema.purchaseOrderItems.id, itemIds[0]!))
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 1.5 }],
+    })
+    const item = await inMemoryDb.query.purchaseOrderItems.findFirst({ where: eq(schema.purchaseOrderItems.id, itemIds[0]!) })
+    expect(item?.quantityOfficeReceived).toBe(1.5)
+  })
+})

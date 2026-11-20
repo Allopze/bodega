@@ -14,6 +14,7 @@ import {
   formatFileSize,
   formatQty,
   quantityStep,
+  requiresWholeQuantity,
   pluralize,
   toCode,
   formatDate,
@@ -85,6 +86,25 @@ describe("formatQty()", () => {
 
   it("formats zero without unit", () => {
     expect(formatQty(0)).toBe("0")
+  })
+})
+
+describe("requiresWholeQuantity()", () => {
+  // La contraparte de servidor de `quantityStep`: lo que el campo sube de a 1,
+  // el servicio lo exige entero. Si las dos listas divergieran, el navegador
+  // bloquearía lo que el servidor acepta, o al revés.
+  it("exige enteros donde el campo avanza de a 1", () => {
+    for (const unit of ["unidad", "par", "caja", "servicio", "Unidad", undefined, null, ""]) {
+      expect(requiresWholeQuantity(unit)).toBe(true)
+      expect(quantityStep(unit)).toBe(1)
+    }
+  })
+
+  it("admite fracciones en las unidades que se miden", () => {
+    for (const unit of ["kg", " KG ", "litros", "m2", "horas"]) {
+      expect(requiresWholeQuantity(unit)).toBe(false)
+      expect(quantityStep(unit)).toBe(0.01)
+    }
   })
 })
 

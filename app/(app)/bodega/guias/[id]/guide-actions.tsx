@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { toast } from "@/lib/toast"
+import { quantityStep, requiresWholeQuantity } from "@/lib/utils"
 import { cancelGuideAction, dispatchGuideAction, receiveGuideAction } from "../actions"
 
 interface GuideActionsProps {
@@ -92,11 +93,15 @@ export function GuideActions({
     // Una GDI enlazada ya cotejada tiene acumuladores en la OC; el backend
     // rechaza su anulación para no borrar historia ni desincronizar estados.
     && !(reconciliationItems.length > 0 && (status === "partially_received" || status === "received"))
+  // Este diálogo no es un `<form>`: el navegador no valida el `step`, así que
+  // la fracción en una unidad contable se bloquea acá (y en el servidor).
+  const isFractionalCount = (item: { unitOfMeasure: string }, received: number) =>
+    requiresWholeQuantity(item.unitOfMeasure) && Number.isFinite(received) && !Number.isInteger(received)
   const hasInvalidReconciliation = reconciliationItems.some((item) => {
     const received = Number(receivedQuantities[item.id])
     const remaining = Math.max(0, item.quantity - (item.receivedQuantity ?? 0))
     const difference = remaining - received
-    return !Number.isFinite(received) || received < 0 || received > remaining || (difference > 1e-9 && (differenceReasons[item.id]?.trim().length ?? 0) < 5)
+    return !Number.isFinite(received) || received < 0 || received > remaining || isFractionalCount(item, received) || (difference > 1e-9 && (differenceReasons[item.id]?.trim().length ?? 0) < 5)
   })
 
   return (
@@ -196,6 +201,8 @@ export function GuideActions({
                 const received = Number(receivedQuantities[item.id])
                 const remaining = Math.max(0, item.quantity - (item.receivedQuantity ?? 0))
                 const hasDifference = Number.isFinite(received) && received < remaining
+                const fractional = isFractionalCount(item, received)
+                const step = quantityStep(item.unitOfMeasure)
                 return (
                   <div key={item.id} className="grid gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] p-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
                     <div className="min-w-0">
@@ -205,13 +212,15 @@ export function GuideActions({
                         {(item.receivedQuantity ?? 0) > 0 && ` · ya confirmado: ${item.receivedQuantity} ${item.unitOfMeasure}`}
                       </p>
                     </div>
-                    <Field label="Recibido en faena" htmlFor={`gdi-recibido-${item.id}`}>
+                    <Field label="Recibido en faena" htmlFor={`gdi-recibido-${item.id}`} error={fractional ? "Va en cantidades enteras" : undefined}>
                       <Input
                         id={`gdi-recibido-${item.id}`}
                         type="number"
+                        inputMode={step === 1 ? "numeric" : "decimal"}
                         min={0}
                         max={remaining}
-                        step="any"
+                        step={step}
+                        error={fractional}
                         value={receivedQuantities[item.id] ?? ""}
                         onChange={(event) => setReceivedQuantities((current) => ({ ...current, [item.id]: event.target.value }))}
                       />

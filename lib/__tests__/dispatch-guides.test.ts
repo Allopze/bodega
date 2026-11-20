@@ -1010,4 +1010,90 @@ describe("Guías de Despacho Internas", () => {
 
     expect(notifyWorkOrderPartsReceived).not.toHaveBeenCalled()
   })
+
+  /* ── Cantidades enteras por unidad ───────────────────────────────────── */
+
+  // El formulario avanzaba de a 0,01 (crear) o sin paso (cotejar), y el
+  // servidor aceptaba cualquier `real`: medio casco viajaba en la guía y
+  // descontaba stock por fracciones. La lista de `quantityStep` decide.
+  describe("cantidades enteras por unidad", () => {
+    it("no crea una guía con una fracción de un producto contable", async () => {
+      await expect(createDispatchGuide(guideInput({
+        items: [{ productId: "p-casco", quantity: 1.5, unitOfMeasure: "unidad", notes: null }],
+      }), ISSUER)).rejects.toThrow(/Casco de seguridad se registra en cantidades enteras/)
+    })
+
+    it("no deja saltarse la regla declarando una unidad que se mide", async () => {
+      await expect(createDispatchGuide(guideInput({
+        items: [{ productId: "p-casco", quantity: 1.5, unitOfMeasure: "kg", notes: null }],
+      }), ISSUER)).rejects.toThrow(/cantidades enteras \(unidad\)/)
+    })
+
+    it("tampoco la acepta al editar el borrador", async () => {
+      const { id } = await createDispatchGuide(guideInput(), ISSUER)
+      await expect(updateDispatchGuide(id, guideInput({
+        items: [{ productId: "p-guantes", quantity: 2.5, unitOfMeasure: "par", notes: null }],
+      }), ISSUER)).rejects.toThrow(/cantidades enteras \(par\)/)
+      const items = await inMemoryDb.select().from(schema.dispatchGuideItems)
+        .where(eq(schema.dispatchGuideItems.guideId, id))
+      expect(items.map((item) => [item.productId, item.quantity])).toEqual([["p-casco", 10]])
+    })
+
+    // Hoy es el único camino de `GuideForm`: la guía nace de la recepción en
+    // oficina y sólo se edita su borrador.
+    it("tampoco la acepta al editar el borrador de una guía de adquisiciones", async () => {
+      const { orderId, orderItemId } = await makeAcquisitionOrder(6)
+      await setOfficeStock("p-gdi", 0)
+      const receiptId = await registerReceipt({
+        purchaseOrderId: orderId, receivedBy: ISSUER.userId, stage: "office",
+        items: [{ purchaseOrderItemId: orderItemId, quantityReceived: 6 }],
+      })
+      const [guide] = await inMemoryDb.select().from(schema.dispatchGuides)
+        .where(eq(schema.dispatchGuides.receiptId, receiptId))
+      const detail = await getDispatchGuideDetail(guide!.id)
+      await expect(updateDispatchGuide(guide!.id, {
+        destinationWorksiteId: FAENA, dispatcherWorkerId: null, receiverWorkerId: null,
+        vehicleId: null, driverWorkerId: null, notes: null,
+        items: [{ productId: "p-gdi", quantity: 1.5, unitOfMeasure: "unidad", notes: null, sourceGuideItemId: detail!.guide.items[0]!.id }],
+      }, ISSUER)).rejects.toThrow(/Lentes de seguridad se registra en cantidades enteras/)
+      const [item] = await inMemoryDb.select().from(schema.dispatchGuideItems)
+        .where(eq(schema.dispatchGuideItems.guideId, guide!.id))
+      expect(item?.quantity).toBe(6)
+    })
+
+    it("un producto que se mide sí viaja en fracción", async () => {
+      await inMemoryDb.insert(schema.productUnits).values({ id: "u-metro", code: "metro", label: "Metro" }).onConflictDoNothing()
+      await inMemoryDb.insert(schema.products).values({
+        id: "p-cable", sku: "MAT-001", name: "Cable eléctrico", categoryId: "cat-1",
+        unitOfMeasure: "metro", isActive: true, createdAt: now, updatedAt: now,
+      }).onConflictDoNothing()
+      const { id } = await createDispatchGuide(guideInput({
+        items: [{ productId: "p-cable", quantity: 12.5, unitOfMeasure: "metro", notes: null }],
+      }), ISSUER)
+      const [item] = await inMemoryDb.select().from(schema.dispatchGuideItems)
+        .where(eq(schema.dispatchGuideItems.guideId, id))
+      expect(item?.quantity).toBe(12.5)
+    })
+
+    it("el cotejo en faena exige enteros y deja la guía sin recibir", async () => {
+      const { orderId, orderItemId } = await makeAcquisitionOrder(5)
+      await setOfficeStock("p-gdi", 0)
+      const receiptId = await registerReceipt({
+        purchaseOrderId: orderId, receivedBy: ISSUER.userId, stage: "office",
+        items: [{ purchaseOrderItemId: orderItemId, quantityReceived: 5 }],
+      })
+      const [guide] = await inMemoryDb.select().from(schema.dispatchGuides)
+        .where(eq(schema.dispatchGuides.receiptId, receiptId))
+      await dispatchDispatchGuide(guide!.id, ISSUER)
+      const detail = await getDispatchGuideDetail(guide!.id)
+      await expect(confirmDispatchGuideReceipt(guide!.id, {
+        items: [{ guideItemId: detail!.guide.items[0]!.id, quantityReceived: 4.5, differenceReason: "Faltó media unidad" }],
+      }, FAENA_ACTOR)).rejects.toThrow(/Lentes de seguridad se registra en cantidades enteras \(unidad\); indicaste 4,5/)
+
+      expect((await getDispatchGuideDetail(guide!.id))!.guide.status).toBe("dispatched")
+      const [poItem] = await inMemoryDb.select().from(schema.purchaseOrderItems)
+        .where(eq(schema.purchaseOrderItems.id, orderItemId))
+      expect(poItem?.quantityReceived ?? 0).toBe(0)
+    })
+  })
 })
