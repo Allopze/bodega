@@ -299,6 +299,7 @@ describe("sidebar navigation", () => {
       ["Seguimiento", "Panel operacional"],
       ["Flota", "Vehículos"],
       ["Flota", "Traslados"],
+      ["Flota", "Turnos y ralentí"],
       ["Flota", "Conductores"],
       ["Flota", "Monitoreo GPS"],
       // GPS tiene su pantalla de Indicadores; en Mantención y Combustible los gráficos son el Panel.
