@@ -114,6 +114,8 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
       // Traslados entre faenas (2026-11-18): visible con `flota:view` cuando el submódulo está encendido,
       // como en el seed E2E (`e2e/setup-db.ts`).
       { href: "/flota/traslados", nombre: "Traslados" },
+      // Turnos y ralentí (2026-11-20): `flota:view_shifts`, con el submódulo encendido en el seed E2E.
+      { href: "/flota/turnos", nombre: "Turnos y ralentí" },
       { href: "/flota/conductores", nombre: "Conductores" },
       { href: "/flota/monitoreo", nombre: "Monitoreo GPS" },
       { href: "/flota/indicadores", nombre: "Indicadores GPS" },

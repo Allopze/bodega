@@ -408,6 +408,10 @@ services:
         30 5 * * * CRON_SECRET="$$CRON_SECRET" FUEL_CRON_INTERNAL_SECRET="$$FUEL_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fuel-copec-sync >/proc/1/fd/1 2>&1
         # VisionLink — telemetría de los últimos 14 días, ya cerrado el día anterior.
         0 6 * * * CRON_SECRET="$$CRON_SECRET" FUEL_CRON_INTERNAL_SECRET="$$FUEL_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fuel-visionlink-sync >/proc/1/fd/1 2>&1
+        # VisionLink — tramos por hora de ayer y hoy, cada hora al minuto 15: los turnos de la
+        # tarde y la noche de ayer no quedan «Pendiente de datos» hasta la mañana siguiente
+        # (la telemetría llega con ~15 min de retraso). Candado propio; no alarga el de las 06:00.
+        15 * * * * CRON_SECRET="$$CRON_SECRET" FUEL_CRON_INTERNAL_SECRET="$$FUEL_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fuel-visionlink-hourly >/proc/1/fd/1 2>&1
         # Variaciones — después de las ventanas Copec (05:30, máx. 5 min) y
         # VisionLink (06:00, máx. 2 min), para leer los datos del mismo ciclo.
         30 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-anomaly-detection >/proc/1/fd/1 2>&1

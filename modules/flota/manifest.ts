@@ -11,6 +11,8 @@ export const flotaModule = {
     "flota:manage_licenses",
     "flota:export",
     "flota:transfer",
+    "flota:view_shifts",
+    "flota:manage_shifts",
   ] as const,
 
   permissionMeta: {
@@ -24,6 +26,8 @@ export const flotaModule = {
     // la plataforma. Al estrenarse se copia de `flota:view` (`PERMISSION_MIRRORS` en lib/auth/bootstrap.ts).
     "flota:export": { id: "p-flot-export", description: "Exportar a Excel los vehículos y los indicadores GPS" },
     "flota:transfer": { id: "p-flot-transfer", description: "Trasladar equipos entre faenas y anular traslados" },
+    "flota:view_shifts": { id: "p-flot-view-shifts", description: "Ver turnos de operación y ralentí por operador" },
+    "flota:manage_shifts": { id: "p-flot-manage-shifts", description: "Registrar, editar y anular turnos de operación" },
   },
 
   nav: [
@@ -56,6 +60,15 @@ export const flotaModule = {
           href:     "/flota/traslados",
           iconName: "ArrowsLeftRight",
           permissions: ["flota:view"],
+          group:    "Flota",
+        },
+        {
+          // Turnos de operación y ralentí por operador. Hasta que un administrador lo habilite,
+          // el interruptor del submódulo lo oculta del menú.
+          label:    "Turnos y ralentí",
+          href:     "/flota/turnos",
+          iconName: "ClockCountdown",
+          permissions: ["flota:view_shifts"],
           group:    "Flota",
         },
         {
@@ -112,5 +125,11 @@ export const flotaModule = {
     { roleSlug: "administrador", permission: "flota:transfer" },
     { roleSlug: "jefe_mantencion", permission: "flota:transfer" },
     { roleSlug: "jefa_chome", permission: "flota:transfer" },
+    { roleSlug: "administrador", permission: "flota:view_shifts" },
+    { roleSlug: "jefa_chome", permission: "flota:view_shifts" },
+    { roleSlug: "jefe_mantencion", permission: "flota:view_shifts" },
+    { roleSlug: "admin_contrato", permission: "flota:view_shifts" },
+    { roleSlug: "administrador", permission: "flota:manage_shifts" },
+    { roleSlug: "admin_contrato", permission: "flota:manage_shifts" },
   ],
 } as const satisfies ModuleManifest

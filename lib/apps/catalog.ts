@@ -278,6 +278,7 @@ const PREVENTION_JOB_LABELS: Record<string, string> = {
 export const APP_CRON_JOBS: AppCronJob[] = [
   { jobName: "fuel-copec-sync", appId: "combustibles", label: "Sincronización Copec", maxAgeHours: 26 },
   { jobName: "fuel-visionlink-sync", appId: "combustibles", label: "Sincronización VisionLink", maxAgeHours: 26 },
+  { jobName: "fuel-visionlink-hourly", appId: "combustibles", label: "Tramos por hora VisionLink", maxAgeHours: 3 },
   { jobName: "fuel-anomaly-detection", appId: "combustibles", label: "Detección de anomalías", maxAgeHours: 26 },
   { jobName: "fuel-statement-notifications", appId: "combustibles", label: "Avisos de estados de cuenta", maxAgeHours: 26 },
   { jobName: "fleet-onway-sync", appId: "flota", label: "GPS OnWay", maxAgeHours: 1 },

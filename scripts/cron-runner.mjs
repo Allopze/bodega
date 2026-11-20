@@ -53,6 +53,15 @@ const JOBS = Object.freeze({
   },
   "fuel-visionlink-sync": {
     url: "http://app:3000/api/cron/fuel-visionlink-sync",
+    // Diario + tramos por hora de 14 días (unas 120 llamadas a VisionLink).
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "FUEL_CRON_",
+    internalSecretEnv: "FUEL_CRON_INTERNAL_SECRET",
+    internalSecretHeader: "X-Fuel-Cron-Secret",
+  },
+  "fuel-visionlink-hourly": {
+    url: "http://app:3000/api/cron/fuel-visionlink-hourly",
     timeoutMs: 2 * 60 * 1_000,
     kind: "sync",
     codePrefix: "FUEL_CRON_",

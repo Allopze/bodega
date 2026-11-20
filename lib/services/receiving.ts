@@ -14,6 +14,7 @@ import {
   products,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { formatQty, requiresWholeQuantity } from "@/lib/utils"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { receiveItemTx, receiveOfficeItemTx } from "./item-state"
@@ -272,6 +273,19 @@ export async function registerReceipt(
       }
       if (qtyRej < 0 || qtyDmg < 0) {
         throw new Error("Rejected and damaged quantities cannot be negative")
+      }
+      // Lo que se cuenta llega entero. El formulario ya avanza de a 1 según la
+      // unidad (`quantityStep`), pero un «1,5» tipeado o un payload armado a
+      // mano registraba medio casco: la columna es `real` y lo aceptaba.
+      if (requiresWholeQuantity(lockedOcItem.unitOfMeasure)) {
+        const fractional = [qtyRec, qtyRej, qtyDmg].find((qty) => !Number.isInteger(qty))
+        if (fractional !== undefined) {
+          const product = lockedOcItem.productId
+            ? await tx.query.products.findFirst({ where: eq(products.id, lockedOcItem.productId), columns: { name: true } })
+            : null
+          const name = product?.name ?? lockedOcItem.productNameFree ?? "Esta línea"
+          throw new Error(`${name} se registra en cantidades enteras (${lockedOcItem.unitOfMeasure}); indicaste ${formatQty(fractional)}.`)
+        }
       }
       // M-3: una línea 100% rechazada/dañada llega con qtyRec = 0. Se acepta
       // mientras haya alguna cantidad (recibida, rechazada o dañada); no suma

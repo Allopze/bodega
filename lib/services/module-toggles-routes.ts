@@ -174,6 +174,8 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/api/cron/fuel-copec-sync" },
   // Telemetría VisionLink: es una fuente de datos más (motor en vacío de Consumo).
   { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/api/cron/fuel-visionlink-sync" },
+  // Tramos de VisionLink por hora (turnos y ralentí): la misma fuente, corrida liviana de cada hora.
+  { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/api/cron/fuel-visionlink-hourly" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/pagos", prefix: "/api/cron/fuel-statement-notifications" },
   { moduleId: "feedback", submoduleHref: "/soporte", prefix: "/api/cron/feedback-sla-reminders" },
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-retention" },

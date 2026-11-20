@@ -98,6 +98,15 @@ export function quantityStep(unit?: string | null): number {
 }
 
 /**
+ * La cantidad de esta unidad va entera. Contraparte de servidor de
+ * `quantityStep`: el campo avanza de a 1 y el servicio exige un entero, con
+ * la misma lista, para que el navegador y el servidor no discrepen.
+ */
+export function requiresWholeQuantity(unit?: string | null): boolean {
+  return quantityStep(unit) === 1
+}
+
+/**
  * Pluraliza un sustantivo español de forma sistemática (auditoría UI/UX
  * §4.4 — "1 submódulo / 2 submódulos" ya no se resuelve a mano en cada
  * sitio). Reglas: vocal → +s, consonante → +es, -z → -ces, -ión → -iones,

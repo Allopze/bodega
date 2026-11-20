@@ -11,12 +11,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { DatePicker } from "@/components/ui/date-picker"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { registerReceiptAction } from "./actions"
-import { formatQty } from "@/lib/utils"
+import { formatQty, quantityStep } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import Link from "next/link"
 import { describeStageProgress, faenaStockEffect, rejectionHint } from "./receipt-form-progress"
 import type { ReceiptOcItem, ReceiptStage } from "./receipt-form.types"
 import { remainingForStage } from "./receipt-remaining"
+import type { FaenaGuideNotice } from "./faena-guide"
 
 export type { ReceiptOcItem } from "./receipt-form.types"
 
@@ -55,6 +56,7 @@ export function ReceiptForm({
   items,
   canOffice,
   canFaena,
+  faenaGuideNotice = null,
   deliveryMode = "via_oficina",
 }: {
   purchaseOrderId: string
@@ -65,6 +67,11 @@ export function ReceiptForm({
   items:           ReceiptOcItem[]
   canOffice:       boolean
   canFaena:        boolean
+  /**
+   * La OC ya tiene guía de despacho: la faena se recibe en la guía y no aquí
+   * (ver `faena-guide.ts`). Ocupa el lugar de la tarjeta de faena y dice adónde ir.
+   */
+  faenaGuideNotice?: FaenaGuideNotice | null
   deliveryMode?:   "via_oficina" | "directo_faena"
 }) {
   // REC-002: la misma fórmula que aplica el servidor —capacidad de la etapa
@@ -243,6 +250,17 @@ export function ReceiptForm({
                 </p>
               </button>
             )}
+            {faenaGuideNotice && (
+              <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+                <p className="text-sm font-medium text-[var(--color-text-muted)]">Recepción en faena</p>
+                <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{faenaGuideNotice.title}.</p>
+                {faenaGuideNotice.action && (
+                  <Link href={faenaGuideNotice.action.href} className="mt-1 inline-flex text-xs font-medium text-[var(--color-primary-ink)] hover:underline">
+                    {faenaGuideNotice.action.label}
+                  </Link>
+                )}
+              </div>
+            )}
           </div>
         </Field>
         </div>
@@ -266,6 +284,10 @@ export function ReceiptForm({
             const remaining = getRemaining(item, stage)
             const pending   = remaining > 0
             const overBooked = overBookedItemIdSet.has(item.id)
+            // La unidad decide el paso de las flechas: con 0.01 fijo un casco
+            // se recibía de a centésimos. `min` sigue en 0 porque 0 es válido
+            // (una línea 100% rechazada va con Recibido en 0).
+            const step = quantityStep(item.unitOfMeasure)
 
             return (
               <div key={item.id} className={`grid min-w-[440px] grid-cols-[minmax(0,1fr)_84px_84px_84px] gap-3 px-4 py-3 ${!pending ? "opacity-50" : ""}`}>
@@ -297,7 +319,7 @@ export function ReceiptForm({
 
                 <Input
                   type="number"
-                  step="0.01"
+                  step={step}
                   min="0"
                   max={remaining}
                   value={qtys[item.id] ?? remaining}
@@ -310,7 +332,7 @@ export function ReceiptForm({
 
                 <Input
                   type="number"
-                  step="0.01"
+                  step={step}
                   min="0"
                   max={remaining}
                   value={rejs[item.id] ?? 0}
@@ -323,7 +345,7 @@ export function ReceiptForm({
 
                 <Input
                   type="number"
-                  step="0.01"
+                  step={step}
                   min="0"
                   max={remaining}
                   value={dmgs[item.id] ?? 0}
@@ -342,6 +364,9 @@ export function ReceiptForm({
             const remaining = getRemaining(item, stage)
             const pending = remaining > 0
             const overBooked = overBookedItemIdSet.has(item.id)
+            const step = quantityStep(item.unitOfMeasure)
+            // Sin coma en el teclado del celular cuando la cantidad es entera.
+            const inputMode = step === 1 ? "numeric" : "decimal"
             return (
               <fieldset key={item.id} disabled={!pending} className={`rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 ${!pending ? "opacity-60" : ""}`}>
                 <legend className="sr-only">Recepción de {lineLabel(item)}</legend>
@@ -360,13 +385,13 @@ export function ReceiptForm({
                 </div>
                 <div className="mt-3 grid grid-cols-3 gap-2">
                   <Field label="Recibido">
-                    <Input type="number" inputMode="decimal" step="0.01" min="0" max={remaining} value={qtys[item.id] ?? remaining} onChange={(event) => setQtys((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad recibida de ${lineLabel(item)}`} />
+                    <Input type="number" inputMode={inputMode} step={step} min="0" max={remaining} value={qtys[item.id] ?? remaining} onChange={(event) => setQtys((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad recibida de ${lineLabel(item)}`} />
                   </Field>
                   <Field label="Rechazado">
-                    <Input type="number" inputMode="decimal" step="0.01" min="0" max={remaining} value={rejs[item.id] ?? 0} onChange={(event) => setRejs((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad rechazada de ${lineLabel(item)}`} />
+                    <Input type="number" inputMode={inputMode} step={step} min="0" max={remaining} value={rejs[item.id] ?? 0} onChange={(event) => setRejs((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad rechazada de ${lineLabel(item)}`} />
                   </Field>
                   <Field label="Dañado">
-                    <Input type="number" inputMode="decimal" step="0.01" min="0" max={remaining} value={dmgs[item.id] ?? 0} onChange={(event) => setDmgs((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad dañada de ${lineLabel(item)}`} />
+                    <Input type="number" inputMode={inputMode} step={step} min="0" max={remaining} value={dmgs[item.id] ?? 0} onChange={(event) => setDmgs((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad dañada de ${lineLabel(item)}`} />
                   </Field>
                 </div>
                 {overBooked && <p className="mt-2 text-xs text-[var(--color-danger)]">La suma supera el saldo pendiente de {formatQty(remaining, item.unitOfMeasure)}.</p>}
