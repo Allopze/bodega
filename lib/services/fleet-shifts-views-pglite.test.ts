@@ -217,12 +217,33 @@ describe("ranking de operadores", () => {
   })
 })
 
+describe("grilla de equipos: VisionLink omite los días sin uso", () => {
+  it("un domingo sin datos con datos el lunes es detenido, y un día sólo con «running» es sin dato", async () => {
+    const V_SUNDAY = "veh-sv-d"
+    await testDb.insert(schema.fuelVehicles).values({
+      // Faena C: otras pruebas listan los equipos de la faena A.
+      id: V_SUNDAY, plate: "SV-0005", code: "SV-D", serialNumber: "SN-D", worksiteId: IDS.wsC,
+      type: "x", equipmentTypeId: IDS.eqType, meterType: "hour_meter", performanceUnit: "liters_per_hour",
+    })
+    // Sábado 14: trabajó. Domingo 15: nada (VisionLink no trae el día). Lunes 16: sólo «running» (ConnectPro).
+    await addHours(V_SUNDAY, "2026-11-14", range(8, 12), { idle: 900, working: 2700 })
+    await addHours(V_SUNDAY, "2026-11-16", range(8, 12), { running: 3600 })
+    for (const day of ["2026-11-14", "2026-11-15", "2026-11-16"]) await addFetch(V_SUNDAY, day)
+
+    const view = await getEquipmentGridView([IDS.wsC], { from: "2026-11-14", to: "2026-11-16" })
+    const row = view.rows.find((r) => r.vehicleId === V_SUNDAY)!
+    expect(row.cells.map((c) => [c.day.slice(8), c.kind])).toEqual([["14", "pct"], ["15", "detenido"], ["16", "sin_dato"]])
+    expect(row.cells[2]!.engineHours).toBeCloseTo(4)
+  })
+})
+
 describe("grilla de equipos", () => {
   it("distingue detenido, sin señal, fuera de servicio, sin operación programada y sin datos", async () => {
     const hour = { source: SOURCE, vehicleId: V_GRID }
     await testDb.insert(schema.fuelTelemetryHourly).values(range(6, 14).map((h) => ({ ...hour, day: "2026-10-01", hour: h, idleSeconds: 600, workingSeconds: 3000, runningSeconds: 0 })))
     for (const day of ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"]) await addFetch(V_GRID, day)
-    // 10-02: el resumen diario confirmó un día detenido (fila con 0 h). 10-03: sin fila = no transmitió.
+    // 10-02: fila del resumen diario (transmitió). 10-03 en adelante: sin datos ni ese día ni después, y el equipo
+    // lleva más de 3 días callado = sin señal.
     await addDaily(V_GRID, "2026-10-01", 10, 30)
     await addDaily(V_GRID, "2026-10-02", 5, 15)
     await testDb.insert(schema.fuelVehicleOperationalIntervals).values({

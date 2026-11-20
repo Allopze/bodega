@@ -42,9 +42,10 @@ function cellView(cell: GridCell, target: number): { text: string; className: st
       }
     }
     case "detenido": return { text: "–", className: "text-[var(--color-text-muted)]", title: "Motor detenido ese día" }
+    case "sin_dato": return { text: "s/d", className: "text-[var(--color-text-muted)]", title: `${formatHoursValue(cell.engineHours)} h de motor, sin dato de ralentí: el equipo no distingue ralentí de trabajo` }
     case "fs": return { text: "FS", className: NEUTRAL_CELL, title: "Fuera de servicio o en mantención" }
     case "sp": return { text: "SP", className: "bg-[var(--color-info-tint)] text-[var(--color-info-ink)]", title: "Sin operación programada" }
-    case "ss": return { text: "SS", className: "bg-[var(--color-signal-tint)] text-[var(--color-signal-ink)]", title: "Sin señal: el equipo no transmitió ese día" }
+    case "ss": return { text: "SS", className: "bg-[var(--color-signal-tint)] text-[var(--color-signal-ink)]", title: "Sin señal: el equipo no transmite desde antes de ese día" }
     default: return { text: "", className: "", title: "Sin telemetría ese día" }
   }
 }
@@ -67,9 +68,10 @@ function Legend({ target }: { target: number }) {
     { box: BAND.over, sample: "38", text: `sobre la meta` },
     { box: BAND.farOver, sample: "55", text: `muy sobre la meta (más de ${formatTargetPct(target * FAR_OVER_FACTOR)})` },
     { box: "text-[var(--color-text-muted)]", sample: "–", text: "motor detenido" },
+    { box: "text-[var(--color-text-muted)]", sample: "s/d", text: "con motor, sin dato de ralentí" },
     { box: NEUTRAL_CELL, sample: "FS", text: "fuera de servicio o en mantención" },
     { box: "bg-[var(--color-info-tint)] text-[var(--color-info-ink)]", sample: "SP", text: "sin operación programada" },
-    { box: "bg-[var(--color-signal-tint)] text-[var(--color-signal-ink)]", sample: "SS", text: "sin señal (no transmitió)" },
+    { box: "bg-[var(--color-signal-tint)] text-[var(--color-signal-ink)]", sample: "SS", text: "sin señal (no transmite hace días)" },
     { box: "border border-dashed border-[var(--color-border-strong)]", sample: "", text: "vacío: sin telemetría o sin datos" },
   ]
   return (

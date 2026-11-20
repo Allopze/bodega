@@ -68,7 +68,8 @@ export interface EquipmentDayRow {
 
 export interface GridCell {
   day: string
-  kind: "pct" | "detenido" | "fs" | "sp" | "ss" | "vacio"
+  /** `sin_dato`: hubo motor pero el equipo no distingue ralentí de trabajo (ConnectPro: sólo tramos «running»). */
+  kind: "pct" | "detenido" | "sin_dato" | "fs" | "sp" | "ss" | "vacio"
   pct: number | null
   engineHours: number
 }
@@ -309,7 +310,7 @@ function stateOnDay(intervals: StateInterval[] | undefined, bounds: { start: num
 }
 
 function teleOf(map: Map<string, VehicleTelemetry>, vehicleId: string): VehicleTelemetry {
-  return map.get(vehicleId) ?? { linked: false, hours: new Map(), segmentsFetchedAt: new Map(), dailyFetchedAt: new Map(), dailyRowDays: new Set() }
+  return map.get(vehicleId) ?? { linked: false, hours: new Map(), segmentsFetchedAt: new Map(), lastReportDay: null, signalLost: false }
 }
 
 const EMPTY_DAY_VIEW = (day: string, target: number) => ({ day, target, vehicles: [] as EquipmentDayRow[], shifts: [] as ShiftRow[] })
@@ -507,7 +508,8 @@ export async function getEquipmentGridView(
       else if (mark && summary.idlePct === null) kind = "sp"
       else if (summary.signal === "sin_senal") kind = "ss"
       else if (summary.signal === "pendiente" && summary.engineHours === 0) kind = "vacio"
-      else if (summary.engineHours === 0 || summary.idlePct === null) kind = "detenido"
+      else if (summary.engineHours === 0) kind = "detenido"
+      else if (summary.idlePct === null) kind = "sin_dato"
       else kind = "pct"
       cells.push({ day, kind, pct: kind === "pct" ? summary.idlePct : null, engineHours: summary.engineHours })
 

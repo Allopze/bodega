@@ -63,8 +63,13 @@ function DayIdleCell({ row, target }: { row: EquipmentDayRow; target: number }) 
   switch (row.summary.signal) {
     case "sin_telemetria": return <span className="text-xs text-[var(--color-text-muted)]">Sin VisionLink</span>
     case "pendiente": return <Badge variant="info" title="Alguna hora del día aún no llega de VisionLink.">Pendiente de datos</Badge>
-    case "sin_senal": return <Badge variant="warning" title="El equipo no transmitió ese día.">Sin señal</Badge>
-    default: return <IdleBar pct={row.summary.idlePct} target={target} />
+    case "sin_senal": return <Badge variant="warning" title="El equipo no transmite desde antes de ese día.">Sin señal</Badge>
+    default:
+      // Con motor y sin % (ConnectPro sólo informa tramos «running»): decirlo, no dibujar «—» como si estuviera detenido.
+      if (row.summary.engineHours > 0 && row.summary.idlePct === null) {
+        return <span className="text-xs text-[var(--color-text-muted)]" title="El equipo no distingue ralentí de trabajo.">Sin dato de ralentí</span>
+      }
+      return <IdleBar pct={row.summary.idlePct} target={target} />
   }
 }
 

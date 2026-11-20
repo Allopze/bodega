@@ -16,7 +16,7 @@ const META: Record<ShiftStatus, StateMetaInput> = {
 const DESCRIPTION: Record<ShiftStatus, string> = {
   sin_telemetria: "El equipo no tiene VisionLink: no hay horas de motor que medir.",
   pendiente: "Alguna hora del turno aún no llega de VisionLink; se completa sola en las próximas horas.",
-  sin_senal: "El equipo no transmitió ese día.",
+  sin_senal: "El equipo no transmite desde antes de ese día (lleva 3 días o más sin señal).",
   sin_uso: "Menos de 0,5 h de motor: el turno no entra al ranking.",
   sin_dato_ralenti: "Hay horas de motor pero VisionLink no informó ralentí ni trabajo.",
   sobre_meta: "El % de ralentí supera la meta.",

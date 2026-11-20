@@ -10,15 +10,15 @@ const TARGET = 0.3
 const LATE = "2026-12-31T00:00:00Z"
 
 function emptyTele(over: Partial<VehicleTelemetry> = {}): VehicleTelemetry {
-  return { linked: true, hours: new Map(), segmentsFetchedAt: new Map(), dailyFetchedAt: new Map(), dailyRowDays: new Set(), ...over }
+  return { linked: true, hours: new Map(), segmentsFetchedAt: new Map(), lastReportDay: null, signalLost: false, ...over }
 }
 
-/** Telemetría con los `days` consultados después de cualquier hora y con fila diaria confirmada. */
+/** Telemetría con los `days` consultados después de cualquier hora, de un equipo que sigue transmitiendo. */
 function teleFor(days: PlainDate[], hours: Array<[HourKey, Partial<HourSeconds>]>, over: Partial<VehicleTelemetry> = {}): VehicleTelemetry {
   const tele = emptyTele({
     segmentsFetchedAt: new Map(days.map((day) => [day, LATE])),
-    dailyFetchedAt: new Map(days.map((day) => [day, LATE])),
-    dailyRowDays: new Set(days),
+    lastReportDay: days[days.length - 1] ?? null,
+    signalLost: false,
     ...over,
   })
   for (const [key, seconds] of hours) tele.hours.set(hourKeyId(key), { idle: 0, working: 0, running: 0, ...seconds })
@@ -142,34 +142,34 @@ describe("summarizeShift", () => {
     expect(summary.idlePct).toBeNull()
   })
 
-  it("0 s de motor, día confirmado y sin fila diaria es sin señal", () => {
-    const tele = teleFor([day], [], { dailyRowDays: new Set() })
+  it("0 s de motor de un equipo que perdió la señal y no transmitió después es sin señal", () => {
+    const tele = teleFor([day], [], { lastReportDay: "2026-11-01", signalLost: true })
     expect(summarizeShift(morning, tele, TARGET).status).toBe("sin_senal")
   })
 
-  it("0 s de motor con fila diaria (equipo detenido) es sin uso", () => {
-    expect(summarizeShift(morning, teleFor([day], []), TARGET).status).toBe("sin_uso")
+  it("0 s de motor de un equipo que transmitió después (domingo detenido) es sin uso", () => {
+    // VisionLink omite los días sin uso: GR-10 el 15-nov no trae nada, pero el 16 sí transmitió.
+    const tele = teleFor([day], [], { lastReportDay: "2026-11-10", signalLost: false })
+    expect(summarizeShift(morning, tele, TARGET).status).toBe("sin_uso")
   })
 
-  it("0 s de motor sin confirmación del resumen diario es pendiente", () => {
-    const tele = teleFor([day], [], { dailyFetchedAt: new Map(), dailyRowDays: new Set() })
-    expect(summarizeShift(morning, tele, TARGET).status).toBe("pendiente")
+  it("0 s de motor de un equipo con señal perdida pero que transmitió después de ese día es sin uso", () => {
+    const tele = teleFor([day], [], { lastReportDay: "2026-11-12", signalLost: true })
+    expect(summarizeShift(morning, tele, TARGET).status).toBe("sin_uso")
   })
 
-  it("con algo de motor no hace falta esperar al resumen diario", () => {
-    const tele = teleFor([day], [[{ day, hour: 6 }, { idle: 1 * H, working: 3 * H }]], { dailyFetchedAt: new Map(), dailyRowDays: new Set() })
+  it("un equipo que nunca transmitió y perdió la señal es sin señal", () => {
+    expect(summarizeShift(morning, teleFor([day], [], { lastReportDay: null, signalLost: true }), TARGET).status).toBe("sin_senal")
+  })
+
+  it("con motor, la señal perdida no importa", () => {
+    const tele = teleFor([day], [[{ day, hour: 6 }, { idle: 1 * H, working: 3 * H }]], { lastReportDay: day, signalLost: true })
     expect(summarizeShift(morning, tele, TARGET).status).toBe("en_meta")
   })
 
-  it("en un turno nocturno basta un día sin fila diaria para sin señal", () => {
-    const tele = teleFor(["2026-11-08", "2026-11-09"], [], { dailyRowDays: new Set(["2026-11-08"]) })
+  it("en un turno nocturno basta un día silencioso para sin señal", () => {
+    const tele = teleFor(["2026-11-08", "2026-11-09"], [], { lastReportDay: "2026-11-08", signalLost: true })
     expect(summarizeShift(night, tele, TARGET).status).toBe("sin_senal")
-  })
-
-  it("en un turno nocturno falta confirmar un día: pendiente", () => {
-    const tele = teleFor(["2026-11-08", "2026-11-09"], [])
-    tele.dailyFetchedAt.delete("2026-11-09")
-    expect(summarizeShift(night, tele, TARGET).status).toBe("pendiente")
   })
 })
 
@@ -252,25 +252,18 @@ describe("summarizeEquipmentDay", () => {
     // La hora 23 termina a las 03:00 UTC del día siguiente: a las 20:00 UTC aún no es conocida.
     const partial = teleFor([day], [], { segmentsFetchedAt: new Map([[day, "2026-11-09T20:00:00Z"]]) })
     expect(summarizeEquipmentDay(day, [], partial, { outOfService: false }).signal).toBe("pendiente")
-    const silent = teleFor([day], [], { dailyRowDays: new Set() })
+    const silent = teleFor([day], [], { lastReportDay: "2026-08-27", signalLost: true })
     expect(summarizeEquipmentDay(day, [], silent, { outOfService: false }).signal).toBe("sin_senal")
     expect(summarizeEquipmentDay(day, [], emptyTele({ linked: false }), { outOfService: false }).signal).toBe("sin_telemetria")
   })
 
-  it("sin motor y sin resumen diario consultado es pendiente, no motor detenido", () => {
-    const awaitingDaily = teleFor([day], [], { dailyFetchedAt: new Map(), dailyRowDays: new Set() })
-    expect(summarizeEquipmentDay(day, [], awaitingDaily, { outOfService: false }).signal).toBe("pendiente")
+  it("un día sin motor de un equipo que transmitió después es detenido (ok), no sin señal", () => {
+    const parked = teleFor([day], [], { lastReportDay: "2026-11-10", signalLost: false })
+    expect(summarizeEquipmentDay(day, [], parked, { outOfService: false }).signal).toBe("ok")
   })
 
-  it("un turno sin motor en un día que el diario descartó pero con tramos es sin uso, no sin señal", () => {
-    // ConnectPro: el diario descarta el día (ralentí > funcionamiento) y no deja fila, pero hubo motor de 06 a 14.
-    const discarded = teleFor([day], [[{ day, hour: 9 }, { idle: 1 * H, working: 2 * H }]], { dailyRowDays: new Set() })
-    const afternoon: ShiftWindow = { shiftDate: day, startHour: 14, endHour: 22 }
-    expect(summarizeShift(afternoon, discarded, TARGET).status).toBe("sin_uso")
-  })
-
-  it("un día sin fila diaria pero con motor no es sin señal", () => {
-    const some = teleFor([day], [[{ day, hour: 9 }, { idle: 1 * H }]], { dailyRowDays: new Set() })
+  it("un día con motor nunca es sin señal", () => {
+    const some = teleFor([day], [[{ day, hour: 9 }, { idle: 1 * H }]], { lastReportDay: day, signalLost: true })
     expect(summarizeEquipmentDay(day, [], some, { outOfService: false }).signal).toBe("ok")
   })
 })

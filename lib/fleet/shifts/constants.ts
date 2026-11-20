@@ -15,6 +15,13 @@ export const UNASSIGNED_WARNING_HOURS = 1
 /** Margen sobre el fin de una hora para darla por conocida (latencia medida: ~15 min). */
 export const KNOWN_HOUR_MARGIN_MS = 3_600_000
 
+/**
+ * Días sin transmitir desde los que un equipo se da por «sin señal». VisionLink omite los días sin
+ * uso (un domingo detenido no trae fila), así que un día sin datos sólo es «sin señal» si el equipo
+ * no transmitió ni ese día ni después y lleva al menos esto en silencio (2026-11-20, GR-10 el 15-nov).
+ */
+export const SIGNAL_LOST_DAYS = 3
+
 /** Días que reescribe la corrida de las 06:00. */
 export const DAILY_LOOKBACK_DAYS = 14
 

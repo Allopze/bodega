@@ -124,10 +124,9 @@ Anti-metas (sería un fracaso aunque funcione)
 - **Estado de un turno**, en este orden:
   1. *Sin telemetría*: el equipo no tiene VisionLink (no hay serie vinculada).
   2. *Pendiente de datos*: alguna hora del turno todavía no es conocida (ver
-     § Hora conocida), o el turno tiene 0 min de motor y algún día que toca
-     aún no tiene confirmación del resumen diario (ver § Sin señal).
-  3. *Sin señal*: 0 min de motor y el resumen diario confirmó que el equipo no
-     transmitió ese día (ver § Sin señal).
+     § Hora conocida).
+  3. *Sin señal*: 0 min de motor y el equipo perdió la señal antes de ese día
+     (ver § Sin señal).
   4. *Sin uso*: menos de 0,5 h de motor.
   5. *Sin dato de ralentí*: hay motor pero ralentí + trabajo = 0.
   6. *Sobre meta*: % > meta. 7. *En meta*: el resto.
@@ -166,14 +165,26 @@ siguiente corrida.
 ### Sin señal (equipo detenido ≠ equipo que no transmite)
 
 Los tramos sólo existen con el motor encendido, así que no distinguen un equipo
-estacionado de uno que dejó de transmitir. El resumen diario sí: VisionLink
-entrega una fila con 0 h los días en que el equipo estuvo detenido (en
-`bodega_dev`, CR-51 tiene 274 de 420 días en 0 h) y **ninguna fila** cuando no
-transmitió (CR-53 no tiene filas después del 2026-08-27). Regla: para un día
-que el sync diario ya consultó después de terminado, fila con 0 h = detenido y
-sin fila = *Sin señal*. Mientras ese día no se consulte cerrado, un turno con
-0 min de motor queda *Pendiente de datos*; con algo de motor no hace falta
-esperar. La grilla de equipos usa la misma regla («SS» = sin señal).
+estacionado de uno que dejó de transmitir. Tampoco el resumen diario: VisionLink
+**omite los días sin uso** (verificado el 2026-11-20: GR-10 y CR-52 no traen el
+domingo 15-nov, pero sí el 14 y el 16), aunque a veces manda una fila con 0 h.
+La primera versión de este diseño leía «sin fila» como «no transmitió» y marcaba
+«Sin señal» cada domingo detenido; se corrigió así:
+
+- Cada equipo tiene su **último día con datos** (tramos con motor o fila del
+  resumen diario, de toda la historia) y **perdió la señal** si ese día fue hace
+  `SIGNAL_LOST_DAYS` = 3 días o más (o nunca transmitió).
+- Un día sin motor es *Sin señal* sólo si el equipo perdió la señal **y** no
+  transmitió ni ese día ni después. Si transmitió más tarde, ese día estuvo
+  detenido (un turno sale *Sin uso*; la grilla, «–»).
+- CR-53 (callado desde el 2026-08-27) sale *Sin señal*; GR-10 el domingo 15-nov,
+  detenido.
+- `daily_fetched_at` sigue guardándose (constancia de la consulta del resumen
+  diario), pero el cálculo no la usa.
+
+Un equipo que informa sólo tramos «running» (ConnectPro: CR-51, TO-37) tiene
+motor sin dato de ralentí: el turno sale *Sin dato de ralentí* y la grilla «s/d»,
+nunca «–» (motor detenido).
 
 ### Modelo de datos
 
@@ -359,7 +370,7 @@ registra desde la faena.
   y el interruptor apagado al desplegar.
 - Margen de 1 h para dar una hora por conocida (latencia medida: ~15 min).
 - Corrida liviana de tramos cada hora para ayer y hoy, además de la de 06:00.
-- Estado *Sin señal* a partir de la ausencia de fila en el resumen diario.
+- Estado *Sin señal* por equipo que no transmite hace 3 días o más y no transmitió después del día (VisionLink omite los días sin uso).
 - Equipos mostrados: los con VisionLink más los que tengan turnos o marcas; en
   el selector, todos los activos de la faena.
 - Los turnos históricos se importan tal cual, aunque choquen con la regla de

@@ -18,10 +18,10 @@ export interface VehicleTelemetry {
   hours: Map<string, HourSeconds>
   /** Cuándo se consultaron los tramos de cada día (texto de fecha-hora). */
   segmentsFetchedAt: Map<PlainDate, string>
-  /** Cuándo se consultó el resumen diario de cada día. */
-  dailyFetchedAt: Map<PlainDate, string>
-  /** Días con fila en el resumen diario (con 0 h = detenido; sin fila = no transmitió). */
-  dailyRowDays: Set<PlainDate>
+  /** Último día en que el equipo transmitió (tramos con motor o fila del resumen diario); `null` = nunca. */
+  lastReportDay: PlainDate | null
+  /** No transmite desde hace `SIGNAL_LOST_DAYS` días o más (o nunca transmitió). */
+  signalLost: boolean
 }
 
 /** Una hora es conocida si se consultó después de que terminó, más un margen. */
@@ -87,18 +87,12 @@ function allHoursKnown(keys: readonly HourKey[], tele: VehicleTelemetry): boolea
 }
 
 /**
- * El equipo transmitió ese día: hay fila del resumen diario o algún tramo con motor. Lo
- * segundo importa porque el sync diario descarta días inconsistentes (ralentí mayor que el
- * funcionamiento, típico de ConnectPro) y los deja sin fila aunque el equipo sí transmitió:
- * leer eso como «Sin señal» contradiría los tramos del mismo día.
+ * Un día sin datos es «sin señal» sólo si el equipo perdió la señal (lleva `SIGNAL_LOST_DAYS` o
+ * más sin transmitir) y no transmitió ni ese día ni después. VisionLink omite los días sin uso:
+ * si el equipo transmitió más tarde, ese día estuvo detenido.
  */
-function dayTransmitted(day: PlainDate, tele: VehicleTelemetry): boolean {
-  if (tele.dailyRowDays.has(day)) return true
-  for (let hour = 0; hour < 24; hour++) {
-    const seconds = tele.hours.get(hourKeyId({ day, hour }))
-    if (seconds && seconds.idle + seconds.working + seconds.running > 0) return true
-  }
-  return false
+function isSilentDay(day: PlainDate, tele: VehicleTelemetry): boolean {
+  return tele.signalLost && (tele.lastReportDay === null || tele.lastReportDay < day)
 }
 
 export function summarizeShift(shift: ShiftWindow, tele: VehicleTelemetry, target: number = IDLE_TARGET_DEFAULT): HoursTotals & { status: ShiftStatus } {
@@ -109,8 +103,8 @@ export function summarizeShift(shift: ShiftWindow, tele: VehicleTelemetry, targe
   const noEngine = totals.engineHours === 0
 
   let status: ShiftStatus
-  if (!allHoursKnown(keys, tele) || (noEngine && days.some((day) => !tele.dailyFetchedAt.has(day)))) status = "pendiente"
-  else if (noEngine && days.some((day) => !dayTransmitted(day, tele))) status = "sin_senal"
+  if (!allHoursKnown(keys, tele)) status = "pendiente"
+  else if (noEngine && days.some((day) => isSilentDay(day, tele))) status = "sin_senal"
   else if (totals.engineHours < MIN_ENGINE_HOURS) status = "sin_uso"
   else if (totals.idlePct === null) status = "sin_dato_ralenti"
   else status = totals.idlePct > target ? "sobre_meta" : "en_meta"
@@ -137,9 +131,7 @@ export function summarizeEquipmentDay(
   let signal: EquipmentDaySignal
   if (!tele.linked) signal = "sin_telemetria"
   else if (!allHoursKnown(dayKeys, tele)) signal = "pendiente"
-  // Sin motor en todo el día: «detenido» o «sin señal» sólo lo decide el resumen diario ya consultado.
-  else if (totals.engineHours === 0 && !tele.dailyFetchedAt.has(day)) signal = "pendiente"
-  else if (totals.engineHours === 0 && !dayTransmitted(day, tele)) signal = "sin_senal"
+  else if (totals.engineHours === 0 && isSilentDay(day, tele)) signal = "sin_senal"
   else signal = "ok"
 
   return {
