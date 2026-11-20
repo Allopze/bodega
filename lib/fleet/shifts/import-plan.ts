@@ -26,6 +26,8 @@ export interface ShiftImportPlan {
   errors: string[]
   operatorOverlaps: string[]
   alreadyImported: number
+  /** Cómo quedó cada operador del archivo: el dry-run lo muestra para que una persona lo confirme. */
+  operatorMatches: Array<{ operator: string; workerId: string; workerName: string }>
 }
 
 export const IMPORT_NOTE = "Importado de Ralentí Cholguán"
@@ -84,10 +86,11 @@ interface Planned {
 }
 
 export function planShiftImport(docs: RalentiShiftDoc[], catalog: ShiftImportCatalog): ShiftImportPlan {
-  const vehicleByCode = new Map<string, { id: string; code: string }>()
+  // `fuel_vehicles.code` no es único: un código repetido es ambiguo y se informa, no se elige el primero.
+  const vehiclesByCode = new Map<string, Array<{ id: string; code: string }>>()
   for (const vehicle of catalog.vehicles) {
     const key = vehicle.code.trim().toLowerCase()
-    if (key && !vehicleByCode.has(key)) vehicleByCode.set(key, vehicle)
+    if (key) vehiclesByCode.set(key, [...(vehiclesByCode.get(key) ?? []), vehicle])
   }
 
   const errors: string[] = []
@@ -138,8 +141,10 @@ export function planShiftImport(docs: RalentiShiftDoc[], catalog: ShiftImportCat
     else if (doc.ini === doc.fin) docErrors.push(`Turno ${doc.id}: el inicio y el fin son la misma hora (${doc.ini}).`)
 
     const equipo = (doc.equipo ?? "").trim()
-    const vehicle = vehicleByCode.get(equipo.toLowerCase())
-    if (!vehicle) reportOnce(`equipo:${equipo.toLowerCase()}`, `Equipo «${equipo}»: no existe en la flota (turno ${doc.id}).`)
+    const candidates = vehiclesByCode.get(equipo.toLowerCase()) ?? []
+    const vehicle = candidates.length === 1 ? candidates[0] : undefined
+    if (candidates.length === 0) reportOnce(`equipo:${equipo.toLowerCase()}`, `Equipo «${equipo}»: no existe en la flota (turno ${doc.id}).`)
+    else if (candidates.length > 1) reportOnce(`equipo:${equipo.toLowerCase()}`, `Equipo «${equipo}»: hay ${candidates.length} equipos con ese código en la flota.`)
 
     const operator = resolveOperator(doc.operador ?? "")
     if (operator.error) reportOnce(`operador:${normalizeName(doc.operador ?? "")}`, operator.error)
@@ -164,7 +169,40 @@ export function planShiftImport(docs: RalentiShiftDoc[], catalog: ShiftImportCat
     })
   }
 
-  return { rows: planned.map((item) => item.row), errors, operatorOverlaps: findOperatorOverlaps(planned), alreadyImported }
+  // Un equipo no puede tener dos turnos a la misma hora: dentro del archivo es un error (horas dobles en el ranking).
+  errors.push(...findVehicleOverlaps(planned))
+
+  const operatorMatches = [...operatorCache.entries()]
+    .flatMap(([, match]) => (match.worker ? [match.worker] : []))
+    .map((worker) => ({ workerId: worker.id, workerName: `${worker.firstName} ${worker.lastName}` }))
+  const labelByWorker = new Map(planned.map((item) => [item.row.operatorWorkerId, item.operatorLabel]))
+  return {
+    rows: planned.map((item) => item.row),
+    errors,
+    operatorOverlaps: findOperatorOverlaps(planned),
+    alreadyImported,
+    operatorMatches: operatorMatches
+      .filter((match) => labelByWorker.has(match.workerId))
+      .map((match) => ({ operator: labelByWorker.get(match.workerId)!, ...match }))
+      .sort((a, b) => a.operator.localeCompare(b.operator, "es")),
+  }
+}
+
+function findVehicleOverlaps(planned: Planned[]): string[] {
+  const byVehicle = new Map<string, Planned[]>()
+  for (const item of planned) byVehicle.set(item.row.vehicleId, [...(byVehicle.get(item.row.vehicleId) ?? []), item])
+  const errors: string[] = []
+  for (const items of byVehicle.values()) {
+    const hours = items.map((item) => new Set(shiftHourKeys(item.row).map(hourKeyId)))
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        if ([...hours[j]!].some((key) => hours[i]!.has(key))) {
+          errors.push(`Equipo ${items[i]!.code}: se cruzan ${describeShift(items[i]!)} (${items[i]!.operatorLabel}) y ${describeShift(items[j]!)} (${items[j]!.operatorLabel}).`)
+        }
+      }
+    }
+  }
+  return errors
 }
 
 function describeShift(item: Planned): string {

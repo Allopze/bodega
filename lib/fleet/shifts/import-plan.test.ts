@@ -60,6 +60,30 @@ describe("planShiftImport", () => {
     expect(plan.errors).toHaveLength(1)
   })
 
+  it("un código de equipo repetido en la flota es un error, no se elige el primero", () => {
+    const dup = { ...catalog, vehicles: [...catalog.vehicles, { id: "v-gr11-bis", code: "gr-11" }] }
+    const plan = planShiftImport([doc()], dup)
+    expect(plan.rows).toEqual([])
+    expect(plan.errors).toEqual(["Equipo «GR-11»: hay 2 equipos con ese código en la flota."])
+  })
+
+  it("dos turnos del mismo equipo que se cruzan en el archivo son un error", () => {
+    const plan = planShiftImport([
+      doc({ id: "a", operador: "Jose Briceño", ini: 6, fin: 14, fecha: "2026-11-03" }),
+      doc({ id: "b", operador: "Mauricio Vallejos", ini: 12, fin: 20, fecha: "2026-11-03" }),
+    ], catalog)
+    expect(plan.errors).toHaveLength(1)
+    expect(plan.errors[0]).toMatch(/^Equipo GR-11: se cruzan 03-11 GR-11 06–14/)
+  })
+
+  it("informa con qué trabajador quedó cada operador", () => {
+    const plan = planShiftImport([doc(), doc({ id: "d2", operador: "Mauricio Vallejos", fecha: "2026-11-12" })], catalog)
+    expect(plan.operatorMatches).toEqual([
+      { operator: "Jose Briceño", workerId: "w-briceno", workerName: "José Ignacio Briceño Soto" },
+      { operator: "Mauricio Vallejos", workerId: "w-vallejos", workerName: "Mauricio Vallejos Pérez" },
+    ])
+  })
+
   it("calza por nombre completo sin tildes, mayúsculas ni espacios de más", () => {
     const plan = planShiftImport([doc({ operador: "  MAURICIO   vallejos  PEREZ " })], catalog)
     expect(plan.errors).toEqual([])

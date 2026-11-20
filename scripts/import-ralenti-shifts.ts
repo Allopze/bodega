@@ -22,12 +22,14 @@
  * Se corre a mano, una vez; no forma parte del deploy.
  */
 import { readFileSync } from "node:fs"
-import { and, eq, isNotNull } from "drizzle-orm"
+import { and, between, eq, inArray, isNotNull, isNull } from "drizzle-orm"
 import { db } from "@/db"
-import { fleetOperationShifts, fuelVehicles, users, workers } from "@/db/schema"
+import { fleetOperationShifts, fuelVehicles, users, workers, worksites } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
+import { hourKeyId, shiftHourKeys } from "@/lib/fleet/shifts/hours"
 import { planShiftImport, type RalentiShiftDoc } from "@/lib/fleet/shifts/import-plan"
+import { addDaysToPlainDate } from "@/lib/utils"
 
 function argValue(argv: string[], name: string): string | undefined {
   const prefix = `--${name}=`
@@ -77,8 +79,9 @@ async function main(argv = process.argv.slice(2)) {
   const vehicles = (await db.select({ id: fuelVehicles.id, code: fuelVehicles.code }).from(fuelVehicles))
     .flatMap((vehicle) => (vehicle.code ? [{ id: vehicle.id, code: vehicle.code }] : []))
   const activeWorkers = await db
-    .select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName })
+    .select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName, worksiteName: worksites.name })
     .from(workers)
+    .innerJoin(worksites, eq(worksites.id, workers.worksiteId))
     .where(eq(workers.isActive, true))
   const existing = await db
     .select({ importRef: fleetOperationShifts.importRef })
@@ -88,11 +91,37 @@ async function main(argv = process.argv.slice(2)) {
 
   const plan = planShiftImport(docs, { vehicles, workers: activeWorkers, existingImportRefs })
 
+  // Cruces por equipo contra turnos que ya están en la plataforma (p. ej. registrados a mano antes de importar).
+  if (plan.rows.length > 0) {
+    const dates = plan.rows.map((row) => row.shiftDate).sort()
+    const existingShifts = await db.select({
+      vehicleId: fleetOperationShifts.vehicleId, shiftDate: fleetOperationShifts.shiftDate,
+      startHour: fleetOperationShifts.startHour, endHour: fleetOperationShifts.endHour,
+      operatorName: fleetOperationShifts.operatorNameSnapshot, importRef: fleetOperationShifts.importRef,
+    }).from(fleetOperationShifts).where(and(
+      isNull(fleetOperationShifts.voidedAt),
+      inArray(fleetOperationShifts.vehicleId, [...new Set(plan.rows.map((row) => row.vehicleId))]),
+      between(fleetOperationShifts.shiftDate, addDaysToPlainDate(dates[0]!, -1), addDaysToPlainDate(dates[dates.length - 1]!, 1)),
+    ))
+    const codeById = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle.code]))
+    for (const row of plan.rows) {
+      const hours = new Set(shiftHourKeys(row).map(hourKeyId))
+      const clash = existingShifts.find((other) => other.vehicleId === row.vehicleId && other.importRef !== row.importRef
+        && shiftHourKeys(other).some((key) => hours.has(hourKeyId(key))))
+      if (clash) {
+        plan.errors.push(`Equipo ${codeById.get(row.vehicleId)}: el turno ${row.shiftDate} ${row.startHour}–${row.endHour} (${row.operatorName}) se cruza con uno ya registrado en la plataforma (${clash.shiftDate} ${clash.startHour}–${clash.endHour}, ${clash.operatorName}).`)
+      }
+    }
+  }
+
   console.log(`Turnos en el archivo: ${docs.length}`)
   console.log(`A importar: ${plan.rows.length}`)
   console.log(`Ya importados: ${plan.alreadyImported}`)
   console.log(`Errores: ${plan.errors.length}`)
   for (const error of plan.errors) console.log(`  - ${error}`)
+  const worksiteByWorker = new Map(activeWorkers.map((worker) => [worker.id, worker.worksiteName]))
+  console.log(`Operadores (confirmar que cada uno quedó con la persona correcta): ${plan.operatorMatches.length}`)
+  for (const match of plan.operatorMatches) console.log(`  - ${match.operator} → ${match.workerName} (${worksiteByWorker.get(match.workerId) ?? "sin faena"})`)
   console.log(`Cruces por operador (se importan tal cual): ${plan.operatorOverlaps.length}`)
   for (const overlap of plan.operatorOverlaps) console.log(`  - ${overlap}`)
   const outOfServiceFile = argValue(argv, "fuera-servicio")
