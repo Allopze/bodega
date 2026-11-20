@@ -29,6 +29,12 @@ import { formatLastReading } from "./fleet-last-reading"
 import { revalidateVehicleFicha } from "@/lib/routing/revalidate-vehicle-ficha"
 import { assignVehiclesToContract, endVehicleAssignment } from "@/lib/services/contracts/assignments"
 import { civilDate } from "@/lib/validation/dates"
+import {
+  createPersonalUsePeriod,
+  deletePersonalUsePeriod,
+  getPersonalUsePeriodVehicleId,
+  updatePersonalUsePeriod,
+} from "@/lib/services/fleet-personal-use"
 
 const FLEET_EXPORT_LIMIT = 10_000
 
@@ -180,6 +186,96 @@ function revalidateAfterContractChange(vehicleId: string, worksiteId: string): v
   revalidatePath(`/admin/faenas/${worksiteId}`)
   revalidateVehicleFicha(vehicleId)
   revalidatePath("/control-operacional")
+}
+
+/**
+ * «Uso personal» de la ficha del equipo: marcar, corregir o quitar un período en que el dueño se
+ * llevó el equipo. En esos días el equipo no suma plata, litros ni km en los reportes de gestión.
+ * Las fechas, los solapes y la auditoría los sostiene el servicio; aquí van el permiso, el alcance
+ * de la faena del equipo (al editar, el del equipo del período, no el que diga el formulario) y
+ * refrescar las pantallas que cambian.
+ */
+const OUT_OF_SCOPE = "No puedes gestionar vehículos de esta faena"
+
+async function personalUseVehicleInScope(
+  session: Parameters<typeof canAccessWorksite>[0],
+  vehicleId: string,
+): Promise<{ ok: true; worksiteId: string } | { ok: false; message: string }> {
+  const vehicle = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, vehicleId) })
+  if (!vehicle) return { ok: false, message: "Vehículo no encontrado" }
+  if (!canAccessWorksite(session, vehicle.worksiteId)) return { ok: false, message: OUT_OF_SCOPE }
+  return { ok: true, worksiteId: vehicle.worksiteId }
+}
+
+function revalidateAfterPersonalUse(vehicleId: string): void {
+  revalidatePath("/flota")
+  revalidateVehicleFicha(vehicleId)
+  revalidatePath("/control-operacional")
+  revalidatePath("/combustibles")
+  revalidatePath("/dashboard")
+  revalidatePath("/analitica")
+}
+
+export async function savePersonalUsePeriodAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { session, error } = await guardPermission("flota:personal_use")
+  if (error) return error
+
+  const id = String(formData.get("id") ?? "").trim()
+  const startedOnRaw = String(formData.get("startedOn") ?? "").trim()
+  const endedOnRaw = String(formData.get("endedOn") ?? "").trim()
+  const noteRaw = String(formData.get("note") ?? "").trim().slice(0, 500)
+  const started = civilDate("Indica desde qué día").safeParse(startedOnRaw)
+  if (!started.success) {
+    const message = started.error.issues[0]?.message ?? "Indica desde qué día"
+    return { ok: false, message, fieldErrors: { startedOn: [message] } }
+  }
+  const ended = endedOnRaw === "" ? null : civilDate("Indica hasta qué día, o déjalo vacío").safeParse(endedOnRaw)
+  if (ended && !ended.success) {
+    const message = ended.error.issues[0]?.message ?? "Indica hasta qué día, o déjalo vacío"
+    return { ok: false, message, fieldErrors: { endedOn: [message] } }
+  }
+  const input = { startedOn: started.data, endedOn: ended ? ended.data : null, note: noteRaw === "" ? null : noteRaw }
+
+  try {
+    const vehicleId = id ? await getPersonalUsePeriodVehicleId(id) : String(formData.get("vehicleId") ?? "").trim()
+    if (!vehicleId) return { ok: false, message: id ? "El período ya no existe: recarga la ficha." : "Elige un equipo" }
+    const scope = await personalUseVehicleInScope(session, vehicleId)
+    if (!scope.ok) return scope
+
+    const actor = { userId: session.user.id, email: session.user.email ?? null }
+    const result = id
+      ? await updatePersonalUsePeriod(actor, id, input)
+      : await createPersonalUsePeriod(actor, { vehicleId, ...input })
+    if (!result.ok) return { ok: false, message: result.message }
+    revalidateAfterPersonalUse(vehicleId)
+    return { ok: true, message: id ? "Uso personal actualizado" : "Uso personal marcado" }
+  } catch (e) {
+    logger.error("[savePersonalUsePeriodAction]", e)
+    return { ok: false, message: safeActionMessage(e, "No se pudo guardar el uso personal") }
+  }
+}
+
+export async function deletePersonalUsePeriodAction(id: string): Promise<ActionState> {
+  const { session, error } = await guardPermission("flota:personal_use")
+  if (error) return error
+
+  try {
+    const vehicleId = await getPersonalUsePeriodVehicleId(String(id ?? "").trim())
+    if (!vehicleId) return { ok: false, message: "El período ya no existe: recarga la ficha." }
+    const scope = await personalUseVehicleInScope(session, vehicleId)
+    if (!scope.ok) return scope
+
+    const result = await deletePersonalUsePeriod({ userId: session.user.id, email: session.user.email ?? null }, id)
+    if (!result.ok) return { ok: false, message: result.message }
+    revalidateAfterPersonalUse(vehicleId)
+    return { ok: true, message: "Uso personal quitado" }
+  } catch (e) {
+    logger.error("[deletePersonalUsePeriodAction]", e)
+    return { ok: false, message: safeActionMessage(e, "No se pudo quitar el uso personal") }
+  }
 }
 
 /**
