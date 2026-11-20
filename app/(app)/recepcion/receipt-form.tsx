@@ -17,6 +17,7 @@ import Link from "next/link"
 import { describeStageProgress, faenaStockEffect, rejectionHint } from "./receipt-form-progress"
 import type { ReceiptOcItem, ReceiptStage } from "./receipt-form.types"
 import { remainingForStage } from "./receipt-remaining"
+import type { FaenaGuideNotice } from "./faena-guide"
 
 export type { ReceiptOcItem } from "./receipt-form.types"
 
@@ -55,6 +56,7 @@ export function ReceiptForm({
   items,
   canOffice,
   canFaena,
+  faenaGuideNotice = null,
   deliveryMode = "via_oficina",
 }: {
   purchaseOrderId: string
@@ -65,6 +67,11 @@ export function ReceiptForm({
   items:           ReceiptOcItem[]
   canOffice:       boolean
   canFaena:        boolean
+  /**
+   * La OC ya tiene guía de despacho: la faena se recibe en la guía y no aquí
+   * (ver `faena-guide.ts`). Ocupa el lugar de la tarjeta de faena y dice adónde ir.
+   */
+  faenaGuideNotice?: FaenaGuideNotice | null
   deliveryMode?:   "via_oficina" | "directo_faena"
 }) {
   // REC-002: la misma fórmula que aplica el servidor —capacidad de la etapa
@@ -242,6 +249,17 @@ export function ReceiptForm({
                       : "Disponible una vez registrada la llegada a oficina."}
                 </p>
               </button>
+            )}
+            {faenaGuideNotice && (
+              <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+                <p className="text-sm font-medium text-[var(--color-text-muted)]">Recepción en faena</p>
+                <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{faenaGuideNotice.title}.</p>
+                {faenaGuideNotice.action && (
+                  <Link href={faenaGuideNotice.action.href} className="mt-1 inline-flex text-xs font-medium text-[var(--color-primary-ink)] hover:underline">
+                    {faenaGuideNotice.action.label}
+                  </Link>
+                )}
+              </div>
             )}
           </div>
         </Field>

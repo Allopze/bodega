@@ -125,6 +125,8 @@ export const pgliteTestFiles = [
   // CAT-003: la FK de unidad y el rechazo por fila del importador masivo.
   "lib/__tests__/cat-003-unidad-producto-catalogo.test.ts",
   "lib/__tests__/operational-work-queue-quotation-source.test.ts",
+  // OC-2026-0065: con guía viva, la recepción en faena de la cola lleva a la guía.
+  "lib/__tests__/operational-work-queue-guide-source.test.ts",
   // E2E-004: la cola operacional también vigila el pago de la factura.
   "lib/__tests__/e2e-004-cola-vigila-el-pago.test.ts",
   // PEND-003: la CTA de seguimiento SST abre su propia evaluación.
