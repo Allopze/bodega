@@ -15,6 +15,7 @@ import { previousPeriod, dateOnly, daysAgo } from "@/lib/services/analytics-modu
 import { fuelVehicles, fuelEquipmentTypes, worksites } from "@/db/schema"
 import { can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { keptFractionSql } from "@/lib/fleet/personal-use-sql"
 
 export interface ConsumptionAlert {
   type: string
@@ -102,6 +103,31 @@ export const CONSUMO_ALTO_ALERT_COUNT = 3
 export const TRANSACCIONES_ALTAS_ALERT_COUNT = 3
 export const RENDIMIENTO_CERO_ALERT_COUNT = 5
 
+/**
+ * Fracción del período de un registro de consumo que queda fuera del uso personal
+ * del equipo (1 sin equipo vinculado). Un registro por período (TCT importado) no
+ * trae el día de cada carga: su monto y sus litros se prorratean por días, como el
+ * TCT mensual de las transacciones. Las cifras de GESTIÓN de este módulo multiplican
+ * por ella; el detalle de cada lote sigue mostrando el registro entero.
+ */
+export function consumptionKeptFractionSql() {
+  return keptFractionSql(
+    fuelConsumptionRecords.vehicleId,
+    sql`${fuelConsumptionRecords.periodoDesde}`,
+    sql`${fuelConsumptionRecords.periodoHasta}`,
+  )
+}
+
+/** Litros del registro sin los días de uso personal. */
+export function consumptionKeptQuantitySql() {
+  return sql<number>`(${fuelConsumptionRecords.cantidadUnidad} * ${consumptionKeptFractionSql()})`
+}
+
+/** Monto del registro sin los días de uso personal. */
+export function consumptionKeptAmountSql() {
+  return sql<number>`(${fuelConsumptionRecords.monto} * ${consumptionKeptFractionSql()})`
+}
+
 export function normalizeConsumptionFilters(input: ConsumptionFilters, now: Date = new Date()) {
   return {
     fromDate: input.fromDate ?? daysAgo(now, DEFAULT_DAYS_AGO),
@@ -132,8 +158,8 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
     [totals], [previousTotals], seriesPorPeriodoRaw, byPatenteRaw,
   ] = await Promise.all([
     db.select({
-      totalCantidad: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-      totalMonto: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
+      totalCantidad: sql<number>`coalesce(sum(${consumptionKeptQuantitySql()}), 0)`,
+      totalMonto: canViewCosts ? sql<number>`coalesce(sum(${consumptionKeptAmountSql()}), 0)` : sql<null>`null`,
       totalTransacciones: sql<number>`coalesce(sum(${fuelConsumptionRecords.numeroTransacciones}), 0)`,
       totalTarjetas: sql<number>`coalesce(sum(${fuelConsumptionRecords.numeroTarjetas}), 0)`,
       patentesUnicas: sql<number>`count(distinct ${fuelConsumptionRecords.patente})`,
@@ -142,33 +168,33 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
       // ignora los NULL del producto, pero sumaba los litros de esas filas
       // igual, así que cada fila sin rendimiento informado hundía el promedio
       // ponderado del período.
-      rendimientoPonderado: sql<number>`case when coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null), 0) > 0
-        then sum(${fuelConsumptionRecords.rendimientoPromedio} * ${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null)
-             / sum(${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null)
+      rendimientoPonderado: sql<number>`case when coalesce(sum(${consumptionKeptQuantitySql()}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null), 0) > 0
+        then sum(${fuelConsumptionRecords.rendimientoPromedio} * ${consumptionKeptQuantitySql()}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null)
+             / sum(${consumptionKeptQuantitySql()}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null)
         else 0 end`,
     }).from(fuelConsumptionRecords).where(where),
 
     db.select({
-      totalCantidad: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-      totalMonto: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
+      totalCantidad: sql<number>`coalesce(sum(${consumptionKeptQuantitySql()}), 0)`,
+      totalMonto: canViewCosts ? sql<number>`coalesce(sum(${consumptionKeptAmountSql()}), 0)` : sql<null>`null`,
     }).from(fuelConsumptionRecords).where(previousWhere),
 
     db.select({
       periodo: fuelConsumptionRecords.periodoDesde,
-      cantidad: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-      monto: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
+      cantidad: sql<number>`coalesce(sum(${consumptionKeptQuantitySql()}), 0)`,
+      monto: canViewCosts ? sql<number>`coalesce(sum(${consumptionKeptAmountSql()}), 0)` : sql<null>`null`,
     }).from(fuelConsumptionRecords).where(where)
       .groupBy(fuelConsumptionRecords.periodoDesde)
       .orderBy(fuelConsumptionRecords.periodoDesde),
 
     db.select({
       patente: fuelConsumptionRecords.patente,
-      cantidad: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-      monto: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
+      cantidad: sql<number>`coalesce(sum(${consumptionKeptQuantitySql()}), 0)`,
+      monto: canViewCosts ? sql<number>`coalesce(sum(${consumptionKeptAmountSql()}), 0)` : sql<null>`null`,
       transacciones: sql<number>`coalesce(sum(${fuelConsumptionRecords.numeroTransacciones}), 0)`,
-      rendimiento: sql<number>`case when coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null), 0) > 0
-        then sum(${fuelConsumptionRecords.rendimientoPromedio} * ${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null)
-             / sum(${fuelConsumptionRecords.cantidadUnidad}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null)
+      rendimiento: sql<number>`case when coalesce(sum(${consumptionKeptQuantitySql()}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null), 0) > 0
+        then sum(${fuelConsumptionRecords.rendimientoPromedio} * ${consumptionKeptQuantitySql()}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null)
+             / sum(${consumptionKeptQuantitySql()}) filter (where ${fuelConsumptionRecords.rendimientoPromedio} is not null)
         else 0 end`,
       // Un mismo vehicleId siempre que la patente esté asociada en TODAS sus
       // filas del período: `max()` a secas devolvía el id aunque sólo una fila
@@ -251,8 +277,8 @@ export async function getConsumptionByEquipmentType(session: Session, filters: C
 
   const rows = await db.select({
     equipmentTypeName: fuelEquipmentTypes.name,
-    totalLiters: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-    totalAmount: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
+    totalLiters: sql<number>`coalesce(sum(${consumptionKeptQuantitySql()}), 0)`,
+    totalAmount: canViewCosts ? sql<number>`coalesce(sum(${consumptionKeptAmountSql()}), 0)` : sql<null>`null`,
     transactionCount: sql<number>`coalesce(sum(${fuelConsumptionRecords.numeroTransacciones}), 0)`,
     uniqueVehicles: sql<number>`count(distinct ${fuelVehicles.id})`,
   })
@@ -261,7 +287,7 @@ export async function getConsumptionByEquipmentType(session: Session, filters: C
     .innerJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
     .where(where)
     .groupBy(fuelEquipmentTypes.name)
-    .orderBy(desc(sql`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`))
+    .orderBy(desc(sql`coalesce(sum(${consumptionKeptQuantitySql()}), 0)`))
 
   return rows.map((r) => ({
     equipmentTypeName: r.equipmentTypeName,
@@ -294,8 +320,8 @@ export async function getEvolutionByVehicle(session: Session, filters: Consumpti
     plate: fuelConsumptionRecords.patente,
     vehicleCode: fuelVehicles.code,
     vehicleId: fuelVehicles.id,
-    liters: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-    amount: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
+    liters: sql<number>`coalesce(sum(${consumptionKeptQuantitySql()}), 0)`,
+    amount: canViewCosts ? sql<number>`coalesce(sum(${consumptionKeptAmountSql()}), 0)` : sql<null>`null`,
   })
     .from(fuelConsumptionRecords)
     .leftJoin(fuelVehicles, eq(fuelConsumptionRecords.vehicleId, fuelVehicles.id))
@@ -339,8 +365,8 @@ export async function getWorksiteEquipmentMatrix(session: Session, filters: Cons
     worksiteName: worksites.name,
     equipmentCode: fuelVehicles.code,
     plate: fuelConsumptionRecords.patente,
-    liters: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
-    amount: canViewCosts ? sql<number>`coalesce(sum(${fuelConsumptionRecords.monto}), 0)` : sql<null>`null`,
+    liters: sql<number>`coalesce(sum(${consumptionKeptQuantitySql()}), 0)`,
+    amount: canViewCosts ? sql<number>`coalesce(sum(${consumptionKeptAmountSql()}), 0)` : sql<null>`null`,
   })
     .from(fuelConsumptionRecords)
     .innerJoin(fuelVehicles, eq(fuelConsumptionRecords.vehicleId, fuelVehicles.id))
@@ -349,7 +375,7 @@ export async function getWorksiteEquipmentMatrix(session: Session, filters: Cons
     .innerJoin(worksites, eq(fuelConsumptionRecords.worksiteId, worksites.id))
     .where(where)
     .groupBy(worksites.name, fuelVehicles.code, fuelConsumptionRecords.patente)
-    .orderBy(desc(sql`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`))
+    .orderBy(desc(sql`coalesce(sum(${consumptionKeptQuantitySql()}), 0)`))
     .limit(50)
 
   const cells = rows.map((r) => ({

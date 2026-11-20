@@ -13,7 +13,9 @@ import {
   worksites,
 } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
-import { buildLoadWhere, countableLoadSql, statisticallyValidLoadSql, type ControlFilters } from "@/lib/combustibles/control/filters"
+import { buildManagementLoadWhere, countableLoadSql, statisticallyValidLoadSql, type ControlFilters } from "@/lib/combustibles/control/filters"
+import { performanceTaintedByPersonalUseSql } from "@/lib/combustibles/personal-use-fuel-sql"
+import { personalUseDaysInSql } from "@/lib/fleet/personal-use-sql"
 import { FUEL_LOAD_STATE_SLUGS } from "@/lib/combustibles/fuel-log-shared"
 import { fuelPeriodBounds, previousFuelPeriods } from "@/lib/combustibles/period/parse"
 import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
@@ -37,7 +39,15 @@ const num = (value: unknown): number => Number(value ?? 0)
 /** Día civil de Chile de un `timestamptz`. */
 const chileDate = (column: AnyColumn) => sql`(${column} AT TIME ZONE 'America/Santiago')::date`
 
-/** Filtros del control con el rango del período, para reutilizar `buildLoadWhere` (alcance + ventana). */
+/**
+ * Carga que entra a un km/L o L/h de gestión: con rendimiento calculado, sin decisión pendiente y no
+ * contaminada por el uso personal. Su `performance_value` se calculó contra la lectura anterior: las cargas
+ * de un período de uso personal y la PRIMERA después incluyen los km u horas del dueño. Los litros de esa
+ * primera carga sí cuentan en los litros del período (sólo se excluye por día).
+ */
+const managementValidLoadSql = and(statisticallyValidLoadSql, sql`not ${performanceTaintedByPersonalUseSql()}`)!
+
+/** Filtros del control con el rango del período, para reutilizar `buildManagementLoadWhere` (alcance + ventana + uso personal). */
 function rangeFilters(from: string, to: string): ControlFilters {
   return { year: Number(from.slice(0, 4)), months: [], from, to, page: 1 }
 }
@@ -56,7 +66,11 @@ function rangeFilters(from: string, to: string): ControlFilters {
  * Camiones es la familia `camiones` con km/L; maquinaria, la familia
  * `maquinaria` con L/h (las mismas familias de «Consumo y rendimiento»).
  */
-export async function getPanelFigures(session: Session, resolved: ResolvedFuelPeriod, today = todayInChile()): Promise<PanelFiguresRaw> {
+export async function getPanelFigures(
+  session: Session,
+  resolved: ResolvedFuelPeriod,
+  today = todayInChile(),
+): Promise<PanelFiguresRaw & { personalUseDaysInPeriod: number }> {
   const periods = previousFuelPeriods(resolved.period, HISTORY_PERIODS).map((period) => fuelPeriodBounds(period))
   const first = periods[0]
   const last = periods[periods.length - 1]
@@ -71,8 +85,8 @@ export async function getPanelFigures(session: Session, resolved: ResolvedFuelPe
 
   const truck = and(eq(fuelEquipmentTypes.performanceFamily, "camiones"), eq(fuelVehicles.performanceUnit, "km_per_liter"))!
   const machine = and(eq(fuelEquipmentTypes.performanceFamily, "maquinaria"), eq(fuelVehicles.performanceUnit, "liters_per_hour"))!
-  const validTruck = and(statisticallyValidLoadSql, truck)!
-  const validMachine = and(statisticallyValidLoadSql, machine)!
+  const validTruck = and(managementValidLoadSql, truck)!
+  const validMachine = and(managementValidLoadSql, machine)!
   const pendingComputed = and(countableLoadSql, eq(fuelEquipmentLoads.reviewStatus, "flagged"), eq(fuelEquipmentLoads.performanceStatus, "computed"))!
 
   // El período en curso se compara contra los mismos primeros días del anterior: contra el mes entero
@@ -98,7 +112,7 @@ export async function getPanelFigures(session: Session, resolved: ResolvedFuelPe
   }).from(fuelEquipmentLoads)
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
     .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
-    .where(buildLoadWhere(session, rangeFilters(first.from, last.to)))
+    .where(buildManagementLoadWhere(session, rangeFilters(first.from, last.to)))
     // Por posición: repetir la expresión con parámetros nuevos en el GROUP BY no la reconoce como la del SELECT.
     .groupBy(sql`1`)
 
@@ -123,7 +137,30 @@ export async function getPanelFigures(session: Session, resolved: ResolvedFuelPe
   return {
     buckets,
     partialPrevLiters: partialEnd ? num(byBucket.get(previousIndex)?.partialPrev) : null,
+    // Para la nota «Excluye uso personal»: sin días en el período y el alcance no hay nada que avisar.
+    personalUseDaysInPeriod: await getPersonalUseDaysInPeriod(session, resolved.from, resolved.to, { today }),
   }
+}
+
+/**
+ * Días de uso personal que caen en `from..to` (sumados entre los equipos del alcance de la persona, y de
+ * la faena si se acota). Alimenta la nota «Excluye uso personal» de los tableros de gestión: es lo que
+ * le dice a quien mira que las cifras de litros y rendimiento no cuentan esos días. Un período abierto
+ * cuenta hasta hoy: no hay días de uso personal en el futuro.
+ */
+export async function getPersonalUseDaysInPeriod(
+  session: Session,
+  from: string,
+  to: string,
+  options: { worksiteId?: string; today?: string } = {},
+): Promise<number> {
+  const today = options.today ?? todayInChile()
+  const end = to < today ? to : today
+  if (end < from) return 0
+  const [row] = await db.select({
+    days: sql<number>`coalesce(sum(${personalUseDaysInSql(fuelVehicles.id, sql`${from}::text`, sql`${end}::text`)}), 0)::int`,
+  }).from(fuelVehicles).where(worksiteScopeSql(session, fuelVehicles.worksiteId, options.worksiteId))
+  return num(row?.days)
 }
 
 function minDate(a: string, b: string): string {
@@ -140,8 +177,8 @@ export async function hasMeasuredPerformance(session: Session, resolved: Resolve
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
     .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
     .where(and(
-      buildLoadWhere(session, rangeFilters(resolved.from, resolved.to)),
-      statisticallyValidLoadSql,
+      buildManagementLoadWhere(session, rangeFilters(resolved.from, resolved.to)),
+      managementValidLoadSql,
       sql`${fuelVehicles.performanceUnit} in ('km_per_liter', 'liters_per_hour')`,
     ))
     .limit(1)
@@ -261,7 +298,7 @@ export async function getMyEquipmentRanking(session: Session, resolved: Resolved
   }).from(fuelEquipmentLoads)
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
     .leftJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId))
-    .where(and(buildLoadWhere(session, rangeFilters(resolved.from, resolved.to)), countableLoadSql))
+    .where(and(buildManagementLoadWhere(session, rangeFilters(resolved.from, resolved.to)), countableLoadSql))
     .groupBy(fuelVehicles.id, fuelVehicles.code, fuelVehicles.plate, worksites.name)
     .orderBy(desc(liters), fuelVehicles.id)
     .limit(limit)

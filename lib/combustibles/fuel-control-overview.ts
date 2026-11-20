@@ -15,6 +15,8 @@ import { previousPeriod } from "@/lib/services/analytics-module/helpers"
 import { buildConsumptionWhere, type ConsumptionFilters } from "./consumption-queries"
 import { mergeFuelControlWorksites, percentVariation, type FuelControlWorksiteRow } from "./fuel-control-overview.helpers"
 import { can } from "@/lib/auth/can"
+import { notPersonalUseOnDaySql } from "@/lib/fleet/personal-use-sql"
+import { consumptionKeptQuantitySql } from "./consumption-dashboard"
 
 export interface FuelControlOverview {
   billed: {
@@ -53,6 +55,8 @@ export async function getFuelControlOverview(session: Session, options: FuelCont
     filters.patente ? or(ilike(fuelVehicles.plate, `%${filters.patente}%`), ilike(fuelVehicles.code, `%${filters.patente}%`)) : undefined,
     filters.associated === "no" ? sql`false` : undefined,
     worksiteScopeSql(session, fuelLoads.worksiteId),
+    // `load_date` ya es texto YYYY-MM-DD de Chile: las cargas de un día de uso personal no suman en gestión.
+    notPersonalUseOnDaySql(fuelLoads.vehicleId, sql`${fuelLoads.loadDate}`),
   )
   const previousBillingWhere = and(
     accountableFuelLoadsWhere(),
@@ -62,6 +66,8 @@ export async function getFuelControlOverview(session: Session, options: FuelCont
     filters.patente ? or(ilike(fuelVehicles.plate, `%${filters.patente}%`), ilike(fuelVehicles.code, `%${filters.patente}%`)) : undefined,
     filters.associated === "no" ? sql`false` : undefined,
     worksiteScopeSql(session, fuelLoads.worksiteId),
+    // `load_date` ya es texto YYYY-MM-DD de Chile: las cargas de un día de uso personal no suman en gestión.
+    notPersonalUseOnDaySql(fuelLoads.vehicleId, sql`${fuelLoads.loadDate}`),
   )
   const tctWhere = buildConsumptionWhere(session, filters)
 
@@ -85,7 +91,8 @@ export async function getFuelControlOverview(session: Session, options: FuelCont
     db.select({
       worksiteId: fuelConsumptionRecords.worksiteId,
       worksiteName: worksites.name,
-      liters: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)`,
+      // Un registro por período (TCT importado) cuenta la fracción de sus días fuera del uso personal.
+      liters: sql<number>`coalesce(sum(${consumptionKeptQuantitySql()}), 0)`,
     }).from(fuelConsumptionRecords)
       .innerJoin(worksites, eq(worksites.id, fuelConsumptionRecords.worksiteId))
       .where(tctWhere)
@@ -112,6 +119,15 @@ export async function getFuelControlOverview(session: Session, options: FuelCont
   }
 }
 
+/**
+ * Día de Chile de una carga en terreno, `YYYY-MM-DD`: el de `loaded_at`, no el UTC.
+ * Una carga a las 22:30 del último día de un uso personal sigue siendo de ese día.
+ */
+const taeLoadDaySql = sql`to_char((${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date, 'YYYY-MM-DD')`
+
+/** La carga en terreno NO cae en un día de uso personal de su equipo (sin equipo vinculado, siempre cuenta). */
+const taeKeptSql = notPersonalUseOnDaySql(fuelTaeSubmissions.vehicleId, taeLoadDaySql)
+
 async function getTaeOverview(
   session: Session,
   filters: Required<Pick<ConsumptionFilters, "fromDate" | "toDate">> & ConsumptionFilters,
@@ -119,11 +135,14 @@ async function getTaeOverview(
 ) {
   const currentWhere = taeWhere(session, { ...filters, fromDate: filters.fromDate, toDate: filters.toDate })
   const previousWhere = taeWhere(session, { ...filters, fromDate: previous.fromDate, toDate: previous.toDate })
+  // Litros, cargas y equipos son agregados de gestión: pierden los días de uso personal. Lo que hay que
+  // revisar (por validar, observadas, sin sellos, sin evidencia) es trabajo pendiente, no un total: una
+  // carga en uso personal sigue necesitando su revisión y debe seguir contándose (como en «Por revisar»).
   const [[current], [previousRow], byWorksite] = await Promise.all([
     db.select({
-      liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)`,
-      loads: sql<number>`count(*)`,
-      equipment: sql<number>`count(distinct ${fuelTaeSubmissions.equipmentCodeSnapshot})`,
+      liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}) filter (where ${taeKeptSql}), 0)`,
+      loads: sql<number>`(count(*) filter (where ${taeKeptSql}))::int`,
+      equipment: sql<number>`count(distinct ${fuelTaeSubmissions.equipmentCodeSnapshot}) filter (where ${taeKeptSql})`,
       pendingReview: sql<number>`count(*) filter (where ${fuelTaeSubmissions.status} = 'submitted')`,
       observed: sql<number>`count(*) filter (where ${fuelTaeSubmissions.status} = 'observed')`,
       missingSeals: sql<number>`count(*) filter (where ${fuelTaeSubmissions.removedSealNumber} is null or btrim(${fuelTaeSubmissions.removedSealNumber}) = '' or ${fuelTaeSubmissions.installedSealNumber} is null or btrim(${fuelTaeSubmissions.installedSealNumber}) = '')`,
@@ -131,14 +150,14 @@ async function getTaeOverview(
       missingEvidence: sql<number>`count(*) filter (where ${fuelTaeSubmissions.loadedAtSource} <> 'backdated' and (select count(distinct ${fuelTaeEvidence.kind}) from ${fuelTaeEvidence} where ${fuelTaeEvidence.submissionId} = ${fuelTaeSubmissions.id}) < 4)`,
     }).from(fuelTaeSubmissions).where(currentWhere),
     db.select({ liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)` })
-      .from(fuelTaeSubmissions).where(previousWhere),
+      .from(fuelTaeSubmissions).where(and(previousWhere, taeKeptSql)),
     db.select({
       worksiteId: fuelTaeSubmissions.worksiteId,
       worksiteName: worksites.name,
       liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)`,
     }).from(fuelTaeSubmissions)
       .innerJoin(worksites, eq(worksites.id, fuelTaeSubmissions.worksiteId))
-      .where(currentWhere)
+      .where(and(currentWhere, taeKeptSql))
       .groupBy(fuelTaeSubmissions.worksiteId, worksites.name),
   ])
 

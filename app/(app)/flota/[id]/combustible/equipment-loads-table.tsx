@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
+import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { PERFORMANCE_UNIT_LABELS, REVIEW_STATUS_LABELS, STAT_MISSING, type PerformanceUnit } from "@/lib/combustibles/control/contracts"
@@ -22,7 +23,8 @@ function meterText(load: EquipmentFileLoad) {
  * «Últimas cargas» del equipo en el período: fecha (abre la ficha de la carga),
  * litros, lectura, rendimiento o el motivo por el que no se pudo calcular, cómo
  * llegó y en qué estado está. Una carga por decidir o que no cuenta se ve con su
- * estado, no se esconde.
+ * estado, no se esconde. Lo mismo la carga de un día de uso personal: se lista con su marca
+ * «Uso personal» (es un registro), aunque no sume en las cifras de gestión.
  */
 export function EquipmentLoadsTable({ rows, unit }: { rows: EquipmentFileLoad[]; unit: PerformanceUnit | null }) {
   if (rows.length === 0) {
@@ -65,7 +67,10 @@ export function EquipmentLoadsTable({ rows, unit }: { rows: EquipmentFileLoad[];
                 <span className="flex flex-wrap items-center gap-1.5">
                   {load.stateLabel ? <span className="text-sm">{load.stateLabel}</span> : null}
                   {load.reviewStatus !== "ok" ? <MetaBadge meta={metaFor(REVIEW_META, load.reviewStatus)} /> : null}
-                  {!load.stateLabel && load.reviewStatus === "ok" ? <span className="text-[var(--color-text-faint)]">{STAT_MISSING}</span> : null}
+                  {load.personalUse ? (
+                    <Badge variant="warning" size="sm" title="El equipo estaba en uso personal ese día: no suma en costos ni consumo de gestión.">Uso personal</Badge>
+                  ) : null}
+                  {!load.stateLabel && load.reviewStatus === "ok" && !load.personalUse ? <span className="text-[var(--color-text-faint)]">{STAT_MISSING}</span> : null}
                 </span>
               </TableCell>
             </TableRow>

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 // ejercita la función pura de atípicos, así que se aíslan.
 vi.mock("@/db", () => ({ db: {} }))
 vi.mock("@/db/schema", () => ({
-  fuelOperationRecords: {}, fuelVehicles: {}, fuelEquipmentTypes: {}, worksites: {},
+  fuelOperationRecords: {}, fuelVehicles: {}, fuelEquipmentTypes: {}, worksites: {}, fuelVehiclePersonalUsePeriods: {},
 }))
 vi.mock("@/lib/auth/scope", () => ({ worksiteScopeSql: () => undefined }))
 

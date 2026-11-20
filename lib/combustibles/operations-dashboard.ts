@@ -13,6 +13,7 @@ import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { PatenteRankingRow, RendimientoRow } from "./consumption-dashboard"
 import { flagOutliers as flagOutliersGeneric } from "./performance-statistics"
 import { can } from "@/lib/auth/can"
+import { notPersonalUseOnDaySql } from "@/lib/fleet/personal-use-sql"
 
 export interface OperationsSummary {
   totalLitros: number
@@ -75,7 +76,12 @@ export function flagRendimientoPorUnidad<T extends { rendimiento: number; unidad
  *  mostrar una sección vacía en faenas que no usan este log operacional. */
 export async function getOperationsSummary(session: Session, filters: OperationsFilters = {}): Promise<OperationsSummary | null> {
   const canViewCosts = can(session, "combustibles:view") && can(session, "combustibles:view_costs")
-  const where = buildOperationsWhere(session, filters)
+  // Resumen de gestión: las cargas de un día de uso personal no suman (`fecha` ya es texto YYYY-MM-DD).
+  // `buildOperationsWhere` no cambia: también lo comparte el detalle de registros, que lo ve todo.
+  const where = and(
+    buildOperationsWhere(session, filters),
+    notPersonalUseOnDaySql(fuelOperationRecords.vehicleId, sql`${fuelOperationRecords.fecha}`),
+  )
 
   const [[totals], byEquipoRaw, porFaenaRaw, porProveedorRaw] = await Promise.all([
     db.select({
@@ -192,6 +198,8 @@ export async function getScatterObservations(session: Session, filters: Operatio
     .leftJoin(worksites, eq(fuelOperationRecords.worksiteId, worksites.id))
     .where(and(
       where,
+      // Puntos del análisis de gestión (litros vs km u horas): sin las cargas de un día de uso personal.
+      notPersonalUseOnDaySql(fuelOperationRecords.vehicleId, sql`${fuelOperationRecords.fecha}`),
       isNotNull(fuelOperationRecords.horometro),
       sql`${fuelOperationRecords.liters} > 0`,
     ))

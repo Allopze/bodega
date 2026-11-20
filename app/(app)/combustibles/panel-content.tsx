@@ -1,6 +1,7 @@
 import type { Session } from "next-auth"
 import { Suspense } from "react"
 import { can } from "@/lib/auth/can"
+import { settle } from "@/lib/async-settle"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
@@ -14,12 +15,14 @@ import { PanelProgress, PanelStepsStrip } from "@/components/combustibles/panel/
 import { BoardExportButton } from "@/components/dashboard/board-export-button"
 import { DashboardSectionFallback } from "@/components/dashboard/dashboard-section"
 import { loadPanelData, panelLinker } from "@/lib/combustibles/panel/data"
+import { getPersonalUseDaysInPeriod } from "@/lib/combustibles/panel/queries"
 import { panelVariantForSession, type PanelVariant } from "@/lib/combustibles/panel/role-variant"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
 import { fuelAddDataOptions } from "@/lib/combustibles/section-nav"
 import { ConsumoSection } from "./_indicadores/consumo-section"
 import { EficienciaSection } from "./_indicadores/eficiencia-section"
+import { PersonalUseNote } from "./_indicadores/personal-use-note"
 import { loadControlContext } from "./consumo/_components/control-context"
 
 type SearchParams = Record<string, string | string[] | undefined>
@@ -107,6 +110,13 @@ export async function PanelContent({ session, searchParams: sp }: { session: Ses
   const worksite = requested ? ctx.worksites.find((item) => item.id === requested) : undefined
   const worksiteId = worksite?.id
   const worksiteName = worksite?.name ?? (ctx.worksites.length === 1 ? ctx.worksites[0]!.name : allLabel)
+  // Los gráficos no cuentan los días de uso personal: si el período y el alcance tienen alguno, la nota lo dice.
+  // Si la consulta cae, no se avisa de lo que no se pudo medir: los gráficos siguen su camino.
+  const personalUseDays = await settle(
+    getPersonalUseDaysInPeriod(session, period.from, period.to, { worksiteId }),
+    0,
+    "combustibles/panel uso personal",
+  )
 
   return (
     <PageContainer>
@@ -132,6 +142,7 @@ export async function PanelContent({ session, searchParams: sp }: { session: Ses
         </div>
       ) : null}
 
+      <PersonalUseNote days={personalUseDays} />
       <PanelCharts session={session} period={period} worksiteId={worksiteId} />
     </PageContainer>
   )

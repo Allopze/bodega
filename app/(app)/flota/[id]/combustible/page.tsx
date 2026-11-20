@@ -35,7 +35,8 @@ import { EquipmentLitersChart } from "./equipment-liters-chart-lazy"
 import { EquipmentLoadsTable } from "./equipment-loads-table"
 import { EquipmentPerformanceChart } from "./equipment-performance-chart-lazy"
 import { openVehicleFichaArea } from "../_ficha/access"
-import { vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaTabs } from "../_ficha/ficha-chrome"
+import { vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaPersonalUseBadge, VehicleFichaTabs } from "../_ficha/ficha-chrome"
+import { listPersonalUsePeriods } from "@/lib/services/fleet-personal-use"
 
 export const metadata: Metadata = { title: "Equipo" }
 
@@ -60,6 +61,8 @@ const stat = (value: number | null) => (value === null ? STAT_MISSING : formatQt
 export default async function FichaEquipoPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<SearchParams> }) {
   const { id } = await params
   const { session, ctx } = await openVehicleFichaArea(id, "combustible")
+  // Insignia «En uso personal» de la cabecera: informativa, no tumba la página si falla.
+  const personalUsePeriods = await listPersonalUsePeriods(id).catch(() => [])
   const period = await resolveFuelPeriodForPage(session, await searchParams)
 
   // `null` si el equipo no existe o queda fuera de la faena de quien consulta: el mismo 404 en los dos casos.
@@ -93,7 +96,7 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
           ...(familyHref && vehicle.family ? [{ label: `Rendimiento · ${PERFORMANCE_FAMILY_LABELS[vehicle.family]}`, href: familyHref }] : []),
           { label: ctx.label },
         ]} />}
-        actions={<><FuelHeaderActions period={period} /><VehicleFichaEditAction ctx={ctx} /></>}
+        actions={<><FuelHeaderActions period={period} /><VehicleFichaPersonalUseBadge periods={personalUsePeriods} /><VehicleFichaEditAction ctx={ctx} /></>}
       />
       <VehicleFichaTabs ctx={ctx} active="combustible" />
       <DegradedDataBanner degraded={degraded} total={sourceCount} />
@@ -197,7 +200,7 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
           <div>
             <h2 id="cargas-title" className="text-h2 text-[var(--color-text)]">Últimas cargas</h2>
             <p className="mt-0.5 text-sub">
-              {loads.count === 0 ? `Sin cargas en ${period.inLabel}.` : `${formatQty(loads.count)} ${loads.count === 1 ? "carga" : "cargas"} y ${formatQty(Math.round(loads.liters))} L en ${period.inLabel}. La fecha abre la ficha de la carga.`}
+              {loads.count === 0 ? `Sin cargas en ${period.inLabel}.` : `${formatQty(loads.count)} ${loads.count === 1 ? "carga" : "cargas"} y ${formatQty(Math.round(loads.liters))} L en ${period.inLabel}. La fecha abre la ficha de la carga.${loads.keptCount < loads.count ? " Las marcadas «Uso personal» no suman en las cifras de la ficha." : ""}`}
             </p>
           </div>
           <Link href={inContext(`${FUEL_PATHS.cargas}?q=${encodeURIComponent(vehicle.plate)}`)} className="text-sm font-medium text-[var(--color-primary-ink)] underline-offset-2 hover:underline">
@@ -299,8 +302,9 @@ function buildStats(file: EquipmentFile, links: { periodLabel: string; motorHref
   items.push({
     key: "litros",
     label: `Litros en ${links.periodLabel}`,
-    value: `${formatQty(Math.round(loads.liters))} L`,
-    secondary: `${formatQty(loads.count)} ${loads.count === 1 ? "carga" : "cargas"}`,
+    // Cifra de gestión: sin los días de uso personal del equipo (esas cargas se listan, con su marca, pero no suman).
+    value: `${formatQty(Math.round(loads.keptLiters))} L`,
+    secondary: `${formatQty(loads.keptCount)} ${loads.keptCount === 1 ? "carga" : "cargas"}`,
     href: "#cargas",
   })
 
