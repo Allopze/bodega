@@ -3,7 +3,9 @@ import { cronRequestSource, parseCronAllowedSources, verifyCronInternalRequest, 
 import { fuelCronContractFor } from "@/lib/combustibles/fuel-cron-contract"
 import { VisionLinkClientError } from "@/lib/integrations/visionlink/visionlink-client"
 import { loadVisionLinkConfig } from "@/lib/integrations/visionlink/visionlink-settings"
+import { syncVisionLinkHourly, type SyncVisionLinkHourlyResult } from "@/lib/integrations/visionlink/visionlink-hourly-sync"
 import { syncVisionLink } from "@/lib/integrations/visionlink/visionlink-sync"
+import { DAILY_LOOKBACK_DAYS } from "@/lib/fleet/shifts/constants"
 import { logger } from "@/lib/logger"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { isRouteOperational } from "@/lib/services/module-toggles"
@@ -12,7 +14,8 @@ import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
-export const maxDuration = 120
+// El paso de tramos por hora reescribe 14 días de cada equipo (unas 120 llamadas): no cabe en 2 minutos.
+export const maxDuration = 300
 
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET
@@ -57,11 +60,35 @@ export async function GET(request: NextRequest) {
     if (outcome.unmatched.length > 0) {
       logger.warn("[cron/fuel-visionlink-sync] Equipos de VisionLink sin vehículo con esa serie", { unmatched: outcome.unmatched })
     }
-    return respond(fuelCronContractFor({ failed: 0, total: 1 }), outcome)
+    // Los tramos por hora van DESPUÉS del resumen diario y aislados de él: si fallan,
+    // el diario ya quedó guardado y su contrato no cambia; el resultado se informa aparte.
+    const hourly = await runHourlyStep(config)
+    return respond(fuelCronContractFor({ failed: 0, total: 1 }), { ...outcome, hourly })
   } catch (error) {
     const code = error instanceof VisionLinkClientError ? error.code : "VISIONLINK_SYNC_FAILED"
     logger.error("[cron/fuel-visionlink-sync] Fatal error", { code })
     return respond(fuelCronContractFor({ failed: 1, total: 1 }), { errorCode: code })
+  }
+}
+
+type HourlyStepResult = SyncVisionLinkHourlyResult | { skipped: true } | { errorCode: string }
+
+async function runHourlyStep(config: Awaited<ReturnType<typeof loadVisionLinkConfig>>): Promise<HourlyStepResult> {
+  try {
+    // Mismo candado que la corrida liviana de cada hora: dos reescrituras del mismo rango a la vez se pisarían.
+    const result = await withCronLock("fuel-visionlink-hourly", () => syncVisionLinkHourly(config, { lookbackDays: DAILY_LOOKBACK_DAYS }))
+    if ("skipped" in result) {
+      logger.warn("[cron/fuel-visionlink-sync] Tramos por hora omitidos: otra corrida en curso")
+      return { skipped: true }
+    }
+    if (result.failedVehicles.length > 0) {
+      logger.warn("[cron/fuel-visionlink-sync] Tramos por hora: equipos con falla", { failedVehicles: result.failedVehicles })
+    }
+    return result
+  } catch (error) {
+    const errorCode = error instanceof VisionLinkClientError ? error.code : "VISIONLINK_HOURLY_SYNC_FAILED"
+    logger.error("[cron/fuel-visionlink-sync] Falló el paso de tramos por hora", { errorCode })
+    return { errorCode }
   }
 }
 

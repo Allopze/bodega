@@ -88,6 +88,8 @@
     "db:backfill-epp-logo": "tsx --env-file-if-exists=.env.local scripts/backfill-epp-logo.ts",
     "db:normalize-fuel-suppliers": "tsx --env-file=.env.local scripts/normalize-fuel-suppliers.ts",
     "db:sync-rbac": "tsx --env-file=.env.local scripts/sync-rbac.ts",
+    "db:backfill-visionlink-hourly": "tsx --env-file-if-exists=.env.local scripts/backfill-visionlink-hourly.ts",
+    "db:import-ralenti-shifts": "tsx --env-file-if-exists=.env.local scripts/import-ralenti-shifts.ts",
     "forms:overlay-grid": "tsx scripts/overlay-form-grid.ts",
     "db:studio": "drizzle-kit studio",
     "e2e:setup": "tsx e2e/setup-db.ts",

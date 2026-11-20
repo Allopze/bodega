@@ -22,10 +22,11 @@
  */
 import { isNotNull, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelTelemetryDaily, fuelVehicles } from "@/db/schema"
+import { fuelTelemetryDaily, fuelTelemetryFetches, fuelVehicles } from "@/db/schema"
 import { saveMeterReadings, type ParsedMeterReading } from "@/lib/combustibles/meter-readings"
 import { nanoid } from "@/lib/id"
 import { buildVehicleResolverByPlate } from "@/lib/integrations/fleet-gps/identity"
+import { daysBetween } from "@/lib/fleet/shifts/hours"
 import { todayInChile } from "@/lib/utils"
 import { fetchVisionLinkUtilization, type VisionLinkCredentials, type VisionLinkUtilization } from "./visionlink-client"
 import {
@@ -177,6 +178,20 @@ export async function syncVisionLink(
       if (row.inserted) inserted++
       else updated++
     }
+  }
+
+  // Constancia de que el resumen diario ya consultó estos días cerrados, para cada
+  // equipo con serie —haya o no devuelto fila VisionLink—: con ella, un día sin fila
+  // es «el equipo no transmitió» y no «aún no llega» (turnos y ralentí, «Sin señal»).
+  const days = daysBetween(from, to)
+  const marks = vehicles.flatMap((vehicle) => days.map((day) => ({ vehicleId: vehicle.id, day })))
+  for (let index = 0; index < marks.length; index += 500) {
+    await db.insert(fuelTelemetryFetches)
+      .values(marks.slice(index, index + 500).map((mark) => ({ ...mark, dailyFetchedAt: sql`now()` })))
+      .onConflictDoUpdate({
+        target: [fuelTelemetryFetches.vehicleId, fuelTelemetryFetches.day],
+        set: { dailyFetchedAt: sql`now()` },
+      })
   }
 
   const vehicleById = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle]))

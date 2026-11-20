@@ -3645,6 +3645,49 @@ async function main() {
     ])
   }
 
+  // ── Turnos y ralentí (e2e/flota-turnos.spec.ts) ──
+  // La migración 0396 deja `/flota/turnos` apagado; aquí se enciende. Un administrador de
+  // contrato de «Faena E2E» registra un turno Mañana 06–14 de ayer en `QA-TUR-01`, cuyos
+  // tramos de VisionLink ya están por hora: 1 h de ralentí y 3 h de trabajo = 25,0 % (meta 30 %).
+  // `QA-TUR-02` está en otra faena y no debe aparecer en su selector.
+  {
+    const ayerTurnos = new Date(Date.now() - 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/Santiago" })
+    await db.insert(schema.systemSettings).values({ key: "submodule.enabled:flota:/flota/turnos", value: "true", updatedAt: now })
+      .onConflictDoUpdate({ target: schema.systemSettings.key, set: { value: "true", updatedAt: now } })
+    // El rol de sistema `admin_contrato` ya lo sembró `seedMantencionE2E` con sus permisos por defecto
+    // (`SYSTEM_ROLE_PERMISSIONS`), que incluyen `flota:view_shifts` y `flota:manage_shifts`: se reutiliza.
+    const [contratoRole] = await db.select({ id: schema.roles.id }).from(schema.roles).where(eq(schema.roles.name, "admin_contrato"))
+    if (!contratoRole) throw new Error("Falta el rol admin_contrato: seedMantencionE2E debe correr antes del bloque de turnos.")
+    await db.insert(schema.users).values({
+      id: "user-contrato-e2e", name: "Contrato E2E", email: "contrato@e2e.chome.cl",
+      hashedPassword: password, avatarColor: "140", isActive: true, createdAt: now, updatedAt: now,
+    })
+    await db.insert(schema.userRoles).values({ userId: "user-contrato-e2e", roleId: contratoRole.id })
+    await db.insert(schema.worksiteUsers).values({ userId: "user-contrato-e2e", worksiteId: "ws-e2e", isPrimary: true })
+
+    const turnosVehicle = (id: string, plate: string, code: string, worksiteId: string, serialNumber: string | null) => ({
+      id, plate, code, type: "motoniveladora", equipmentTypeId: "fet-camioneta", meterType: "hour_meter",
+      performanceUnit: "liters_per_hour", brand: "Caterpillar", model: "140K", year: 2019, serialNumber,
+      worksiteId, responsibleUserId: "user-admin-e2e", operationalStatus: "operativo", isActive: true, createdAt: now, updatedAt: now,
+    })
+    await db.insert(schema.fuelVehicles).values([
+      turnosVehicle("fuel-veh-turnos-e2e", "E2E-TUR-1", "QA-TUR-01", "ws-e2e", "QATUR0001"),
+      turnosVehicle("fuel-veh-turnos-otra-e2e", "E2E-TUR-2", "QA-TUR-02", "ws-restricted-e2e", "QATUR0002"),
+    ])
+    await db.insert(schema.workers).values({
+      id: "worker-operador-turnos-e2e", rut: "70200001-1", firstName: "QA Operador", lastName: "Turnos",
+      position: "Operador de maquinaria", worksiteId: "ws-e2e", isActive: true, createdAt: now,
+    })
+    // 06:00–14:00 de ayer: 450 s de ralentí y 1350 s de trabajo por hora = 1 h y 3 h en el turno.
+    await db.insert(schema.fuelTelemetryHourly).values(Array.from({ length: 8 }, (_, index) => ({
+      vehicleId: "fuel-veh-turnos-e2e", day: ayerTurnos, hour: 6 + index, source: "visionlink-api",
+      idleSeconds: 450, workingSeconds: 1350, runningSeconds: 0,
+    })))
+    await db.insert(schema.fuelTelemetryFetches).values({
+      vehicleId: "fuel-veh-turnos-e2e", day: ayerTurnos, segmentsFetchedAt: now, dailyFetchedAt: now,
+    })
+  }
+
   await client.end()
 }
 
