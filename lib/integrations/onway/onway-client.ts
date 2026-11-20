@@ -30,6 +30,10 @@ const NAVIGATION_TIMEOUT_MS = 45_000
 const PORTAL_REQUEST_TIMEOUT_MS = 20_000
 /** Tope de toda la lectura del portal: menor que los 2 min del runner y que el intervalo de 5 min. */
 export const ONWAY_TELEMETRY_DEADLINE_MS = 110_000
+/** Equipos cuyo historial y viajes se piden a la vez (medido: 2 h de 50 equipos ~14 s; 24 h ~36 s). */
+const HISTORY_CONCURRENCY = 5
+/** Margen antes del plazo para no empezar equipos nuevos: lo que ya corre debe alcanzar a terminar. */
+const HISTORY_RESERVE_MS = 20_000
 const BROWSER_CLOSE_TIMEOUT_MS = 10_000
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 const MAX_TELEMETRY_DEVICES = 500
@@ -296,27 +300,61 @@ async function portalJson(page: Page, path: string, init: { method?: "GET" | "PO
   }
 }
 
-function unwrapArray(input: unknown): unknown[] {
+/**
+ * Sobres en que el portal envuelve una lista. `value` es el del historial
+ * (`devices/quick/history`) y `routes` el de `GetDeviceLatestTrips`: sin ellos el
+ * historial y los viajes se descartaban siempre (hallazgo 2026-11-19).
+ */
+const ARRAY_ENVELOPE_KEYS = ["data", "alerts", "items", "rows", "result", "value", "routes"] as const
+
+export function unwrapArray(input: unknown): unknown[] {
   if (Array.isArray(input)) return input
   if (!isRecord(input)) return []
-  for (const key of ["data", "alerts", "items", "rows", "result"]) {
+  for (const key of ARRAY_ENVELOPE_KEYS) {
     if (Array.isArray(input[key])) return input[key]
   }
   return []
 }
 
-function hasArrayPayload(input: unknown): boolean {
+export function hasArrayPayload(input: unknown): boolean {
   if (Array.isArray(input)) return true
-  return isRecord(input) && ["data", "alerts", "items", "rows", "result"].some((key) => Array.isArray(input[key]))
+  return isRecord(input) && ARRAY_ENVELOPE_KEYS.some((key) => Array.isArray(input[key]))
 }
 
-async function fetchDeviceDetails(page: Page, refs: OnwayPortalDeviceRef[]): Promise<{ details: OnwayDeviceTelemetry[]; incomplete: boolean }> {
+/**
+ * Corre `work` por equipo, de a `concurrency` a la vez, y deja de empezar equipos
+ * nuevos cuando `now()` pasa `stopStartingAt` (los que ya corren terminan). Un
+ * equipo que falla no detiene a los demás: `work` registra su propio aviso.
+ */
+export async function runPerDeviceWithinBudget<T>(
+  items: readonly T[],
+  work: (item: T) => Promise<void>,
+  options: { concurrency: number; stopStartingAt: number; now?: () => number },
+): Promise<{ skipped: number }> {
+  const now = options.now ?? Date.now
+  let next = 0
+  let started = 0
+  const lane = async () => {
+    while (next < items.length && now() <= options.stopStartingAt) {
+      const item = items[next++] as T
+      started++
+      try { await work(item) } catch { /* el aviso lo deja `work` */ }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(options.concurrency, items.length)) }, lane))
+  return { skipped: items.length - started }
+}
+
+async function fetchDeviceDetails(page: Page, refs: OnwayPortalDeviceRef[], wallClockOffsetHours: number | null): Promise<{ details: OnwayDeviceTelemetry[]; incomplete: boolean }> {
   const details: OnwayDeviceTelemetry[] = []
   let incomplete = false
   for (const ref of refs) {
     try {
       const payload = await portalJson(page, `${DEVICE_DETAIL_PATH}?unitId=${encodeURIComponent(ref.unitId)}`)
-      const detail = parseOnwayDeviceDetail(isRecord(payload) && isRecord(payload.data) ? payload.data : payload)
+      const parsed = parseOnwayDeviceDetail(isRecord(payload) && isRecord(payload.data) ? payload.data : payload, { wallClockOffsetHours: wallClockOffsetHours ?? undefined })
+      // Sin el desfase, la hora de reporte quedaría corrida: se omite (y la
+      // lectura de medidor cae a la hora de la consulta).
+      const detail = parsed && wallClockOffsetHours === null ? { ...parsed, gpsReportedAt: null, gprsReportedAt: null } : parsed
       if (detail && detail.deviceId === ref.deviceId) details.push(detail)
       else incomplete = true
     } catch {
@@ -326,7 +364,9 @@ async function fetchDeviceDetails(page: Page, refs: OnwayPortalDeviceRef[]): Pro
   return { details, incomplete }
 }
 
-async function fetchAlerts(page: Page, refs: OnwayPortalDeviceRef[]): Promise<{ alerts: OnwayAlertSnapshot[]; incomplete: boolean }> {
+async function fetchAlerts(page: Page, refs: OnwayPortalDeviceRef[], wallClockOffsetHours: number | null): Promise<{ alerts: OnwayAlertSnapshot[]; incomplete: boolean }> {
+  // Una alerta sin hora confiable no se guarda: su hora decide faena y orden.
+  if (wallClockOffsetHours === null) return { alerts: [], incomplete: true }
   const imeis = refs.flatMap((ref) => ref.imei ? [ref.imei] : [])
   if (imeis.length === 0) return { alerts: [], incomplete: refs.length > 0 }
   const payload = await portalJson(page, ALERTS_PATH, {
@@ -337,26 +377,34 @@ async function fetchAlerts(page: Page, refs: OnwayPortalDeviceRef[]): Promise<{ 
   })
   if (!hasArrayPayload(payload)) throw new OnwayClientError("ONWAY_RESPONSE_INVALID")
   const rows = unwrapArray(payload)
-  return parseOnwayAlertRows(rows, refs)
+  return parseOnwayAlertRows(rows, refs, { wallClockOffsetHours })
 }
 
 async function fetchHistory(page: Page, ref: OnwayPortalDeviceRef, from: string, to: string): Promise<OnwayHistoryPoint[]> {
   if (!ref.imei) return []
   const payload = await page.evaluate(async ({ imei, from, to, timeoutMs }) => {
-    const context = (globalThis as { lbs?: { apiHistory?: { get?: (...args: unknown[]) => void }; getContext?: () => { loggedUser?: Record<string, unknown> } } }).lbs
+    // El portal publica su contexto como `window.__lbs` (verificado 2026-11-19);
+    // `lbs` a secas no existe y el historial fallaba en cada corrida.
+    type PortalContext = { apiHistory?: { get?: (...args: unknown[]) => void }; getContext?: () => { loggedUser?: Record<string, unknown> } }
+    const scope = globalThis as { __lbs?: PortalContext; lbs?: PortalContext }
+    const context = scope.__lbs ?? scope.lbs
     const get = context?.apiHistory?.get
     const loggedUser = context?.getContext?.().loggedUser
-    if (!get || !loggedUser || typeof loggedUser.client_id !== "string") throw new Error("ONWAY_HISTORY_UNAVAILABLE")
+    const clientId = loggedUser?.client_id
+    if (!get || !loggedUser || (typeof clientId !== "string" && typeof clientId !== "number")) throw new Error("ONWAY_HISTORY_UNAVAILABLE")
     return await new Promise<unknown>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error("ONWAY_HISTORY_TIMEOUT")), timeoutMs)
       try {
         get("devices/quick/history", {
-          clientId: loggedUser.client_id,
+          clientId,
           imei,
           from,
           to,
           culture: typeof loggedUser.two_letters_culture === "string" ? loggedUser.two_letters_culture : "es",
-          timeZone: typeof loggedUser.time_zone_offset === "string" ? loggedUser.time_zone_offset : "-04:00",
+          // Horas en UTC: `generate_time` vuelve sin zona y en este desfase. El
+          // del usuario es un `-4` fijo (no sigue el horario de verano) y un
+          // texto como "+00:00" el portal no lo entiende. Ver `utcInstant`.
+          timeZone: "0",
           filteredAlerts: "",
         }, (response: unknown) => { clearTimeout(timeout); resolve(response) })
       } catch (error) {
@@ -369,11 +417,27 @@ async function fetchHistory(page: Page, ref: OnwayPortalDeviceRef, from: string,
   return parseOnwayHistory(unwrapArray(payload))
 }
 
-async function fetchTrips(page: Page, ref: OnwayPortalDeviceRef): Promise<OnwayTripSnapshot[]> {
+/**
+ * Desfase horario (en horas) configurado para el usuario del portal: los viajes
+ * vienen en su reloj. `null` si no se puede leer o no es un desfase válido.
+ */
+async function readPortalTimeZoneOffset(page: Page): Promise<number | null> {
+  const raw = await page.evaluate(() => {
+    type PortalContext = { getContext?: () => { loggedUser?: Record<string, unknown> } }
+    const scope = globalThis as { __lbs?: PortalContext; lbs?: PortalContext }
+    return (scope.__lbs ?? scope.lbs)?.getContext?.().loggedUser?.time_zone_offset ?? null
+  })
+  const hours = typeof raw === "number" || typeof raw === "string" ? Number(raw) : Number.NaN
+  return Number.isFinite(hours) && Math.abs(hours) <= 14 ? hours : null
+}
+
+async function fetchTrips(page: Page, ref: OnwayPortalDeviceRef, wallClockOffsetHours: number | null): Promise<OnwayTripSnapshot[]> {
   if (!ref.imei) return []
+  // Sin el desfase las horas de los viajes quedarían corridas: mejor no guardarlos.
+  if (wallClockOffsetHours === null) throw new OnwayClientError("ONWAY_RESPONSE_INVALID")
   const payload = await portalJson(page, `/OnlineTracking/GetDeviceLatestTrips/?noCache=${Date.now()}&imei=${encodeURIComponent(ref.imei)}`)
   if (!hasArrayPayload(payload)) throw new OnwayClientError("ONWAY_RESPONSE_INVALID")
-  return parseOnwayTrips(unwrapArray(payload))
+  return parseOnwayTrips(unwrapArray(payload), { wallClockOffsetHours })
 }
 
 async function scrapeWithSession(credentials: OnwayCredentials): Promise<OnwayPortalSnapshot> {
@@ -447,8 +511,9 @@ export async function fetchOnwaySnapshot(input: OnwayCredentials): Promise<Onway
  * usan sólo durante esta función; lo que retorna ya pasó por contratos allowlist.
  */
 export async function fetchOnwayTelemetry(input: OnwayCredentials, options: OnwayTelemetryOptions = {}): Promise<OnwayTelemetryBundle> {
+  const deadlineMs = options.deadlineMs ?? ONWAY_TELEMETRY_DEADLINE_MS
   try {
-    return await withOnwayDeadline(collectTelemetry(input, options), options.deadlineMs ?? ONWAY_TELEMETRY_DEADLINE_MS)
+    return await withOnwayDeadline(collectTelemetry(input, options, Date.now() + deadlineMs), deadlineMs)
   } catch (error) {
     // No basta con cerrar el navegador para liberar `inFlight`: si el cierre
     // también se cuelga, la próxima corrida reusaría la misma promesa colgada.
@@ -471,7 +536,7 @@ interface OnwayTelemetryOptions {
   deadlineMs?: number
 }
 
-async function collectTelemetry(input: OnwayCredentials, options: OnwayTelemetryOptions): Promise<OnwayTelemetryBundle> {
+async function collectTelemetry(input: OnwayCredentials, options: OnwayTelemetryOptions, deadlineAt: number): Promise<OnwayTelemetryBundle> {
   const credentials = validateOnwayCredentials(input)
   const portal = await scrapePortal(credentials)
   if (options.includeDetails === false) {
@@ -479,16 +544,18 @@ async function collectTelemetry(input: OnwayCredentials, options: OnwayTelemetry
   }
   const { page } = await getBrowserSession(accountKey(credentials))
   const warnings: OnwayTelemetryBundle["warnings"] = []
+  const wallClockOffsetHours = await readPortalTimeZoneOffset(page).catch(() => null)
+  if (wallClockOffsetHours === null) warnings.push("details")
   let details: OnwayDeviceTelemetry[] = []
   let alerts: OnwayAlertSnapshot[] = []
   try {
-    const detailResult = await fetchDeviceDetails(page, portal.refs)
+    const detailResult = await fetchDeviceDetails(page, portal.refs, wallClockOffsetHours)
     details = detailResult.details
     if (detailResult.incomplete) warnings.push("details")
   }
   catch { warnings.push("details") }
   try {
-    const alertResult = await fetchAlerts(page, portal.refs)
+    const alertResult = await fetchAlerts(page, portal.refs, wallClockOffsetHours)
     alerts = alertResult.alerts
     if (alertResult.incomplete) warnings.push("alerts")
   }
@@ -496,12 +563,18 @@ async function collectTelemetry(input: OnwayCredentials, options: OnwayTelemetry
   const historyByDeviceId = new Map<string, OnwayHistoryPoint[]>()
   const tripsByDeviceId = new Map<string, OnwayTripSnapshot[]>()
   if (options.includeHistory && options.historyFrom && options.historyTo) {
-    for (const ref of portal.refs) {
-      try { historyByDeviceId.set(ref.deviceId, await fetchHistory(page, ref, options.historyFrom, options.historyTo)) }
+    const { historyFrom, historyTo } = options
+    // En serie, 2 h de historial de ~50 equipos tardan ~72 s y la corrida
+    // completa pasaba el plazo (110 s): de a varios y sin empezar equipos nuevos
+    // cerca del final. Lo que quede afuera lo recoge la ventana siguiente, que se
+    // solapa con esta.
+    const { skipped } = await runPerDeviceWithinBudget(portal.refs, async (ref) => {
+      try { historyByDeviceId.set(ref.deviceId, await fetchHistory(page, ref, historyFrom, historyTo)) }
       catch { warnings.push("history") }
-      try { tripsByDeviceId.set(ref.deviceId, await fetchTrips(page, ref)) }
+      try { tripsByDeviceId.set(ref.deviceId, await fetchTrips(page, ref, wallClockOffsetHours)) }
       catch { warnings.push("trips") }
-    }
+    }, { concurrency: HISTORY_CONCURRENCY, stopStartingAt: deadlineAt - HISTORY_RESERVE_MS })
+    if (skipped > 0) warnings.push("history", "trips")
   }
   return { snapshot: portal.snapshot, details, alerts, historyByDeviceId, tripsByDeviceId, warnings: [...new Set(warnings)] }
 }

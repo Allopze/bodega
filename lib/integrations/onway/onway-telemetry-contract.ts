@@ -90,6 +90,38 @@ function isoInstant(value: unknown): string | null {
   return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null
 }
 
+/**
+ * `devices/quick/history` entrega `generate_time` sin zona (`2026-11-18T12:05:22`),
+ * expresado en el `timeZone` de la consulta. El cliente pide `timeZone: "0"`, así
+ * que una hora sin zona es UTC; `Date.parse` la leería en la zona del proceso.
+ */
+function utcInstant(value: unknown): string | null {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(value.trim())) {
+    return isoInstant(`${value.trim()}Z`)
+  }
+  return isoInstant(value)
+}
+
+/** Desfase horario (horas) del usuario del portal; ver `wallClockInstant`. */
+export interface OnwayWallClockOptions {
+  wallClockOffsetHours?: number
+}
+
+/**
+ * El portal escribe `/Date(ms)/` (detalle, alertas, viajes) con la hora del RELOJ
+ * en el desfase de su usuario como si fuera UTC. Verificado 2026-11-19 con el
+ * usuario en `-4`: el reporte GPS más nuevo decía 22:06Z a las 02:06Z, y los
+ * viajes calzan con el odómetro del historial sólo sumando 4 h. Sin desfase
+ * conocido se lee tal cual; una fecha que ya trae su zona no se corrige.
+ */
+function wallClockInstant(value: unknown, wallClockOffsetHours: number | undefined): string | null {
+  if (typeof value === "string" && wallClockOffsetHours !== undefined) {
+    const dotNetDate = /^\/Date\((-?\d+)\)\/$/.exec(value.trim())
+    if (dotNetDate) return isoInstant(`/Date(${Number(dotNetDate[1]) - wallClockOffsetHours * 3_600_000})/`)
+  }
+  return isoInstant(value)
+}
+
 function optionalNumber(value: unknown, min: number, max: number): number | null | "invalid" {
   if (value === undefined || value === null || value === "") return null
   if (typeof value !== "number" || !Number.isFinite(value)) return null
@@ -123,7 +155,7 @@ function externalEventKey(row: Record<string, unknown>, alertType: string, occur
     .digest("hex")
 }
 
-export function parseOnwayDeviceDetail(input: unknown): OnwayDeviceTelemetry | null {
+export function parseOnwayDeviceDetail(input: unknown, options: OnwayWallClockOptions = {}): OnwayDeviceTelemetry | null {
   if (!isRecord(input)) return null
   const deviceId = typeof input.device_id === "number" && Number.isInteger(input.device_id) && input.device_id > 0
     ? String(input.device_id)
@@ -133,8 +165,8 @@ export function parseOnwayDeviceDetail(input: unknown): OnwayDeviceTelemetry | n
   try {
     return {
       deviceId,
-      gpsReportedAt: isoInstant(input.gps_message_time),
-      gprsReportedAt: isoInstant(input.gprs_message_time),
+      gpsReportedAt: wallClockInstant(input.gps_message_time, options.wallClockOffsetHours),
+      gprsReportedAt: wallClockInstant(input.gprs_message_time, options.wallClockOffsetHours),
       gpsStatus: boundedText(input.gps_status, 80),
       gprsStatus: boundedText(input.gprs_status, 80),
       movementState: boundedText(input.movement_state, 80),
@@ -155,7 +187,7 @@ export function parseOnwayDeviceDetail(input: unknown): OnwayDeviceTelemetry | n
   }
 }
 
-export function parseOnwayAlertHistory(input: unknown): OnwayAlertSnapshot | null {
+export function parseOnwayAlertHistory(input: unknown, options: OnwayWallClockOptions = {}): OnwayAlertSnapshot | null {
   if (!isRecord(input)) return null
   const alertType = typeof input.alert_id === "number" && Number.isInteger(input.alert_id) && input.alert_id >= 0
     ? String(input.alert_id)
@@ -163,8 +195,11 @@ export function parseOnwayAlertHistory(input: unknown): OnwayAlertSnapshot | nul
   const title = localizedText(input.alert_description, 240)
     ?? localizedText(input.message, 240)
     ?? localizedText(input.alert_string, 240)
-  const occurredAt = isoInstant(input.generate_time ?? input.entry_time)
-  if (!alertType || !title || !occurredAt) return null
+  // La clave se calcula con la hora tal como la entrega el portal, para que una
+  // alerta guardada antes de corregir el desfase se actualice y no se duplique.
+  const portalInstant = isoInstant(input.generate_time ?? input.entry_time)
+  const occurredAt = wallClockInstant(input.generate_time ?? input.entry_time, options.wallClockOffsetHours)
+  if (!alertType || !title || !occurredAt || !portalInstant) return null
   const point = coordinates(input)
   if (!point) return null
   const speedKph = optionalNumber(input.speed, 0, 400)
@@ -175,7 +210,7 @@ export function parseOnwayAlertHistory(input: unknown): OnwayAlertSnapshot | nul
       : typeof input.device_id === "number" && Number.isInteger(input.device_id) && input.device_id > 0
         ? String(input.device_id)
         : null,
-    externalEventKey: externalEventKey(input, alertType, occurredAt, point.latitude, point.longitude),
+    externalEventKey: externalEventKey(input, alertType, portalInstant, point.latitude, point.longitude),
     alertType,
     title,
     priority: typeof input.priority === "number" && Number.isFinite(input.priority)
@@ -191,6 +226,7 @@ export function parseOnwayAlertHistory(input: unknown): OnwayAlertSnapshot | nul
 export function parseOnwayAlertRows(
   input: unknown,
   refs: Array<{ deviceId: string; unitId: string; imei: string | null }>,
+  options: OnwayWallClockOptions = {},
 ): { alerts: OnwayAlertSnapshot[]; incomplete: boolean } {
   if (!Array.isArray(input) || input.length > MAX_RECORDS) return { alerts: [], incomplete: true }
   const deviceIdByImei = new Map(refs.flatMap((ref) => ref.imei ? [[ref.imei, ref.deviceId] as const] : []))
@@ -198,7 +234,7 @@ export function parseOnwayAlertRows(
   const alerts: OnwayAlertSnapshot[] = []
   let incomplete = false
   for (const row of input) {
-    const parsed = parseOnwayAlertHistory(row)
+    const parsed = parseOnwayAlertHistory(row, options)
     if (!parsed) {
       incomplete = true
       continue
@@ -220,10 +256,13 @@ export function parseOnwayHistory(input: unknown): OnwayHistoryPoint[] {
   const points: OnwayHistoryPoint[] = []
   for (const value of input) {
     if (!isRecord(value)) continue
-    const sequence = typeof value.sequence === "number" && Number.isInteger(value.sequence)
+    // `sequence` es la posición del punto en ESTA respuesta (1, 2, 3…): el mismo
+    // punto trae otro número en la consulta siguiente, cuya ventana se solapa.
+    // `message_key` identifica el mensaje y se mantiene entre consultas.
+    const sequence = boundedText(value.message_key, 80) ?? (typeof value.sequence === "number" && Number.isInteger(value.sequence)
       ? String(value.sequence)
-      : boundedText(value.sequence, 80)
-    const occurredAt = isoInstant(value.generate_time)
+      : boundedText(value.sequence, 80))
+    const occurredAt = utcInstant(value.generate_time)
     const point = coordinates(value)
     const speedKph = optionalNumber(value.speed, 0, 400)
     const headingDegrees = optionalNumber(value.directionHeading ?? value.heading, 0, 359.999)
@@ -241,16 +280,18 @@ export function parseOnwayHistory(input: unknown): OnwayHistoryPoint[] {
   return points
 }
 
-export function parseOnwayTrips(input: unknown): OnwayTripSnapshot[] {
+export function parseOnwayTrips(input: unknown, options: OnwayWallClockOptions = {}): OnwayTripSnapshot[] {
   if (!Array.isArray(input) || input.length > MAX_RECORDS) return []
   const trips: OnwayTripSnapshot[] = []
   for (const value of input) {
     if (!isRecord(value)) continue
-    const externalTripKey = typeof value.row === "number" && Number.isInteger(value.row)
-      ? String(value.row)
-      : boundedText(value.row, 80)
-    const startedAt = isoInstant(value.begin_message_time)
-    const endedAt = isoInstant(value.end_message_time)
+    const startedAt = wallClockInstant(value.begin_message_time, options.wallClockOffsetHours)
+    // `GetDeviceLatestTrips` trae `id: 0` en todos y `row` es la posición 1..5 en
+    // la lista de últimos viajes, que corre con cada viaje nuevo: como clave, cada
+    // corrida pisaba viajes distintos. Un equipo no empieza dos viajes en el mismo
+    // instante, así que el inicio identifica al viaje.
+    const externalTripKey = startedAt
+    const endedAt = wallClockInstant(value.end_message_time, options.wallClockOffsetHours)
     const distanceKm = optionalNumber(value.distance, 0, 100_000)
     const beginOdometer = optionalNumber(value.begin_odometer, 0, 9_999_999)
     const endOdometer = optionalNumber(value.end_odometer, 0, 9_999_999)
