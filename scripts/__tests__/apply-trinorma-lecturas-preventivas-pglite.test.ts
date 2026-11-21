@@ -267,6 +267,12 @@ describe.sequential("carga de lecturas y preventivas declaradas", () => {
       .rejects.toThrow(/Fila 6 \(KA-140 SGCP-84\).*preventiva declarada.*No se sobrescribe/)
     expect(await snapshot()).toBe(before)
     expect(await profileOf("v-150")).toMatchObject({ initialReading: null, priorPreventiveDate: null })
+    // En simulación el conflicto no oculta al resto: queda como pendiente, con una nota, y se sigue.
+    const simulated = await applyTrinormaLecturasPreventivas({ ...common, bytes: await planilla(rows), pautaConfirmada: true })
+    expect(simulated.outcomes.find((o) => o.item === "KA-150 TTTT-50")?.result).toBe("dry-run")
+    expect(simulated.outcomes.find((o) => o.item === "KA-140 SGCP-84")).toMatchObject({ result: "pendiente", detail: expect.stringMatching(/^conflicto: Fila 6/) })
+    expect(simulated.notes.join(" ")).toMatch(/1 conflicto\(s\).*se abortaría la carga entera/)
+    expect(await snapshot()).toBe(before)
   })
 
   it("una lectura inicial ya guardada y distinta (que no es la de la hoja 2) tampoco se sobrescribe", async () => {
@@ -300,5 +306,54 @@ describe.sequential("carga de lecturas y preventivas declaradas", () => {
     expect(parseService("40.000 km")).toBe(40_000)
     expect(parseService("Otro")).toBeNull()
     expect(parseService(null)).toBeNull()
+  })
+
+  // Revisión 2026-11-22 (I1): el formulario reenvía la declaración en cada guardado; si no cambió, no
+  // puede pisar a quién la declaró ni de dónde salió. Va al final: cambia la ficha de KA-140.
+  it("volver a guardar «Editar mantención» por otra razón conserva quién declaró la preventiva y su fuente", async () => {
+    const { updateEquipmentPlan } = await import("@/lib/services/mantencion/equipment")
+    const profile = async () => (await inMemoryDb.select().from(schema.mantEquipmentProfiles).where(eq(schema.mantEquipmentProfiles.vehicleId, "v-140")))[0]!
+    const loaded = await profile()
+    expect(loaded.priorPreventiveDeclaredBy).toBe("u-jefe")
+    expect(loaded.priorPreventiveSource).toMatch(/^Planilla del Jefe de Mantención/)
+    const admin = { userId: "u-carga", email: ACTOR }
+    const declaration = {
+      date: loaded.priorPreventiveDate, reading: loaded.priorPreventiveReading, intervalValue: loaded.priorPreventiveInterval,
+      evidence: loaded.priorPreventiveEvidence, declaredBy: "u-carga", source: "Editar mantención",
+    }
+    // Cambia sólo la fecha de la lectura inicial (sigue siendo posterior a la preventiva).
+    const edited = await updateEquipmentPlan(admin, "v-140", {
+      scheduleId: loaded.scheduleId, initialReading: loaded.initialReading, initialReadingDate: "2026-11-18", priorPreventive: declaration,
+    }, { active: true, retiredReason: "" })
+    expect(edited.ok).toBe(true)
+    const after = await profile()
+    expect(after.initialReadingDate).toBe("2026-11-18")
+    expect(after.priorPreventiveDeclaredBy).toBe("u-jefe")
+    expect(after.priorPreventiveSource).toBe(loaded.priorPreventiveSource)
+
+    // Si la declaración cambia (otro respaldo), pasa a ser de quien la guarda, con su fuente.
+    const changed = await updateEquipmentPlan(admin, "v-140", {
+      scheduleId: loaded.scheduleId, initialReading: loaded.initialReading, initialReadingDate: "2026-11-18",
+      priorPreventive: { ...declaration, evidence: "Factura 9876" },
+    }, { active: true, retiredReason: "" })
+    expect(changed.ok).toBe(true)
+    expect(await profile()).toMatchObject({ priorPreventiveEvidence: "Factura 9876", priorPreventiveDeclaredBy: "u-carga", priorPreventiveSource: "Editar mantención" })
+  })
+
+  it("el servidor rechaza una declaración sin respaldo, posterior a la lectura inicial o con un servicio fuera de la pauta", async () => {
+    const { updateEquipmentPlan } = await import("@/lib/services/mantencion/equipment")
+    const [loaded] = await inMemoryDb.select().from(schema.mantEquipmentProfiles).where(eq(schema.mantEquipmentProfiles.vehicleId, "v-140"))
+    const admin = { userId: "u-carga", email: ACTOR }
+    const plan = { scheduleId: loaded!.scheduleId, initialReading: loaded!.initialReading, initialReadingDate: loaded!.initialReadingDate }
+    const declaration = { date: "2026-06-11", reading: 400_627, intervalValue: 40_000, evidence: "OT 33753" }
+    const fail = async (priorPreventive: typeof declaration) => {
+      const result = await updateEquipmentPlan(admin, "v-140", { ...plan, priorPreventive }, { active: true, retiredReason: "" })
+      expect(result.ok).toBe(false)
+      return result.ok ? {} : result.fieldErrors
+    }
+    expect(await fail({ ...declaration, evidence: "  " })).toHaveProperty("priorPreventiveEvidence")
+    expect(await fail({ ...declaration, date: "2026-12-31" })).toHaveProperty("priorPreventiveDate")
+    expect(await fail({ ...declaration, reading: (loaded!.initialReading ?? 0) + 1 })).toHaveProperty("priorPreventiveReading")
+    expect(await fail({ ...declaration, intervalValue: 12_345 })).toHaveProperty("priorPreventiveInterval")
   })
 })

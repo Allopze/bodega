@@ -56,7 +56,8 @@ function PreventiveOrigin({ preventive, declaredBy }: { preventive: { origin?: "
     <span className="mt-0.5 block text-xs font-normal text-[var(--color-text-muted)]">
       <span className="font-semibold text-[var(--color-text)]">{PRIOR_PREVENTIVE_LABEL}</span>
       {support ? <> · {support}</> : null}
-      {declaredBy?.declaredByName ? <> · Declarada por {declaredBy.declaredByName}{declaredBy.source ? ` (${declaredBy.source})` : ""}</> : null}
+      {declaredBy?.declaredByName ? <> · Declarada por {declaredBy.declaredByName}</> : null}
+      {declaredBy?.source ? <span className="block">Fuente: {declaredBy.source}</span> : null}
     </span>
   )
 }
@@ -73,6 +74,13 @@ export function EquipmentStatusCard({ data }: { data: EquipmentDetailData }) {
         <EquipmentStateBadge state={status.state} workshop={data.workshop ? { days: data.workshop.daysStopped ?? null } : null} />
       </div>
       {data.workshop && <WorkshopNote workshop={data.workshop} />}
+      {status.state === "sin_preventiva" ? (
+        <p className="mb-3 text-sm text-[var(--color-text-muted)]">
+          No hay ninguna preventiva firmada ni declarada, así que la próxima mantención no se puede calcular. Si hubo una
+          preventiva antes de usar la plataforma, jefatura la declara en «Editar mantención», con su respaldo (orden de
+          trabajo o factura); la próxima firmada en la app la reemplaza.
+        </p>
+      ) : null}
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
         <DetailItem layout="stacked" mono label="Última lectura" value={status.currentReading ? <ValueOnDate value={<NoBreak>{formatReading(status.currentReading.value, unit)}</NoBreak>} date={status.currentReading.date} /> : null} />
         <DetailItem layout="stacked" mono label="Próxima mantención" value={status.nextReading != null ? <NoBreak>{formatReading(status.nextReading, unit)}</NoBreak> : null} />

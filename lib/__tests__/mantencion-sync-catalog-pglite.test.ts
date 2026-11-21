@@ -90,7 +90,8 @@ describe("catálogo", () => {
     expect(body.equipment.find((equipment) => equipment.code === "KA-999")).toBeUndefined()
 
     const truck = body.equipment.find((equipment) => equipment.code === "KA-135")!
-    expect(truck).toMatchObject({ plate: "RBYD-98", unit: "km", brandName: "Scania", scheduleId: IDS.schKm, state: "al_dia", nextReading: 20_000, remaining: 10_000, noPlate: false })
+    // Sin ninguna preventiva y ya en el primer servicio: «sin información de preventiva», sin próxima (Trinorma, 2026-11-21).
+    expect(truck).toMatchObject({ plate: "RBYD-98", unit: "km", brandName: "Scania", scheduleId: IDS.schKm, state: "sin_preventiva", nextReading: null, remaining: null, noPlate: false })
     expect(truck.readings).toEqual([{ value: 10_000, date: daysAgo(200), source: "Lectura inicial" }])
     const machine = body.equipment.find((equipment) => equipment.code === "MQ-01")!
     expect(machine).toMatchObject({ unit: "h", noPlate: true })

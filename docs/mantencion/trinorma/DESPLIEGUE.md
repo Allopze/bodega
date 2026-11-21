@@ -199,7 +199,9 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
       Quien carga y quien declara tienen que tener `mant:equipment:manage` (jefatura de mantención o administración). Por equipo carga la lectura inicial y la preventiva declarada **juntas**. Para cargarla, el Jefe tiene que haber elegido «Confirma» o «Corrige», indicado el servicio de pauta y puesto un respaldo. Sin respaldo, el equipo va al listado de pendientes y no se le carga nada, ni siquiera la lectura.
 
       Para Arauco usa la lectura de noviembre de la hoja 3, si viene. La nota de la planilla (KCH-129, detenido) queda en la fuente y en el historial.
-   3. **`--apply`** con la autorización del usuario, **a más tardar el 29-11**, para tener dos días de margen. Después, revisar el Panel de Biodiversa, su PDF y su Excel: la preventiva declarada se ve como «Declarada, anterior a la plataforma» con su respaldo, y los equipos sin preventiva como «Sin información de preventiva».
+   3. **`--apply`** con la autorización del usuario, **a más tardar el 29-11**, para tener dos días de margen. Después, revisar:
+      - la ficha de cada equipo cargado y el Excel de Equipos: la preventiva declarada se ve como «Declarada, anterior a la plataforma», con su respaldo, quién la declaró y la fuente;
+      - el Panel de Biodiversa y su PDF, que muestran estados y no preventivas por equipo: los equipos sin preventiva figuran como «Sin información de preventiva» y no cuentan como al día.
    4. **Congelar cambios** en Mantención hasta la auditoría del 01-12.
 
 ## 5. Reversión

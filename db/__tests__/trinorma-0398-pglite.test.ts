@@ -26,29 +26,33 @@ async function catalog(pg: PGlite) {
   return [...columns.rows, ...constraints.rows, ...indexes.rows].map((row) => row.v)
 }
 
-/** Carpeta temporal con la cadena hasta la 0397 (sin la 0398). */
-async function chainUntil0397(): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), "mig-0397-"))
+/**
+ * Carpeta temporal con la cadena de migraciones hasta la 0398, incluida o no. Las posteriores (la
+ * 0399 en adelante) quedan fuera: si no, sus columnas aparecerían en la comparación de la reversión.
+ */
+async function chainAround0398(include: boolean): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), include ? "mig-0398-" : "mig-0397-"))
   await mkdir(path.join(dir, "meta"))
   const journal = JSON.parse(await readFile(path.join(MIGRATIONS, "meta", "_journal.json"), "utf8")) as { entries: { tag: string }[] }
-  const last = journal.entries.at(-1)!
-  expect(last.tag.startsWith("0398_")).toBe(true)
-  journal.entries = journal.entries.slice(0, -1)
+  const index = journal.entries.findIndex((entry) => entry.tag.startsWith("0398_"))
+  expect(index).toBeGreaterThan(0)
+  journal.entries = journal.entries.slice(0, include ? index + 1 : index)
+  const kept = new Set(journal.entries.map((entry) => entry.tag))
   await writeFile(path.join(dir, "meta", "_journal.json"), JSON.stringify(journal))
   for (const file of await readdir(MIGRATIONS)) {
-    if (file.endsWith(".sql") && !file.startsWith("0398_")) await symlink(path.join(MIGRATIONS, file), path.join(dir, file))
+    if (file.endsWith(".sql") && kept.has(file.slice(0, -4))) await symlink(path.join(MIGRATIONS, file), path.join(dir, file))
   }
   return dir
 }
 
-const full = new PGlite()
-// Con opciones explícitas el wrapper de Vitest no inyecta la plantilla migrada
-// (que ya trae la 0398): esta base parte vacía y recibe sólo hasta la 0397.
+// Con opciones explícitas el wrapper de Vitest no inyecta la plantilla migrada (que ya trae todas
+// las migraciones): estas bases parten vacías y reciben sólo su cadena.
+const full = new PGlite({})
 const before = new PGlite({})
 
 beforeAll(async () => {
-  await migratePGlite(full, MIGRATIONS)
-  await migratePGlite(before, await chainUntil0397())
+  await migratePGlite(full, await chainAround0398(true))
+  await migratePGlite(before, await chainAround0398(false))
 }, 240_000)
 
 afterAll(async () => {

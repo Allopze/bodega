@@ -398,9 +398,17 @@ export async function updateEquipmentPlanTx(
     const empty = { date: null, reading: null, intervalValue: null, evidence: null }
     const resolved = resolvePriorPreventive(input.priorPreventive ?? empty, { initialReading, initialReadingDate, hasSchedule: !!schedule, intervals }, today)
     if (Object.keys(resolved.errors).length > 0) return equipmentFailure(resolved.errors)
-    prior = resolved.value
-      ? { ...resolved.value, declaredBy: input.priorPreventive?.declaredBy ?? actor.userId, source: input.priorPreventive?.source?.trim() || "Editar mantención" }
-      : { date: null, reading: null, intervalValue: null, evidence: null, declaredBy: null, source: null }
+    const value = resolved.value
+    // La misma declaración vuelve con cada guardado del formulario: si no cambió, se conserva quién la
+    // declaró y de dónde salió (si no, editar la pauta pisaría al Jefe y a la planilla con quien guardó).
+    const unchanged = value !== null
+      && value.date === prior.date && value.reading === prior.reading
+      && value.intervalValue === prior.intervalValue && value.evidence === prior.evidence
+    prior = !value
+      ? { date: null, reading: null, intervalValue: null, evidence: null, declaredBy: null, source: null }
+      : unchanged
+        ? { ...value, declaredBy: prior.declaredBy, source: prior.source }
+        : { ...value, declaredBy: input.priorPreventive?.declaredBy ?? actor.userId, source: input.priorPreventive?.source?.trim() || "Editar mantención" }
   }
   const fields: EquipmentFields = {
     ...current.fields,

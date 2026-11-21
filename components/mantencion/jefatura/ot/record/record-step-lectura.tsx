@@ -78,7 +78,7 @@ function PautaPanel({ draft, dispatch, row, analysis }: { draft: FlowDraft; disp
       <p className="mt-1 text-[var(--color-text-muted)]">
         {manual
           ? `Elegida a mano. Por la lectura correspondía la de ${formatReading(suggestion.intervalValue, unit)}.`
-          : `Lectura ${formatReading(value, unit)} → toca la de ${formatReading(intervalValue, unit)}${last ? ` (${lastPreventiveLabel(last)}: ${formatReading(last.intervalValue, unit)}, ${formatDate(last.date)}${preventiveSupportText(last) ? `; ${preventiveSupportText(last)!.toLowerCase()}` : ""})` : ""}.`}
+          : `Lectura ${formatReading(value, unit)} → toca la de ${formatReading(intervalValue, unit)}${last ? ` (${lastPreventiveLabel(last)}: ${formatReading(last.intervalValue, unit)}, ${formatDate(last.date)}${preventiveSupportText(last) ? `; ${preventiveSupportText(last, { midSentence: true })}` : ""})` : ""}.`}
       </p>
       {open ? (
         <div className="mt-2 flex flex-col gap-3">

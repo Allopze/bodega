@@ -947,8 +947,9 @@ describe("lectura: lista, detalle, filtros y Excel", () => {
     const mecanico = await loadWorkOrderDetail(await viewerOf(IDS.mecBio), id)
     expect(mecanico?.allowedTransitions).toEqual([])
     expect(mecanico?.linkedRecords[0]?.canOpen).toBe(true)
-    // El administrador de contrato ve la OT de su faena pero no los registros del módulo.
-    expect((await loadWorkOrderDetail(await viewerOf(IDS.adminBio), id))?.linkedRecords[0]?.canOpen).toBe(false)
+    // El administrador de contrato ve la OT de su faena y, desde la concesión del 2026-11-21
+    // (`mant:records:view_worksite`), también abre sus registros enlazados; de otra faena, nada.
+    expect((await loadWorkOrderDetail(await viewerOf(IDS.adminBio), id))?.linkedRecords[0]?.canOpen).toBe(true)
     expect(await loadWorkOrderDetail(await viewerOf(IDS.adminCho), id)).toBeNull()
     expect(await loadWorkOrderDetail(await viewerOf(IDS.jefe), "no-existe")).toBeNull()
   })

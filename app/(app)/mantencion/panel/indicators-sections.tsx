@@ -398,7 +398,10 @@ export function PautasSection({
   const pautaSegments = barCounts.map((item) => ({
     key: item.state,
     // «Sin pauta» es un estado con su propia cifra, no «al día» ni cero: se nombra completo (Trinorma R5).
-    label: item.state === "sin_pauta" ? "Sin pauta definida" : EQUIPMENT_STATE_LABEL[item.state],
+    // «Sin información de preventiva» no cabe en el eje del gráfico (22 caracteres): va corto, y el
+    // nombre completo queda en el detalle, en la insignia y en el filtro.
+    label: item.state === "sin_pauta" ? "Sin pauta definida" : item.state === "sin_preventiva" ? "Sin preventiva" : EQUIPMENT_STATE_LABEL[item.state],
+    ...(item.state === "sin_preventiva" ? { detail: EQUIPMENT_STATE_LABEL.sin_preventiva } : {}),
     value: item.count,
     color: PAUTA_COLOR[item.state],
     href: equiposHref({ estado: item.state }),
@@ -451,7 +454,7 @@ export function PautasSection({
                 <ChartDataTable
                   caption="Estado de las pautas hoy"
                   headers={["Estado", "Equipos"]}
-                  rows={pautaSegments.map((segment) => [segment.label, segment.value])}
+                  rows={pautaSegments.map((segment) => [segment.detail ?? segment.label, segment.value])}
                   excel={excel}
                 />
               </ChartFrame>

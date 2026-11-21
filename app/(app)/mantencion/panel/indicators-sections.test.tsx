@@ -8,12 +8,12 @@ import type { MantEquipmentState } from "@/lib/mantencion/types"
 // enlaces, vacíos y qué gráficos se piden), no el dibujo. El gráfico de barras queda como un
 // `[role="img"]` con su nombre y una lista de sus ítems (rótulo, cifra, color y enlace).
 vi.mock("@/components/charts/bar-ranking-chart-lazy", () => ({
-  BarRankingChartLazy: (props: { ariaLabel: string; order?: string; items: Array<{ key: string; label: string; value: number; href?: string; color?: string }> }) => (
+  BarRankingChartLazy: (props: { ariaLabel: string; order?: string; items: Array<{ key: string; label: string; value: number; href?: string; color?: string; detail?: string }> }) => (
     <div role="img" aria-label={`${props.ariaLabel}; «Ver datos» trae las cifras exactas`} data-order={props.order}>
       <ul>
         {props.items.map((item) => (
           <li key={item.key} data-color={item.color ?? ""}>
-            {item.href ? <a href={item.href}>{item.label}</a> : item.label}: {item.value}
+            {item.href ? <a href={item.href} data-detail={item.detail}>{item.label}</a> : item.label}: {item.value}
           </li>
         ))}
       </ul>
@@ -216,7 +216,10 @@ describe("PautasSection", () => {
     render(<PautasSection {...common} {...base} pautas={{ ...base.pautas, counts: counts({ vencida: 1, al_dia: 4, sin_preventiva: 3, sin_pauta: 1 }) }} showRanking />)
     const region = screen.getByRole("region", { name: "Pautas y disponibilidad" })
     const chart = within(region).getByRole("img", { name: /^Equipos por estado de pauta hoy/ })
-    expect(within(chart).getByRole("link", { name: "Sin información de preventiva" }).getAttribute("href")).toBe("/mantencion/equipos?estado=sin_preventiva")
+    // En el eje va corto («Sin preventiva»: el largo no cabe en 22 caracteres) y el nombre completo, en el detalle.
+    const bar = within(chart).getByRole("link", { name: "Sin preventiva" })
+    expect(bar.getAttribute("href")).toBe("/mantencion/equipos?estado=sin_preventiva")
+    expect(bar.getAttribute("data-detail")).toBe("Sin información de preventiva")
     const stat = within(region).getByRole("link", { name: /Equipos con la pauta al día/ })
     expect(stat.textContent).toContain("3 sin información de preventiva")
     // 4 al día sobre 1 + 4 + 3 con pauta = 50 %: los sin información cuentan en el total, no como al día.

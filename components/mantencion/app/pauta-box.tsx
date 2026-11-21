@@ -38,7 +38,7 @@ export function PautaBox({ draft, dispatch, row, analysis }: { draft: FlowDraft;
   const why = manual
     ? <>Elegida a mano. Por la lectura correspondía la de <span className="nw">{formatReading(suggestion.intervalValue, unit)}</span>.</>
     : <>Lectura <span className="nw">{formatReading(value, unit)}</span> → toca la de <span className="nw">{formatReading(intervalValue, unit)}</span>
-        {last ? <> ({isDeclaredPreventive(last) ? `última preventiva ${PRIOR_PREVENTIVE_LABEL.toLowerCase()}` : "última preventiva"}: <span className="nw">{formatReading(last.intervalValue, unit)}</span>, {formatDate(last.date)}{preventiveSupportText(last) ? `; ${preventiveSupportText(last)!.toLowerCase()}` : ""}).</> : "."}</>
+        {last ? <> ({isDeclaredPreventive(last) ? `última preventiva ${PRIOR_PREVENTIVE_LABEL.toLowerCase()}` : "última preventiva"}: <span className="nw">{formatReading(last.intervalValue, unit)}</span>, {formatDate(last.date)}{preventiveSupportText(last) ? `; ${preventiveSupportText(last, { midSentence: true })}` : ""}).</> : "."}</>
   const open = draft.intervalOpen || manual
 
   return (

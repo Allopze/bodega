@@ -42,6 +42,8 @@ export const MANAGE_PERMISSION = "mant:equipment:manage"
 const LOCK_KEY = "trinorma-lecturas-preventivas"
 const EVIDENCE_MAX = 120
 export const PAUTA_PENDING_NOTE = "falta confirmar la pauta: hoja 1 de la planilla. Hasta entonces sólo se simula; con --apply no se escribe nada."
+/** El error de `--apply` sin `--pauta-confirmada` (dice lo mismo una vez, sin repetirse). */
+export const PAUTA_REQUIRED_ERROR = "No se escribe nada: falta confirmar la pauta: hoja 1 de la planilla. Agrega --pauta-confirmada cuando el Jefe de Mantención la haya confirmado o corregido."
 
 /* ── Lectura de la planilla ──────────────────────────────────────────────── */
 
@@ -327,7 +329,7 @@ export async function applyTrinormaLecturasPreventivas(options: ApplyLecturasOpt
   const apply = options.apply ?? false
   const pautaConfirmada = options.pautaConfirmada ?? false
   if (apply && !pautaConfirmada) {
-    throw new Error(`No se escribe nada: ${PAUTA_PENDING_NOTE.replace(/^f/, "F")}`)
+    throw new Error(PAUTA_REQUIRED_ERROR)
   }
   const planilla = await readPlanilla(options.bytes)
   const report: LecturasReport = { fileName: path.basename(options.fileName), pautaConfirmada, apply, outcomes: [], notes: [...planilla.notes] }
@@ -352,9 +354,11 @@ export async function applyTrinormaLecturasPreventivas(options: ApplyLecturasOpt
       }
 
       const loaded: string[] = []
+      const conflicts: string[] = []
       for (const row of planilla.rows) {
         const item = label(row)
         const pending = (reason: string) => report.outcomes.push({ item, row: row.row, result: "pendiente", detail: reason })
+        const conflict = (message: string) => { conflicts.push(message); pending(`conflicto: ${message}`) }
         if (!plateKey(row.plate)) { pending("la fila no trae patente"); continue }
         if ((plateCounts.get(plateKey(row.plate)) ?? 0) > 1) { pending("la patente aparece más de una vez en la hoja 2"); continue }
         const novemberRows = novemberByPlate.get(plateKey(row.plate)) ?? []
@@ -378,14 +382,16 @@ export async function applyTrinormaLecturasPreventivas(options: ApplyLecturasOpt
           const isPlannedReplacement = target.readingFrom === "hoja 3 (noviembre)" && target.sheet2Reading !== null
             && near(f.initialReading, target.sheet2Reading.value) && f.initialReadingDate === target.sheet2Reading.date
           if (!isPlannedReplacement) {
-            throw new Error(`Fila ${row.row} (${item}): ya tiene una lectura inicial (${f.initialReading} km al ${f.initialReadingDate}) distinta de la de la planilla (${target.initialReading} km al ${target.initialReadingDate}). No se sobrescribe: se aborta la carga entera; corrige la ficha o la planilla.`)
+            conflict(`Fila ${row.row} (${item}): ya tiene una lectura inicial (${f.initialReading} km al ${f.initialReadingDate}) distinta de la de la planilla (${target.initialReading} km al ${target.initialReadingDate}). No se sobrescribe: se aborta la carga entera; corrige la ficha o la planilla.`)
+            continue
           }
         }
         const hasPrior = f.priorPreventiveDate != null
         const samePrior = f.priorPreventiveDate === target.prior.date && near(f.priorPreventiveReading, target.prior.reading)
           && f.priorPreventiveInterval === target.prior.intervalValue && f.priorPreventiveEvidence === target.prior.evidence
         if (hasPrior && !samePrior) {
-          throw new Error(`Fila ${row.row} (${item}): ya tiene una preventiva declarada (${f.priorPreventiveDate}, ${f.priorPreventiveReading} km, servicio ${f.priorPreventiveInterval}) distinta de la de la planilla (${target.prior.date}, ${target.prior.reading} km, servicio ${target.prior.intervalValue}). No se sobrescribe: se aborta la carga entera; corrige la ficha o la planilla.`)
+          conflict(`Fila ${row.row} (${item}): ya tiene una preventiva declarada (${f.priorPreventiveDate}, ${f.priorPreventiveReading} km, servicio ${f.priorPreventiveInterval}) distinta de la de la planilla (${target.prior.date}, ${target.prior.reading} km, servicio ${target.prior.intervalValue}). No se sobrescribe: se aborta la carga entera; corrige la ficha o la planilla.`)
+          continue
         }
         if (sameReading && samePrior) { report.outcomes.push({ item, row: row.row, result: "ya estaba" }); continue }
 
@@ -413,6 +419,12 @@ export async function applyTrinormaLecturasPreventivas(options: ApplyLecturasOpt
         })
       }
 
+      // Un valor ya guardado y distinto no se sobrescribe. Con --apply aborta la carga entera, con todos
+      // los conflictos a la vista; en simulación quedan en el informe y se sigue, para no ocultar el resto.
+      if (conflicts.length > 0) {
+        if (apply) throw new Error(`No se escribe nada: ${conflicts.length} equipo(s) ya tienen datos distintos de los de la planilla.\n${conflicts.join("\n")}`)
+        report.notes.push(`${conflicts.length} conflicto(s) con datos ya guardados: con --apply se abortaría la carga entera hasta corregirlos.`)
+      }
       const countOf = (r: Result) => report.outcomes.filter((o) => o.result === r).length
       await recordAudit({
         userId: actor.userId, userEmail: actor.email, action: "update", entityType: "mant_equipment_prior_preventive_load", entityId: nanoid(),
@@ -493,7 +505,7 @@ export async function main(argv = process.argv) {
   if (!file) throw new Error("Falta --file <planilla.xlsx>.")
   if (!actorEmail) throw new Error("Falta --actor-email <correo>: la bitácora necesita un responsable.")
   if (!declaredByEmail) throw new Error("Falta --declarada-por <correo>: quién declara la preventiva (el Jefe de Mantención).")
-  if (apply && !pautaConfirmada) throw new Error(`No se escribe nada: ${PAUTA_PENDING_NOTE.replace(/^f/, "F")}`)
+  if (apply && !pautaConfirmada) throw new Error(PAUTA_REQUIRED_ERROR)
   console.log(`Lecturas y preventivas declaradas — ${apply ? "escribiendo" : "simulación (no escribe)"}`)
   const report = await applyTrinormaLecturasPreventivas({ bytes: readFileSync(file), fileName: file, actorEmail, declaredByEmail, pautaConfirmada, apply })
   printLecturasReport(report)

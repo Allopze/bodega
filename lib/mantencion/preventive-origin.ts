@@ -22,8 +22,11 @@ export function preventiveOriginLabel(preventive: OriginInput): string {
 }
 
 /** Respaldo de la declarada («Respaldo: OT-123») o folio de la firmada; `null` si no hay nada que decir. */
-export function preventiveSupportText(preventive: OriginInput): string | null {
+export function preventiveSupportText(preventive: OriginInput, options: { midSentence?: boolean } = {}): string | null {
   const evidence = preventive?.evidence?.trim()
   if (!preventive || !evidence) return null
-  return isDeclaredPreventive(preventive) ? `Respaldo: ${evidence}` : `Folio ${evidence}`
+  // Dentro de una frase sólo el rótulo va en minúscula: el respaldo y el folio se muestran tal cual,
+  // porque se copian o se buscan en otro sistema con su grafía.
+  const label = isDeclaredPreventive(preventive) ? "Respaldo:" : "Folio"
+  return `${options.midSentence ? label.toLowerCase() : label} ${evidence}`
 }
