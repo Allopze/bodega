@@ -9,6 +9,9 @@ import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
 import { FLEET_STOPPED_FILTER, FLEET_STOPPED_FILTER_LABEL } from "@/lib/fleet-overview-filters"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 
+/** Valor de `ubicacion` (URL) que deja sólo los equipos con la ubicación por confirmar (lo lee `page.tsx`). */
+const LOCATION_PENDING_FILTER = "confirmar"
+
 interface FleetFiltersProps {
   operationalStatuses: string[]
   responsibleUsers: Array<{ id: string; name: string }>
@@ -17,6 +20,8 @@ interface FleetFiltersProps {
     responsable?: string
     vencimiento?: string
     revision?: string
+    /** `confirmar`: sólo los equipos con la marca «Ubicación por confirmar». */
+    ubicacion?: string
     q?: string
   }
   warningDays: number
@@ -85,6 +90,9 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
       displayValue: "Estado distinto entre ficha e intervalo",
     })
   }
+  if (current.ubicacion === LOCATION_PENDING_FILTER) {
+    activeChips.push({ key: "ubicacion", label: "Ubicación", value: LOCATION_PENDING_FILTER, displayValue: "Por confirmar" })
+  }
   if (current.q) {
     activeChips.push({ key: "q", label: "Búsqueda", value: current.q, displayValue: current.q })
   }
@@ -135,6 +143,17 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
           <SelectItem value="vencidos">Documentos vencidos</SelectItem>
           <SelectItem value="proximos">Próximos a vencer ({warningDays} días)</SelectItem>
           <SelectItem value="al-dia">Al día</SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Select
+        value={current.ubicacion === LOCATION_PENDING_FILTER ? LOCATION_PENDING_FILTER : "all"}
+        onValueChange={(v) => setFilter("ubicacion", v === "all" ? "" : v)}
+      >
+        <SelectTrigger className="w-full text-xs sm:w-48" aria-label="Ubicación"><SelectValue placeholder="Todas las ubicaciones" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Todas las ubicaciones</SelectItem>
+          <SelectItem value={LOCATION_PENDING_FILTER}>Ubicación por confirmar</SelectItem>
         </SelectContent>
       </Select>
     </FilterToolbar>

@@ -28,6 +28,7 @@ import { revalidateVehicleFicha } from "@/lib/routing/revalidate-vehicle-ficha"
 import type { ActionState } from "@/lib/validation/masters"
 import { pluralize } from "@/lib/utils"
 import { dbErrMsg } from "./loads"
+import { duplicateEquipmentCodeError } from "@/lib/services/fleet-vehicle-code"
 
 /* El padrón se administra desde acá, y por eso las cinco acciones de esta
  * familia piden `admin:fleet_vehicles` y no `combustibles:manage_vehicles`.
@@ -232,7 +233,7 @@ export async function createFuelVehicleAction(
     revalidatePath(FLEET_CATALOG_PATH)
     return { ok: true, message: "Vehículo creado", data: { id } }
   } catch (e) {
-    return { ok: false, message: await dbErrMsg(e, "Error al crear vehículo") }
+    return { ok: false, message: duplicateEquipmentCodeError(e, parsed.data.code) ?? await dbErrMsg(e, "Error al crear vehículo") }
   }
 }
 
@@ -351,7 +352,7 @@ export async function updateFuelVehicleAction(
     return { ok: true, message: "Vehículo actualizado" }
   } catch (e) {
     if (e instanceof MaintenanceIdentityRejected) return maintenanceRejection(e)
-    return { ok: false, message: await dbErrMsg(e, "Error al actualizar") }
+    return { ok: false, message: duplicateEquipmentCodeError(e, parsed.data.code ?? existing.code) ?? await dbErrMsg(e, "Error al actualizar") }
   }
 }
 
@@ -612,7 +613,7 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
       }
     })
   } catch (error) {
-    return { ok: false, message: await dbErrMsg(error, "No se pudieron importar los vehículos") }
+    return { ok: false, message: duplicateEquipmentCodeError(error, null) ?? await dbErrMsg(error, "No se pudieron importar los vehículos") }
   }
 
   const skipped = errors.length

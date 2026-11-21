@@ -6,6 +6,8 @@ import { DataTable } from "@/components/ui/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { WorksiteForm } from "./worksite-form"
+import { WorksiteMasterDialog } from "./worksite-master-dialog"
+import { WORKSITE_KIND_LABELS, isWorksiteKind, type WorksiteKind } from "@/lib/services/worksite-kind"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -27,15 +29,31 @@ interface WorksiteRow {
   adminContratoLabel: string | null
   /** Contratos de la faena (de cualquier estado); 0 = no se muestra. */
   contractCount: number
+  /** Operación, depósito o administración. */
+  kind: WorksiteKind
+  /** Otros nombres con que llega la faena en las planillas. */
+  aliases: Array<{ id: string; aliasText: string }>
   isActive: boolean
   createdAt: string
   updatedAt: string
 }
 
-/** «2 contratos»: el texto secundario bajo el nombre; una faena sin contratos no lleva ninguno. */
-function contractCountLabel(count: number): string | null {
-  if (count <= 0) return null
-  return count === 1 ? "1 contrato" : `${count} contratos`
+/** «2 contratos · Depósito»: el texto secundario bajo el nombre; lo que no aplica no se escribe. */
+function secondaryLabel(ws: WorksiteRow): string | null {
+  const parts: string[] = []
+  if (ws.contractCount > 0) parts.push(ws.contractCount === 1 ? "1 contrato" : `${ws.contractCount} contratos`)
+  if (isWorksiteKind(ws.kind) && ws.kind !== "operacion") parts.push(WORKSITE_KIND_LABELS[ws.kind])
+  if (ws.aliases.length > 0) parts.push(ws.aliases.length === 1 ? "1 alias" : `${ws.aliases.length} alias`)
+  return parts.length > 0 ? parts.join(" · ") : null
+}
+
+/** Abre «Tipo y alias» de la faena; un botón de texto porque no es una acción de estado. */
+function MasterButton({ ws, onOpen }: { ws: WorksiteRow; onOpen: (id: string) => void }) {
+  return (
+    <Button type="button" variant="ghost" size="sm" onClick={() => onOpen(ws.id)} aria-label={`Tipo y alias de ${ws.name}`}>
+      Tipo y alias
+    </Button>
+  )
 }
 
 /** El nombre es el acceso al detalle de la faena (`/admin/faenas/[id]`), con sus contratos y equipos. */
@@ -67,6 +85,9 @@ export function FaenasList({
   } = useCatalogSheet<WorksiteRow>(toggleWorksiteActive)
 
   const rows = worksites as (WorksiteRow & Record<string, unknown>)[]
+  // Se guarda el id y no la fila: tras agregar o quitar un alias la lista llega nueva del servidor.
+  const [masterId, setMasterId] = React.useState<string | null>(null)
+  const masterRow = masterId ? worksites.find((ws) => ws.id === masterId) ?? null : null
 
   const [tab, setTab] = React.useState<"active" | "inactive">("active")
   const activeRows   = React.useMemo(() => rows.filter((ws) => ws.isActive),  [rows])
@@ -93,8 +114,8 @@ export function FaenasList({
           <div className="min-w-0">
             <h2 className="truncate text-sm font-medium"><WorksiteNameLink ws={ws} className="block truncate" /></h2>
             <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{ws.code}</p>
-            {contractCountLabel(ws.contractCount) && (
-              <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{contractCountLabel(ws.contractCount)}</p>
+            {secondaryLabel(ws) && (
+              <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{secondaryLabel(ws)}</p>
             )}
           </div>
           <MetaBadge meta={{ label: `${ws.isActive ? "Activa" : "Inactiva"}`, variant: ws.isActive ? "success" : "default" }} dot />
@@ -108,6 +129,7 @@ export function FaenasList({
         </dl>
 
         <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
+          <MasterButton ws={ws} onOpen={setMasterId} />
           <CatalogRowActions
             id={ws.id}
             isActive={ws.isActive}
@@ -128,8 +150,8 @@ export function FaenasList({
         <TableRow>
           <TableCell>
             <WorksiteNameLink ws={ws} className="block truncate text-sm font-medium" />
-            {contractCountLabel(ws.contractCount) && (
-              <span className="block text-xs text-text-muted">{contractCountLabel(ws.contractCount)}</span>
+            {secondaryLabel(ws) && (
+              <span className="block text-xs text-text-muted">{secondaryLabel(ws)}</span>
             )}
           </TableCell>
           <TableCell><span className="font-mono text-xs">{ws.code}</span></TableCell>
@@ -139,6 +161,7 @@ export function FaenasList({
           </TableCell>
           <TableCell>
             <div className="flex items-center gap-2 justify-end">
+              <MasterButton ws={ws} onOpen={setMasterId} />
               <CatalogRowActions
                 id={ws.id}
                 isActive={ws.isActive}
@@ -202,6 +225,12 @@ export function FaenasList({
         open={sheetOpen}
         onClose={closeSheet}
         editWorksite={editWs}
+      />
+
+      <WorksiteMasterDialog
+        key={masterRow?.id ?? "ninguna"}
+        worksite={masterRow}
+        onClose={() => setMasterId(null)}
       />
 
       <Dialog open={closing !== null} onOpenChange={(open) => { if (!open) setClosing(null) }}>

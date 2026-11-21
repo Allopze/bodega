@@ -35,7 +35,7 @@ import { EquipmentLitersChart } from "./equipment-liters-chart-lazy"
 import { EquipmentLoadsTable } from "./equipment-loads-table"
 import { EquipmentPerformanceChart } from "./equipment-performance-chart-lazy"
 import { openVehicleFichaArea } from "../_ficha/access"
-import { vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaPersonalUseBadge, VehicleFichaTabs } from "../_ficha/ficha-chrome"
+import { vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaPersonalUseBadge, VehicleFichaOwnership, VehicleFichaTabs } from "../_ficha/ficha-chrome"
 import { listPersonalUsePeriods } from "@/lib/services/fleet-personal-use"
 
 export const metadata: Metadata = { title: "Equipo" }
@@ -98,6 +98,7 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
         ]} />}
         actions={<><FuelHeaderActions period={period} /><VehicleFichaPersonalUseBadge periods={personalUsePeriods} /><VehicleFichaEditAction ctx={ctx} /></>}
       />
+      <VehicleFichaOwnership vehicleId={ctx.vehicle.id} />
       <VehicleFichaTabs ctx={ctx} active="combustible" />
       <DegradedDataBanner degraded={degraded} total={sourceCount} />
       {!vehicle.isActive ? <p className="mb-4"><Badge variant="neutral" size="sm">Equipo inactivo</Badge></p> : null}

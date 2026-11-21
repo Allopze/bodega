@@ -19,15 +19,16 @@ import { loadEquipmentInsurance, loadEquipmentWorkOrders, loadLifeRows, loadLife
 import { listHistoricalRecords } from "@/lib/services/mantencion/historical-import"
 import { listEquipmentHistory } from "@/lib/services/mantencion/equipment-history"
 import { loadFleet } from "@/lib/services/mantencion/fleet"
-import { listAssignableMechanics, listWorkOrderEquipmentOptions, listWorksiteMechanics } from "@/lib/services/mantencion/work-orders/query"
+import { listAssignableMechanics, listExecutionWorksiteOptions, listWorkOrderEquipmentOptions, listWorksiteMechanics } from "@/lib/services/mantencion/work-orders/query"
 import { todayInChile } from "@/lib/utils"
+import { getOperationalSettings } from "@/lib/services/system-settings"
 import { getVehiclePurchaseHistory } from "@/lib/services/vehicle-purchase-history"
 import type { NewOtSheetProps } from "@/components/mantencion/jefatura/ot/new-ot-sheet"
 import { LIFE_PAGE_SIZE } from "@/components/mantencion/jefatura/equipos/equipment-life-section"
 import { listSchedules } from "@/lib/services/mantencion/schedules"
 import { PERFORMANCE_UNIT_LABELS } from "@/lib/combustibles/control/contracts"
 import { openVehicleFichaArea } from "../_ficha/access"
-import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaPersonalUseBadge, VehicleFichaTabs } from "../_ficha/ficha-chrome"
+import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaOwnership, VehicleFichaPersonalUseBadge, VehicleFichaTabs } from "../_ficha/ficha-chrome"
 import { listPersonalUsePeriods } from "@/lib/services/fleet-personal-use"
 
 export const metadata: Metadata = { title: "Vehículo · Mantención" }
@@ -51,7 +52,7 @@ export default async function EquipmentDetailPage({
   const personalUsePeriods = await listPersonalUsePeriods(id).catch(() => [])
   const viewer = viewerFromSession(session)
   const header = { title: ctx.label, description: vehicleFichaDescription(ctx), breadcrumb: vehicleFichaBreadcrumb(ctx, "mantencion") }
-  const tabs = <VehicleFichaTabs ctx={ctx} active="mantencion" />
+  const tabs = <><VehicleFichaOwnership vehicleId={ctx.vehicle.id} /><VehicleFichaTabs ctx={ctx} active="mantencion" /></>
 
   // Un vehículo de la flota que todavía no está en el plan de mantención: la pestaña dice qué
   // falta y, a quien puede, cómo incorporarlo. Antes la ficha de Flota escondía el botón.
@@ -113,14 +114,16 @@ export default async function EquipmentDetailPage({
   const canManageOrders = can(session, "mant:ot:manage")
   let newOrder: NewOtSheetProps | null = null
   if (canCreateOrder) {
-    const [options, mechanics, worksiteMechanics] = await Promise.all([
+    const [options, mechanics, worksiteMechanics, executionWorksites, settings] = await Promise.all([
       listWorkOrderEquipmentOptions(viewer),
       canManageOrders ? listAssignableMechanics() : Promise.resolve(null),
       canManageOrders ? Promise.resolve(null) : listWorksiteMechanics(viewer),
+      listExecutionWorksiteOptions(),
+      getOperationalSettings(),
     ])
     const equipment = options.filter((option) => option.id === id)
     if (equipment.length > 0) {
-      newOrder = { equipment, mechanics, worksiteMechanics, today: todayInChile(), defaultRequesterName: session.user.name ?? "", defaultVehicleId: id }
+      newOrder = { equipment, mechanics, worksiteMechanics, worksites: executionWorksites, actionTypeRequired: settings.mantencionActionTypeRequired === 1, today: todayInChile(), defaultRequesterName: session.user.name ?? "", defaultVehicleId: id }
     }
   }
 

@@ -22,6 +22,7 @@ import {
 } from "./equipment-resolve"
 import { unitName } from "@/lib/mantencion/format"
 import { todayInChile } from "@/lib/utils"
+import { FUEL_VEHICLE_CODE_UNIQUE, duplicateEquipmentCodeMessage } from "@/lib/services/fleet-vehicle-code"
 
 export { NEW_WORKSITE, countEquipmentRecords, hasMaintenanceProfile } from "./equipment-resolve"
 export type { EquipmentCurrent, EquipmentInput, EquipmentPlanInput, EquipmentResult, FieldErrors, ResolvedEquipment } from "./equipment-resolve"
@@ -66,8 +67,10 @@ const NEW_WORKSITE_NOT_ALLOWED = "No puedes crear faenas nuevas desde un equipo:
  * Traduce una violación única al campo que la causó. Atribuir toda violación a
  * la patente mandaba a corregir un campo que no tenía nada que ver.
  */
-function uniqueFailure(error: unknown): { ok: false; message: string; fieldErrors: FieldErrors } | null {
+function uniqueFailure(error: unknown, codeHint?: string | null): { ok: false; message: string; fieldErrors: FieldErrors } | null {
   if (!isUniqueViolation(error)) return null
+  // Índice del código normalizado: «KA-071» y «KA-71» son el mismo equipo (el pre-chequeo no los distingue).
+  if (isUniqueViolation(error, FUEL_VEHICLE_CODE_UNIQUE)) return equipmentFailure({ code: duplicateEquipmentCodeMessage(codeHint) })
   if (isUniqueViolation(error, PLATE_UNIQUE)) return equipmentFailure({ plate: "Esa patente ya está en otro equipo." })
   if (isUniqueViolation(error, PROFILE_PK)) {
     return equipmentFailure({ code: "Ese vehículo ya está en la mantención: recarga la página y vuelve a intentarlo." })
@@ -231,7 +234,7 @@ export async function createEquipment(
     })
   } catch (error) {
     if (error instanceof IncorporationTransferRejected) return equipmentFailure({ worksiteId: error.message })
-    const mapped = uniqueFailure(error)
+    const mapped = uniqueFailure(error, input.code)
     if (mapped) return mapped
     throw error
   }

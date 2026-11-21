@@ -29,6 +29,8 @@ import { formatLastReading } from "./fleet-last-reading"
 import { revalidateVehicleFicha } from "@/lib/routing/revalidate-vehicle-ficha"
 import { assignVehiclesToContract, endVehicleAssignment } from "@/lib/services/contracts/assignments"
 import { civilDate } from "@/lib/validation/dates"
+import { z } from "zod"
+import { createFleetOwnerTx, isFleetOwnerKind, setVehicleOwnershipTx } from "@/lib/services/fleet-owners"
 import {
   createPersonalUsePeriod,
   deletePersonalUsePeriod,
@@ -387,6 +389,8 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
     { header: "Faena", key: "worksite", width: 24 },
     { header: "Estado", key: "status", width: 18 },
     { header: "Responsable", key: "responsible", width: 24 },
+    { header: "Propietario", key: "owner", width: 26 },
+    { header: "Ubicación por confirmar", key: "locationPending", width: 22 },
     { header: "Próximo vencimiento", key: "expiry", width: 42 },
     ...(canViewFuel ? [
       { header: "Litros (12 meses)", key: "liters", width: 18 },
@@ -417,6 +421,8 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
       // lee igual que «En mantención» y contradice el filtro aplicado.
       status: row.isActive ? formatFuelVehicleStatus(row.operationalStatus) : "Inactivo",
       responsible: row.responsibleName ?? "",
+      owner: row.ownerName ?? "",
+      locationPending: row.locationPendingConfirmation ? "Sí" : "",
       // La tabla muestra tipo y fecha; el Excel exportaba sólo la fecha y
       // dejaba sin explicar de qué documento vencía.
       expiry: row.nextExpiryDate
@@ -464,5 +470,56 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
       truncated,
       rowLimit: FLEET_EXPORT_LIMIT,
     },
+  }
+}
+
+const vehicleOwnershipSchema = z.object({
+  vehicleId: z.string().trim().min(1).max(64),
+  /** Id de una empresa del catálogo; vacío = sin informar. Se ignora si viene `newOwner`. */
+  ownerId: z.string().trim().max(64).nullable().optional(),
+  /** Empresa nueva, creada en la misma transacción (o la existente con ese nombre). */
+  newOwner: z.object({ name: z.string().trim().max(200), kind: z.string().trim().max(40) }).nullable().optional(),
+  locationPendingConfirmation: z.boolean(),
+})
+export type VehicleOwnershipInput = z.input<typeof vehicleOwnershipSchema>
+
+/**
+ * Empresa propietaria y marca «Ubicación por confirmar» de un equipo (Trinorma). Pide lo mismo que
+ * editar el vehículo (`admin:fleet_vehicles` y la faena del equipo dentro del alcance). No escribe la
+ * faena: sólo cambia por «Trasladar equipos». Crear la empresa en línea es parte del mismo guardado.
+ */
+export async function saveVehicleOwnershipAction(input: VehicleOwnershipInput): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:fleet_vehicles", "/flota") }
+  catch { return { ok: false, message: "No tienes permiso para editar vehículos." } }
+  const parsed = vehicleOwnershipSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, message: "Revisa los datos del propietario." }
+  const { vehicleId, ownerId, newOwner, locationPendingConfirmation } = parsed.data
+  if (newOwner && !isFleetOwnerKind(newOwner.kind)) {
+    return { ok: false, message: "Elige el tipo de la empresa nueva.", fieldErrors: { newOwnerKind: ["Elige el tipo de empresa"] } }
+  }
+
+  try {
+    const vehicle = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, vehicleId), columns: { id: true, worksiteId: true } })
+    if (!vehicle) return { ok: false, message: "Vehículo no encontrado" }
+    if (!canAccessWorksite(session, vehicle.worksiteId)) return { ok: false, message: "No puedes gestionar vehículos de esta faena" }
+
+    const actor = { userId: session.user.id, email: session.user.email }
+    const result = await db.transaction(async (tx) => {
+      let nextOwnerId: string | null = ownerId || null
+      if (newOwner) {
+        const created = await createFleetOwnerTx(tx, actor, newOwner)
+        if (!created.ok) return { ok: false as const, message: created.message, fieldErrors: { newOwnerName: [created.message] } }
+        nextOwnerId = created.data.id
+      }
+      return setVehicleOwnershipTx(tx, actor, { vehicleId, ownerId: nextOwnerId, locationPendingConfirmation })
+    })
+    if (!result.ok) return result
+    revalidatePath("/flota")
+    revalidateVehicleFicha(vehicleId)
+    return { ok: true, message: result.message }
+  } catch (e) {
+    logger.error("[saveVehicleOwnershipAction]", e)
+    return { ok: false, message: safeActionMessage(e, "No se pudo guardar el propietario") }
   }
 }

@@ -23,7 +23,7 @@ import { FleetDocumentUpload, FleetDocumentsPanel } from "../fleet-documents-pan
 import { VehicleExpiries } from "../vehicle-expiries"
 import { VehicleStaysCard } from "./vehicle-stays-card"
 import { openVehicleFichaArea } from "../_ficha/access"
-import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaPersonalUseBadge, VehicleFichaTabs } from "../_ficha/ficha-chrome"
+import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaPersonalUseBadge, VehicleFichaOwnership, VehicleFichaTabs } from "../_ficha/ficha-chrome"
 import { VehicleContractCard } from "./vehicle-contract-card"
 import { VehiclePersonalUseCard } from "./vehicle-personal-use-card"
 
@@ -87,6 +87,7 @@ export default async function FlotaVehiclePage({
   return (
     <PageContainer width="workbench">
       <PageHeader title={ctx.label} description={vehicleFichaDescription(ctx)} breadcrumb={vehicleFichaBreadcrumb(ctx, "flota")} actions={<><VehicleFichaPersonalUseBadge periods={personalUsePeriods} /><VehicleFichaEditAction ctx={ctx} />{canTransfer && <TransferButton initialVehicleId={vehicle.id} label="Trasladar" variant="secondary" />}</>} />
+      <VehicleFichaOwnership vehicleId={ctx.vehicle.id} />
       <VehicleFichaTabs ctx={ctx} active="flota" />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

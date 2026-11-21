@@ -8,6 +8,7 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import type { PadronBrandOption } from "@/lib/mantencion/padron-identity"
 import { logger } from "@/lib/logger"
+import { listFleetOwners, type FleetOwnerRow } from "@/lib/services/fleet-owners"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { loadPadronMaintenance } from "@/lib/services/mantencion/padron-identity"
 import { loadVehicleFormCatalogs, type VehicleFormCatalogs } from "@/app/(app)/combustibles/vehiculos/form-catalogs"
@@ -88,6 +89,37 @@ export async function loadVehicleEditAction(vehicleId: string): Promise<VehicleE
     }
   } catch (error) {
     logger.error("[loadVehicleEditAction]", error)
+    return { ok: false, message: "No se pudo abrir el formulario. Inténtalo de nuevo." }
+  }
+}
+
+export interface VehicleOwnershipPayload {
+  ownerId: string | null
+  locationPendingConfirmation: boolean
+  owners: FleetOwnerRow[]
+}
+
+export type VehicleOwnershipLoadResult = { ok: true; data: VehicleOwnershipPayload } | { ok: false; message: string }
+
+/** Lo que «Propietario y ubicación» necesita al abrir: el valor actual y el catálogo de empresas. Mismo permiso que editar. */
+export async function loadVehicleOwnershipAction(vehicleId: string): Promise<VehicleOwnershipLoadResult> {
+  let session
+  try { session = await requirePermission("admin:fleet_vehicles") }
+  catch { return { ok: false, message: "No tienes permiso para editar vehículos." } }
+  const parsed = idSchema.safeParse(vehicleId)
+  if (!parsed.success) return { ok: false, message: "No se reconoce el vehículo." }
+  try {
+    const vehicle = await db.query.fuelVehicles.findFirst({
+      where: eq(fuelVehicles.id, parsed.data),
+      columns: { worksiteId: true, ownerId: true, locationPendingConfirmation: true },
+    })
+    if (!vehicle) return { ok: false, message: "Ese vehículo ya no existe. Recarga la página." }
+    if (!canAccessWorksite(session, vehicle.worksiteId)) return { ok: false, message: "No puedes editar vehículos de esta faena." }
+    // Las inactivas sólo se ofrecen si son la actual del equipo.
+    const owners = (await listFleetOwners(db)).filter((owner) => owner.isActive || owner.id === vehicle.ownerId)
+    return { ok: true, data: { ownerId: vehicle.ownerId, locationPendingConfirmation: vehicle.locationPendingConfirmation, owners } }
+  } catch (error) {
+    logger.error("[loadVehicleOwnershipAction]", error)
     return { ok: false, message: "No se pudo abrir el formulario. Inténtalo de nuevo." }
   }
 }

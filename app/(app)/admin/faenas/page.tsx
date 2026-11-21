@@ -6,6 +6,8 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { listWorksiteAliases } from "@/lib/services/worksite-aliases"
+import { isWorksiteKind } from "@/lib/services/worksite-kind"
 import { countContractsByWorksite } from "@/lib/services/contracts/worksite-view"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { FaenasList } from "./faenas-list"
@@ -23,6 +25,13 @@ export default async function FaenasPage() {
     orderBy: (w, { asc }) => [asc(w.name)],
   })
   const contractCounts = await countContractsByWorksite(allWorksites.map((w) => w.id))
+  const aliasRows = await listWorksiteAliases(db, allWorksites.map((w) => w.id))
+  const aliasesByWorksite = new Map<string, Array<{ id: string; aliasText: string }>>()
+  for (const row of aliasRows) {
+    const list = aliasesByWorksite.get(row.worksiteId) ?? []
+    list.push({ id: row.id, aliasText: row.aliasText })
+    aliasesByWorksite.set(row.worksiteId, list)
+  }
   const canCreateWorksites = resolveWorksiteScope(session).mode === "all"
 
   const activeCount = allWorksites.filter((w) => w.isActive).length
@@ -54,6 +63,8 @@ export default async function FaenasPage() {
           id: w.id, name: w.name, code: w.code,
           address: w.address, region: w.region, commune: w.commune, adminContratoLabel: w.adminContratoLabel,
           contractCount: contractCounts.get(w.id) ?? 0,
+          kind: isWorksiteKind(w.kind) ? w.kind : "operacion",
+          aliases: aliasesByWorksite.get(w.id) ?? [],
           isActive: w.isActive, createdAt: w.createdAt, updatedAt: w.updatedAt,
         }))}
         canCreateWorksites={canCreateWorksites}

@@ -77,4 +77,18 @@ describe("filterFleetOverviewRows", () => {
       expect(filterFleetOverviewRows(all, { operationalStatus: "" }, dates)).toEqual(all)
     })
   })
+  describe("ubicación por confirmar y propietario", () => {
+    const pending = { ...rows[0]!, plate: "PP-QQ-55", locationPendingConfirmation: true, ownerName: "Servimar" }
+    const all = [...rows, pending]
+
+    it("ubicacion=confirmar deja sólo los equipos marcados y se combina con los demás filtros", () => {
+      expect(filterFleetOverviewRows(all, { ubicacion: "confirmar" }, dates)).toEqual([pending])
+      expect(filterFleetOverviewRows(all, { ubicacion: "confirmar", q: "no-existe" }, dates)).toEqual([])
+      expect(filterFleetOverviewRows(all, {}, dates)).toEqual(all)
+    })
+
+    it("la búsqueda de texto también encuentra por empresa propietaria", () => {
+      expect(filterFleetOverviewRows(all, { q: "servimar" }, dates)).toEqual([pending])
+    })
+  })
 })

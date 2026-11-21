@@ -16,6 +16,7 @@ import type { MantActionResult } from "@/lib/services/mantencion/result"
 import type { ActionState } from "@/lib/validation/operations"
 import { revalidateVehicleFicha } from "@/lib/routing/revalidate-vehicle-ficha"
 import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
+import { FUEL_VEHICLE_CODE_UNIQUE, duplicateEquipmentCodeMessage } from "@/lib/services/fleet-vehicle-code"
 
 /**
  * Acciones de «Equipos». Cada una pide su permiso del §6 EN el servidor
@@ -81,12 +82,15 @@ export async function createEquipmentAction(_prev: ActionState, formData: FormDa
   const guard = await guardPermission("mant:equipment:manage", PATH)
   if (guard.error) return guard.error
   let vehicleId: string
+  const input = readEquipmentForm(formData)
   try {
-    const result = await createEquipment(equipmentActor(guard.session), readEquipmentForm(formData))
+    const result = await createEquipment(equipmentActor(guard.session), input)
     if (!result.ok) return toState(result)
     vehicleId = result.data.vehicleId
   } catch (error) {
-    return actionErrorResult(error, "No se pudo crear el equipo. Inténtalo de nuevo.")
+    // El índice único del código (tras normalizarlo) es la última barrera: «KA-071» y «KA-71» son el mismo equipo.
+    const message = duplicateEquipmentCodeMessage(input.code)
+    return actionErrorResult(error, "No se pudo crear el equipo. Inténtalo de nuevo.", { unique: { [FUEL_VEHICLE_CODE_UNIQUE]: message } })
   }
   revalidateEquipment(vehicleId)
   // Cae en la ficha del equipo recién creado, ya en modo lectura.
@@ -181,7 +185,8 @@ export async function commitImportAction(formData: FormData): Promise<MantAction
     if (result.ok) revalidateEquipment()
     return result
   } catch (error) {
-    return actionErrorResult(error, "No se pudo importar la planilla. No se guardó ningún cambio.")
+    // El código de la fila que chocó no se conoce aquí: el mensaje no lo nombra.
+    return actionErrorResult(error, "No se pudo importar la planilla. No se guardó ningún cambio.", { unique: { [FUEL_VEHICLE_CODE_UNIQUE]: duplicateEquipmentCodeMessage(null) } })
   }
 }
 
@@ -240,7 +245,7 @@ export async function incorporateFleetAction(input: z.input<typeof incorporateSc
     ].filter(Boolean).join(" · ")
     return { ok: true, data: result, message }
   } catch (error) {
-    return actionErrorResult(error, "No se pudo incorporar. No se guardó ningún cambio.")
+    return actionErrorResult(error, "No se pudo incorporar. No se guardó ningún cambio.", { unique: { [FUEL_VEHICLE_CODE_UNIQUE]: duplicateEquipmentCodeMessage(null) } })
   }
 }
 
