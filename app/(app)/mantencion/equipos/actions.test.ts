@@ -67,13 +67,27 @@ describe("«Editar mantención»", () => {
     expect(updateEquipmentPlan).toHaveBeenCalledWith(
       expect.objectContaining({ userId: "u-jefe" }),
       "veh-1",
-      { scheduleId: "s-1", initialReading: 40_312, initialReadingDate: "2026-11-01" },
+      // Sin la sección de la preventiva declarada (`priorPreventiveForm`), ésta no viaja y no se toca.
+      { scheduleId: "s-1", initialReading: 40_312, initialReadingDate: "2026-11-01", priorPreventive: undefined, expectedUpdatedAt: null },
       { active: false, retiredReason: "Vendido a tercero" },
     )
   })
 
+  it("con la sección de la preventiva declarada, viaja con quién la declara, la fuente y la marca de tiempo", async () => {
+    await updateEquipmentPlanAction({ ok: false }, form({
+      vehicleId: "veh-1", status: "activo", scheduleId: "s-1", initialReading: "435.410", initialReadingDate: "2026-11-20",
+      priorPreventiveForm: "1", priorPreventiveDate: "2026-08-20", priorPreventiveReading: "414.394", priorPreventiveInterval: "40000",
+      priorPreventiveEvidence: "OT 35513", expectedUpdatedAt: "2026-11-21 21:49:51.123+00",
+    }))
+    expect(updateEquipmentPlan.mock.calls[0]![2]).toEqual({
+      scheduleId: "s-1", initialReading: 435_410, initialReadingDate: "2026-11-20",
+      priorPreventive: { date: "2026-08-20", reading: 414_394, intervalValue: 40_000, evidence: "OT 35513", declaredBy: "u-jefe", source: "Editar mantención" },
+      expectedUpdatedAt: "2026-11-21 21:49:51.123+00",
+    })
+  })
+
   it("sin pauta ni lectura viajan como nulos", async () => {
     await updateEquipmentPlanAction({ ok: false }, form({ vehicleId: "veh-1", status: "activo" }))
-    expect(updateEquipmentPlan.mock.calls[0]![2]).toEqual({ scheduleId: null, initialReading: null, initialReadingDate: null })
+    expect(updateEquipmentPlan.mock.calls[0]![2]).toEqual({ scheduleId: null, initialReading: null, initialReadingDate: null, expectedUpdatedAt: null })
   })
 })

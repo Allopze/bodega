@@ -140,3 +140,55 @@ Esta lista es explícita a propósito: nada de esto debe darse por hecho al carg
 - **No se corrió la E2E ni test:pglite completo** sobre estos últimos commits. Se corrieron las suites PGlite de los archivos tocados, typecheck y lint.
 
 **Despliegue:** llegar a `main` no corre ningún script de Trinorma. Un push a `origin/main` corre el CI y luego el workflow Deploy, cuya compuerta de esquema, de solo lectura, se detiene mientras producción tenga migraciones pendientes (hoy, la 0397 y la 0398). La carga de datos sigue siendo un paso aparte, a mano y primero en simulación (DESPLIEGUE.md §4).
+
+## Opción A: preventiva declarada anterior a la plataforma (21 y 22-11)
+
+**Qué se construyó.** Commits 7e93c2751 (núcleo y migración 0399), f4312c4e2 (interfaz, exportaciones y cargador), 2d0802ac9, 6c825001e (revisión) y 17cef672c (auditoría).
+
+**Pruebas previas al deploy.**
+- **Producción, en solo lectura:** 397 migraciones (hasta la 0396) y 0 códigos duplicados según la normalización del índice único (150 equipos con código).
+- **Copia limpia de producción** (respaldo del 21-11 restaurado en `bodega_prodtest_0399`): `npm run db:migrate` completo aplicó la 0397, la 0398 y la 0399 sin errores (397 → 400 migraciones).
+
+**Recorrido en Chromium** contra el dev :3003, con una planilla de ejemplo «devuelta» y cargada con el cargador. Verificado:
+- **PASS. Cargador:**
+  - sin `--pauta-confirmada` solo simula, y con `--apply` se niega;
+  - con `--pauta-confirmada`: 4 equipos cargados y 8 pendientes con su motivo (sin respaldo, «No sé», sin respuesta);
+  - la segunda corrida da «ya estaban».
+- **PASS. Ficha de KCH-133:**
+  - «Preventiva 40.000 km · 20-08-2026 · Declarada, anterior a la plataforma · Respaldo: OT 35513 · Taller propio · Declarada por …»;
+  - la fuente va en su propia línea;
+  - no aparece ningún folio de registro firmado.
+- **PASS. Ficha de KA-140** (con lectura, sin preventiva): «Sin información de preventiva», nunca «al día», y una nota que explica qué hacer.
+- **PASS. «Editar mantención» sin fecha ni respaldo:** el servidor devuelve los errores por campo y no guarda. Sin cambios, guarda sin error; el formulario lleva la marca de tiempo de la ficha.
+- **PASS. Panel de Biodiversa:**
+  - 0 % al día, con 2 vencidas por la pauta de 10.000 km, 1 «sin información de preventiva» y 5 sin lecturas;
+  - la línea «2 con preventiva declarada, anterior a la plataforma» y su «Ver datos» con el respaldo.
+- **PASS. PDF:** la tabla «Preventivas declaradas (anteriores a la plataforma)» con su respaldo.
+- **PASS. Excel de equipos:** «Origen de la última preventiva» y «Respaldo».
+- **PASS. Consola y red:** sin errores.
+- **Nota:** el servidor de desarrollo, que llevaba horas corriendo, servía la regla vieja hasta reiniciarlo. Sin el reinicio, la ficha mostraba «Próxima 440.000» con la convención anterior. Se reinició antes de cada recorrido.
+
+**Revisión (Sonnet) y auditoría (Opus xhigh).** Lo que se corrigió:
+- volver a guardar el formulario pisaba quién declaró y la fuente;
+- el respaldo se mostraba en minúsculas en la app;
+- el historial registraba borrados falsos desde «Editar vehículo» y la importación;
+- el respaldo aceptaba rellenos («S/R», «N/A»): ahora exige un número de OT o factura;
+- otras puertas podían dejar la lectura inicial bajo la declarada;
+- el Panel y el PDF no decían qué estados se apoyan en una declarada;
+- los `.sql` de reversión no se versionaban (estaban en `docs/`): ahora están en `db/repairs/trinorma/` y la 0399 tiene su reversión probada;
+- faltaba proteger la edición concurrente, el redondeo de lecturas con decimales y el caso de los equipos dados de baja;
+- una pauta republicada bloqueaba el formulario;
+- los intervalos del formulario salían del borrador y no de la versión publicada;
+- había que subir `CATALOG_FORMAT`.
+
+**Quedó como riesgo conocido, sin corregir:**
+- el cargador no revisa cuentas temporales vencidas ni el alcance por faena de quien carga (un usuario de jefatura o administración tiene alcance global);
+- un equipo con registros firmados y sin lectura inicial no puede recibir una declarada (hoy producción no tiene registros).
+
+**Pruebas.** Unitarias nuevas en `lib/services/mantencion/prior-preventive.test.ts` y `status.test.ts`; PGlite del cargador (12 casos) y de la 0399 con su reversión. El resultado de las suites completas está al final de esta sección.
+
+**Suites completas sobre 17cef672c (22-11):**
+- `test:fast`: 1.433 archivos y 21.536 pruebas en verde. Fallaban 2 casos de `app/(app)/mantencion/equipos/actions.test.ts`, que esperaban la forma vieja de la entrada del plan; se corrigieron y se agregó un caso para la sección de la declarada (5 de 5).
+- `test:pglite`: 434 archivos y 5.556 pruebas en verde. Falla solo `module-toggles`, que viene de antes y no es de este trabajo: las rutas `/apps/recientes` y `/apps/visita` de TI.
+- `db:verify-migrations`: 400 entradas hasta la 0399, con los checksums verificados.
+- **No se corrió la E2E** sobre estos commits. Los recorridos de la ficha, el formulario, el Panel, el PDF y los Excel se verificaron a mano en el navegador (arriba).
