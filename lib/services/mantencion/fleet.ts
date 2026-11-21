@@ -7,8 +7,8 @@ import {
 import { daysBetween } from "@/lib/mantencion/readings"
 import { todayInChile } from "@/lib/utils"
 import { getCurrentScheduleSnapshots } from "./schedule-versions"
-import { equipmentStatus, WORKSHOP_UPDATE_DAYS, workshopState, type WorkshopState } from "@/lib/mantencion/status"
-import type { MantEquipmentStatus, MantReading, MantUnit } from "@/lib/mantencion/types"
+import { equipmentStatus, newerPreventive, WORKSHOP_UPDATE_DAYS, workshopState, type WorkshopState } from "@/lib/mantencion/status"
+import type { MantEquipmentStatus, MantPreventiveSummary, MantReading, MantUnit } from "@/lib/mantencion/types"
 import { mergeLatestGpsByVehicle } from "@/lib/integrations/fleet-gps/merge-latest"
 import { loadLatestGpsRowsForVehicles } from "@/lib/services/fleet-gps-latest"
 import { MANT_GPS_SOURCE_LABEL, pickGpsEstimateReading, type MantGpsReadingSource } from "@/lib/mantencion/gps-estimate"
@@ -118,6 +118,10 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
       retiredReason: mantEquipmentProfiles.retiredReason,
       initialReading: mantEquipmentProfiles.initialReading,
       initialReadingDate: mantEquipmentProfiles.initialReadingDate,
+      priorPreventiveDate: mantEquipmentProfiles.priorPreventiveDate,
+      priorPreventiveReading: mantEquipmentProfiles.priorPreventiveReading,
+      priorPreventiveInterval: mantEquipmentProfiles.priorPreventiveInterval,
+      priorPreventiveEvidence: mantEquipmentProfiles.priorPreventiveEvidence,
     })
     .from(mantEquipmentProfiles)
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantEquipmentProfiles.vehicleId))
@@ -232,13 +236,21 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
       : null
     const preventives = (preventivesByVehicle.get(row.vehicleId) ?? [])
       .map((item) => ({ id: item.id, folio: item.folio, reading: item.reading, date: item.workDate, intervalValue: item.intervalValue ?? 0 }))
-    const last = preventives[0]
+    const signed = preventives[0]
+    // La declarada (anterior a la plataforma) manda sólo si es más reciente que la última firmada.
+    const declared: MantPreventiveSummary | null = row.priorPreventiveDate != null && row.priorPreventiveReading != null && row.priorPreventiveInterval != null
+      ? { reading: row.priorPreventiveReading, date: row.priorPreventiveDate, intervalValue: row.priorPreventiveInterval, origin: "declarada" as const, evidence: row.priorPreventiveEvidence }
+      : null
+    const last = newerPreventive<MantPreventiveSummary>(
+      signed ? { reading: signed.reading, date: signed.date, intervalValue: signed.intervalValue, origin: "firmada", evidence: signed.folio } satisfies MantPreventiveSummary : null,
+      declared,
+    )
     const status = equipmentStatus({
       retired: !row.isActive,
       intervals: row.scheduleId && intervals.length ? intervals : null,
       readings,
       initial: initial ? { ...initial, source: "Lectura inicial" } : null,
-      lastPreventive: last ? { reading: last.reading, date: last.date, intervalValue: last.intervalValue } : null,
+      lastPreventive: last,
     })
     const gps = gpsByVehicle.get(row.vehicleId)
     const gpsValue = unit === "km" ? (gps?.odometer ?? null) : (gps?.hourMeter ?? null)
@@ -257,7 +269,7 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
           intervals,
           readings: [{ value: estimate.value, date: todayInChile(estimate.at), source: MANT_GPS_SOURCE_LABEL[estimate.source] }],
           initial: initial ? { ...initial, source: "Lectura inicial" } : null,
-          lastPreventive: last ? { reading: last.reading, date: last.date, intervalValue: last.intervalValue } : null,
+          lastPreventive: last,
         })
       : null
     rows.push({

@@ -16,11 +16,12 @@ import {
   EQUIPMENT_FIELD_LABELS, diffEquipmentFields, summarizeChanges, writeEquipmentHistory, type EquipmentFields, type MantActor,
 } from "./equipment-history"
 import {
-  NEW_WORKSITE, equipmentFailure, loadEquipmentCurrent, loadScheduleCatalog, resolveEquipment, resolveEquipmentPlan,
+  NEW_WORKSITE, equipmentFailure, loadEquipmentCurrent, loadScheduleCatalog, resolveEquipment, resolveEquipmentPlan, resolvePriorPreventive,
   type EquipmentCurrent, type EquipmentInput, type EquipmentPlanInput, type EquipmentResult, type FieldErrors, type ResolvedEquipment,
   type VehicleIdentity,
 } from "./equipment-resolve"
 import { unitName } from "@/lib/mantencion/format"
+import { getCurrentScheduleSnapshots } from "./schedule-versions"
 import { todayInChile } from "@/lib/utils"
 import { FUEL_VEHICLE_CODE_UNIQUE, duplicateEquipmentCodeMessage } from "@/lib/services/fleet-vehicle-code"
 
@@ -348,9 +349,11 @@ async function applyReactivate(tx: Tx, actor: MantActor, vehicleId: string, code
 }
 
 /**
- * «Editar mantención»: la pauta, la lectura inicial y, si cambia, el estado (activo / dado de
- * baja), en una sola transacción: un error en cualquier parte no deja la ficha a medias. La
- * identidad del equipo no se toca aquí: se edita en el padrón (`resolveFleetIdentity`).
+ * «Editar mantención»: la pauta, la lectura inicial, la preventiva declarada anterior a la
+ * plataforma y, si cambia, el estado (activo / dado de baja), en una sola transacción: un error en
+ * cualquier parte no deja la ficha a medias. La identidad del equipo no se toca aquí: se edita en el
+ * padrón (`resolveFleetIdentity`). Quien llama exige `mant:equipment:manage` (jefatura de
+ * mantención y administración).
  */
 export async function updateEquipmentPlan(
   actor: MantActor,
@@ -358,62 +361,109 @@ export async function updateEquipmentPlan(
   input: EquipmentPlanInput,
   status: EquipmentStatusInput,
 ): Promise<EquipmentResult<{ changed: boolean }>> {
-  const scope = actorEquipmentScope(actor)
-  return db.transaction(async (tx) => {
-    const current = await loadEquipmentCurrent(tx, vehicleId)
-    if (!current) return equipmentFailure({}, "Ese equipo no existe en la mantención.")
-    if (!isWorksiteInScope(scope, current.worksiteId)) return equipmentFailure({}, EQUIPMENT_OUT_OF_SCOPE)
-    if (!status.active && current.active && !isValidReason(status.retiredReason)) {
-      return equipmentFailure({ retiredReason: reasonRequiredMessage("el motivo de la baja") })
-    }
-    const plan = resolveEquipmentPlan(await loadScheduleCatalog(tx), input, current.unit, current, { today: todayInChile() })
-    if (Object.keys(plan.errors).length > 0) return equipmentFailure(plan.errors)
+  return db.transaction((tx) => updateEquipmentPlanTx(tx, actor, vehicleId, input, status))
+}
 
-    const { schedule, initialReading, initialReadingDate } = plan.value
-    const fields: EquipmentFields = { ...current.fields, schedule: schedule?.name ?? null, initialReading, initialReadingDate }
-    const changes = diffEquipmentFields(current.fields, fields)
-    const edited = Object.keys(changes).length > 0
-    if (edited) {
-      await tx.update(mantEquipmentProfiles).set({
-        scheduleId: schedule?.id ?? null,
-        initialReading,
-        initialReadingDate,
-        updatedAt: new Date().toISOString(),
-        updatedBy: actor.userId,
-      }).where(eq(mantEquipmentProfiles.vehicleId, vehicleId))
-      const action = historyActionFor(changes)
-      await writeEquipmentHistory(tx, {
-        vehicleId,
-        action,
-        summary: action === "schedule_change"
-          ? scheduleChangeSummary(current.fields.schedule, fields.schedule)
-          : `Editado · ${summarizeChanges(changes)}`,
-        changes,
-        userId: actor.userId,
-      })
-      await recordAudit({
-        userId: actor.userId,
-        userEmail: actor.email ?? undefined,
-        action: "update",
-        entityType: "mant_equipment",
-        entityId: vehicleId,
-        entityCode: current.fields.code,
-        oldState: auditState(current.fields),
-        newState: auditState(fields),
-        worksiteId: current.worksiteId,
-      }, tx)
-    }
-    let statusChanged = false
-    if (!status.active && current.active) {
-      await applyRetire(tx, actor, vehicleId, current.fields.code, status.retiredReason.trim())
-      statusChanged = true
-    } else if (status.active && !current.active) {
-      await applyReactivate(tx, actor, vehicleId, current.fields.code)
-      statusChanged = true
-    }
-    const changed = edited || statusChanged
-    return { ok: true as const, data: { changed }, message: changed ? `Cambios guardados en ${current.fields.code}.` : "No había cambios que guardar." }
-  })
+/** `updateEquipmentPlan` dentro de la transacción de quien llama (el cargador de la planilla de Trinorma). */
+export async function updateEquipmentPlanTx(
+  tx: Tx,
+  actor: MantActor,
+  vehicleId: string,
+  input: EquipmentPlanInput,
+  status: EquipmentStatusInput,
+): Promise<EquipmentResult<{ changed: boolean }>> {
+  const scope = actorEquipmentScope(actor)
+  const current = await loadEquipmentCurrent(tx, vehicleId)
+  if (!current) return equipmentFailure({}, "Ese equipo no existe en la mantención.")
+  if (!isWorksiteInScope(scope, current.worksiteId)) return equipmentFailure({}, EQUIPMENT_OUT_OF_SCOPE)
+  if (!status.active && current.active && !isValidReason(status.retiredReason)) {
+    return equipmentFailure({ retiredReason: reasonRequiredMessage("el motivo de la baja") })
+  }
+  const today = todayInChile()
+  const plan = resolveEquipmentPlan(await loadScheduleCatalog(tx), input, current.unit, current, { today })
+  if (Object.keys(plan.errors).length > 0) return equipmentFailure(plan.errors)
+
+  const { schedule, initialReading, initialReadingDate } = plan.value
+  // Preventiva declarada: se valida contra la lectura inicial y la pauta que quedan guardadas.
+  let prior = {
+    date: current.fields.priorPreventiveDate ?? null,
+    reading: current.fields.priorPreventiveReading ?? null,
+    intervalValue: current.fields.priorPreventiveInterval ?? null,
+    evidence: current.fields.priorPreventiveEvidence ?? null,
+    declaredBy: current.priorPreventiveDeclaredBy,
+    source: current.priorPreventiveSource,
+  }
+  if (input.priorPreventive !== undefined) {
+    const intervals = schedule ? ((await getCurrentScheduleSnapshots([schedule.id], tx))[0]?.intervals ?? []) : []
+    const empty = { date: null, reading: null, intervalValue: null, evidence: null }
+    const resolved = resolvePriorPreventive(input.priorPreventive ?? empty, { initialReading, initialReadingDate, hasSchedule: !!schedule, intervals }, today)
+    if (Object.keys(resolved.errors).length > 0) return equipmentFailure(resolved.errors)
+    prior = resolved.value
+      ? { ...resolved.value, declaredBy: input.priorPreventive?.declaredBy ?? actor.userId, source: input.priorPreventive?.source?.trim() || "Editar mantención" }
+      : { date: null, reading: null, intervalValue: null, evidence: null, declaredBy: null, source: null }
+  }
+  const fields: EquipmentFields = {
+    ...current.fields,
+    schedule: schedule?.name ?? null,
+    initialReading,
+    initialReadingDate,
+    priorPreventiveDate: prior.date,
+    priorPreventiveReading: prior.reading,
+    priorPreventiveInterval: prior.intervalValue,
+    priorPreventiveEvidence: prior.evidence,
+  }
+  const changes = diffEquipmentFields(current.fields, fields)
+  const edited = Object.keys(changes).length > 0
+  if (edited) {
+    const priorChanged = Object.keys(changes).some((label) => label.includes("preventiva declarada"))
+    await tx.update(mantEquipmentProfiles).set({
+      scheduleId: schedule?.id ?? null,
+      initialReading,
+      initialReadingDate,
+      priorPreventiveDate: prior.date,
+      priorPreventiveReading: prior.reading,
+      priorPreventiveInterval: prior.intervalValue,
+      priorPreventiveEvidence: prior.evidence,
+      priorPreventiveDeclaredBy: prior.declaredBy,
+      priorPreventiveSource: prior.source,
+      updatedAt: new Date().toISOString(),
+      updatedBy: actor.userId,
+    }).where(eq(mantEquipmentProfiles.vehicleId, vehicleId))
+    const action = historyActionFor(changes)
+    // La bitácora dice quién la declaró y de dónde salió; quién la cargó es `userId`.
+    const origin = priorChanged && prior.date ? ` · Declarada, anterior a la plataforma (fuente: ${prior.source})` : ""
+    await writeEquipmentHistory(tx, {
+      vehicleId,
+      action,
+      summary: action === "schedule_change"
+        ? scheduleChangeSummary(current.fields.schedule, fields.schedule)
+        : `Editado · ${summarizeChanges(changes)}${origin}`,
+      changes,
+      userId: actor.userId,
+    })
+    await recordAudit({
+      userId: actor.userId,
+      userEmail: actor.email ?? undefined,
+      action: "update",
+      entityType: "mant_equipment",
+      entityId: vehicleId,
+      entityCode: current.fields.code,
+      oldState: { ...auditState(current.fields), priorPreventiveDeclaredBy: current.priorPreventiveDeclaredBy, priorPreventiveSource: current.priorPreventiveSource },
+      newState: { ...auditState(fields), priorPreventiveDeclaredBy: prior.declaredBy, priorPreventiveSource: prior.source },
+      reason: priorChanged && prior.source ? `Preventiva declarada anterior a la plataforma · fuente: ${prior.source}` : undefined,
+      worksiteId: current.worksiteId,
+    }, tx)
+  }
+  let statusChanged = false
+  if (!status.active && current.active) {
+    await applyRetire(tx, actor, vehicleId, current.fields.code, status.retiredReason.trim())
+    statusChanged = true
+  } else if (status.active && !current.active) {
+    await applyReactivate(tx, actor, vehicleId, current.fields.code)
+    statusChanged = true
+  }
+  const changed = edited || statusChanged
+  return { ok: true as const, data: { changed }, message: changed ? `Cambios guardados en ${current.fields.code}.` : "No había cambios que guardar." }
 }
 
 /** Lo que el padrón dice de la identidad de un vehículo (Vehículos › Editar vehículo). */

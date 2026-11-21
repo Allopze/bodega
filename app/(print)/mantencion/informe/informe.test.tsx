@@ -27,7 +27,7 @@ const report = (over: Partial<PanelReportData> = {}): PanelReportData => ({
       topCorrective: [{ vehicleId: "v-1", label: "KA-1 · AAAA-01", count: 3 }],
     },
   },
-  pautas: { counts: { vencida: 0, proxima: 0, al_dia: 0, sin_lecturas: 0, sin_pauta: 2, baja: 0 }, total: 2, inWorkshop: 0, inWorkshopByOrder: 0 },
+  pautas: { counts: { vencida: 0, proxima: 0, sin_preventiva: 0, al_dia: 0, sin_lecturas: 0, sin_pauta: 2, baja: 0 }, total: 2, inWorkshop: 0, inWorkshopByOrder: 0 },
   compliance: { checks: 4, withCompliance: 3, averagePercent: 76.7 },
   findings: { days: 7, total: 6, withWork: 2, withoutWork: 3, inWindow: 1, unlinked: 1, byEquipment: [{ vehicleId: "v-2", label: "KA-2 · AAAA-02", worksiteName: "Biodiversa", count: 3, firstFoundOn: "2026-10-12", items: ["Frenos: Freno de servicio"] }] },
   outOfService: { points: [], total: 8.5, totalPrevious: 2 },

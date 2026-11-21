@@ -116,6 +116,18 @@ export async function updateEquipmentPlanAction(_prev: ActionState, formData: Fo
         scheduleId: text(formData, "scheduleId", 64) || null,
         initialReading: numberOrNull(text(formData, "initialReading", 20)),
         initialReadingDate: text(formData, "initialReadingDate", 10) || null,
+        // La preventiva declarada sólo viaja si el formulario trae su sección: uno sin ella no la borra.
+        // Quién la declara es quien guarda; el servidor valida todo (`resolvePriorPreventive`).
+        priorPreventive: formData.get("priorPreventiveForm") === "1"
+          ? {
+            date: text(formData, "priorPreventiveDate", 10) || null,
+            reading: numberOrNull(text(formData, "priorPreventiveReading", 20)),
+            intervalValue: numberOrNull(text(formData, "priorPreventiveInterval", 12)),
+            evidence: text(formData, "priorPreventiveEvidence", 200) || null,
+            declaredBy: guard.session.user.id,
+            source: "Editar mantención",
+          }
+          : undefined,
       },
       { active: !retired, retiredReason: text(formData, "retiredReason", 1000) },
     )

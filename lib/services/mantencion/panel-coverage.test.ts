@@ -3,13 +3,13 @@ import type { MantEquipmentState } from "@/lib/mantencion/types"
 import { fleetCoverage, overdueDetail } from "./panel-coverage"
 
 const counts = (overrides: Partial<Record<MantEquipmentState, number>>): Record<MantEquipmentState, number> => ({
-  vencida: 0, proxima: 0, al_dia: 0, sin_lecturas: 0, sin_pauta: 0, baja: 0, ...overrides,
+  vencida: 0, proxima: 0, sin_preventiva: 0, al_dia: 0, sin_lecturas: 0, sin_pauta: 0, baja: 0, ...overrides,
 })
 
 describe("cobertura de la flota", () => {
   it("sólo cuentan como evaluables los equipos con pauta y lectura", () => {
     expect(fleetCoverage(counts({ vencida: 1, proxima: 2, al_dia: 4, sin_lecturas: 112, sin_pauta: 3 }))).toEqual({
-      evaluable: 7, withoutReadings: 112, withoutSchedule: 3, unknown: 115,
+      evaluable: 7, withoutReadings: 112, withoutPreventive: 0, withoutSchedule: 3, unknown: 115,
     })
   })
 })

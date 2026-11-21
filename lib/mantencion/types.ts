@@ -16,8 +16,12 @@ export type MantExecutorKind = "yo" | "otro_mecanico" | "externo"
 export type MantPhotoKind = "filtros" | "sticker" | "correctiva"
 export type MantWorkshopUpdateKind = "sigue" | "salio"
 
-/** Estado de mantención de un equipo (regla 6), en el orden en que se listan. */
-export const MANT_EQUIPMENT_STATES = ["vencida", "proxima", "al_dia", "sin_lecturas", "sin_pauta", "baja"] as const
+/**
+ * Estado de mantención de un equipo (regla 6), en el orden en que se listan.
+ * `sin_preventiva`: tiene pauta y lectura, pero ninguna preventiva —firmada ni declarada— y ya pasó
+ * el primer servicio de la pauta; el próximo servicio no se puede calcular (Trinorma, 2026-11-21).
+ */
+export const MANT_EQUIPMENT_STATES = ["vencida", "proxima", "sin_preventiva", "al_dia", "sin_lecturas", "sin_pauta", "baja"] as const
 export type MantEquipmentState = (typeof MANT_EQUIPMENT_STATES)[number]
 
 /**
@@ -74,5 +78,19 @@ export interface MantEquipmentStatus {
   remaining: number | null
   /** Intervalo de la pauta que toca en `nextReading`. */
   nextIntervalValue: number | null
-  lastPreventive: { reading: number; date: string; intervalValue: number } | null
+  lastPreventive: MantPreventiveSummary | null
+}
+
+/**
+ * La preventiva que manda en el estado. `origin` dice de dónde sale: «firmada» es un registro
+ * firmado en la plataforma; «declarada» es la última preventiva ANTERIOR a la plataforma, que
+ * jefatura declaró con su respaldo (`evidence`: orden de trabajo o factura). Nunca se muestran
+ * igual. Sin `origin` es una firmada (los datos de la app anteriores a este campo).
+ */
+export interface MantPreventiveSummary {
+  reading: number
+  date: string
+  intervalValue: number
+  origin?: "firmada" | "declarada"
+  evidence?: string | null
 }

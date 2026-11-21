@@ -121,6 +121,7 @@ export const EQUIPMENT_STATE_LABEL = {
   vencida: "Vencida",
   proxima: "Próxima",
   al_dia: "Al día",
+  sin_preventiva: "Sin información de preventiva",
   sin_lecturas: "Sin lecturas",
   sin_pauta: "Sin pauta",
   baja: "Dado de baja",

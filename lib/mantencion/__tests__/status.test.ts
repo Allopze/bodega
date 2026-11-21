@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  equipmentStatus, findDuplicatePreventive, NEXT_THRESHOLD, stateRank, WORKSHOP_UPDATE_DAYS, workshopState,
+  equipmentStatus, findDuplicatePreventive, newerPreventive, NEXT_THRESHOLD, stateRank, WORKSHOP_UPDATE_DAYS, workshopState,
   type PreventiveRef, type StatusInput,
 } from "../status"
 import { MANT_EQUIPMENT_STATES, type MantReading } from "../types"
@@ -33,16 +33,31 @@ describe("regla 6 · estado de mantención", () => {
   })
 
   it("la lectura inicial sirve cuando no hay registros", () => {
-    const status = equipmentStatus(input({ initial: { value: 12_345, date: "2026-01-01", source: "Lectura inicial" } }))
+    const lastPreventive = { reading: 10_000, date: "2025-12-01", intervalValue: 10_000, origin: "declarada" as const, evidence: "OT 1" }
+    const status = equipmentStatus(input({ initial: { value: 12_345, date: "2026-01-01", source: "Lectura inicial" }, lastPreventive }))
     expect(status.state).toBe("al_dia")
     expect(status.currentReading?.value).toBe(12_345)
   })
 
-  it("sin preventivas: próxima = (piso(L / base) + 1) × base", () => {
+  // Trinorma, 2026-11-21: sin preventiva no se supone un «al día» (antes: (piso(L / base) + 1) × base).
+  it("sin ninguna preventiva y pasado el primer servicio: «sin información de preventiva», sin próxima", () => {
     const status = equipmentStatus(input({ readings: [reading(12_345)] }))
-    expect(status).toMatchObject({ state: "al_dia", nextReading: 20_000, remaining: 7_655, nextIntervalValue: 20_000 })
-    // Justo en un múltiplo no está vencida: la siguiente es la del múltiplo que sigue.
-    expect(equipmentStatus(input({ readings: [reading(10_000)] }))).toMatchObject({ nextReading: 20_000, remaining: 10_000 })
+    expect(status).toMatchObject({ state: "sin_preventiva", nextReading: null, remaining: null, nextIntervalValue: null, lastPreventive: null })
+    expect(status.currentReading?.value).toBe(12_345)
+    expect(equipmentStatus(input({ readings: [reading(10_000)] })).state).toBe("sin_preventiva")
+  })
+
+  it("sin ninguna preventiva pero antes del primer servicio (equipo nuevo): la próxima es la base", () => {
+    expect(equipmentStatus(input({ readings: [reading(3_500)] }))).toMatchObject({ state: "al_dia", nextReading: 10_000, remaining: 6_500 })
+    expect(equipmentStatus(input({ readings: [reading(9_000)] }))).toMatchObject({ state: "proxima", nextReading: 10_000, remaining: 1_000 })
+  })
+
+  it("una preventiva declarada calcula la próxima igual que una firmada", () => {
+    const declared = { reading: 414_394, date: "2026-08-20", intervalValue: 40_000, origin: "declarada" as const, evidence: "OT 35513" }
+    const status = equipmentStatus(input({ readings: [reading(435_410, "2026-11-20")], lastPreventive: declared }))
+    expect(status.state).not.toBe("sin_preventiva")
+    expect(status.lastPreventive).toEqual(declared)
+    expect(status.nextReading).toBeGreaterThan(414_394)
   })
 
   it("con preventiva: próxima = punto sugerido de la última + base", () => {
@@ -99,9 +114,39 @@ describe("regla 6 · estado de mantención", () => {
     expect(equipmentStatus(input({ readings: [reading(21_000)], lastPreventive: last })).lastPreventive).toBe(last)
   })
 
-  it("stateRank ordena vencida → próxima → al día → sin lecturas → sin pauta → baja", () => {
+  it("stateRank ordena vencida → próxima → sin preventiva → al día → sin lecturas → sin pauta → baja", () => {
     const shuffled = [...MANT_EQUIPMENT_STATES].reverse().sort((a, b) => stateRank(a) - stateRank(b))
-    expect(shuffled).toEqual(["vencida", "proxima", "al_dia", "sin_lecturas", "sin_pauta", "baja"])
+    expect(shuffled).toEqual(["vencida", "proxima", "sin_preventiva", "al_dia", "sin_lecturas", "sin_pauta", "baja"])
+  })
+})
+
+describe("la preventiva que manda: firmada contra declarada (Trinorma, 2026-11-21)", () => {
+  const declared = { reading: 414_394, date: "2026-08-20", intervalValue: 40_000, origin: "declarada" as const, evidence: "OT 35513" }
+
+  it("una firmada más antigua que la declarada: manda la declarada", () => {
+    const signed = { reading: 373_935, date: "2026-04-24", intervalValue: 40_000, origin: "firmada" as const, evidence: "MP-BIO-0001" }
+    expect(newerPreventive(signed, declared)).toBe(declared)
+  })
+
+  it("una firmada más nueva que la declarada: manda la firmada", () => {
+    const signed = { reading: 454_100, date: "2026-12-10", intervalValue: 40_000, origin: "firmada" as const, evidence: "MP-BIO-0002" }
+    expect(newerPreventive(signed, declared)).toBe(signed)
+  })
+
+  it("misma fecha: manda la de mayor lectura", () => {
+    const signed = { reading: 414_500, date: "2026-08-20", intervalValue: 40_000, origin: "firmada" as const, evidence: "MP-BIO-0003" }
+    expect(newerPreventive(declared, signed)).toBe(signed)
+    expect(newerPreventive(signed, { ...declared, reading: 414_600 })).toEqual({ ...declared, reading: 414_600 })
+  })
+
+  it("un equipo sin ninguna preventiva: no hay preventiva y el estado es «sin información de preventiva»", () => {
+    expect(newerPreventive(null, null)).toBeNull()
+    expect(equipmentStatus(input({ readings: [reading(435_410)], lastPreventive: newerPreventive(null, null) })).state).toBe("sin_preventiva")
+  })
+
+  it("con una sola de las dos, manda esa", () => {
+    expect(newerPreventive(null, declared)).toBe(declared)
+    expect(newerPreventive(declared, null)).toBe(declared)
   })
 })
 

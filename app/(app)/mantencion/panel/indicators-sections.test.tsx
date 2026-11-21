@@ -51,7 +51,7 @@ const point = (key: string, over: Record<string, unknown> = {}) => ({
   key, created: 0, closed: 0, backlog: 0, repairOnly: 0, maintenanceOnly: 0, both: 0, partial: false, ...over,
 })
 const counts = (over: Partial<Record<MantEquipmentState, number>> = {}): Record<MantEquipmentState, number> => ({
-  vencida: 0, proxima: 0, al_dia: 0, sin_lecturas: 0, sin_pauta: 0, baja: 0, ...over,
+  vencida: 0, proxima: 0, sin_preventiva: 0, al_dia: 0, sin_lecturas: 0, sin_pauta: 0, baja: 0, ...over,
 })
 
 describe("ventana de los gráficos de evolución", () => {

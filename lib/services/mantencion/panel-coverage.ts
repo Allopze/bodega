@@ -16,20 +16,24 @@ export interface FleetCoverage {
   evaluable: number
   /** Con pauta, pero todavía sin ninguna lectura. */
   withoutReadings: number
+  /** Con pauta y lectura, pero sin ninguna preventiva (firmada ni declarada) y ya pasado el primer servicio. */
+  withoutPreventive: number
   /** Sin pauta asignada (o con una pauta sin intervalos activos). */
   withoutSchedule: number
-  /** Los dos anteriores juntos: equipos cuyo estado aún se desconoce. */
+  /** Los tres anteriores juntos: equipos cuyo estado aún se desconoce. */
   unknown: number
 }
 
 export function fleetCoverage(counts: Record<MantEquipmentState, number>): FleetCoverage {
   const withoutReadings = counts.sin_lecturas
+  const withoutPreventive = counts.sin_preventiva
   const withoutSchedule = counts.sin_pauta
   return {
     evaluable: counts.vencida + counts.proxima + counts.al_dia,
     withoutReadings,
+    withoutPreventive,
     withoutSchedule,
-    unknown: withoutReadings + withoutSchedule,
+    unknown: withoutReadings + withoutPreventive + withoutSchedule,
   }
 }
 

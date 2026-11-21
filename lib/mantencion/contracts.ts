@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { civilDate } from "@/lib/validation/dates"
-import type { MantEquipmentState, MantExecutorKind, MantItemValue, MantPhotoKind, MantRecordKind, MantReview, MantRecordStatus, MantScheduleSnapshot, MantUnit } from "./types"
+import type { MantEquipmentState, MantExecutorKind, MantItemValue, MantPhotoKind, MantPreventiveSummary, MantRecordKind, MantReview, MantRecordStatus, MantScheduleSnapshot, MantUnit } from "./types"
 import type { OtItemDone, OtItemKind, OtItemOrigin, OtStatus } from "./work-order-states"
 
 /**
@@ -324,7 +324,7 @@ export interface CatalogEquipment {
   nextReading: number | null
   remaining: number | null
   nextIntervalValue: number | null
-  lastPreventive: { reading: number; date: string; intervalValue: number } | null
+  lastPreventive: MantPreventiveSummary | null
   /** Preventivas vigentes recientes (hasta 5), para el aviso de duplicado (regla 7). */
   recentPreventives: Array<{ id: string; folio: string | null; reading: number; date: string; intervalValue: number }>
   /**

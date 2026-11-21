@@ -12,7 +12,7 @@ import {
 } from "./indicators"
 
 const counts = (partial: Partial<Record<MantEquipmentState, number>>): Record<MantEquipmentState, number> => ({
-  vencida: 0, proxima: 0, al_dia: 0, sin_lecturas: 0, sin_pauta: 0, baja: 0, ...partial,
+  vencida: 0, proxima: 0, sin_preventiva: 0, al_dia: 0, sin_lecturas: 0, sin_pauta: 0, baja: 0, ...partial,
 })
 
 const ot = (over: Partial<WorkOrderSeriesRow>): WorkOrderSeriesRow => ({

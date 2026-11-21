@@ -1,7 +1,7 @@
 import type { CatalogEquipment, MantCatalog } from "../contracts"
 import { nameKey } from "../normalize"
 import { currentReading, daysBetween } from "../readings"
-import { equipmentStatus, WORKSHOP_UPDATE_DAYS, type PreventiveRef } from "../status"
+import { equipmentStatus, newerPreventive, WORKSHOP_UPDATE_DAYS, type PreventiveRef } from "../status"
 import type { MantEquipmentStatus, MantReading, MantScheduleSnapshot } from "../types"
 import { todayInChile } from "@/lib/utils"
 import { equipmentFromWorkOrder } from "./ot-model"
@@ -78,11 +78,6 @@ export function allEquipment(stored: StoredCatalog | null): CatalogEquipment[] {
 
 export function schedulesById(catalog: MantCatalog | null | undefined): Map<string, MantScheduleSnapshot> {
   return new Map((catalog?.schedules ?? []).map((schedule) => [schedule.id, schedule]))
-}
-
-function newerPreventive<T extends { date: string; reading: number }>(a: T | null, b: T): T {
-  if (!a) return b
-  return b.date > a.date || (b.date === a.date && b.reading > a.reading) ? b : a
 }
 
 export function buildRow(eq: CatalogEquipment, schedule: MantScheduleSnapshot | null, queue: readonly QueueRecordItem[], worksiteIds: ReadonlySet<string>): FleetRow {

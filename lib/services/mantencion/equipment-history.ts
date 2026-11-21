@@ -37,6 +37,11 @@ export interface EquipmentFields {
   schedule: string | null
   initialReading: number | null
   initialReadingDate: string | null
+  /** Preventiva declarada anterior a la plataforma; opcional: el alta y la importación no la traen. */
+  priorPreventiveDate?: string | null
+  priorPreventiveReading?: number | null
+  priorPreventiveInterval?: number | null
+  priorPreventiveEvidence?: string | null
 }
 
 /** Etiquetas en español de cada campo (las llaves de `changes` y de los resúmenes). */
@@ -52,6 +57,10 @@ export const EQUIPMENT_FIELD_LABELS: Record<keyof EquipmentFields, string> = {
   schedule: "Pauta",
   initialReading: "Lectura inicial",
   initialReadingDate: "Fecha de la lectura inicial",
+  priorPreventiveDate: "Fecha de la preventiva declarada (anterior a la plataforma)",
+  priorPreventiveReading: "Lectura de la preventiva declarada",
+  priorPreventiveInterval: "Servicio de la preventiva declarada",
+  priorPreventiveEvidence: "Respaldo de la preventiva declarada",
 }
 
 /** Orden en que se listan los cambios: el mismo de la ficha. */
@@ -61,7 +70,8 @@ const FIELD_ORDER = Object.keys(EQUIPMENT_FIELD_LABELS) as Array<keyof Equipment
 export function diffEquipmentFields(before: EquipmentFields, after: EquipmentFields): MantFieldChanges {
   const changes: MantFieldChanges = {}
   for (const key of FIELD_ORDER) {
-    if (before[key] !== after[key]) changes[EQUIPMENT_FIELD_LABELS[key]] = { from: before[key], to: after[key] }
+    // `undefined` (un alta sin esos campos) y `null` son lo mismo: sin valor.
+    if ((before[key] ?? null) !== (after[key] ?? null)) changes[EQUIPMENT_FIELD_LABELS[key]] = { from: before[key] ?? null, to: after[key] ?? null }
   }
   return changes
 }

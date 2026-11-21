@@ -94,6 +94,9 @@ export interface EquipmentCurrent {
   /** Pauta vigente; `null` sin pauta o si la que tenía se eliminó. */
   scheduleId: string | null
   fields: EquipmentFields
+  /** Quién declaró la preventiva anterior a la plataforma y de dónde salió (para la bitácora). */
+  priorPreventiveDeclaredBy: string | null
+  priorPreventiveSource: string | null
 }
 
 export interface EquipmentCatalogs {
@@ -195,6 +198,12 @@ export async function loadEquipmentCurrents(client: Reader, vehicleId?: string):
       retiredReason: mantEquipmentProfiles.retiredReason,
       initialReading: mantEquipmentProfiles.initialReading,
       initialReadingDate: mantEquipmentProfiles.initialReadingDate,
+      priorPreventiveDate: mantEquipmentProfiles.priorPreventiveDate,
+      priorPreventiveReading: mantEquipmentProfiles.priorPreventiveReading,
+      priorPreventiveInterval: mantEquipmentProfiles.priorPreventiveInterval,
+      priorPreventiveEvidence: mantEquipmentProfiles.priorPreventiveEvidence,
+      priorPreventiveDeclaredBy: mantEquipmentProfiles.priorPreventiveDeclaredBy,
+      priorPreventiveSource: mantEquipmentProfiles.priorPreventiveSource,
     })
     .from(mantEquipmentProfiles)
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantEquipmentProfiles.vehicleId))
@@ -237,7 +246,13 @@ export async function loadEquipmentCurrents(client: Reader, vehicleId?: string):
         schedule: row.scheduleName,
         initialReading: row.initialReading,
         initialReadingDate: row.initialReadingDate,
+        priorPreventiveDate: row.priorPreventiveDate,
+        priorPreventiveReading: row.priorPreventiveReading,
+        priorPreventiveInterval: row.priorPreventiveInterval,
+        priorPreventiveEvidence: row.priorPreventiveEvidence,
       },
+      priorPreventiveDeclaredBy: row.priorPreventiveDeclaredBy,
+      priorPreventiveSource: row.priorPreventiveSource,
     })
   }
   return currents
@@ -288,11 +303,77 @@ export interface ResolveOptions {
   ignoreLockedInitialReading?: boolean
 }
 
-/** Lo que es de Mantención en la ficha del equipo: su pauta y su lectura inicial. */
+/** Lo que es de Mantención en la ficha del equipo: su pauta, su lectura inicial y la preventiva declarada. */
 export interface EquipmentPlanInput {
   scheduleId: string | null
   initialReading: number | null
   initialReadingDate: string | null
+  /**
+   * Preventiva anterior a la plataforma: `undefined` = no viene (se conserva la guardada);
+   * `null` o todo vacío = se borra. Quién la declaró y de dónde salió van a la ficha y a la bitácora.
+   */
+  priorPreventive?: (PriorPreventiveInput & { declaredBy?: string | null; source?: string | null }) | null
+}
+
+export interface PriorPreventiveInput {
+  date: string | null
+  reading: number | null
+  intervalValue: number | null
+  evidence: string | null
+}
+
+export interface ResolvedPriorPreventive {
+  date: string
+  reading: number
+  intervalValue: number
+  evidence: string
+}
+
+/**
+ * La última preventiva anterior a la plataforma, DECLARADA por jefatura con su respaldo (Trinorma,
+ * decisión del usuario del 2026-11-21, opción A). Reglas del servidor, no sólo del formulario:
+ * - van las cuatro: fecha, lectura, servicio de la pauta y respaldo (orden de trabajo o factura);
+ * - necesita la lectura inicial: la fecha no puede ser posterior a la de esa lectura ni futura, y la
+ *   lectura no puede pasar de la inicial;
+ * - el servicio tiene que existir en la pauta vigente del equipo.
+ * Todo vacío = borrarla.
+ */
+export function resolvePriorPreventive(
+  input: PriorPreventiveInput,
+  plan: { initialReading: number | null; initialReadingDate: string | null; hasSchedule: boolean; intervals: readonly number[] },
+  today: string,
+): { value: ResolvedPriorPreventive | null; errors: FieldErrors } {
+  const errors: FieldErrors = {}
+  const evidence = input.evidence?.trim() ?? ""
+  if (!input.date && input.reading === null && input.intervalValue === null && !evidence) return { value: null, errors }
+
+  if (!input.date) errors.priorPreventiveDate = "Indica la fecha de la preventiva."
+  else if (!isRealDate(input.date)) errors.priorPreventiveDate = "La fecha de la preventiva no es válida."
+  else if (input.date > today) errors.priorPreventiveDate = "La fecha de la preventiva no puede ser futura."
+  if (input.reading === null) errors.priorPreventiveReading = "Indica la lectura de la preventiva."
+  else if (!Number.isFinite(input.reading) || input.reading < 0 || input.reading > 99_999_999) {
+    errors.priorPreventiveReading = "Escribe una lectura válida: un número que no sea negativo."
+  }
+  if (input.intervalValue === null) errors.priorPreventiveInterval = "Indica qué servicio de la pauta fue."
+  if (!evidence) errors.priorPreventiveEvidence = "Indica el respaldo: número de orden de trabajo o de factura."
+  else if (evidence.length > 120) errors.priorPreventiveEvidence = "El respaldo es demasiado largo (máximo 120 caracteres)."
+
+  if (plan.initialReading === null || !plan.initialReadingDate) {
+    errors.priorPreventiveDate ??= "Primero indica la lectura inicial: la preventiva declarada no puede ser posterior a ella."
+  } else {
+    if (!errors.priorPreventiveDate && input.date && input.date > plan.initialReadingDate) {
+      errors.priorPreventiveDate = `La fecha de la preventiva no puede ser posterior a la de la lectura inicial (${plan.initialReadingDate}).`
+    }
+    if (!errors.priorPreventiveReading && input.reading !== null && input.reading > plan.initialReading) {
+      errors.priorPreventiveReading = `La lectura de la preventiva no puede ser mayor que la lectura inicial (${plan.initialReading}).`
+    }
+  }
+  if (!plan.hasSchedule) errors.priorPreventiveInterval ??= "Asigna una pauta: el servicio tiene que existir en ella."
+  else if (input.intervalValue !== null && !plan.intervals.includes(input.intervalValue)) {
+    errors.priorPreventiveInterval = `Ese servicio no existe en la pauta del equipo (${plan.intervals.join(", ")}).`
+  }
+  if (Object.keys(errors).length > 0) return { value: null, errors }
+  return { value: { date: input.date as string, reading: input.reading as number, intervalValue: input.intervalValue as number, evidence }, errors }
 }
 
 export interface ResolvedEquipmentPlan {

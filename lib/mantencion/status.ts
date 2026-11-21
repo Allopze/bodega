@@ -1,6 +1,6 @@
 import { currentReading, daysBetween } from "./readings"
 import { baseInterval, suggestInterval } from "./schedule"
-import type { MantEquipmentState, MantEquipmentStatus, MantReading } from "./types"
+import type { MantEquipmentState, MantEquipmentStatus, MantPreventiveSummary, MantReading } from "./types"
 
 /**
  * Estado de mantención, preventivas duplicadas y equipos en taller (reglas 6, 7
@@ -16,14 +16,29 @@ export interface StatusInput {
   intervals: readonly number[] | null
   readings: readonly MantReading[]
   initial: MantReading | null
-  /** Última preventiva vigente (mayor fecha de trabajo). */
-  lastPreventive: { reading: number; date: string; intervalValue: number } | null
+  /**
+   * La preventiva más reciente entre la última firmada vigente y la declarada anterior a la
+   * plataforma (`newerPreventive`).
+   */
+  lastPreventive: MantPreventiveSummary | null
+}
+
+/**
+ * La más reciente de dos preventivas: por fecha y, si empatan, por lectura. La misma regla para la
+ * firmada contra la declarada (servidor) y para la de la cola de la app contra la del catálogo.
+ */
+export function newerPreventive<T extends { date: string; reading: number }>(a: T | null, b: T | null): T | null {
+  if (!a) return b
+  if (!b) return a
+  return b.date > a.date || (b.date === a.date && b.reading > a.reading) ? b : a
 }
 
 /**
  * Regla 6.
- * - próxima = punto sugerido de la última preventiva vigente + base;
- * - sin preventivas: (piso(lectura / base) + 1) × base;
+ * - próxima = punto sugerido de la última preventiva (firmada o declarada) + base;
+ * - sin ninguna preventiva: si la lectura todavía no llega al primer servicio (equipo nuevo), la
+ *   próxima es la base; si ya pasó, el estado es `sin_preventiva` y no se calcula la próxima. Antes
+ *   se suponía (piso(lectura / base) + 1) × base, un «al día» sin respaldo (Trinorma, 2026-11-21);
  * - falta = próxima − lectura; vencida si ≤ 0, próxima si ≤ 15 % de la base.
  */
 export function equipmentStatus(input: StatusInput): MantEquipmentStatus {
@@ -34,9 +49,10 @@ export function equipmentStatus(input: StatusInput): MantEquipmentStatus {
   if (!current) return { state: "sin_lecturas", ...empty }
 
   const base = baseInterval(input.intervals)
+  if (!input.lastPreventive && current.value >= base) return { state: "sin_preventiva", ...empty }
   const nextReading = input.lastPreventive
     ? suggestInterval(input.intervals, input.lastPreventive.reading).point + base
-    : (Math.floor(current.value / base) + 1) * base
+    : base
   const remaining = nextReading - current.value
   const state: MantEquipmentState = remaining <= 0 ? "vencida" : remaining <= base * NEXT_THRESHOLD ? "proxima" : "al_dia"
   return {
@@ -49,9 +65,9 @@ export function equipmentStatus(input: StatusInput): MantEquipmentStatus {
   }
 }
 
-/** Orden por defecto de la lista de equipos (§10): vencida → próxima → al día → sin lecturas → sin pauta → baja. */
+/** Orden por defecto de la lista de equipos (§10): vencida → próxima → sin preventiva → al día → sin lecturas → sin pauta → baja. */
 export function stateRank(state: MantEquipmentState): number {
-  return ["vencida", "proxima", "al_dia", "sin_lecturas", "sin_pauta", "baja"].indexOf(state)
+  return ["vencida", "proxima", "sin_preventiva", "al_dia", "sin_lecturas", "sin_pauta", "baja"].indexOf(state)
 }
 
 export interface PreventiveRef {

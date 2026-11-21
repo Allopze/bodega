@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { boolean, check, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, check, foreignKey, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { fuelVehicles } from "./fuel-vehicles"
 import { users } from "./users"
 import { workers, worksites } from "./worksites"
@@ -88,6 +88,11 @@ export const mantDrivers = pgTable("mant_drivers", {
  *   (`fuel_equipment_types.default_meter_type`).
  * - La baja es `fuel_vehicles.is_active = false`; aquí sólo queda el motivo.
  * - `no_plate`: equipo sin patente; `fuel_vehicles.plate` guarda el código.
+ * - `prior_preventive_*`: la última preventiva ANTERIOR a la plataforma, DECLARADA por
+ *   jefatura con su respaldo (orden de trabajo o factura). No es un registro firmado y
+ *   nunca se muestra como tal. El estado la usa sólo mientras no haya una preventiva
+ *   firmada más reciente (Trinorma, decisión del usuario del 2026-11-21, opción A).
+ *   Van las cuatro juntas: fecha, lectura, servicio de la pauta y respaldo.
  */
 export const mantEquipmentProfiles = pgTable("mant_equipment_profiles", {
   vehicleId:          text("vehicle_id").primaryKey().references(() => fuelVehicles.id, { onDelete: "restrict" }),
@@ -97,6 +102,17 @@ export const mantEquipmentProfiles = pgTable("mant_equipment_profiles", {
   initialReadingDate: text("initial_reading_date"),
   noPlate:            boolean("no_plate").notNull().default(false),
   retiredReason:      text("retired_reason"),
+  /** `YYYY-MM-DD` de la última preventiva anterior a la plataforma (declarada). */
+  priorPreventiveDate:       text("prior_preventive_date"),
+  priorPreventiveReading:    numeric("prior_preventive_reading", { precision: 14, scale: 1, mode: "number" }),
+  /** Servicio de la pauta que fue (10.000, 40.000…), en la unidad del equipo. */
+  priorPreventiveInterval:   integer("prior_preventive_interval"),
+  /** Respaldo: número de orden de trabajo o de factura. Obligatorio. */
+  priorPreventiveEvidence:   text("prior_preventive_evidence"),
+  /** Quién la declaró (el Jefe de Mantención); quién la cargó queda en la bitácora. */
+  priorPreventiveDeclaredBy: text("prior_preventive_declared_by"),
+  /** De dónde salió: «Editar mantención» o el archivo de la planilla. */
+  priorPreventiveSource:     text("prior_preventive_source"),
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedBy:          text("updated_by").references(() => users.id, { onDelete: "set null" }),
@@ -105,6 +121,14 @@ export const mantEquipmentProfiles = pgTable("mant_equipment_profiles", {
   index("mant_equipment_profiles_brand_idx").on(table.brandId),
   check("mant_equipment_profiles_initial_reading_valid", sql`${table.initialReading} IS NULL OR ${table.initialReading} >= 0`),
   check("mant_equipment_profiles_initial_reading_date", sql`(${table.initialReading} IS NULL) = (${table.initialReadingDate} IS NULL)`),
+  // Nombre explícito: el automático (`…_prior_preventive_declared_by_users_id_fk`) pasa de los 63 bytes.
+  foreignKey({ name: "mant_equipment_profiles_prior_declared_by_fk", columns: [table.priorPreventiveDeclaredBy], foreignColumns: [users.id] }).onDelete("set null"),
+  check("mant_equipment_profiles_prior_preventive_all", sql`(${table.priorPreventiveDate} IS NULL) = (${table.priorPreventiveReading} IS NULL)
+    AND (${table.priorPreventiveDate} IS NULL) = (${table.priorPreventiveInterval} IS NULL)
+    AND (${table.priorPreventiveDate} IS NULL) = (${table.priorPreventiveEvidence} IS NULL)`),
+  check("mant_equipment_profiles_prior_preventive_valid", sql`(${table.priorPreventiveReading} IS NULL OR ${table.priorPreventiveReading} >= 0)
+    AND (${table.priorPreventiveInterval} IS NULL OR ${table.priorPreventiveInterval} > 0)
+    AND (${table.priorPreventiveEvidence} IS NULL OR btrim(${table.priorPreventiveEvidence}) <> '')`),
 ])
 
 export const MANT_EQUIPMENT_HISTORY_ACTIONS = [

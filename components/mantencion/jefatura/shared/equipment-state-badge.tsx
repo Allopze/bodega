@@ -20,6 +20,7 @@ const VARIANT: Record<MantEquipmentState, NonNullable<BadgeProps["variant"]>> = 
   vencida: "danger",
   proxima: "warning",
   al_dia: "success",
+  sin_preventiva: "neutral",
   sin_lecturas: "neutral",
   sin_pauta: "neutral",
   baja: "outline",

@@ -223,9 +223,12 @@ export interface PautaCompliance {
   percent: number | null
 }
 
-/** % de equipos con la pauta al día: `al_dia / (total − baja − sin_pauta)`. */
+/**
+ * % de equipos con la pauta al día: `al_dia / (total − baja − sin_pauta)`. Los que no tienen
+ * información de preventiva cuentan en el total y no como al día: su estado se desconoce.
+ */
 export function pautaCompliance(counts: Record<MantEquipmentState, number>): PautaCompliance {
-  const withSchedule = counts.vencida + counts.proxima + counts.al_dia + counts.sin_lecturas
+  const withSchedule = counts.vencida + counts.proxima + counts.sin_preventiva + counts.al_dia + counts.sin_lecturas
   return {
     withSchedule,
     onTime: counts.al_dia,
