@@ -24,7 +24,10 @@ import { seedMantencion } from "../../lib/services/mantencion/seed"
  *   que prueba que una OT de Biodiversa se ejecuta desde otra faena).
  * - Lecturas iniciales que dejan tres equipos de Biodiversa medidos en km
  *   «Próximos» (39.900 km → toca la de 40.000), para que «Le toca mantención»
- *   tenga qué mostrar sin depender de registros previos.
+ *   tenga qué mostrar sin depender de registros previos. Desde 2026-11-22 un
+ *   equipo sin ninguna preventiva queda «Sin información de preventiva» (ya no
+ *   se supone la última en el múltiplo anterior): por eso llevan también una
+ *   preventiva DECLARADA anterior a la plataforma a los 30.000 km, con respaldo.
  */
 
 export const MANT_E2E_USERS = {
@@ -111,9 +114,14 @@ export async function seedMantencionE2E(db: DB, options: { hashedPassword: strin
   // Treinta días atrás: lejos de la medianoche UTC/Chile, la lectura inicial
   // nunca queda «después» del trabajo que registra la prueba hoy.
   const initialDate = new Date(Date.parse(options.now) - 30 * 86_400_000).toISOString().slice(0, 10)
+  const priorDate = new Date(Date.parse(options.now) - 90 * 86_400_000).toISOString().slice(0, 10)
   if (kmVehicles.length) {
     await db.update(schema.mantEquipmentProfiles)
-      .set({ initialReading: 39_900, initialReadingDate: initialDate })
+      .set({
+        initialReading: 39_900, initialReadingDate: initialDate,
+        priorPreventiveDate: priorDate, priorPreventiveReading: 30_000, priorPreventiveInterval: 10_000,
+        priorPreventiveEvidence: "OT E2E-30000", priorPreventiveSource: "Carga inicial E2E",
+      })
       .where(inArray(schema.mantEquipmentProfiles.vehicleId, kmVehicles.map((row) => row.vehicleId)))
   }
 }

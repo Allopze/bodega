@@ -439,10 +439,11 @@ test.describe("Orden de trabajo (OT)", () => {
     }
     await expect(historial.getByText(MOTIVO_RECHAZO)).toBeVisible()
     // Los dos registros de mantención (el de antes y el de después del rechazo) quedan enlazados.
-    // El administrador de contrato no tiene permisos de registros: ve los folios, pero no puede abrirlos.
+    // Desde la concesión del 2026-11-21 el administrador de contrato ve los registros de su faena
+    // (`mant:records:view_worksite`): los folios se abren.
     const enlazados = page.getByRole("complementary", { name: "Historial y registros enlazados" })
     await expect(enlazados.getByText(/^MC-BIO-\d{4}$/)).toHaveCount(2)
-    await expect(enlazados.getByText(/Correctiva · .* · sin acceso para abrirlo/)).toHaveCount(2)
+    await expect(enlazados.getByText(/sin acceso para abrirlo/)).toHaveCount(0)
 
     // PDF: el botón descarga un PDF de verdad.
     const descarga = page.waitForEvent("download", { timeout: 90_000 })
