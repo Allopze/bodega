@@ -24,7 +24,7 @@ Rama `feat/mantencion-trinorma`, sobre `main` a47271fd3, que ya incluye la 0397 
 
 Probadas el 21-11 sobre una copia limpia de producción (el respaldo de ese día, restaurado en `bodega_prodtest_0399`): las tres entraron sin errores (397 → 400) con el camino completo de `npm run db:migrate`, y el índice único de código se creó porque no hay duplicados. La consulta de duplicados en producción, en solo lectura, dio 0 filas el mismo 21-11.
 
-**Cambio visible del estado de las pautas.** Un equipo con pauta y lectura que no tiene ninguna preventiva (firmada ni declarada) y ya pasó el primer servicio queda «Sin información de preventiva», ya no «al día» por convención. Un equipo nuevo que todavía no llega al primer servicio sigue calculando la próxima en la base. Hoy no cambia nada a la vista en producción: ningún equipo tiene lectura.
+**Cambio visible del estado de las pautas.** Un equipo con pauta y lectura que no tiene ninguna preventiva (firmada ni declarada) y ya pasó el primer servicio queda «Sin información de preventiva», ya no «al día» por convención. Un equipo nuevo que todavía no llega al primer servicio sigue calculando la próxima en la base. Hoy no cambia nada a la vista en producción: los únicos equipos con lectura (H-4, H-12, H-14, H-15 y H-17) no tienen pauta, así que siguen «Sin pauta» (comprobado en la copia del 21-11).
 
 **Permisos.** No hay permisos nuevos. Sí hay una concesión nueva, decidida por el usuario el 2026-11-21: el administrador de contrato recibe `mant:records:view_worksite` y `mant:export`, es decir, ve y exporta el Panel, los registros, el historial y los equipos de **sus** faenas. Va en `GRANT_ADDITIONS` y la aplica una sola vez el paso `sync-rbac` que `deploy-prod.sh` ya corre.
 
