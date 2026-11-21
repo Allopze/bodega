@@ -2,9 +2,10 @@ import { and, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm"
 import type { Tx } from "@/db"
 import { mantDrivers, mantWorkOrderItems, mantWorkOrders, mantWorkshops } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { getOperationalSettings } from "@/lib/services/system-settings"
 import type { WorkOrderEntryPayload } from "@/lib/mantencion/contracts"
 import {
-  OT_ITEM_MAX_PER_KIND, OT_TRANSITIONS, type OtItemDone, type OtItemKind, type OtTransition,
+  OT_ITEM_MAX_PER_KIND, OT_LABOR_HOURS_MAX, OT_TRANSITIONS, type OtItemDone, type OtItemKind, type OtTransition,
 } from "@/lib/mantencion/work-order-states"
 import type { EditWorkOrderInput } from "@/lib/mantencion/work-order-schemas"
 import { isValidReason, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
@@ -14,7 +15,7 @@ import {
 } from "./access"
 import { activateWorkOrderCapaEvidence, supersedeWorkOrderCapaEvidence } from "./capa-link"
 import { applyChange, assertNotFuture, CLIENT_OP_EVENTS, linkedRecordState, planFor, refuse, runLocked, type LockedResult, type OtRow } from "./core"
-import { checkRequestFields, itemRows, normalizeItems } from "./create"
+import { checkClassification, checkRequestFields, itemRows, normalizeItems } from "./create"
 import { findAssignableMechanic } from "./mechanics"
 import { markVehicleInWorkshop, markVehicleOutOfWorkshop } from "./vehicle-status"
 import type { WorkOrderActor } from "./types"
@@ -310,9 +311,16 @@ export async function markWorkOrderItems(actor: WorkOrderActor, input: MarkItems
  * última devolución a ejecución (un rechazo o una reapertura); sin rechazo
  * basta cualquiera, porque enlazar ya exige que la OT esté en ejecución.
  */
-export async function finishWorkOrder(actor: WorkOrderActor, input: Base & { exitAt: string; note: string | null }): Promise<LockedResult> {
+export async function finishWorkOrder(
+  actor: WorkOrderActor,
+  input: Base & { exitAt: string; note: string | null; workPerformed?: string | null; laborHours?: number | null },
+): Promise<LockedResult> {
   return runLocked(actor, { ...input, clientOpTypes: CLIENT_OP_EVENTS.finish }, async (ctx) => {
     assertAct(canActOnWorkOrder(actor, ctx.ot, "finish"))
+    // Sin fecha de salida no hay término: la OT sigue «En taller».
+    if (!input.exitAt || Number.isNaN(Date.parse(input.exitAt))) {
+      refuse("Indica la fecha y hora de salida del taller: sin ella el trabajo no se da por terminado.", "invalid", "exitAt")
+    }
     const [pending] = await ctx.tx
       .select({ count: sql<number>`count(*)::int` })
       .from(mantWorkOrderItems)
@@ -336,12 +344,29 @@ export async function finishWorkOrder(actor: WorkOrderActor, input: Base & { exi
     }
     assertNotFuture(input.exitAt, "La fecha y hora de salida no pueden ser futuras.", "exitAt")
     const note = input.note?.trim() || null
+    const workPerformed = input.workPerformed?.trim() || null
+    const laborHours = input.laborHours ?? null
+    if (laborHours !== null && (!Number.isFinite(laborHours) || laborHours < 0 || laborHours > OT_LABOR_HOURS_MAX)) {
+      refuse(`Las horas hombre deben estar entre 0 y ${OT_LABOR_HOURS_MAX.toLocaleString("es-CL")}.`, "invalid", "laborHours")
+    }
+    if (workPerformed && workPerformed.length > 4000) refuse("El trabajo realizado no puede pasar de 4.000 caracteres.", "invalid", "workPerformed")
+    // Sólo se pisa lo que llegó: el mecánico del teléfono (que no lo manda) no borra lo que el PC ya dejó.
+    const completion = {
+      ...(workPerformed ? { workPerformed } : {}),
+      ...(laborHours !== null ? { laborHours } : {}),
+    }
     const row = await applyChange(ctx, {
       status: "trabajo_terminado",
       workshopExitAt: exitAt.toISOString(),
       finishedByUserId: actor.userId,
       finishedAt: nowIso(),
-    }, [{ type: "finished", reason: note, changeSet: { exitAt: exitAt.toISOString(), rejectionCount: ctx.ot.rejectionCount }, clientOpId: input.clientOpId }])
+      ...completion,
+    }, [{
+      type: "finished",
+      reason: note,
+      changeSet: { exitAt: exitAt.toISOString(), rejectionCount: ctx.ot.rejectionCount, ...completion },
+      clientOpId: input.clientOpId,
+    }], { newState: completion })
     await markVehicleOutOfWorkshop(ctx.tx, { vehicleId: row.vehicleId, folio: row.folio, workOrderId: row.id, actorUserId: actor.userId })
     return { row, notify: [planFor(row, "finished", actor)] }
   })
@@ -504,6 +529,7 @@ function summarize(ot: OtRow) {
   return {
     repair: ot.repair, maintenance: ot.maintenance, requestDate: ot.requestDate, requesterName: ot.requesterName,
     repairDescription: ot.repairDescription, observations: ot.observations,
+    actionType: ot.actionType, specialties: ot.specialties, executionWorksiteId: ot.executionWorksiteId,
   }
 }
 
@@ -512,8 +538,20 @@ export async function editWorkOrderRequest(actor: WorkOrderActor, input: EditWor
   return runLocked(actor, input, async (ctx) => {
     assertAct(canEditRequest(actor, ctx.ot))
     checkRequestFields(input)
+    const { mantencionActionTypeRequired } = await getOperationalSettings(ctx.tx)
+    // Un campo que el llamador no manda (undefined) se conserva; sólo `null` lo borra.
+    const keep = {
+      actionType: input.actionType === undefined ? ctx.ot.actionType : input.actionType,
+      specialties: input.specialties === undefined ? ctx.ot.specialties : input.specialties,
+      executionWorksiteId: input.executionWorksiteId === undefined ? ctx.ot.executionWorksiteId : input.executionWorksiteId,
+    }
+    const classification = await checkClassification(ctx.tx, keep, {
+      imputationWorksiteId: ctx.ot.worksiteId, required: mantencionActionTypeRequired === 1, previousActionType: ctx.ot.actionType,
+      previousExecutionWorksiteId: ctx.ot.executionWorksiteId, isEdit: true,
+    })
     const items = normalizeItems(input.annexItems, input.maintenanceItems)
     const patch = {
+      ...classification,
       repair: input.repair,
       maintenance: input.maintenance,
       requestDate: input.requestDate,
@@ -534,7 +572,7 @@ export async function editWorkOrderRequest(actor: WorkOrderActor, input: EditWor
         after: patch,
         items: { before: previousItems, after: rows.map((item) => ({ kind: item.kind, description: item.description })) },
       },
-    }])
+    }], { oldState: summarize(ctx.ot), newState: patch })
     return { row }
   })
 }

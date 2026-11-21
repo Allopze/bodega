@@ -44,7 +44,9 @@ vi.mock("@/components/ui/page-header", () => ({
   PageHeader: ({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) => <header><h1>{title}</h1><p>{description}</p>{actions}</header>,
 }))
 // «Editar vehículo» pide el formulario al abrirse; su acción trae la base de datos consigo.
-vi.mock("./_ficha/edit-vehicle-action", () => ({ loadVehicleEditAction: vi.fn() }))
+vi.mock("./_ficha/edit-vehicle-action", () => ({ loadVehicleEditAction: vi.fn(), loadVehicleOwnershipAction: vi.fn() }))
+// El propietario lee su fila de la base y es un componente de servidor asíncrono: acá no interesa.
+vi.mock("./_ficha/ficha-chrome", async (importOriginal) => ({ ...(await importOriginal<typeof import("./_ficha/ficha-chrome")>()), VehicleFichaOwnership: () => null }))
 vi.mock("@/components/ui/section-nav", () => ({
   SectionNav: ({ items, activeKey, ariaLabel }: { items: Array<{ key: string; href: string; label: string }>; activeKey: string; ariaLabel: string }) => (
     <nav aria-label={ariaLabel}>{items.map((item) => <a key={item.key} href={item.href} aria-current={item.key === activeKey ? "page" : undefined}>{item.label}</a>)}</nav>

@@ -115,3 +115,35 @@ describe("gráficos de los Indicadores de mantención", () => {
     expect(bucketFullLabel("2026-11", "month")).toBe("nov 2026")
   })
 })
+
+describe("Trabajos de mantención por tipo", () => {
+  it("el titular es el % de correctivas sobre los clasificados y los «sin clasificar» se dicen aparte", async () => {
+    const { WorkTypeChart } = await import("./indicators-charts")
+    render(
+      <WorkTypeChart
+        {...common}
+        source="historial de formularios y órdenes de trabajo"
+        data={[
+          { key: "2026-09", partial: false, preventiva: 2, correctiva: 2, predictiva: 0, sin_clasificar: 6 },
+          { key: "2026-10", partial: false, preventiva: 1, correctiva: 3, predictiva: 0, sin_clasificar: 0 },
+        ]}
+      />,
+    )
+    // (2 + 3) de 8 clasificados; los 6 sin clasificar no entran en la base.
+    expect(screen.getByText("63%")).toBeTruthy()
+    expect(screen.getByText(/de los trabajos clasificados son correctivos \(5 de 8\) · 6 sin clasificar aparte/)).toBeTruthy()
+    expect(screen.getByText(/Fuente: historial de formularios y órdenes de trabajo/)).toBeTruthy()
+    expect(screen.getByRole("table", { hidden: true, name: "Trabajos de mantención por tipo" })).toBeTruthy()
+  })
+
+  it("sin trabajos clasificados no hay porcentaje y sin trabajos el gráfico no se pinta", async () => {
+    const { WorkTypeChart } = await import("./indicators-charts")
+    const { container, rerender } = render(
+      <WorkTypeChart {...common} source="historial" data={[{ key: "2026-10", partial: false, preventiva: 0, correctiva: 0, predictiva: 0, sin_clasificar: 4 }]} />,
+    )
+    expect(screen.getByText("—")).toBeTruthy()
+    expect(screen.getByText(/sin trabajos clasificados por tipo · 4 sin clasificar aparte/)).toBeTruthy()
+    rerender(<WorkTypeChart {...common} source="historial" data={[{ key: "2026-10", partial: false, preventiva: 0, correctiva: 0, predictiva: 0, sin_clasificar: 0 }]} />)
+    expect(container.innerHTML).toBe("")
+  })
+})

@@ -444,3 +444,51 @@ export function WorkOrderFlowChart({ data, granularity, scopeNote, excel }: Char
     </ChartFrame>
   )
 }
+
+// ── (g) Trabajos de mantención por tipo (historial + OT) ───────────────────
+
+export interface WorkTypePoint extends BucketPoint {
+  preventiva: number
+  correctiva: number
+  predictiva: number
+  sin_clasificar: number
+}
+
+const WORK_TYPE_SERIES = [
+  { key: "preventiva", label: "Preventiva", color: CHART_COLORS.brand },
+  { key: "correctiva", label: "Correctiva", color: CHART_COLORS.blue },
+  { key: "predictiva", label: "Predictiva", color: CHART_COLORS.teal },
+  { key: "sin_clasificar", label: "Sin clasificar", color: CHART_COLORS.neutral },
+] as const
+
+/**
+ * Trabajos por tipo y período. El titular es el % de correctivas sobre los trabajos CLASIFICADOS: los «sin
+ * clasificar» (formularios que no preguntaron el tipo) se dicen aparte y nunca engrosan ni diluyen el porcentaje.
+ */
+export function WorkTypeChart(props: ChartCommon & { data: WorkTypePoint[]; source: string }) {
+  return (
+    <StackedBucketsChart
+      {...props}
+      title="Trabajos de mantención por tipo"
+      source={props.source}
+      ariaLabel="Trabajos de mantención por período, preventivos, correctivos, predictivos y sin clasificar apilados"
+      series={WORK_TYPE_SERIES}
+      stacked
+      headline={(at, all) => {
+        const rows = at ? [at] : all
+        const sum = (pick: (point: WorkTypePoint) => number) => rows.reduce((total, point) => total + pick(point), 0)
+        const correctivas = sum((point) => point.correctiva)
+        const classified = correctivas + sum((point) => point.preventiva) + sum((point) => point.predictiva)
+        const unclassified = sum((point) => point.sin_clasificar)
+        const when = at ? `, ${bucketFullLabel(at.key, props.granularity)}` : ""
+        const aside = unclassified > 0 ? ` · ${formatQty(unclassified)} sin clasificar aparte` : ""
+        return {
+          value: classified > 0 ? formatPercent((correctivas / classified) * 100, 0) : "—",
+          caption: classified > 0
+            ? `de los trabajos clasificados son correctivos (${formatQty(correctivas)} de ${formatQty(classified)}${when})${aside}`
+            : `sin trabajos clasificados por tipo${when}${aside}`,
+        }
+      }}
+    />
+  )
+}

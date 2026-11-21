@@ -2,7 +2,8 @@ import { z } from "zod"
 import { civilDate } from "@/lib/validation/dates"
 import { REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 import { workOrderEntrySchema } from "./contracts"
-import { OT_ITEM_MAX_PER_KIND } from "./work-order-states"
+import { ACTION_TYPES, SPECIALTIES } from "./action-type"
+import { OT_ITEM_MAX_PER_KIND, OT_LABOR_HOURS_MAX } from "./work-order-states"
 
 /**
  * Esquemas de las acciones web de la OT (jefatura y administración de
@@ -24,7 +25,23 @@ const personName = z.string().trim().min(2, "Indica el nombre de quien recibe.")
 const itemList = z.array(z.string().trim().min(3, "Cada ítem necesita al menos 3 caracteres.").max(300))
   .max(OT_ITEM_MAX_PER_KIND, `Máximo ${OT_ITEM_MAX_PER_KIND} ítems por lista.`)
 
+/**
+ * Clasificación Trinorma (R4). Todo opcional en el esquema: que el tipo de acción sea
+ * obligatorio depende de `mantencionActionTypeRequired` y lo exige el servicio
+ * (`checkClassification`), no el esquema. La faena de imputación NO viaja: es la del equipo.
+ */
+const classificationFields = {
+  actionType: z.enum(ACTION_TYPES).nullable().optional(),
+  specialties: z.array(z.enum(SPECIALTIES)).max(SPECIALTIES.length).optional(),
+  executionWorksiteId: id.nullable().optional(),
+}
+
+const laborHours = z.number({ error: "Indica las horas hombre como número." })
+  .min(0, "Las horas hombre no pueden ser negativas.")
+  .max(OT_LABOR_HOURS_MAX, `Las horas hombre no pueden pasar de ${OT_LABOR_HOURS_MAX.toLocaleString("es-CL")}.`)
+
 const requestFields = {
+  ...classificationFields,
   repair: z.boolean(),
   maintenance: z.boolean(),
   requestDate: isoDate,
@@ -82,7 +99,15 @@ export const markWorkOrderItemsSchema = z.object({
   added: z.array(z.object({ kind: z.enum(["anexo", "mantencion"]), description: z.string().trim().min(3).max(300) })).max(24),
 })
 
-export const finishWorkOrderSchema = z.object({ workOrderId: id, expectedVersion, exitAt: isoDateTime, note: z.string().trim().max(1000).nullable() })
+export const finishWorkOrderSchema = z.object({
+  workOrderId: id,
+  expectedVersion,
+  exitAt: isoDateTime,
+  note: z.string().trim().max(1000).nullable(),
+  /** Trinorma R4: opcionales al terminar. */
+  workPerformed: z.string().trim().max(4000).nullable().optional(),
+  laborHours: laborHours.nullable().optional(),
+})
 
 export const receiveWorkOrderSchema = z.object({ workOrderId: id, expectedVersion, receivedAt: isoDateTime, receiverName: personName })
 export const conformWorkOrderSchema = z.object({ workOrderId: id, expectedVersion, faenaReceivedAt: isoDateTime, faenaReceiverName: personName })

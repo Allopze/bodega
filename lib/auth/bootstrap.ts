@@ -50,6 +50,11 @@ const RETIRED_PERMISSION_NAMES = [
  * reinstala. Sólo para cambios de default decididos; la clave no se reutiliza.
  */
 export const GRANT_ADDITIONS = [
+  // El administrador de contrato ve y exporta el Panel de mantención, los
+  // registros, el historial y los equipos de sus faenas (alcance por faena).
+  // Decisión del usuario del 2026-11-21 (Trinorma).
+  { key: "2026-11-21-rol-admin-contrato-p-mant-records-worksite", roleId: "rol-admin-contrato", permissionId: "p-mant-records-worksite" },
+  { key: "2026-11-21-rol-admin-contrato-p-mant-export", roleId: "rol-admin-contrato", permissionId: "p-mant-export" },
   // El rol completa la ficha reservada del incidente (identidad y lesión); sin
   // ningún rol con el permiso, el formulario de la vista reservada no lo veía
   // nadie. Decisión del 2026-09-28.

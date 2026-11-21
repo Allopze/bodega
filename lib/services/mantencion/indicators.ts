@@ -46,6 +46,8 @@ export interface MantIndicatorQuery {
   chart: { from: string; to: string; granularity: IndicatorGranularity }
   /** Faena elegida; `undefined` = todas las visibles. */
   worksiteId?: string
+  /** Equipo elegido (`?equipo=`, ya validado contra el alcance); acota las OT, los días fuera de servicio y las pautas. */
+  vehicleId?: string
   today?: string
 }
 
@@ -244,10 +246,11 @@ export function percentChange(current: number, previous: number): number | null 
 
 // ── Órdenes de trabajo ─────────────────────────────────────────────────────
 
-function workOrderScope(viewer: MantViewer, worksiteId: string | undefined): SQL {
+function workOrderScope(viewer: MantViewer, worksiteId: string | undefined, vehicleId?: string): SQL {
   return and(
     workOrderVisibilitySql(workOrderVisibility(viewer)),
     worksiteId ? eq(mantWorkOrders.worksiteId, worksiteId) : undefined,
+    vehicleId ? eq(mantWorkOrders.vehicleId, vehicleId) : undefined,
   )!
 }
 
@@ -274,7 +277,7 @@ export async function loadWorkOrderSeries(viewer: MantViewer, query: MantIndicat
   })
     .from(mantWorkOrders)
     .where(and(
-      workOrderScope(viewer, query.worksiteId),
+      workOrderScope(viewer, query.worksiteId, query.vehicleId),
       lte(mantWorkOrders.requestDate, chart.to),
       or(isNull(mantWorkOrders.closedAt), gte(mantWorkOrders.closedAt, fromInstant)),
       or(isNull(mantWorkOrders.voidedAt), gte(mantWorkOrders.voidedAt, fromInstant)),
@@ -307,7 +310,7 @@ export async function loadWorkOrderPeriodStats(viewer: MantViewer, query: MantIn
     repairHours: sql<number>`COALESCE(SUM(EXTRACT(EPOCH FROM (${mantWorkOrders.workshopExitAt} - ${mantWorkOrders.workshopEntryAt})) / 3600) FILTER (WHERE ${repairMeasured}), 0)::float8`,
   })
     .from(mantWorkOrders)
-    .where(and(ne(mantWorkOrders.status, "anulada"), workOrderScope(viewer, query.worksiteId)))
+    .where(and(ne(mantWorkOrders.status, "anulada"), workOrderScope(viewer, query.worksiteId, query.vehicleId)))
   const repairClosed = Number(row?.repairClosed ?? 0)
   return {
     closed: Number(row?.closed ?? 0),
@@ -321,10 +324,11 @@ export async function loadWorkOrderPeriodStats(viewer: MantViewer, query: MantIn
 export async function loadOpenWorkOrdersByStatus(
   viewer: MantViewer,
   worksiteId: string | undefined,
+  vehicleId?: string,
 ): Promise<Array<{ status: OtStatus; count: number }>> {
   const rows = await db.select({ status: mantWorkOrders.status, count: sql<number>`count(*)::int` })
     .from(mantWorkOrders)
-    .where(and(inArray(mantWorkOrders.status, [...OT_OPEN_STATUSES]), workOrderScope(viewer, worksiteId)))
+    .where(and(inArray(mantWorkOrders.status, [...OT_OPEN_STATUSES]), workOrderScope(viewer, worksiteId, vehicleId)))
     .groupBy(mantWorkOrders.status)
   const byStatus = new Map(rows.map((row) => [row.status, Number(row.count)]))
   // Orden del ciclo de vida, no el de tamaño.
@@ -347,7 +351,7 @@ export interface RepairRankingRow {
  */
 export async function loadTopRepairEquipment(
   viewer: MantViewer,
-  query: Pick<MantIndicatorQuery, "from" | "to" | "worksiteId">,
+  query: Pick<MantIndicatorQuery, "from" | "to" | "worksiteId" | "vehicleId">,
   limit = 50,
   minCount = 2,
 ): Promise<RepairRankingRow[]> {
@@ -365,7 +369,7 @@ export async function loadTopRepairEquipment(
       ne(mantWorkOrders.status, "anulada"),
       gte(mantWorkOrders.requestDate, query.from),
       lte(mantWorkOrders.requestDate, query.to),
-      workOrderScope(viewer, query.worksiteId),
+      workOrderScope(viewer, query.worksiteId, query.vehicleId),
     ))
     .groupBy(mantWorkOrders.vehicleId, fuelVehicles.code, fuelVehicles.plate)
     .having(sql`count(*) >= ${minCount}`)
@@ -390,8 +394,8 @@ export interface PautaState {
 }
 
 /** Estado de las pautas hoy: la única fuente es `loadFleet`. */
-export async function loadPautaState(viewer: MantViewer, worksiteId: string | undefined, today: string = todayInChile()): Promise<PautaState> {
-  const fleet = await loadFleet({ scope: fleetScopeFor(viewer, worksiteId), today })
+export async function loadPautaState(viewer: MantViewer, worksiteId: string | undefined, today: string = todayInChile(), vehicleId?: string): Promise<PautaState> {
+  const fleet = await loadFleet({ scope: fleetScopeFor(viewer, worksiteId), today, ...(vehicleId ? { vehicleIds: [vehicleId] } : {}) })
   const counts = Object.fromEntries(MANT_EQUIPMENT_STATES.map((state) => [state, 0])) as Record<MantEquipmentState, number>
   for (const row of fleet) counts[row.status.state] += 1
   const inWorkshop = fleet.filter((row) => row.workshop)
@@ -491,6 +495,7 @@ export async function loadOutOfService(viewer: MantViewer, query: MantIndicatorQ
     .innerJoin(fuelVehicleWorksiteIntervals, eq(fuelVehicleWorksiteIntervals.vehicleId, fuelVehicleOperationalIntervals.vehicleId))
     .where(and(
       eq(fuelVehicles.isActive, true),
+      query.vehicleId ? eq(fuelVehicles.id, query.vehicleId) : undefined,
       inArray(fuelVehicleOperationalIntervals.status, ["mantencion", "fuera_servicio"]),
       worksiteScopeSqlFor(fleetScopeFor(viewer, query.worksiteId), fuelVehicleWorksiteIntervals.worksiteId),
       lt(fuelVehicleOperationalIntervals.startedAt, rangeEnd),

@@ -6,7 +6,7 @@ import { OtActions } from "@/components/mantencion/jefatura/ot/ot-actions"
 import { OtAside } from "@/components/mantencion/jefatura/ot/ot-aside"
 import { equipmentText, workOrderTypeText } from "@/components/mantencion/jefatura/ot/ot-labels"
 import {
-  OtHeaderSection, OtItemsSection, OtObservationsSection, OtPartsRequestsSection, OtProgressSection, OtRejectionNotice, OtRepairSection,
+  OtHeaderSection, OtItemsSection, OtObservationsSection, OtPartsRequestsSection, OtProgressSection, OtRejectionNotice, OtRepairSection, OtWorkPerformedSection,
   OtVoidedNotice,
 } from "@/components/mantencion/jefatura/ot/ot-sections"
 import { can, requireAnyPermission } from "@/lib/auth/can"
@@ -102,6 +102,7 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
           <OtItemsSection detail={detail} kind="anexo" />
           <OtItemsSection detail={detail} kind="mantencion" />
           <OtPartsRequestsSection detail={detail} canOpenRequests={canOpenRequests} canOpenSpareParts={canOpenSpareParts} partsRequestHref={partsRequestHref} />
+          <OtWorkPerformedSection detail={detail} />
           <OtObservationsSection detail={detail} />
         </div>
         <OtAside detail={detail} />

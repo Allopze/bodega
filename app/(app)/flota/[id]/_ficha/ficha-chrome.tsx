@@ -7,6 +7,10 @@ import { FUEL_PERIOD_PARAMS } from "@/lib/combustibles/period/types"
 import { VEHICLE_FICHA_TAB_LABELS, vehicleFichaHref, type VehicleFichaTab } from "@/lib/routing/vehicle-ficha"
 import type { VehicleFichaContext } from "@/lib/services/vehicle-ficha"
 import { VehicleEditButton } from "./vehicle-edit-button"
+import { VehicleOwnershipButton } from "./vehicle-ownership-button"
+import { eq } from "drizzle-orm"
+import { db } from "@/db"
+import { fleetOwners, fuelVehicles } from "@/db/schema"
 
 /**
  * Lo común a las cuatro pestañas de la ficha del vehículo: el nombre, la línea que lo
@@ -67,7 +71,7 @@ export function VehicleFichaTabs({ ctx, active }: { ctx: VehicleFichaContext; ac
  * nada.
  */
 export function VehicleFichaEditAction({ ctx }: { ctx: VehicleFichaContext }) {
-  return ctx.canEditVehicle ? <VehicleEditButton vehicleId={ctx.vehicle.id} /> : null
+  return ctx.canEditVehicle ? <><VehicleOwnershipButton vehicleId={ctx.vehicle.id} /><VehicleEditButton vehicleId={ctx.vehicle.id} /></> : null
 }
 
 /**
@@ -81,4 +85,31 @@ export function VehicleFichaEditAction({ ctx }: { ctx: VehicleFichaContext }) {
  */
 export function VehicleFichaPersonalUseBadge({ periods }: { periods: ReadonlyArray<Pick<PersonalUsePeriod, "endedOn">> }) {
   return periods.some((period) => period.endedOn === null) ? <Badge variant="warning">En uso personal</Badge> : null
+}
+
+/**
+ * Propietario y marca «Ubicación por confirmar» del equipo (Trinorma), a la vista bajo la cabecera de
+ * todas las pestañas y no sólo dentro del diálogo que los edita. Sin ninguno de los dos, no dibuja nada.
+ * La marca avisa que la faena de origen está registrada pero falta confirmar dónde está el equipo hoy.
+ */
+export async function VehicleFichaOwnership({ vehicleId }: { vehicleId: string }) {
+  const [row] = await db.select({
+    ownerName: fleetOwners.name,
+    pending: fuelVehicles.locationPendingConfirmation,
+  })
+    .from(fuelVehicles)
+    .leftJoin(fleetOwners, eq(fleetOwners.id, fuelVehicles.ownerId))
+    .where(eq(fuelVehicles.id, vehicleId))
+    .limit(1)
+  if (!row || (!row.ownerName && !row.pending)) return null
+  return (
+    <p className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[var(--color-text-muted)]">
+      {row.ownerName ? <span>Propietario: <span className="font-medium text-[var(--color-text)]">{row.ownerName}</span></span> : null}
+      {row.pending ? (
+        <span className="font-medium text-[var(--color-warning-ink)]" title="La faena de origen es la registrada, pero falta confirmar dónde está el equipo hoy.">
+          Ubicación por confirmar
+        </span>
+      ) : null}
+    </p>
+  )
 }

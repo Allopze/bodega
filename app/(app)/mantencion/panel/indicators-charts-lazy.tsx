@@ -12,3 +12,4 @@ export const WorkOrderFlowChart = lazyChart(() => import("./indicators-charts").
 export const WorkOrderMixChart = lazyChart(() => import("./indicators-charts").then((m) => m.WorkOrderMixChart), "la mezcla de reparación y mantención", "h-96")
 export const RecordsKindChart = lazyChart(() => import("./indicators-charts").then((m) => m.RecordsKindChart), "los registros preventivos y correctivos", "h-96")
 export const OutOfServiceChart = lazyChart(() => import("./indicators-charts").then((m) => m.OutOfServiceChart), "los días fuera de servicio", "h-96")
+export const WorkTypeChart = lazyChart(() => import("./indicators-charts").then((m) => m.WorkTypeChart), "los trabajos por tipo", "h-96")

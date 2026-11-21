@@ -395,7 +395,8 @@ export function PautasSection({
   const barTotal = barCounts.reduce((sum, item) => sum + item.count, 0)
   const pautaSegments = barCounts.map((item) => ({
     key: item.state,
-    label: EQUIPMENT_STATE_LABEL[item.state],
+    // «Sin pauta» es un estado con su propia cifra, no «al día» ni cero: se nombra completo (Trinorma R5).
+    label: item.state === "sin_pauta" ? "Sin pauta definida" : EQUIPMENT_STATE_LABEL[item.state],
     value: item.count,
     color: PAUTA_COLOR[item.state],
     href: equiposHref({ estado: item.state }),

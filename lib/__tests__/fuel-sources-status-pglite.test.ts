@@ -449,8 +449,9 @@ describe("archivos importados (PostgreSQL)", () => {
     ])
     await inMemoryDb.insert(schema.fuelEquipmentTypes).values({ id: typeId, slug: `camion-${nanoid().slice(0, 6)}`, name: "Camión" })
     await inMemoryDb.insert(schema.fuelVehicles).values([
-      { id: vehicleA, plate: `TA${nanoid().slice(0, 4).toUpperCase()}`, code: "KA-1", type: "camion", equipmentTypeId: typeId, worksiteId: worksiteA, isActive: true },
-      { id: vehicleB, plate: `TB${nanoid().slice(0, 4).toUpperCase()}`, code: "KB-1", type: "camion", equipmentTypeId: typeId, worksiteId: worksiteB, isActive: true },
+      // Códigos distintos de los del primer bloque: desde la 0398 el código de equipo es único (Trinorma).
+      { id: vehicleA, plate: `TA${nanoid().slice(0, 4).toUpperCase()}`, code: "KA-2", type: "camion", equipmentTypeId: typeId, worksiteId: worksiteA, isActive: true },
+      { id: vehicleB, plate: `TB${nanoid().slice(0, 4).toUpperCase()}`, code: "KB-2", type: "camion", equipmentTypeId: typeId, worksiteId: worksiteB, isActive: true },
     ])
     await inMemoryDb.insert(schema.fuelProducts).values({ id: productId, code: `DIESEL-${nanoid().slice(0, 6)}`, name: "Diésel", category: "diesel", unit: "liter" })
 

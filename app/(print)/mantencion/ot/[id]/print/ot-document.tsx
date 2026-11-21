@@ -1,4 +1,4 @@
-import { OT_STATE_META, equipmentText } from "@/components/mantencion/jefatura/ot/ot-labels"
+import { OT_STATE_META, actionTypeText, daysStoppedText, equipmentText, laborHoursText, specialtiesText } from "@/components/mantencion/jefatura/ot/ot-labels"
 import { formatTimeOnly } from "@/components/mantencion/jefatura/ot/ot-format"
 import { formatNumber } from "@/lib/mantencion/format"
 import type { OtItemKind } from "@/lib/mantencion/work-order-states"
@@ -57,6 +57,12 @@ export function OtDocument({ detail, linkedWork, logoSrc }: { detail: WorkOrderD
           <Item label="Tipo de equipo" value={detail.equipmentType} />
           <Item label="Mecánico" value={detail.assignedToName ?? "Sin asignar"} />
           {detail.requestedByName !== detail.requesterName && <Item label="Creada por" value={detail.requestedByName} />}
+          <Item label="Tipo de acción" value={actionTypeText(detail.effectiveActionType)} />
+          <Item label="Especialidades" value={specialtiesText(detail.specialties)} />
+          <Item label="Faena de imputación" value={detail.worksiteName} />
+          {detail.executionWorksiteName && <Item label="Faena de ejecución" value={detail.executionWorksiteName} />}
+          <Item label="Horas hombre" value={laborHoursText(detail.laborHours)} mono />
+          <Item label="Días detenido" value={daysStoppedText(detail.daysStopped)} mono />
         </dl>
       </section>
 
@@ -71,6 +77,13 @@ export function OtDocument({ detail, linkedWork, logoSrc }: { detail: WorkOrderD
         <ItemTable detail={detail} kind="anexo" title="Trabajos anexos (reparación)" />
       )}
       <ItemTable detail={detail} kind="mantencion" title="Registro de mantenciones solicitadas o asignadas en taller" />
+
+      {detail.workPerformed && (
+        <section>
+          <h2>Trabajo realizado</h2>
+          <p className="note">{detail.workPerformed}</p>
+        </section>
+      )}
 
       <section>
         <h2>Observaciones</h2>

@@ -34,6 +34,7 @@ vi.mock("../_ficha/ficha-chrome", () => ({
   VehicleFichaTabs: () => <nav aria-label="Ficha de KA-115" />,
   VehicleFichaEditAction: () => null,
   VehicleFichaPersonalUseBadge: () => null,
+  VehicleFichaOwnership: () => null,
 }))
 vi.mock("@/lib/services/fleet", () => ({ getFleetVehicleDetail: mocks.detail }))
 // La tarjeta «Contrato» lee su historial de la base; acá no interesa.

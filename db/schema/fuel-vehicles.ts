@@ -5,6 +5,7 @@ import { fuelLoads } from "./fuel-invoices"
 import { users } from "./users"
 import { fuelSuppliers } from "./fuel-suppliers"
 import { fuelEquipmentTypes } from "./fuel-equipment-types"
+import { fleetOwners } from "./fleet-owners"
 
 /* ── Fuel Vehicles (catálogo propio del módulo combustibles) ─────────────── */
 export const fuelVehicles = pgTable("fuel_vehicles", {
@@ -34,6 +35,15 @@ export const fuelVehicles = pgTable("fuel_vehicles", {
   insurancePolicyNumber: text("insurance_policy_number"),
   insuranceExpiresAt: text("insurance_expires_at"),
   isActive:  boolean("is_active").notNull().default(true),
+  /** Empresa propietaria (2026-11-21, Trinorma). Null = sin informar. */
+  ownerId:   text("owner_id").references(() => fleetOwners.id, { onDelete: "restrict" }),
+  /**
+   * Nadie sabe dónde está físicamente el equipo (2026-11-21, Trinorma). Es una
+   * marca, no una ubicación: la faena sigue siendo `worksite_id` y sólo cambia
+   * con `transferVehiclesTx`. La ubicación física se deriva de la OT abierta en
+   * taller (decisión C3-A del usuario).
+   */
+  locationPendingConfirmation: boolean("location_pending_confirmation").notNull().default(false),
   notes:     text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -47,6 +57,17 @@ export const fuelVehicles = pgTable("fuel_vehicles", {
   index("fuel_vehicles_performance_unit_idx").on(table.performanceUnit),
   index("fuel_vehicles_usual_supplier_idx").on(table.usualFuelSupplierId),
   index("fuel_vehicles_code_idx").on(table.code),
+  /*
+   * Código único tras normalizar (R2, 2026-11-21): mayúsculas, sólo letras y
+   * dígitos, sin ceros a la izquierda en la parte numérica. «KA-071», «ka71» y
+   * «KA.71» son el mismo equipo. Es la misma regla que `equipmentCodeKey`
+   * (`lib/mantencion/equipment-identity.ts`); si cambia una, cambia la otra.
+   * Prod no tenía duplicados al crearlo (lectura del 2026-11-20).
+   */
+  uniqueIndex("fuel_vehicles_code_key_unique")
+    .on(sql`regexp_replace(upper(regexp_replace(${table.code}, '[^A-Za-z0-9]', '', 'g')), '^([A-Z]+)0+([0-9])', '\\1\\2')`)
+    .where(sql`${table.code} IS NOT NULL AND btrim(${table.code}) <> ''`),
+  index("fuel_vehicles_owner_idx").on(table.ownerId),
   uniqueIndex("fuel_vehicles_serial_number_key").on(table.serialNumber),
   check("fuel_vehicles_meter_type_valid", sql`${table.meterType} IN ('odometer', 'hour_meter', 'none')`),
   check("fuel_vehicles_performance_unit_valid", sql`${table.performanceUnit} IN ('km_per_liter', 'liters_per_hour', 'not_applicable')`),

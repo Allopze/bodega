@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { HistoricalFilters } from "@/components/mantencion/jefatura/registros/historical-filters"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
@@ -10,7 +11,8 @@ import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { can, requireAnyPermission } from "@/lib/auth/can"
-import { plural } from "@/lib/mantencion/format"
+import { ACTION_TYPE_LABELS, type ActionTypeOrUnknown } from "@/lib/mantencion/action-type"
+import { formatHours, plural } from "@/lib/mantencion/format"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
 import { listHistoricalRecords } from "@/lib/services/mantencion/historical-import"
@@ -21,6 +23,14 @@ export const dynamic = "force-dynamic"
 
 const PATH = "/mantencion/registros/historicos"
 const WARNING_TEXT = "text-xs text-[var(--color-warning-ink)]"
+
+/** El tipo normalizado del consolidado; en las filas que sólo vienen del formulario, el texto que escribieron. */
+function actionLabel(row: { actionType: string | null; kindText: string }): string {
+  if (row.actionType && row.actionType in ACTION_TYPE_LABELS) return ACTION_TYPE_LABELS[row.actionType as ActionTypeOrUnknown]
+  return row.kindText || "No informada"
+}
+/** Horas hombre normalizadas; si no hay, lo que el formulario escribió. */
+const hoursLabel = (row: { laborHours: number | null; hoursText: string }) => (row.laborHours !== null ? formatHours(row.laborHours) : row.hoursText.trim() || "—")
 
 type Params = Record<string, string | string[] | undefined>
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value) ?? ""
@@ -55,7 +65,7 @@ export default async function HistoricalRecordsPage({ searchParams }: { searchPa
       <HistoricalFilters />
 
       <p className="mb-3 text-sm text-[var(--color-text-muted)]">
-        {plural(list.total, "trabajo", "trabajos")} {vehicleId ? "de este equipo" : "en el historial anterior"}. No modifican las lecturas ni los indicadores actuales.
+        {plural(list.total, "trabajo", "trabajos")} {vehicleId ? "de este equipo" : "en el historial anterior"}. No modifican las lecturas, el semáforo de pautas ni las alertas; cuentan en los indicadores de trabajos del Panel.
       </p>
 
       {list.rows.length === 0 ? (
@@ -82,8 +92,18 @@ export default async function HistoricalRecordsPage({ searchParams }: { searchPa
                     </Button>
                   )}
                 >
-                  <ResponsiveDataListField label="Acción">{row.kindText || "No informada"}</ResponsiveDataListField>
+                  <ResponsiveDataListField label="Acción">{actionLabel(row)}</ResponsiveDataListField>
                   <ResponsiveDataListField label="Orden">{row.orderText || "No informada"}</ResponsiveDataListField>
+                  <ResponsiveDataListField label="Horas hombre">{hoursLabel(row)}</ResponsiveDataListField>
+                  <ResponsiveDataListField label="Contrato">{row.contractText || "—"}</ResponsiveDataListField>
+                  {(row.isTest || row.qualityNotes) && (
+                    <ResponsiveDataListField label="Revisar" className="col-span-2">
+                      <span className="flex flex-wrap items-center gap-2">
+                        {row.isTest && <Badge variant="warning">Posible prueba</Badge>}
+                        {row.qualityNotes && <span className="text-[var(--color-warning-ink)]">{row.qualityNotes}</span>}
+                      </span>
+                    </ResponsiveDataListField>
+                  )}
                   <ResponsiveDataListField label="Trabajo" className="col-span-2">
                     <span className="whitespace-pre-wrap break-words">{row.description || "No informado"}</span>
                   </ResponsiveDataListField>
@@ -109,6 +129,8 @@ export default async function HistoricalRecordsPage({ searchParams }: { searchPa
                     <TableHead>Faena</TableHead>
                     <TableHead>Acción</TableHead>
                     <TableHead>Trabajo</TableHead>
+                    <TableHead>Horas hombre</TableHead>
+                    <TableHead>Contrato</TableHead>
                     <TableHead>Orden</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -119,13 +141,19 @@ export default async function HistoricalRecordsPage({ searchParams }: { searchPa
                       <TableCell>
                         <Link href={`${PATH}/${row.sourceKey}`} className="font-semibold text-[var(--color-primary-ink)] hover:underline">{row.equipmentText || "Sin equipo"}</Link>
                         {!row.vehicleId && <span className={`block ${WARNING_TEXT}`}>Equipo sin identificar</span>}
+                        {row.isTest && <Badge variant="warning" className="mt-1">Posible prueba</Badge>}
                       </TableCell>
                       <TableCell>
                         {row.worksiteText || "No informada"}
                         {!row.worksiteId && <span className={`block ${WARNING_TEXT}`}>Faena sin identificar</span>}
                       </TableCell>
-                      <TableCell>{row.kindText || "No informada"}</TableCell>
-                      <TableCell className="max-w-sm"><span className="line-clamp-2">{row.description || "No informado"}</span></TableCell>
+                      <TableCell>{actionLabel(row)}</TableCell>
+                      <TableCell className="max-w-sm">
+                        <span className="line-clamp-2">{row.description || "No informado"}</span>
+                        {row.qualityNotes && <span className={`line-clamp-1 ${WARNING_TEXT}`} title={row.qualityNotes}>Observación de calidad: {row.qualityNotes}</span>}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{hoursLabel(row)}</TableCell>
+                      <TableCell>{row.contractText || "—"}</TableCell>
                       <TableCell>{row.orderText || "—"}</TableCell>
                     </TableRow>
                   ))}

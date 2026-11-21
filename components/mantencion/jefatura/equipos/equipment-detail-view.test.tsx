@@ -107,7 +107,8 @@ describe("ficha del equipo: crear una orden de trabajo y el enlace a Flota", () 
     const sheet = within(await screen.findByRole("dialog"))
     expect((sheet.getByRole("combobox", { name: /Equipo/ }) as HTMLInputElement).value).toContain("KA-107")
     // Con el equipo elegido, el botón de crear no queda apagado por falta de equipo.
-    expect(sheet.getByText(/Faena: Santa Fe/)).toBeTruthy()
+    // La faena de imputación es la del equipo y se muestra de sólo lectura (Trinorma, R4).
+    expect((sheet.getByLabelText("Faena de imputación") as HTMLInputElement).value).toBe("Santa Fe")
   })
 
   it("sin permiso para crear órdenes (o con el equipo dado de baja) no hay botón", () => {

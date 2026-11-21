@@ -2787,6 +2787,13 @@
       "when": 1795196803640,
       "tag": "0397_natural_marten_broadcloak",
       "breakpoints": true
+    },
+    {
+      "idx": 398,
+      "version": "7",
+      "when": 1795227511759,
+      "tag": "0398_furry_luckman",
+      "breakpoints": true
     }
   ]
 }

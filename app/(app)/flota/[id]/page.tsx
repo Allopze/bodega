@@ -28,7 +28,7 @@ import {
 import { formatDate, formatQty } from "@/lib/utils"
 import { openVehicleFicha } from "./_ficha/access"
 import { fuelPendingText, openOrdersText } from "./_ficha/summary-text"
-import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaPersonalUseBadge, VehicleFichaTabs } from "./_ficha/ficha-chrome"
+import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaPersonalUseBadge, VehicleFichaOwnership, VehicleFichaTabs } from "./_ficha/ficha-chrome"
 import { listPersonalUsePeriods } from "@/lib/services/fleet-personal-use"
 
 export const metadata: Metadata = { title: "Vehículo" }
@@ -75,6 +75,7 @@ export default async function VehicleSummaryPage({ params, searchParams }: { par
   return (
     <PageContainer width="workbench">
       <PageHeader title={ctx.label} description={vehicleFichaDescription(ctx)} breadcrumb={vehicleFichaBreadcrumb(ctx, "resumen")} actions={<><VehicleFichaPersonalUseBadge periods={personalUsePeriods} /><VehicleFichaEditAction ctx={ctx} /></>} />
+      <VehicleFichaOwnership vehicleId={ctx.vehicle.id} />
       <VehicleFichaTabs ctx={ctx} active="resumen" />
 
       <Card>

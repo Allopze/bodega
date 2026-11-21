@@ -79,6 +79,10 @@ export async function saveOperationalSettingsAction(_prev: ActionState, formData
         pdtpEvidenceRetentionDays:  readNumber(formData, "pdtpEvidenceRetentionDays"),
         purchasingClpTolerance:     readNumber(formData, "purchasingClpTolerance"),
         repuestosQuotationThresholdClp: readNumber(formData, "repuestosQuotationThresholdClp"),
+        // Las casillas no viajan cuando están desmarcadas: el campo oculto «presente» distingue «apagado» de «no enviado».
+        mantencionActionTypeRequired:   formData.has("mantencionActionTypeRequired__present") ? (formData.get("mantencionActionTypeRequired") === "on" ? 1 : 0) : undefined,
+        mantencionExcludeTestRows:      formData.has("mantencionExcludeTestRows__present") ? (formData.get("mantencionExcludeTestRows") === "on" ? 1 : 0) : undefined,
+        mantencionFindingWithoutOtDays: readNumber(formData, "mantencionFindingWithoutOtDays"),
       }, {
         userId:    session.user.id,
         userEmail: session.user.email ?? undefined,

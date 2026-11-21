@@ -25,6 +25,21 @@ describe("talonario de la OT para imprimir", () => {
     expect(screen.getByText("KA-135 · RBYD-98")).toBeTruthy()
   })
 
+  it("lleva tipo, especialidades, horas, faena de ejecución, días detenido y trabajo realizado", () => {
+    render(<OtDocument detail={otDetail({
+      actionType: "correctiva", effectiveActionType: "correctiva", specialties: ["electrica"], laborHours: 4, executionWorksiteId: "ws-2",
+      executionWorksiteName: "Santa Fe", daysStopped: 1, workPerformed: "Se cambió el alternador",
+    })} linkedWork={[]} logoSrc="/x.svg" />)
+    for (const text of ["Correctiva", "Eléctrica", "4 h", "Santa Fe", "1 día", "Se cambió el alternador"]) expect(screen.getByText(text)).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Trabajo realizado" })).toBeTruthy()
+  })
+
+  it("sin clasificar imprime «No informado» y no abre «Trabajo realizado»", () => {
+    render(<OtDocument detail={otDetail()} linkedWork={[]} logoSrc="/x.svg" />)
+    expect(screen.getByText("No informado")).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Trabajo realizado" })).toBeNull()
+  })
+
   it("marca REPARACIÓN y MANTENCIÓN según la OT", () => {
     render(<OtDocument detail={full()} linkedWork={[]} logoSrc="/x.svg" />)
     const group = screen.getByRole("group", { name: "Tipo de trabajo" })

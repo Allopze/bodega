@@ -1,9 +1,11 @@
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { mantWorkOrderEvents, mantWorkOrderItems, mantWorkOrders } from "@/db/schema"
+import { mantWorkOrderEvents, mantWorkOrderItems, mantWorkOrders, worksites } from "@/db/schema"
 import { isUniqueViolation } from "@/lib/action-error"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
+import { ACTION_TYPES, ACTION_TYPE_LABELS, SPECIALTIES, isActionType, type ActionType, type Specialty } from "@/lib/mantencion/action-type"
+import { getOperationalSettings } from "@/lib/services/system-settings"
 import { OT_ITEM_MAX_PER_KIND, OT_PERMISSIONS, type OtItemKind, type OtStatus } from "@/lib/mantencion/work-order-states"
 import type { CreateWorkOrderInput } from "@/lib/mantencion/work-order-schemas"
 import { todayInChile } from "@/lib/utils"
@@ -39,6 +41,16 @@ interface NewOrder {
   inspectionFindingId: string | null
   clientRequestId: string | null
   assignedToUserId: string | null
+  /** Trinorma R4. */
+  actionType: ActionType | null
+  specialties: Specialty[] | null
+  executionWorksiteId: string | null
+}
+
+export interface Classification {
+  actionType: ActionType | null
+  specialties: Specialty[] | null
+  executionWorksiteId: string | null
 }
 
 function cleanItems(texts: readonly string[] | undefined, label: string): string[] {
@@ -52,6 +64,42 @@ export function checkRequestFields(input: { repair: boolean; maintenance: boolea
   if (!input.repair && !input.maintenance) refuse("Marca REPARACIÓN, MANTENCIÓN o ambas.", "invalid", "repair")
   if (input.repair && (input.repairDescription ?? "").trim().length < 5) refuse("Describe la reparación que se pide.", "invalid", "repairDescription")
   if (input.requesterName.trim().length < 2) refuse("Indica quién solicita.", "invalid", "requesterName")
+}
+
+/**
+ * Tipo de acción, especialidades y faena de ejecución de una OT (Trinorma R4). El tipo
+ * es obligatorio sólo con `ops.mantencion.ot_action_type_required` encendido; el
+ * servidor es quien lo exige (el formulario sólo marca el campo). `previous` es lo que ya
+ * tenía la OT al editarla: una OT anterior a la clasificación no se bloquea por no tenerla.
+ * La faena de ejecución, si es la misma de imputación, no se guarda (sería ruido).
+ */
+export async function checkClassification(
+  client: Pick<Tx, "select">,
+  input: { actionType?: string | null; specialties?: readonly string[] | null; executionWorksiteId?: string | null },
+  context: { imputationWorksiteId: string; required: boolean; previousActionType?: string | null; previousExecutionWorksiteId?: string | null; isEdit?: boolean },
+): Promise<Classification> {
+  const actionType = input.actionType ?? null
+  if (actionType !== null && !isActionType(actionType)) {
+    refuse(`El tipo de acción debe ser ${ACTION_TYPES.map((type) => ACTION_TYPE_LABELS[type].toLowerCase()).join(", ")}.`, "invalid", "actionType")
+  }
+  const legacyWithoutType = context.isEdit && !isActionType(context.previousActionType)
+  if (context.required && actionType === null && !legacyWithoutType) {
+    refuse("Elige el tipo de acción: preventiva, correctiva o predictiva.", "invalid", "actionType")
+  }
+  const wanted = new Set(input.specialties ?? [])
+  const unknown = [...wanted].filter((value) => !(SPECIALTIES as readonly string[]).includes(value))
+  if (unknown.length) refuse("Una de las especialidades no es válida.", "invalid", "specialties")
+  const specialties = SPECIALTIES.filter((value) => wanted.has(value))
+
+  let executionWorksiteId = input.executionWorksiteId || null
+  if (executionWorksiteId === context.imputationWorksiteId) executionWorksiteId = null
+  // Una faena ya guardada que después se desactivó no bloquea editar otros campos: sólo se valida si cambia.
+  if (executionWorksiteId && executionWorksiteId !== context.previousExecutionWorksiteId) {
+    const [found] = await client.select({ id: worksites.id }).from(worksites)
+      .where(and(eq(worksites.id, executionWorksiteId), eq(worksites.isActive, true))).limit(1)
+    if (!found) refuse("La faena de ejecución no existe o está inactiva.", "invalid", "executionWorksiteId")
+  }
+  return { actionType, specialties: specialties.length ? specialties : null, executionWorksiteId }
 }
 
 export function itemRows(workOrderId: string, userId: string, items: ItemTexts) {
@@ -99,6 +147,9 @@ async function insertLocked(tx: Tx, order: NewOrder, actor: Pick<WorkOrderActor,
     assignedByUserId: assigned ? actor.userId : null,
     assignedAt: assigned ? new Date().toISOString() : null,
     inspectionFindingId: order.inspectionFindingId,
+    actionType: order.actionType,
+    specialties: order.specialties,
+    executionWorksiteId: order.executionWorksiteId,
   }).returning()
   if (!row) throw new Error("No se pudo crear la orden de trabajo")
 
@@ -107,7 +158,10 @@ async function insertLocked(tx: Tx, order: NewOrder, actor: Pick<WorkOrderActor,
   await tx.insert(mantWorkOrderEvents).values([
     {
       id: nanoid(), workOrderId: id, type: "created", fromStatus: null, toStatus: "solicitada", actorUserId: actor.userId,
-      changeSet: { equipment: vehicle.code, repair: order.repair, maintenance: order.maintenance, items: items.length, inspectionFindingId: order.inspectionFindingId },
+      changeSet: {
+        equipment: vehicle.code, repair: order.repair, maintenance: order.maintenance, items: items.length, inspectionFindingId: order.inspectionFindingId,
+        actionType: order.actionType, specialties: order.specialties, executionWorksiteId: order.executionWorksiteId,
+      },
     },
     ...(assigned ? [{
       id: nanoid(), workOrderId: id, type: "assigned" as const, fromStatus: "solicitada", toStatus: "asignada", actorUserId: actor.userId,
@@ -124,6 +178,7 @@ async function insertLocked(tx: Tx, order: NewOrder, actor: Pick<WorkOrderActor,
     newState: {
       vehicleId: vehicle.vehicleId, equipment: vehicle.code, repair: order.repair, maintenance: order.maintenance,
       assignedToUserId: assigned, inspectionFindingId: order.inspectionFindingId, items: items.length,
+      actionType: order.actionType, specialties: order.specialties, executionWorksiteId: order.executionWorksiteId,
     },
   }, tx)
   return row
@@ -156,6 +211,10 @@ export async function createWorkOrderWithClient(
       inspectionFindingId: input.inspectionFindingId,
       clientRequestId: null,
       assignedToUserId: null,
+      // C5: una OT que nace de un hallazgo de inspección es correctiva (editable después).
+      actionType: "correctiva",
+      specialties: null,
+      executionWorksiteId: null,
     }, actor)
     return { id: row.id, folio: row.folio, worksiteId: row.worksiteId }
   } catch (error) {
@@ -240,6 +299,7 @@ export async function createWorkOrder(actor: WorkOrderActor, input: CreateWorkOr
 
   const already = await findByClientRequest(db, input.clientRequestId)
   if (already) return existingResult(already, actor.userId)
+  const { mantencionActionTypeRequired } = await getOperationalSettings()
 
   try {
     const row = await db.transaction(async (tx) => {
@@ -255,6 +315,7 @@ export async function createWorkOrder(actor: WorkOrderActor, input: CreateWorkOr
       if (raced) return { raced }
 
       checkRequestFields(input)
+      const classification = await checkClassification(tx, input, { imputationWorksiteId: vehicle.worksiteId, required: mantencionActionTypeRequired === 1 })
       const items = normalizeItems(input.annexItems, input.maintenanceItems)
       if (manage && input.assignedToUserId && !(await findAssignableMechanic(tx, input.assignedToUserId))) {
         refuse("Ese mecánico no existe, está inactivo o no puede ejecutar órdenes de trabajo.", "invalid", "assignedToUserId")
@@ -274,6 +335,7 @@ export async function createWorkOrder(actor: WorkOrderActor, input: CreateWorkOr
         inspectionFindingId: null,
         clientRequestId: input.clientRequestId,
         assignedToUserId,
+        ...classification,
       }, actor, vehicle)
       return { created }
     })

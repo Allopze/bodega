@@ -45,6 +45,7 @@ export default async function FlotaPage({
   const filterResponsable = typeof sp.responsable === "string" ? sp.responsable : undefined
   const filterVencimiento = typeof sp.vencimiento === "string" ? sp.vencimiento : undefined
   const filterRevision = sp.revision === "estado" ? "estado" as const : undefined
+  const filterUbicacion = sp.ubicacion === "confirmar" ? "confirmar" as const : undefined
   const q = typeof sp.q === "string" ? sp.q.slice(0, 160) : undefined
   const requestedPage = typeof sp.page === "string" && /^\d+$/.test(sp.page) ? Math.max(1, Number(sp.page)) : 1
 
@@ -60,6 +61,7 @@ export default async function FlotaPage({
     responsibleName: filterResponsable,
     expiry: filterVencimiento as "vencidos" | "proximos" | "al-dia" | undefined,
     revision: filterRevision,
+    ubicacion: filterUbicacion,
     q,
   }
   const initialPageData = await getFleetOverviewPage(session, filters, { today, warningWindowEnd }, {
@@ -114,7 +116,7 @@ export default async function FlotaPage({
         actions={<div className="flex items-center gap-2">
           {/* Exportar es opt-in con `flota:export` (decisión 2026-11-15), como en el resto de la plataforma. */}
           {can(session, "flota:export") && (
-            <FleetExportButton filters={{ operationalStatus: filterEstado, responsibleName: filterResponsable, expiry: filterVencimiento as "vencidos" | "proximos" | "al-dia" | undefined, revision: filterRevision, q }} />
+            <FleetExportButton filters={{ operationalStatus: filterEstado, responsibleName: filterResponsable, expiry: filterVencimiento as "vencidos" | "proximos" | "al-dia" | undefined, revision: filterRevision, ubicacion: filterUbicacion, q }} />
           )}
           {/* El botón lleva al padrón, así que se guarda con el permiso del
               padrón y no con el de la decisión operativa. */}
@@ -159,7 +161,7 @@ export default async function FlotaPage({
       <FleetFilters
         operationalStatuses={operationalStatuses}
         responsibleUsers={responsibleUsers}
-        current={{ estado: filterEstado, responsable: filterResponsable, vencimiento: filterVencimiento, revision: filterRevision, q }}
+        current={{ estado: filterEstado, responsable: filterResponsable, vencimiento: filterVencimiento, revision: filterRevision, ubicacion: filterUbicacion, q }}
         warningDays={warningDays}
       />
 

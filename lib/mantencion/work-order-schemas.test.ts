@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { parseWorkOrderQuery } from "@/components/mantencion/jefatura/ot/ot-filters"
-import { createWorkOrderSchema, changeWorkOrderEstimateSchema } from "./work-order-schemas"
+import { createWorkOrderSchema, changeWorkOrderEstimateSchema, finishWorkOrderSchema } from "./work-order-schemas"
 
 /** Las fechas de la OT son fechas civiles reales: `2026-02-31` no pasa. */
 
@@ -25,6 +25,25 @@ describe("fechas de los esquemas de la OT", () => {
     })
     expect(parse("2026-04-31").success).toBe(false)
     expect(parse("2026-04-30").success).toBe(true)
+  })
+})
+
+describe("clasificación y término (Trinorma R4)", () => {
+  const withDate = { ...base, requestDate: "2026-11-02" }
+  it("el alta acepta tipo, especialidades y faena de ejecución, todos opcionales", () => {
+    expect(createWorkOrderSchema.safeParse(withDate).success).toBe(true)
+    expect(createWorkOrderSchema.safeParse({ ...withDate, actionType: "preventiva", specialties: ["mecanica", "electrica"], executionWorksiteId: "ws-2" }).success).toBe(true)
+    expect(createWorkOrderSchema.safeParse({ ...withDate, actionType: "otro" }).success).toBe(false)
+    expect(createWorkOrderSchema.safeParse({ ...withDate, specialties: ["carpinteria"] }).success).toBe(false)
+  })
+  it("terminar: horas entre 0 y 10.000, trabajo realizado opcional", () => {
+    const finish = { workOrderId: "ot-1", expectedVersion: 1, exitAt: "2026-11-03T14:00:00.000Z", note: null }
+    expect(finishWorkOrderSchema.safeParse(finish).success).toBe(true)
+    expect(finishWorkOrderSchema.safeParse({ ...finish, laborHours: 0, workPerformed: null }).success).toBe(true)
+    expect(finishWorkOrderSchema.safeParse({ ...finish, laborHours: 10_000 }).success).toBe(true)
+    expect(finishWorkOrderSchema.safeParse({ ...finish, laborHours: -0.5 }).success).toBe(false)
+    expect(finishWorkOrderSchema.safeParse({ ...finish, laborHours: 10_000.5 }).success).toBe(false)
+    expect(finishWorkOrderSchema.safeParse({ ...finish, exitAt: undefined }).success).toBe(false)
   })
 })
 

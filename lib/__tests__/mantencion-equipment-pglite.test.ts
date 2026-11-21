@@ -151,6 +151,11 @@ describe("alta", () => {
     expect(dup).toMatchObject({ ok: false, fieldErrors: { code: "Ya existe un equipo con el código KA-500." } })
   })
 
+  it("el índice único del código atrapa lo que el pre-chequeo no ve («KA-0500» = «KA-500») y dice «Ya existe un equipo con el código»", async () => {
+    const dup = await createEquipment(actor, input({ code: "KA-0500", plate: "TVWX-13" }))
+    expect(dup).toMatchObject({ ok: false, fieldErrors: { code: "Ya existe un equipo con el código KA-0500." } })
+  })
+
   it("rechaza la patente repetida y la inválida, y cuenta cada error por campo", async () => {
     const repeated = await createEquipment(actor, input({ code: "KA-501", plate: "bcdf 12" }))
     expect(repeated).toMatchObject({ ok: false })

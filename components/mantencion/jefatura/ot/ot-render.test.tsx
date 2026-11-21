@@ -167,6 +167,23 @@ describe("tabla de la lista", () => {
   })
 })
 
+describe("clasificación Trinorma en el detalle", () => {
+  it("sin tipo declarado ni casillas claras dice «No informado»; las casillas lo derivan", () => {
+    const { rerender } = render(<OtHeaderSection detail={otDetail()} />)
+    expect(screen.getByText("Tipo de acción").nextElementSibling?.textContent).toBe("No informado")
+    expect(screen.getByText("Horas hombre").nextElementSibling?.textContent).toBe("—")
+    rerender(<OtHeaderSection detail={otDetail({
+      actionType: "preventiva", effectiveActionType: "preventiva", specialties: ["mecanica", "hidraulica"], laborHours: 6.5,
+      executionWorksiteId: "ws-2", executionWorksiteName: "Santa Fe", daysStopped: 3,
+    })} />)
+    expect(screen.getByText("Tipo de acción").nextElementSibling?.textContent).toBe("Preventiva")
+    expect(screen.getByText("Especialidades").nextElementSibling?.textContent).toBe("Mecánica, Hidráulica")
+    expect(screen.getByText("Faena de ejecución").nextElementSibling?.textContent).toBe("Santa Fe")
+    expect(screen.getByText("Horas hombre").nextElementSibling?.textContent).toContain("6,5")
+    expect(screen.getByText("Días detenido").nextElementSibling?.textContent).toBe("3 días")
+  })
+})
+
 describe("secciones del detalle, en el orden del talonario", () => {
   it("cabecera: REPARACIÓN / MANTENCIÓN marcadas, fecha, solicitante y mecánico; folio, equipo y faena ya van en el título", () => {
     render(<OtHeaderSection detail={otDetail({ repair: true, maintenance: false })} />)

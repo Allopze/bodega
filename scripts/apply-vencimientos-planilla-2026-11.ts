@@ -1,6 +1,11 @@
 /**
  * scripts/apply-vencimientos-planilla-2026-11.ts
  *
+ * ⚠ YA APLICADO EN PRODUCCIÓN (2026-11-13). NO VOLVER A CORRERLO con esa planilla: trae rotados
+ * los códigos de los tractos SRCJ-47, SRCJ-42 y SRCJ-39 de Biodiversa, y el paso 4 de
+ * `scripts/apply-trinorma-maestros.ts` los devolvió a KCH-133, KCH-135 y KCH-136 (decisión del
+ * usuario, 2026-11-21: manda el inventario de octubre). Una segunda corrida los volvería a rotar.
+ *
  * Carga única de `Control_vencimientos_Chome_consolidado.xlsx`, el control
  * manual que hasta hoy se llevaba fuera de Chome, y que esta carga deja de
  * necesitar (decisiones del usuario, 2026-11-05):
@@ -70,6 +75,7 @@ import {
   formatExcelDateUTC, isExcelErrorText, normalizeCellValue, normalizePlate, parseSheetDate, plateMatchKey,
 } from "@/lib/combustibles/xlsx-utils"
 import { civilDaysBetween } from "@/lib/expiry"
+import { equipmentCodeKey } from "@/lib/mantencion/equipment-identity"
 import { nanoid } from "@/lib/id"
 import { loadXlsxTolerant } from "@/lib/reports/xlsx-normalize"
 import { cleanRut, validateRut } from "@/lib/rut"
@@ -577,6 +583,12 @@ interface Ctx {
   omittedPlates: Set<string>
   /** Trabajador de cada fila de la hoja «Trabajadores»; `workerId` nulo = se crea en este plan. */
   workerRefs: Map<number, { workerId: string | null; label: string }>
+  /**
+   * Código que la planilla le pone a cada equipo existente (por id). Desde la 0398 el código es único
+   * tras normalizar (`fuel_vehicles_code_key_unique`): un intercambio de códigos entre dos equipos
+   * necesita saber que el otro también cambia, para estacionarlo en un código temporal.
+   */
+  plannedCodes?: Map<string, string>
 }
 
 function workerLabel(row: WorkerRow): string {
@@ -667,6 +679,11 @@ async function runVehicles(ctx: Ctx, machines: MachineRow[]) {
   const byPlate = withPlateCorrections(new Map(vehicles.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle])))
   const detailsByPlate = new Map(Object.entries(NEW_VEHICLE_DETAILS).map(([plate, details]) => [plateMatchKey(plate), details]))
   const seen = new Set<string>()
+  ctx.plannedCodes = new Map()
+  for (const m of machines) {
+    const vehicle = byPlate.get(plateMatchKey(m.plate))
+    if (vehicle && m.code && !ctx.plannedCodes.has(vehicle.id)) ctx.plannedCodes.set(vehicle.id, m.code)
+  }
 
   for (const m of machines) {
     const key = plateMatchKey(m.plate)
@@ -821,6 +838,31 @@ async function changeVehicleCode(ctx: Ctx, m: MachineRow, existing: VehicleRow) 
     const [current] = await tx.select({ id: fuelVehicles.id, code: fuelVehicles.code }).from(fuelVehicles).where(eq(fuelVehicles.id, existing.id))
     if (!current) return { kind: "missing" as const }
     if ((current.code ?? "").trim().toUpperCase() === m.code) return { kind: "same" as const }
+    // Desde la 0398 el código es único tras normalizar. Si otro equipo lo lleva y la planilla también
+    // le cambia el código, es un intercambio: ese equipo pasa por un código temporal (su fila lo deja
+    // en el definitivo). Si la planilla no lo cambia, no se crea un duplicado: se omite y se informa.
+    const targetKey = equipmentCodeKey(m.code)
+    const others = await tx.select({ id: fuelVehicles.id, plate: fuelVehicles.plate, code: fuelVehicles.code, worksiteId: fuelVehicles.worksiteId }).from(fuelVehicles)
+    const holder = others.find((vehicle) => vehicle.id !== existing.id && vehicle.code && equipmentCodeKey(vehicle.code) === targetKey)
+    if (holder) {
+      const holderPlanned = ctx.plannedCodes?.get(holder.id)
+      if (!holderPlanned || equipmentCodeKey(holderPlanned) === targetKey) return { kind: "taken" as const, holderPlate: holder.plate }
+      if (!ctx.apply) return { kind: "dry" as const, before: current.code, swapWith: holder.plate }
+      const parked = `ZZTMP-${nanoid().replace(/[^A-Za-z0-9]/g, "").slice(0, 8).toUpperCase()}`
+      await tx.update(fuelVehicles).set({ code: parked, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, holder.id))
+      await recordAudit({
+        userId: ctx.actor.userId,
+        userEmail: ctx.actor.email,
+        action: "update",
+        entityType: "fuel_vehicle",
+        entityId: holder.id,
+        entityCode: holder.plate,
+        oldState: { code: holder.code },
+        newState: { code: parked },
+        reason: `${REASON}: código temporal para intercambiarlo con ${existing.plate}`,
+        worksiteId: holder.worksiteId,
+      }, tx)
+    }
     if (!ctx.apply) return { kind: "dry" as const, before: current.code }
     await tx.update(fuelVehicles).set({ code: m.code, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, existing.id))
     await recordAudit({
@@ -835,13 +877,15 @@ async function changeVehicleCode(ctx: Ctx, m: MachineRow, existing: VehicleRow) 
       reason: `${REASON}: la planilla manda en el código`,
       worksiteId: existing.worksiteId,
     }, tx)
-    return { kind: "changed" as const, before: current.code }
+    return { kind: "changed" as const, before: current.code, swapWith: holder?.plate }
   })
-  const detail = (before: string | null | undefined) => (before ? `antes ${before}` : "no tenía código")
+  const detail = (before: string | null | undefined, swapWith?: string) =>
+    `${before ? `antes ${before}` : "no tenía código"}${swapWith ? `; intercambio con ${swapWith}` : ""}`
   if (result.kind === "missing") ctx.report({ item: m.plate, action, result: "omitido", detail: "el equipo desapareció mientras se aplicaba" })
   else if (result.kind === "same") ctx.report({ item: m.plate, action, result: "ya estaba" })
-  else if (result.kind === "dry") ctx.report({ item: m.plate, action, result: "dry-run", detail: detail(result.before) })
-  else ctx.report({ item: m.plate, action, result: "aplicado", detail: detail(result.before) })
+  else if (result.kind === "taken") ctx.report({ item: m.plate, action, result: "omitido", detail: `el código lo lleva ${result.holderPlate} y la planilla no se lo cambia: no se crea un duplicado` })
+  else if (result.kind === "dry") ctx.report({ item: m.plate, action, result: "dry-run", detail: detail(result.before, "swapWith" in result ? result.swapWith : undefined) })
+  else ctx.report({ item: m.plate, action, result: "aplicado", detail: detail(result.before, result.swapWith) })
 }
 
 /** El código no es único en la base (así se pueden intercambiar), pero al terminar no debería quedar repetido. */

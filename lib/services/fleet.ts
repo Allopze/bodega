@@ -2,6 +2,7 @@ import type { Session } from "next-auth"
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
+  fleetOwners,
   fleetVehicleDocuments,
   fuelAnomalyCases,
   fuelAnomalyRules,
@@ -109,6 +110,17 @@ async function loadFleetVehicles(vehicleScope: ReturnType<typeof and>, vehicleId
     },
     orderBy: [fuelVehicles.plate],
   })
+}
+
+/**
+ * Nombre de la empresa propietaria por id (Trinorma). `fuel_vehicles` no declara la relación en Drizzle,
+ * así que se resuelve con una consulta aparte sobre los ids que traen los equipos.
+ */
+async function loadOwnerNames(vehicles: ReadonlyArray<{ ownerId: string | null }>): Promise<Map<string, string>> {
+  const ids = [...new Set(vehicles.flatMap((vehicle) => (vehicle.ownerId ? [vehicle.ownerId] : [])))]
+  if (ids.length === 0) return new Map()
+  const rows = await db.select({ id: fleetOwners.id, name: fleetOwners.name }).from(fleetOwners).where(inArray(fleetOwners.id, ids))
+  return new Map(rows.map((row) => [row.id, row.name]))
 }
 
 type FleetOverviewVehicle = Awaited<ReturnType<typeof loadFleetVehicles>>[number]
@@ -337,6 +349,7 @@ export async function getFleetOverview(
     }
   }
 
+  const ownerNames = await loadOwnerNames(vehicles)
   return vehicles.map((vehicle) => {
     const fuel = fuelByVehicle.get(vehicle.id)
     const totalFuelAmount = canViewFuel && canViewCosts ? Number(fuel?.totalFuelAmount ?? 0) : null
@@ -444,6 +457,10 @@ export async function getFleetOverview(
         && vehicle.operationalIntervals[0].status !== vehicle.operationalStatus,
       worksiteName: vehicle.worksite?.name ?? "Sin faena",
       responsibleName: vehicle.responsibleUser?.name ?? vehicle.responsibleUser?.email ?? null,
+      /** Empresa propietaria (catálogo `fleet_owners`); `null` = sin informar. */
+      ownerName: vehicle.ownerId ? (ownerNames.get(vehicle.ownerId) ?? null) : null,
+      /** Marca «ubicación por confirmar»: la faena de origen está, dónde está hoy el equipo no. */
+      locationPendingConfirmation: vehicle.locationPendingConfirmation,
       soapExpiresAt: vehicle.soapExpiresAt,
       technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
       circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
@@ -516,6 +533,7 @@ export async function getFleetOverviewPage(
       { documentType: row.documentType, expiresAt: row.expiresAt },
     ])
   }
+  const ownerNames = await loadOwnerNames(vehicles)
   const index = vehicles.map((vehicle) => ({
     id: vehicle.id,
     plate: vehicle.plate,
@@ -529,6 +547,8 @@ export async function getFleetOverviewPage(
       && vehicle.operationalIntervals?.[0] != null
       && vehicle.operationalIntervals[0].status !== vehicle.operationalStatus,
     responsibleName: vehicle.responsibleUser?.name ?? vehicle.responsibleUser?.email ?? null,
+    ownerName: vehicle.ownerId ? (ownerNames.get(vehicle.ownerId) ?? null) : null,
+    locationPendingConfirmation: vehicle.locationPendingConfirmation,
     isActive: vehicle.isActive,
     nextExpiryDate: resolveNextExpiryDate({
       soapExpiresAt: vehicle.soapExpiresAt,

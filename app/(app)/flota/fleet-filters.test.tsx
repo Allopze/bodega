@@ -58,3 +58,18 @@ describe("FleetFilters", () => {
     expect(nav.replace).toHaveBeenCalledWith("/flota", { scroll: false })
   })
 })
+
+describe("FleetFilters · ubicación por confirmar", () => {
+  it("ofrece el filtro «Ubicación», por defecto en «Todas las ubicaciones»", () => {
+    render(<FleetFilters {...props} current={{}} />)
+    expect(screen.getByRole("combobox", { name: "Ubicación" }).textContent).toContain("Todas las ubicaciones")
+  })
+
+  it("con el filtro activo muestra su chip y el selector lo refleja", () => {
+    nav.search = "ubicacion=confirmar"
+    render(<FleetFilters {...props} current={{ ubicacion: "confirmar" }} />)
+    expect(screen.getByRole("combobox", { name: "Ubicación" }).textContent).toContain("Ubicación por confirmar")
+    fireEvent.click(screen.getByRole("button", { name: "Limpiar filtros" }))
+    expect(nav.replace).toHaveBeenCalledWith("/flota", { scroll: false })
+  })
+})

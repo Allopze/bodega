@@ -191,3 +191,21 @@ describe("FleetTable · enlace, estado y columnas", () => {
     expect(within(fila).getAllByText("—").length).toBeGreaterThan(0)
   })
 })
+
+describe("FleetTable · propietario y ubicación por confirmar", () => {
+  it("muestra la columna «Propietario» y la marca «Ubicación por confirmar» cuando el servicio las trae", () => {
+    renderTable([
+      { ...LIMPIA, ownerName: "Chome", locationPendingConfirmation: true },
+      { ...SIN_LECTURA, ownerName: null, locationPendingConfirmation: false },
+    ])
+    expect(screen.getByRole("columnheader", { name: /Propietario/ })).toBeInTheDocument()
+    expect(screen.getAllByText("Chome").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Ubicación por confirmar")).toHaveLength(2) // tarjeta móvil + fila de la tabla, sólo del equipo marcado
+  })
+
+  it("sin ningún propietario informado no hay columna: no se pinta una fila de «—»", () => {
+    renderTable([LIMPIA])
+    expect(screen.queryByRole("columnheader", { name: /Propietario/ })).toBeNull()
+    expect(screen.queryByText("Ubicación por confirmar")).toBeNull()
+  })
+})

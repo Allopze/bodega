@@ -3,6 +3,7 @@
 import { useActionState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
@@ -24,6 +25,9 @@ interface OpsSettingsFormProps {
     pdtpEvidenceRetentionDays: number
     purchasingClpTolerance: number
     repuestosQuotationThresholdClp: number
+    mantencionActionTypeRequired: number
+    mantencionExcludeTestRows: number
+    mantencionFindingWithoutOtDays: number
   }
   defaults: typeof import("@/lib/services/system-settings").DEFAULT_OPS_SETTINGS
   office: {
@@ -147,6 +151,40 @@ export function OpsSettingsForm({ current, defaults, office, pdfEngines }: OpsSe
             step={1}
             defaultValue={String(current.repuestosQuotationThresholdClp)}
             error={!!state.fieldErrors?.repuestosQuotationThresholdClp}
+          />
+        </Field>
+      </Section>
+
+      <Section title="Mantención" description="Reglas de la orden de trabajo, del historial importado y del tablero de mantención.">
+        <input type="hidden" name="mantencionActionTypeRequired__present" value="1" />
+        <Checkbox
+          id="mantencionActionTypeRequired"
+          name="mantencionActionTypeRequired"
+          defaultChecked={current.mantencionActionTypeRequired === 1}
+          label="Exigir el tipo de acción (preventiva, correctiva o predictiva) al crear una OT"
+        />
+        <input type="hidden" name="mantencionExcludeTestRows__present" value="1" />
+        <Checkbox
+          id="mantencionExcludeTestRows"
+          name="mantencionExcludeTestRows"
+          defaultChecked={current.mantencionExcludeTestRows === 1}
+          label="Al importar el historial, dejar fuera las filas marcadas como posible prueba (si no, se importan marcadas y el tablero no las cuenta)"
+        />
+        <Field
+          label="Días para que un hallazgo «mal estado» sin OT cuente como pendiente"
+          htmlFor="mantencionFindingWithoutOtDays"
+          helper={`Predeterminado: ${defaults.mantencionFindingWithoutOtDays}. Rango permitido: 1 a 60 días.`}
+          error={state.fieldErrors?.mantencionFindingWithoutOtDays?.[0]}
+        >
+          <Input
+            id="mantencionFindingWithoutOtDays"
+            name="mantencionFindingWithoutOtDays"
+            type="number"
+            min={1}
+            max={60}
+            step={1}
+            defaultValue={String(current.mantencionFindingWithoutOtDays)}
+            error={!!state.fieldErrors?.mantencionFindingWithoutOtDays}
           />
         </Field>
       </Section>

@@ -90,6 +90,25 @@ export const mantWorkOrders = pgTable("mant_work_orders", {
   voidReason:            text("void_reason"),
   /** Hallazgo de inspección que originó la OT (FK con nombre corto, abajo). */
   inspectionFindingId:   text("inspection_finding_id"),
+  // ── Trinorma (2026-11-21, R4) ──
+  /**
+   * Preventiva, correctiva o predictiva. Null en las OT anteriores («No
+   * informado»): no se reclasifican. Es obligatorio en las OT nuevas sólo con
+   * `ops.mantencion.ot_action_type_required` encendido. Las casillas del papel
+   * (`repair`, `maintenance`) se conservan.
+   */
+  actionType:            text("action_type"),
+  /** Especialidades del trabajo: mecánica, eléctrica, soldadura, hidráulica. */
+  specialties:           text("specialties").array(),
+  /** Horas hombre del trabajo. Sólo horas: la mano de obra interna no se valoriza. */
+  laborHours:            numeric("labor_hours", { precision: 8, scale: 2, mode: "number" }),
+  /**
+   * Dónde se ejecutó, si fue en otra faena (un taller de faena que atiende
+   * equipos de otra). La faena de imputación sigue siendo `worksite_id`.
+   */
+  executionWorksiteId:   text("execution_worksite_id").references(() => worksites.id, { onDelete: "restrict" }),
+  /** Trabajo realizado, en palabras de quien lo hizo. */
+  workPerformed:         text("work_performed"),
   createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
@@ -155,6 +174,10 @@ export const mantWorkOrders = pgTable("mant_work_orders", {
       AND char_length(trim(coalesce(${table.voidReason}, ''))) >= 5)
     OR (${table.status} <> 'anulada' AND ${table.voidedAt} IS NULL AND ${table.voidedByUserId} IS NULL AND ${table.voidReason} IS NULL)
   `),
+  check("mant_work_orders_action_type_valid", sql`${table.actionType} IS NULL OR ${table.actionType} IN ('preventiva', 'correctiva', 'predictiva')`),
+  check("mant_work_orders_specialties_valid", sql`${table.specialties} IS NULL OR ${table.specialties} <@ ARRAY['mecanica', 'electrica', 'soldadura', 'hidraulica']::text[]`),
+  check("mant_work_orders_labor_hours_valid", sql`${table.laborHours} IS NULL OR (${table.laborHours} >= 0 AND ${table.laborHours} <= 10000)`),
+  index("mant_work_orders_action_type_idx").on(table.actionType),
   check("mant_work_orders_readings_valid", sql`coalesce(${table.entryOdometer}, 0) >= 0 AND coalesce(${table.entryHourmeter}, 0) >= 0`),
   check("mant_work_orders_counters_valid", sql`${table.version} >= 1 AND ${table.rejectionCount} >= 0`),
 ])

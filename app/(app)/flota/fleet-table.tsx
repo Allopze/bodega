@@ -16,7 +16,24 @@ import { FleetMeterReading } from "./fleet-meter-reading"
 import { Button } from "@/components/ui/button"
 import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
-type VehicleRow = Awaited<ReturnType<typeof getFleetOverview>>[number]
+/**
+ * Propietario y marca «ubicación por confirmar» (Trinorma): los trae `getFleetOverview`; son opcionales
+ * aquí para que la tabla siga dibujándose con filas que aún no los llevan.
+ */
+type VehicleRow = Awaited<ReturnType<typeof getFleetOverview>>[number] & {
+  ownerName?: string | null
+  locationPendingConfirmation?: boolean
+}
+
+/** La marca no es una ubicación: avisa que la faena de origen está, pero dónde está el equipo hoy no se sabe. */
+function LocationPendingTag({ vehicle }: { vehicle: VehicleRow }) {
+  if (!vehicle.locationPendingConfirmation) return null
+  return (
+    <span className="block text-xs text-[var(--color-warning-ink)]" title="La faena de origen es la registrada, pero falta confirmar dónde está el equipo hoy.">
+      Ubicación por confirmar
+    </span>
+  )
+}
 
 /** Gasto del proveedor por km o por hora, con un decimal: no es un monto CLP entero. */
 function formatUnitCost(value: number | null, label: string | null): string {
@@ -85,12 +102,15 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
   const showMeterReading = canViewFuel && vehicles.some((v) => v.lastOdometerReading != null || v.lastHourMeterReading != null)
   // Una columna entera de «—» no dice nada: «Responsable» aparece cuando algún vehículo lo tiene (crítica 2026-11-15).
   const showResponsible = vehicles.some((v) => v.responsibleName != null)
+  // Igual que «Responsable»: sin ningún propietario informado la columna sería una fila de «—».
+  const showOwner = vehicles.some((v) => v.ownerName != null)
   const showFuel = canViewCosts && canViewFuel
 
   const columns = React.useMemo(() => [
     { key: "plate", label: "Vehículo", sortable: true },
     { key: "worksiteName", label: "Faena", sortable: true },
     { key: "operationalStatus", label: "Estado", sortable: true },
+    ...(showOwner ? [{ key: "ownerName", label: "Propietario", sortable: true }] : []),
     ...(showResponsible ? [{ key: "responsibleName", label: "Responsable", sortable: true }] : []),
     { key: "nextExpiryDate", label: "Próximo vencimiento", sortable: true },
     // El gasto y su costo por km u hora van en una celda (el costo debajo, con su unidad): en dos
@@ -99,14 +119,14 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
     ...(showFuel ? [{ key: "totalFuelAmount", label: "Gasto combustible (12 m)", sortable: true, numeric: true }] : []),
     ...(showWorkOrders ? [{ key: "openWorkOrders", label: "OT abiertas", sortable: true, numeric: true }] : []),
     ...(showMeterReading ? [{ key: "_meterReading", label: "Lectura (km u h)", sortable: false, numeric: true }] : []),
-  ], [showResponsible, showFuel, showWorkOrders, showMeterReading])
+  ], [showOwner, showResponsible, showFuel, showWorkOrders, showMeterReading])
 
   return (
     <DataTable
       caption="Vehículos de la flota"
       columns={columns}
       rows={vehicles}
-      searchKeys={["plate", "brand", "model", "worksiteName", "responsibleName"]}
+      searchKeys={["plate", "brand", "model", "worksiteName", "responsibleName", "ownerName"]}
       disableInternalSearch
       tableClassName="min-w-[760px]"
       pageSize={25}
@@ -119,7 +139,8 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
             <StateBadge entity="fleet" state={fleetState(vehicle)} />
           </div>
           <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-            <div><dt className="text-[var(--color-text-subtle)]">Faena</dt><dd>{vehicle.worksiteName}</dd></div>
+            <div><dt className="text-[var(--color-text-subtle)]">Faena</dt><dd>{vehicle.worksiteName}<LocationPendingTag vehicle={vehicle} /></dd></div>
+            {vehicle.ownerName ? <div><dt className="text-[var(--color-text-subtle)]">Propietario</dt><dd>{vehicle.ownerName}</dd></div> : null}
             {vehicle.responsibleName ? <div><dt className="text-[var(--color-text-subtle)]">Responsable</dt><dd>{vehicle.responsibleName}</dd></div> : null}
             <div className="col-span-2"><dt className="text-[var(--color-text-subtle)]">Próximo vencimiento</dt><dd className="mt-0.5"><NextExpiry vehicle={vehicle} today={today} warningDays={warningDays} /></dd></div>
             {canViewCosts && canViewFuel && vehicle.fuelCostPerUnit != null && (
@@ -141,10 +162,11 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
               {/* El enlace es real (clic medio, «abrir en pestaña»); antes la fila entera era un `role="link"`. */}
               <VehicleIdentity code={vehicle.code} plate={vehicle.plate} type={vehicle.type} href={vehicleFichaHref(vehicle.id)} />
             </TableCell>
-            <TableCell>{vehicle.worksiteName}</TableCell>
+            <TableCell>{vehicle.worksiteName}<LocationPendingTag vehicle={vehicle} /></TableCell>
             <TableCell>
               <StateBadge entity="fleet" state={fleetState(vehicle)} />
             </TableCell>
+            {showOwner && <TableCell>{vehicle.ownerName ?? "—"}</TableCell>}
             {showResponsible && <TableCell>{vehicle.responsibleName ?? "—"}</TableCell>}
             <TableCell><NextExpiry vehicle={vehicle} today={today} warningDays={warningDays} /></TableCell>
             {showFuel && (

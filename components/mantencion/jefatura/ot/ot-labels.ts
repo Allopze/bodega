@@ -1,3 +1,4 @@
+import { ACTION_TYPE_LABELS, SPECIALTY_LABELS, type ActionTypeOrUnknown, type Specialty } from "@/lib/mantencion/action-type"
 import type { OtEventType, OtStatus } from "@/lib/mantencion/work-order-states"
 import { OT_STATUS_LABELS, OT_STATUS_TONES } from "@/lib/mantencion/work-order-states"
 import type { StateMetaInput } from "@/components/states/state-badge"
@@ -39,4 +40,26 @@ export function equipmentText(order: { equipmentCode: string; equipmentPlate: st
   return order.equipmentPlate && order.equipmentPlate !== order.equipmentCode
     ? `${order.equipmentCode} · ${order.equipmentPlate}`
     : order.equipmentCode
+}
+
+/** Tipo de acción de la OT; «No informado» cuando no se puede saber (OT anteriores sin casillas claras). */
+export function actionTypeText(type: ActionTypeOrUnknown): string {
+  return type === "sin_clasificar" ? "No informado" : ACTION_TYPE_LABELS[type]
+}
+
+/** «Mecánica, Soldadura»; «—» sin especialidades. */
+export function specialtiesText(specialties: readonly Specialty[]): string {
+  return specialties.length ? specialties.map((specialty) => SPECIALTY_LABELS[specialty]).join(", ") : "—"
+}
+
+/** Horas hombre con coma decimal; «—» si no se informaron. */
+export function laborHoursText(hours: number | null): string {
+  return hours == null ? "—" : `${hours.toLocaleString("es-CL", { maximumFractionDigits: 2 })} h`
+}
+
+/** Días detenido: «3 días», «1 día», «Mismo día»; «—» mientras falte la salida. */
+export function daysStoppedText(days: number | null): string {
+  if (days == null) return "—"
+  if (days === 0) return "Mismo día"
+  return `${days} ${days === 1 ? "día" : "días"}`
 }

@@ -195,7 +195,8 @@ test.describe("Orden de trabajo (OT)", () => {
     await hoja.locator("#ot-equipo").click()
     await hoja.locator("#ot-equipo").fill(equipo.code)
     await page.getByRole("option", { name: new RegExp(equipo.code) }).first().click()
-    await expect(hoja.getByText(/Faena: Biodiversa\. La orden queda en la faena del equipo\./)).toBeVisible()
+    // La faena de imputación es la del equipo, de sólo lectura (Trinorma, R4).
+    await expect(hoja.getByLabel("Faena de imputación")).toHaveValue("Biodiversa")
     // La OT queda asignada al mecánico de su faena; con dos en Biodiversa, se elige entre ellos.
     await selectRadixById(page, "ot-mecanico", NOMBRE_MECANICO_BIO)
 

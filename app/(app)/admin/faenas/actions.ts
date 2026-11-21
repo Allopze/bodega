@@ -12,6 +12,8 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { worksiteSchema, type ActionState } from "@/lib/validation/masters"
 import { setWorksiteActive } from "@/lib/services/worksite-lifecycle"
 import { createWorksiteTx } from "@/lib/services/worksite-create"
+import { addWorksiteAliasTx, removeWorksiteAliasTx } from "@/lib/services/worksite-aliases"
+import { isWorksiteKind, setWorksiteKindTx } from "@/lib/services/worksite-kind"
 
 const REVALIDATE = "/admin/faenas"
 
@@ -160,4 +162,71 @@ export async function toggleWorksiteActive(_prev: ActionState, formData: FormDat
     }
   }
   return { ok: true, message: "Faena activada" }
+}
+
+// ── Tipo y alias (Trinorma) ───────────────────────────────────────────────────
+
+/** Permiso de administrar faenas y faena dentro del alcance de quien actúa. */
+async function guardWorksiteMaster(worksiteId: string) {
+  let session
+  try { session = await requirePermission("admin:worksites") }
+  catch { return { error: { ok: false, message: "Sin permisos" } as ActionState, session: null } }
+  if (!worksiteId) return { error: { ok: false, message: "ID requerido" } as ActionState, session: null }
+  if (!canAccessWorksite(session, worksiteId)) {
+    return { error: { ok: false, message: "No tienes acceso a esta faena" } as ActionState, session: null }
+  }
+  return { error: null, session }
+}
+
+export async function setWorksiteKindAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const worksiteId = String(formData.get("id") ?? "")
+  const guard = await guardWorksiteMaster(worksiteId)
+  if (guard.error) return guard.error
+  const kind = formData.get("kind")
+  if (!isWorksiteKind(kind)) return { ok: false, message: "Elige un tipo de faena válido" }
+  const { session } = guard
+  try {
+    const result = await db.transaction((tx) => setWorksiteKindTx(tx, { userId: session.user.id, email: session.user.email }, { worksiteId, kind }))
+    if (!result.ok) return { ok: false, message: result.message }
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: result.message }
+  } catch (error) {
+    return { ok: false, message: safeActionMessage(error, "No se pudo cambiar el tipo de la faena") }
+  }
+}
+
+export async function addWorksiteAliasAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const worksiteId = String(formData.get("id") ?? "")
+  const guard = await guardWorksiteMaster(worksiteId)
+  if (guard.error) return guard.error
+  const { session } = guard
+  try {
+    const result = await db.transaction((tx) => addWorksiteAliasTx(
+      tx, { userId: session.user.id, email: session.user.email },
+      { worksiteId, aliasText: String(formData.get("alias") ?? "") },
+    ))
+    if (!result.ok) return { ok: false, message: result.message, fieldErrors: { alias: [result.message] } }
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: result.message }
+  } catch (error) {
+    return { ok: false, message: safeActionMessage(error, "No se pudo agregar el alias") }
+  }
+}
+
+export async function removeWorksiteAliasAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const worksiteId = String(formData.get("id") ?? "")
+  const guard = await guardWorksiteMaster(worksiteId)
+  if (guard.error) return guard.error
+  const { session } = guard
+  try {
+    const result = await db.transaction((tx) => removeWorksiteAliasTx(
+      tx, { userId: session.user.id, email: session.user.email },
+      { worksiteId, aliasId: String(formData.get("aliasId") ?? "") },
+    ))
+    if (!result.ok) return { ok: false, message: result.message }
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: result.message }
+  } catch (error) {
+    return { ok: false, message: safeActionMessage(error, "No se pudo quitar el alias") }
+  }
 }

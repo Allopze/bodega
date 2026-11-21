@@ -17,6 +17,8 @@ export interface FleetOverviewFilters {
   expiry?: "vencidos" | "proximos" | "al-dia"
   /** `estado`: equipos cuya ficha y último intervalo operacional no coinciden. */
   revision?: "estado"
+  /** `confirmar`: sólo los equipos con la marca «Ubicación por confirmar». */
+  ubicacion?: "confirmar"
   q?: string
 }
 
@@ -30,6 +32,10 @@ export function filterFleetOverviewRows<T extends {
   worksiteName: string
   operationalStatus: string
   responsibleName: string | null
+  /** Empresa propietaria; se busca por ella. */
+  ownerName?: string | null
+  /** Marca «ubicación por confirmar» (Trinorma). */
+  locationPendingConfirmation?: boolean
   nextExpiryDate: string | null
   /** Presente en la lista de Flota; ausente en los conteos que no distinguen bajas. */
   isActive?: boolean
@@ -55,6 +61,7 @@ export function filterFleetOverviewRows<T extends {
     // Los filtros de vencimiento son operativos: un equipo dado de baja no
     // bloquea la operación aunque conserve documentos vencidos (FLO-001).
     if (filters.expiry && row.isActive === false) return false
+    if (filters.ubicacion === "confirmar" && row.locationPendingConfirmation !== true) return false
     if (filters.revision === "estado" && row.stateMismatch !== true) return false
     if (filters.expiry === "vencidos" && !(row.nextExpiryDate && row.nextExpiryDate < dates.today)) return false
     if (filters.expiry === "proximos" && !(row.nextExpiryDate && row.nextExpiryDate >= dates.today && row.nextExpiryDate <= dates.warningWindowEnd)) return false
@@ -63,7 +70,7 @@ export function filterFleetOverviewRows<T extends {
     // filtro y el deep link del panel lo contaba como vigente.
     if (filters.expiry === "al-dia" && (!row.nextExpiryDate || row.nextExpiryDate <= dates.warningWindowEnd)) return false
     if (query) {
-      const haystack = [row.plate, row.code, row.brand, row.model, row.type, row.worksiteName, row.responsibleName]
+      const haystack = [row.plate, row.code, row.brand, row.model, row.type, row.worksiteName, row.responsibleName, row.ownerName]
         .filter(Boolean)
         .join(" ")
         .toLocaleLowerCase("es-CL")

@@ -13,7 +13,7 @@ import { OT_ITEM_KIND_LABELS, type OtItemKind } from "@/lib/mantencion/work-orde
 import type { WorkOrderDetail, WorkOrderItemDetail, WorkOrderPartsRequest } from "@/lib/services/mantencion/work-orders/types"
 import { SparePartIdentity, SparePartName, SparePartReference, sparePartIdentity } from "@/components/mantencion/spare-part-reference"
 import { SectionCard } from "../shared/section-card"
-import { OT_STATE_META } from "./ot-labels"
+import { OT_STATE_META, actionTypeText, daysStoppedText, laborHoursText, specialtiesText } from "./ot-labels"
 import { formatDay, sortEventsNewestFirst } from "./ot-format"
 import { formatDateTime, todayInChile } from "@/lib/utils"
 import { EstimateCell } from "./ot-table"
@@ -167,7 +167,23 @@ export function OtHeaderSection({ detail }: { detail: WorkOrderDetail }) {
           value={detail.assignedToName ? `${detail.assignedToName}${detail.assignedAt ? ` · desde ${formatDateTime(detail.assignedAt)}` : ""}` : "Sin asignar"}
         />
         <DetailItem layout="stacked" label="Creada por" value={detail.requestedByName} />
+        <DetailItem layout="stacked" label="Tipo de acción" value={actionTypeText(detail.effectiveActionType)} />
+        <DetailItem layout="stacked" label="Especialidades" value={specialtiesText(detail.specialties)} />
+        <DetailItem layout="stacked" label="Faena de imputación" value={detail.worksiteName} />
+        {detail.executionWorksiteName && <DetailItem layout="stacked" label="Faena de ejecución" value={detail.executionWorksiteName} />}
+        <DetailItem layout="stacked" label="Horas hombre" value={laborHoursText(detail.laborHours)} mono />
+        <DetailItem layout="stacked" label="Días detenido" value={daysStoppedText(detail.daysStopped)} mono />
       </dl>
+    </SectionCard>
+  )
+}
+
+/** «Trabajo realizado»: lo que se declaró al terminar. Sin texto, la sección no aparece. */
+export function OtWorkPerformedSection({ detail }: { detail: WorkOrderDetail }) {
+  if (!detail.workPerformed) return null
+  return (
+    <SectionCard title="Trabajo realizado">
+      <p className="whitespace-pre-wrap text-sm text-[var(--color-text)]">{detail.workPerformed}</p>
     </SectionCard>
   )
 }

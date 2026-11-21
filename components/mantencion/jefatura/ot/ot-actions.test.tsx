@@ -229,6 +229,43 @@ describe("OtActions: diálogos y envío con expectedVersion", () => {
   })
 })
 
+describe("OtActions: terminar con trabajo realizado y horas hombre", () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(cleanup)
+
+  async function openFinish() {
+    render(<OtActions {...props({ allowedTransitions: ["finish"], canEditExecution: true })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Registrar salida" }))
+    return within(await screen.findByRole("dialog"))
+  }
+
+  it("envía el trabajo realizado y las horas (coma decimal) junto con la salida", async () => {
+    actions.finishWorkOrderAction.mockResolvedValue({ ok: true, data: { version: 5, status: "trabajo_terminado" } })
+    const dialog = await openFinish()
+    fireEvent.change(dialog.getByRole("textbox", { name: /Trabajo realizado/ }), { target: { value: "  Cambio de manguera  " } })
+    fireEvent.change(dialog.getByRole("spinbutton", { name: /Horas hombre/ }), { target: { value: "6.5" } })
+    fireEvent.click(dialog.getByRole("button", { name: "Registrar salida" }))
+    await waitFor(() => expect(actions.finishWorkOrderAction).toHaveBeenCalledWith(expect.objectContaining({
+      workOrderId: "ot-1", expectedVersion: 4, workPerformed: "Cambio de manguera", laborHours: 6.5,
+    })))
+  })
+
+  it("los dos campos son opcionales: vacíos viajan como null", async () => {
+    actions.finishWorkOrderAction.mockResolvedValue({ ok: true, data: { version: 5, status: "trabajo_terminado" } })
+    const dialog = await openFinish()
+    fireEvent.click(dialog.getByRole("button", { name: "Registrar salida" }))
+    await waitFor(() => expect(actions.finishWorkOrderAction).toHaveBeenCalledWith(expect.objectContaining({ workPerformed: null, laborHours: null })))
+  })
+
+  it("horas negativas o sobre el tope no se envían", async () => {
+    const dialog = await openFinish()
+    fireEvent.change(dialog.getByRole("spinbutton", { name: /Horas hombre/ }), { target: { value: "-2" } })
+    fireEvent.click(dialog.getByRole("button", { name: "Registrar salida" }))
+    expect(await dialog.findByText(/horas entre 0 y 10\.000/)).toBeTruthy()
+    expect(actions.finishWorkOrderAction).not.toHaveBeenCalled()
+  })
+})
+
 describe("OtActions: registrar el trabajo de la OT desde el PC", () => {
   beforeEach(() => vi.clearAllMocks())
   afterEach(cleanup)
