@@ -223,10 +223,12 @@ test("el panel abre con la franja «Hoy» y cada cifra lleva a su subconjunto", 
 test("el panel exporta las tablas de sus gráficos, una hoja por gráfico", async ({ page }) => {
   await login(page, JEFE)
   await page.goto("/mantencion/panel")
-  const { workbook, filename } = await download(page, "Exportar Excel: Panel de mantención, una hoja por gráfico")
+  const { workbook, filename } = await download(page, "Exportar Excel: Panel de mantención, una hoja por gráfico y la hoja Trabajos")
   expect(filename).toMatch(/^panel_de_mantencion_\d{4}-\d{2}-\d{2}\.xlsx$/)
   const names = workbook.worksheets.map((sheet) => sheet.name)
   expect(names.length).toBeGreaterThan(1)
+  // Trinorma (R5): además de una hoja por gráfico, el servidor agrega «Trabajos» (historial + OT).
+  expect(names).toContain("Trabajos")
   expect(names.at(-1)).toBe("Metadatos")
 })
 
