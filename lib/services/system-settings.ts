@@ -32,6 +32,9 @@ export const OPS_SETTING_KEYS = {
   pdtpEvidenceRetentionDays: "ops.pdtp.evidence_retention_days",
   purchasingClpTolerance:    "ops.compras.clp_tolerance",
   repuestosQuotationThresholdClp: "ops.repuestos.quotation_threshold_clp",
+  mantencionActionTypeRequired:   "ops.mantencion.ot_action_type_required",
+  mantencionExcludeTestRows:      "ops.mantencion.import_exclude_test_rows",
+  mantencionFindingWithoutOtDays: "ops.mantencion.finding_without_ot_days",
 } as const
 
 export const DEFAULT_OPS_SETTINGS = {
@@ -57,6 +60,21 @@ export const DEFAULT_OPS_SETTINGS = {
    * usuario el 2026-11-07.
    */
   repuestosQuotationThresholdClp: 200_000,
+  /**
+   * 1 = el tipo de acción (preventiva, correctiva, predictiva) es obligatorio
+   * al crear una OT (R4, Trinorma 2026-11-21). Parte apagado para no cortar el
+   * flujo de quien ya usa la OT; se enciende cuando el Jefe de Mantención lo
+   * pida. Las OT anteriores quedan «No informado».
+   */
+  mantencionActionTypeRequired:   0,
+  /**
+   * 1 = el importador del consolidado deja fuera las filas marcadas como
+   * posible prueba; 0 = las importa marcadas (`is_test`) y el tablero las
+   * excluye igual. Por defecto se importan marcadas: se conservan sin contar.
+   */
+  mantencionExcludeTestRows:      0,
+  /** Días tras un hallazgo «mal estado» sin OT ni ingreso a taller para contarlo como pendiente (R5). */
+  mantencionFindingWithoutOtDays: 7,
 } as const
 
 export interface OperationalSettings {
@@ -67,6 +85,9 @@ export interface OperationalSettings {
   pdtpEvidenceRetentionDays:  number
   purchasingClpTolerance:     number
   repuestosQuotationThresholdClp: number
+  mantencionActionTypeRequired:   number
+  mantencionExcludeTestRows:      number
+  mantencionFindingWithoutOtDays: number
 }
 
 const OPS_VALIDATION: Record<keyof OperationalSettings, { min: number; max: number }> = {
@@ -77,6 +98,9 @@ const OPS_VALIDATION: Record<keyof OperationalSettings, { min: number; max: numb
   pdtpEvidenceRetentionDays:  { min: 30,     max: 3650 },
   purchasingClpTolerance:     { min: 0,      max: 100_000 },
   repuestosQuotationThresholdClp: { min: 0,  max: 50_000_000 },
+  mantencionActionTypeRequired:   { min: 0,  max: 1 },
+  mantencionExcludeTestRows:      { min: 0,  max: 1 },
+  mantencionFindingWithoutOtDays: { min: 1,  max: 60 },
 }
 
 /**
@@ -137,6 +161,9 @@ export async function getOperationalSettings(
     pdtpEvidenceRetentionDays:  parseIntStrict(raw.pdtpEvidenceRetentionDays,  DEFAULT_OPS_SETTINGS.pdtpEvidenceRetentionDays),
     purchasingClpTolerance:     parseIntStrict(raw.purchasingClpTolerance,     DEFAULT_OPS_SETTINGS.purchasingClpTolerance),
     repuestosQuotationThresholdClp: parseIntStrict(raw.repuestosQuotationThresholdClp, DEFAULT_OPS_SETTINGS.repuestosQuotationThresholdClp),
+    mantencionActionTypeRequired:   parseIntStrict(raw.mantencionActionTypeRequired,   DEFAULT_OPS_SETTINGS.mantencionActionTypeRequired),
+    mantencionExcludeTestRows:      parseIntStrict(raw.mantencionExcludeTestRows,      DEFAULT_OPS_SETTINGS.mantencionExcludeTestRows),
+    mantencionFindingWithoutOtDays: parseIntStrict(raw.mantencionFindingWithoutOtDays, DEFAULT_OPS_SETTINGS.mantencionFindingWithoutOtDays),
   }
 
   for (const k of Object.keys(settings) as Array<keyof OperationalSettings>) {

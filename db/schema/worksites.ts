@@ -20,6 +20,13 @@ export const worksites = pgTable("worksites", {
   adminContratoLabel: text("admin_contrato_label"),
   isActive:  boolean("is_active").notNull().default(true),
   /**
+   * Qué es este lugar (2026-11-21, Trinorma): `operacion` es una faena con
+   * contrato; `deposito` guarda equipos sin operar (Flor del Laja);
+   * `administracion` es la oficina. Lo leen los importadores y el tablero para
+   * no contar un depósito como faena. No cambia permisos ni alcance.
+   */
+  kind:      text("kind").notNull().default("operacion"),
+  /**
    * Cuándo se cerró la faena (null mientras opera). Lo fija y lo limpia
    * `setWorksiteActive`. El cierre anual del PDTP le exige los meses completos
    * anteriores a esta fecha. Las bajas anteriores a la columna quedan en null:
@@ -30,6 +37,7 @@ export const worksites = pgTable("worksites", {
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("idx_worksites_active").on(table.isActive).where(sql`${table.isActive} = true`),
+  check("worksites_kind_valid", sql`${table.kind} IN ('operacion', 'deposito', 'administracion')`),
 ])
 
 /* ── Suppliers (Proveedores) ─────────────────────────────────────────────── */

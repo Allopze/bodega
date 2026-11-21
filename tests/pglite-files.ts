@@ -660,4 +660,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/fuel-records-personal-use-pglite.test.ts",
   "lib/__tests__/tae-anomalies-personal-use-pglite.test.ts",
   "lib/__tests__/consumption-exact-personal-use-pglite.test.ts",
+  // Trinorma (2026-11-21): migración 0398 y su reversión, y una suite por paquete de trabajo.
+  "db/__tests__/trinorma-0398-pglite.test.ts",
+  "lib/__tests__/trinorma-maestros-pglite.test.ts",
+  "lib/__tests__/trinorma-consolidado-pglite.test.ts",
+  "lib/__tests__/trinorma-ot-pglite.test.ts",
+  "lib/__tests__/trinorma-tablero-pglite.test.ts",
 ]
