@@ -197,7 +197,11 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
 
 - Encender «Exigir el tipo de acción» cuando el Jefe de Mantención lo pida.
 - **No volver a correr `scripts/apply-vencimientos-planilla-2026-11.ts`** con la planilla de noviembre: volvería a rotar los códigos de los tres tractos.
-- **Lecturas y última preventiva (lo que falta para el Panel del 01-12).** La planilla del Jefe de Mantención (`~/backups-dev/trinorma-2026-11/`) vence el jueves 26-11. Con ella de vuelta se cargan, juntas, las 12 lecturas y las preventivas que él confirme, cada una con su respaldo. KCH-129 lleva la nota de detenido. **Las lecturas no se cargan solas:** sin preventiva registrada, el Panel supone que la última se hizo en el último múltiplo de 10.000 km, y ese «al día» no tiene respaldo. La planilla también le pregunta si la pauta de 10.000 km es la real, porque en los formularios el aceite de motor se cambia cada 37.000 a 50.000 km.
+- **Pauta, lecturas y última preventiva (lo que falta para el Panel del 01-12), en este orden:**
+  1. **La pauta.** La de «Camiones y tractos» parte en 10.000 km, pero en los formularios el aceite de motor se cambia cada 37.000 a 50.000 km en los 9 equipos con historial. Con la pauta actual casi todo saldría vencido aunque las preventivas estén completas. El Jefe de Mantención la confirma o la corrige con el manual del fabricante; es la hoja 1 de su planilla, marcada como la más importante. Si cambia, se corrige en la plataforma antes de cargar nada.
+  2. **Las 12 lecturas y las preventivas que él confirme,** juntas y cada una con su respaldo. KCH-129 lleva la nota de detenido.
+
+  La planilla está en `~/backups-dev/trinorma-2026-11/` y vence el jueves 26-11. **Las lecturas no se cargan solas:** sin preventiva registrada, el Panel supone que la última se hizo en el último múltiplo del intervalo base, y ese «al día» no tiene respaldo.
 - **Contrato «Horcones»:**
   - Facturación carga el cobro: plazo de 30 días, ciclo del 21 al 20, cobro por viaje;
   - los equipos se asignan después de decidir los de Asir (KA-137, KRR-005) y trasladar KCH-130.
@@ -205,4 +209,9 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
   - un traslado por pantalla o con `transferVehiclesTx` admite fechas solo desde el día 1 del mes anterior (hoy, el 01-10-2026);
   - una fecha anterior es trabajo de la reconstrucción del recorrido (`scripts/reconstruct-worksite-stays.ts`), que salta los equipos que ya tienen un traslado.
 
-  Decisión pendiente del usuario.
+  **Decisión del usuario, 21-11: opción B.** No se registra un traslado con fecha 01-10: no se podría deshacer, y la reconstrucción ya no podría corregir julio a septiembre. KCH-130 entra en la reconstrucción de toda la flota.
+  - El 01-07 sale de las cargas de combustible, y por la regla del 18-11 (solo evidencia física, nunca Copec ni GPS) no sirve.
+  - Las fuentes tampoco cuadran: hay OT con faena «ARAUCO» desde el 08-05, pero cargó combustible en Calymag hasta el 29-05.
+  - La mejor evidencia física es la **fecha de acreditación de KCH-130 en Planta Arauco**, que la planilla le pide al administrador de contrato Horcones.
+  - **Fecha propuesta para la reconstrucción en producción:** jueves 03-12-2026, después de la auditoría. Antes, una corrida en seco en el clon. La fecha la confirma el usuario.
+- **Choques de código por ceros a la izquierda.** Se revisó todo el inventario de octubre (Base de Datos, Dados de baja y Equipos móviles) contra la regla del índice único. El único choque es KRR-01 (GRDW-63) con KRR-001 (JC-6212), y ningún código del inventario choca con otro equipo de la flota.

@@ -39,7 +39,8 @@ El contrato «Horcones» se crea con los contratos, no en este script.
 | C10 | Lecturas: se cargan **junto con** las preventivas que confirme el Jefe de Mantención, nunca solas. La planilla, con plazo al 26-11, está en `~/backups-dev/trinorma-2026-11/`. KCH-129 se carga con la nota de detenido. |
 | C11 | Un solo contrato «Horcones» en la faena Arauco, con mandante Celulosa Arauco y Constitución S.A. (93.458.000-1) e inicio el 01-08-2025. Las Líneas 2 y 3 van en las notas, porque no hay líneas por contrato. No lleva número de OC. Queda sin equipos hasta decidir los de Asir. Lo crea el paso 7 de los maestros. |
 | C12 | Fuera de flota: se dan de alta GRDW-63 (remolque de Chome; sin código, porque KRR-01 choca con KRR-001; Arauco por confirmar) y CA-35 / ZV-6852 (camioneta de Asir, Flor del Laja). No se dan de alta WX-6495 ni JN-1255. |
-| C13 | Traslado de KCH-130 a Arauco: aprobado, pero pendiente. El traslado no admite fechas anteriores al 01-10-2026, y el usuario quería el 01-07-2026. Se le consultó. |
+| C13 | KCH-130, opción B: no se registra un traslado con fecha 01-10. Entra en la reconstrucción de toda la flota, con la fecha de acreditación en Planta Arauco como evidencia (se le pregunta al administrador de contrato Horcones). Fecha propuesta: 03-12-2026, a confirmar. |
+| C14 | La pauta va antes que las lecturas. Si la pauta de 10.000 km no es la que se aplica (en los formularios el aceite de motor se cambia cada 37.000 a 50.000 km), se corrige con el manual del fabricante antes de cargar lecturas y preventivas. Es la hoja 1 de la planilla del Jefe de Mantención. |
 
 Decisiones anteriores que siguen vigentes:
 

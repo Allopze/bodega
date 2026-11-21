@@ -121,3 +121,22 @@ Recorrido en Chromium contra el dev :3003, con la base `bodega_trinorma` despué
   - `historical-privacy`: 3 de 3.
   - `test:fast`: 1.431 archivos y 21.503 pruebas pasan, 0 fallas.
 - **No se corrió** la suite completa de `test:pglite` ni la E2E después de este cambio. Se corrieron sólo las suites PGlite de los archivos tocados. El cambio no toca pantallas cubiertas por E2E, salvo el detalle del historial, que se verificó en el navegador.
+
+## Lo que quedó fuera de la Fase 1 (21-11)
+
+Esta lista es explícita a propósito: nada de esto debe darse por hecho al cargar producción.
+
+- **Cobro del contrato «Horcones»:** el plazo de 30 días, el ciclo del 21 al 20 y el cobro por viaje quedaron **solo en las notas**. El servicio operacional de contratos no escribe esos campos; los carga Facturación.
+- **Líneas 2 y 3:** van en las notas del contrato. La plataforma no tiene líneas dentro de un contrato, así que no se puede filtrar por línea.
+- **El contrato no tiene equipos asignados.** Falta decidir los de Asir (KA-137, KRR-005) y trasladar KCH-130.
+- **GRDW-63 está en la flota sin código.** KRR-01 choca con KRR-001 en el índice único, y la base del Jefe de Mantención lo llama H-4. Se le preguntó al Jefe.
+- **KCH-130 sigue en Santa Fe y KCH-129 en Arauco,** cruzados. Se corrigen en la reconstrucción del recorrido (opción B), no antes.
+- **Ningún equipo tiene lectura ni preventiva cargada.** Primero el Jefe de Mantención confirma la pauta; después se cargan lecturas y preventivas juntas. El cargador todavía no existe.
+- **Quedan 8 mantenciones sin equipo:**
+  - 4 de «WX6495»;
+  - 2 de KCH-126 / KXZD-19;
+  - JN-1255;
+  - la estructura de limpieza.
+- **No se corrió la E2E ni test:pglite completo** sobre estos últimos commits. Se corrieron las suites PGlite de los archivos tocados, typecheck y lint.
+
+**Despliegue:** llegar a `main` no corre ningún script de Trinorma. Un push a `origin/main` corre el CI y luego el workflow Deploy, cuya compuerta de esquema, de solo lectura, se detiene mientras producción tenga migraciones pendientes (hoy, la 0397 y la 0398). La carga de datos sigue siendo un paso aparte, a mano y primero en simulación (DESPLIEGUE.md §4).
