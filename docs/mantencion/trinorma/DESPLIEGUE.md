@@ -25,6 +25,8 @@ Se aplicó sin errores sobre un clon de producción del 21-11. Eso incluye el í
 
 **Permisos.** No hay permisos nuevos. Sí hay una concesión nueva, decidida por el usuario el 2026-11-21: el administrador de contrato recibe `mant:records:view_worksite` y `mant:export`, es decir, ve y exporta el Panel, los registros, el historial y los equipos de **sus** faenas. Va en `GRANT_ADDITIONS` y la aplica una sola vez el paso `sync-rbac` que `deploy-prod.sh` ya corre.
 
+**Privacidad (decisión del usuario, 2026-11-21, opción B).** El detalle de un trabajo del historial ya no muestra la cuenta de correo con que se envió el formulario. El dato sigue guardado, porque la identidad de cada formulario se calcula con él; el responsable y el conductor se siguen viendo.
+
 **Parámetros.** En Parámetros operativos → Mantención:
 
 - «Exigir el tipo de acción» parte **apagado**;
@@ -85,18 +87,31 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
 1. **Maestros, simulación:**
 
    ```
-   apply-trinorma-maestros.ts --actor-email <correo> --inventario <INVENTARIO_EQUIPOS_ACTUALIZADO_FAENAS_10-2026.xlsx>
+   apply-trinorma-maestros.ts --actor-email <correo> --inventario <INVENTARIO_EQUIPOS_ACTUALIZADO_FAENAS_10-2026.xlsx> --unir-arauco
    ```
 
    Lo que hace:
    - pasa Flor del Laja a depósito y Oficina Central a administración;
-   - crea 8 alias;
-   - asigna propietarios a 159 equipos (los terceros salen sólo por cantidad);
+   - **une las dos Arauco.** El usuario eligió el 21-11 unirlas con el nombre «Arauco» y el contrato «Horcones»:
+     - «Horcones» (HORCONES) pasa a llamarse «Arauco», sin mover sus equipos;
+     - la «Arauco» del seed (MANT-ARA) pasa a «Arauco (anterior)» y sigue inactiva;
+     - las 18 filas del historial que apuntan a MANT-ARA pasan a HORCONES;
+     - el folio ARA de Mantención pasa a HORCONES. Sin él, la faena no aparece en el Panel.
+
+     La unión se omite sola si MANT-ARA tiene equipos o contratos, y el folio no se traspasa si MANT-ARA ya emitió folios. El contrato «Horcones» no lo crea este script: se crea con los contratos;
+   - crea 9 alias, entre ellos «Horcones», para que las planillas que todavía dicen Horcones la reconozcan;
+   - **devuelve a los tres tractos de Biodiversa su código** (decisión del usuario, 21-11):
+     - SRCJ-47 vuelve a ser KCH-133;
+     - SRCJ-42 vuelve a ser KCH-135;
+     - SRCJ-39 vuelve a ser KCH-136.
+
+     La carga de vencimientos del 13-11 los había rotado, porque la planilla de la faena los traía cruzados. Manda el inventario de octubre. Se corrigen los tres juntos o ninguno: si alguno tiene otro código, el paso se omite y lo informa. Las patentes y los vencimientos no cambian;
+   - asigna propietarios a unos 160 equipos (162 en el clon, con los tres tractos). Los terceros salen sólo por cantidad;
    - pone la marca «ubicación por confirmar» a 32 equipos (Pacífico y faenas cerradas);
    - no mueve ningún equipo de faena.
 
-   En el clon del 21-11: 26 cambios. La segunda corrida no hizo nada.
-2. **Maestros, `--apply`.** La **unión de las dos Arauco** (HORCONES pasa a llamarse «Arauco»; las 18 filas del historial de MANT-ARA pasan a HORCONES; MANT-ARA pasa a «Arauco (anterior)») sólo corre con `--unir-arauco`. Tiene autorización aparte. Si MANT-ARA tuviera equipos o contratos, se omite sola.
+   En el clon del 21-11, la segunda corrida no hizo nada.
+2. **Maestros, `--apply`,** con las mismas opciones, después de revisar la simulación.
 3. **Equipos que faltaban en la flota, simulación y luego `--apply`:**
 
    ```
@@ -132,7 +147,9 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
    | Pautas | 6 (2 de prueba) |
    | Rechazos | 0 |
 
-   Todas las filas resuelven su faena. 112 no tienen equipo: 16 equipos que no están en la flota. Hay 66 mantenciones y 270 inspecciones en conflicto por las patentes cruzadas de KCH-133, KCH-135 y KCH-136.
+   Todas las filas resuelven su faena. Con los equipos faltantes ya dados de alta, 12 mantenciones quedan sin equipo: patentes que no están en ninguna planilla (WX-6495, GRDW-63, ZV-6852) y la estructura de limpieza.
+
+   Con los códigos de los tractos corregidos en el paso 1, las 64 mantenciones y 270 inspecciones de KCH-133, KCH-135 y KCH-136 se ligan solas: en el clon, 18, 24 y 22 trabajos, y 101, 92 y 77 inspecciones. Quedan 2 mantenciones en conflicto, «KCH-126 / KXZD-19» del 08-08-2025, para ligar a mano.
 
    Si el alias «Cholguan» todavía no existe, el importador igual resuelve CHOLGUAN, gracias al respaldo que ya tenía.
 5. **Importador, `--apply`.** La segunda corrida debe dar todo «sin cambios».
@@ -144,6 +161,10 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
    SELECT count(*) FROM mant_historical_inspections;    -- 1333
    SELECT count(*) FROM mant_historical_findings;       -- 1132
    SELECT count(*) FROM mant_historical_schedule_checks; -- 6
+   SELECT count(*) FROM mant_historical_records WHERE equipment_match = 'conflict' AND vehicle_id IS NULL;  -- 2
+   SELECT code, plate FROM fuel_vehicles WHERE plate IN ('SRCJ-39', 'SRCJ-42', 'SRCJ-47') ORDER BY code;  -- KCH-133 SRCJ-47, KCH-135 SRCJ-42, KCH-136 SRCJ-39
+   SELECT w.code, w.name, s.folio_code FROM worksites w LEFT JOIN mant_worksite_settings s ON s.worksite_id = w.id
+    WHERE w.code IN ('HORCONES', 'MANT-ARA');  -- HORCONES «Arauco» ARA; MANT-ARA «Arauco (anterior)» sin folio
    ROLLBACK;
    ```
 
@@ -157,12 +178,14 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
   - borrar las de `mant_historical_records` con `source_file` del consolidado;
   - en las 142 del 18-11, volver a null las columnas nuevas.
 
-  Los maestros dejan un registro de auditoría por cambio.
+  Los maestros dejan un registro de auditoría por cambio. Eso incluye los códigos de los tractos (motivo «vuelve el código anterior a la carga de vencimientos del 13-11») y el traspaso del folio.
 
 ## 6. Después
 
 - Encender «Exigir el tipo de acción» cuando el Jefe de Mantención lo pida.
-- Decisiones pendientes del usuario:
-  - patentes de KCH-133, KCH-135 y KCH-136;
-  - la unión de Arauco;
-  - el traslado (C4).
+- **No volver a correr `scripts/apply-vencimientos-planilla-2026-11.ts`** con la planilla de noviembre: volvería a rotar los códigos de los tres tractos.
+- Crear el contrato «Horcones» de la faena Arauco cuando se carguen los contratos. Antes hay que confirmar el mandante con Finanzas:
+  - las HES son de Celulosa Arauco y Constitución S.A.;
+  - pero una factura de diciembre de 2025 se emitió a Maderas Arauco S.A.
+- **Faenas de KCH-129 y KCH-130, probablemente cruzadas.** La carga del 13-11 dejó KCH-129 (KXZD-19) en Horcones, ahora Arauco. El inventario de octubre lo pone en Cabrero, y pone KCH-130 (KXZD-20) en Horcones. Se corrige con «Trasladar equipos» cuando se encienda (C4).
+- Decisión pendiente del usuario: el traslado (C4).

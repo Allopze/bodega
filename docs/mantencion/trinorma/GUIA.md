@@ -33,6 +33,8 @@ Para el Jefe de Mantención y los administradores de contrato. Explica dónde es
 
 Cada trabajo de los formularios queda con su texto original, su tipo de acción, sus horas, su contrato (Residuos, Calymag, Rodantes) y las observaciones de calidad del consolidado. Si un trabajo no quedó ligado a un equipo, por ejemplo porque el equipo no está en la flota o porque el código y la patente no coinciden, se puede ligar a mano desde su detalle.
 
+En «Datos originales» se ven el responsable y el conductor de cada trabajo. La cuenta de correo con que se envió el formulario no se muestra: para saber de dónde vino un trabajo basta el taller que lo registró.
+
 ## Pedir y cerrar una orden de trabajo
 
 **Dónde:** Mantención → **Órdenes de trabajo** → **Nueva orden**, o desde la ficha del equipo en Flota.
@@ -50,6 +52,7 @@ Hoy el tipo de acción es opcional. El Jefe de Mantención puede hacerlo obligat
 
 ## Faenas y equipos
 
+- **Arauco:** la faena que antes se llamaba «Horcones» se llama ahora **Arauco**. Es la operación de Celulosa Planta Arauco y tiene su historial completo. «Horcones» queda como alias, y su contrato se llamará «Horcones».
 - **Tipo y alias de una faena:** Administración → Faenas → «Tipo y alias». Flor del Laja es un **depósito**, no una operación. Los **alias** son otros nombres con que llega la faena en las planillas (por ejemplo, «Cholguan» para «Cholguan - Arauco»). Sirven para que los importadores la reconozcan.
 - **Empresa propietaria y ubicación por confirmar:** ficha del equipo en Flota → «Propietario y ubicación».
   - La empresa (Chome, ASIR, Servimar, un banco, un tercero) es un dato del equipo: no cambia su faena ni a quién se le imputa el costo.
@@ -58,5 +61,9 @@ Hoy el tipo de acción es opcional. El Jefe de Mantención puede hacerlo obligat
 
 ## Lo que todavía no está
 
-- **Trabajos sin equipo ligado.** Las grúas H-1, H-2 y H-13, las bateas KCB y otros equipos que faltaban se agregan a la flota en la carga. Quedan unos pocos trabajos con patentes que no están en ninguna planilla (WX-6495, GRDW-63, ZV-6852): se ven en el historial y se pueden ligar a mano.
-- **Patentes cruzadas.** Las de KCH-133, KCH-135 y KCH-136 hay que confirmarlas contra el padrón. Mientras tanto, sus trabajos del formulario quedan en conflicto, sin equipo ligado, pero cuentan en la faena.
+- **Trabajos sin equipo ligado.** Las grúas H-1, H-2 y H-13, las bateas KCB y otros equipos que faltaban se agregan a la flota en la carga. Quedan pendientes:
+  - unos pocos trabajos con patentes que no están en ninguna planilla (WX-6495, GRDW-63, ZV-6852);
+  - dos trabajos de agosto de 2025 que dicen «KCH-126 / KXZD-19», cuyo código y patente son de camiones distintos.
+
+  Todos se ven en el historial y se pueden ligar a mano.
+- **KCH-133, KCH-135 y KCH-136** vuelven a llevar el código que tienen en el inventario: KCH-133 es SRCJ-47, KCH-135 es SRCJ-42 y KCH-136 es SRCJ-39. Entre el 13 y el 21 de noviembre la plataforma los mostró cruzados.

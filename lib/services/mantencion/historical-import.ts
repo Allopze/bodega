@@ -3,6 +3,7 @@ import { db, type DB, type Tx } from "@/db"
 import { fuelVehicles, mantHistoricalRecords, worksiteAliases, worksites } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
+import { visibleHistoricalFields } from "@/lib/mantencion/historical-privacy"
 import type { MantViewer } from "./access"
 import type { MantActor } from "./equipment-history"
 import { parseHistoricalWorkbook, resolveHistoricalEquipment, resolveHistoricalWorksite, type HistoricalRow } from "./historical-workbook"
@@ -167,10 +168,11 @@ export async function listHistoricalRecords(viewer: MantViewer, options: { page?
   return { rows, total, page, pageSize: PAGE_SIZE }
 }
 
+/** Un trabajo del historial para mostrarlo: la fila original sale sin los campos ocultos (la cuenta de correo). */
 export async function getHistoricalRecord(viewer: MantViewer, sourceKey: string) {
   if (!/^[a-f0-9]{64}$/.test(sourceKey)) return null
   const [record] = await db.select().from(mantHistoricalRecords).where(and(eq(mantHistoricalRecords.sourceKey, sourceKey), historicalVisibility(viewer))).limit(1)
-  return record ?? null
+  return record ? { ...record, fields: visibleHistoricalFields(record.fields) } : null
 }
 
 export async function historicalLinkOptions() {

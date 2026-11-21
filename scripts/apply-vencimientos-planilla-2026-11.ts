@@ -1,6 +1,11 @@
 /**
  * scripts/apply-vencimientos-planilla-2026-11.ts
  *
+ * ⚠ YA APLICADO EN PRODUCCIÓN (2026-11-13). NO VOLVER A CORRERLO con esa planilla: trae rotados
+ * los códigos de los tractos SRCJ-47, SRCJ-42 y SRCJ-39 de Biodiversa, y el paso 4 de
+ * `scripts/apply-trinorma-maestros.ts` los devolvió a KCH-133, KCH-135 y KCH-136 (decisión del
+ * usuario, 2026-11-21: manda el inventario de octubre). Una segunda corrida los volvería a rotar.
+ *
  * Carga única de `Control_vencimientos_Chome_consolidado.xlsx`, el control
  * manual que hasta hoy se llevaba fuera de Chome, y que esta carga deja de
  * necesitar (decisiones del usuario, 2026-11-05):

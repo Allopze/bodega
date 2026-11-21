@@ -21,11 +21,21 @@ Este documento fija lo que comparten los paquetes. Un implementador **no** cambi
 | C6 | El historial importado **entra** en los indicadores retrospectivos del tablero (por tipo, % de correctivas, días en taller, horas hombre, por faena y por equipo), con la fuente rotulada. El semáforo, las alertas y la lectura oficial del equipo siguen sin leer el historial. |
 | C7 | Los 142 trabajos cargados en prod el 18-11 son los mismos 142 del consolidado con FUENTE «NUEVA_BASE… (form. nuevo)». Se reconocen por la identidad existente, `sourceKey = sha256("google-forms\n" + "YYYY-MM-DD HH:MM:SS" + "\n" + correo)`. No se duplican ni se borran: se completan las columnas nuevas, sin tocar su contenido. |
 
-**Unir las dos «Arauco».** Se propuso al usuario el 20-11 y respondió «tienes mi permiso». El script de WP1 lo implementa **sólo en simulación**. Aplicarlo en producción requiere que el usuario lo autorice explícitamente, aparte, al ver el informe de la simulación. La propuesta:
+**Unir las dos «Arauco».** Se propuso al usuario el 20-11 y respondió «tienes mi permiso». El 21-11, ante la pregunta por el nombre, eligió **«Arauco»**, con el contrato **«Horcones»**. El script de WP1 la aplica con `--unir-arauco`. Como toda carga en producción, `--apply` corre después de que el usuario revise la simulación y con respaldo. Qué hace:
 
 - `HORCONES` (activa, 8 equipos) pasa a llamarse **Arauco**;
 - las 18 filas del historial que apuntan a `MANT-ARA` (la del seed, inactiva y sin equipos) pasan a `HORCONES`;
-- `MANT-ARA` se renombra para no repetir el nombre y queda inactiva, sin borrarse.
+- `MANT-ARA` se renombra «Arauco (anterior)» para no repetir el nombre y queda inactiva, sin borrarse;
+- el folio de Mantención `ARA` pasa de `MANT-ARA` a `HORCONES`, salvo que `MANT-ARA` ya haya emitido folios. El Panel sólo ofrece las faenas con folio.
+
+El contrato «Horcones» se crea con los contratos, no en este script.
+
+**Decisiones del 2026-11-21, tras el informe de evidencia de Gmail, Drive y archivos locales:**
+
+| # | Decisión |
+|---|---|
+| C8 | Los tractos SRCJ-47, SRCJ-42 y SRCJ-39 vuelven a KCH-133, KCH-135 y KCH-136. La carga de vencimientos del 13-11 los había rotado, porque la planilla de la faena los traía cruzados; manda el inventario de octubre. Lo hace el paso 4 de `scripts/apply-trinorma-maestros.ts`, los tres juntos o ninguno. Las 2 filas «KCH-126 / KXZD-19» quedan para ligar a mano. |
+| C9 | Datos personales, opción B. El detalle del historial no muestra la cuenta de correo con que se envió el formulario (`lib/mantencion/historical-privacy.ts`, aplicado en `getHistoricalRecord`). El dato sigue guardado. El responsable y el conductor se muestran. |
 
 Decisiones anteriores que siguen vigentes:
 

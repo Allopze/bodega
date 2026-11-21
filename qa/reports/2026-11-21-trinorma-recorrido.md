@@ -101,3 +101,23 @@ Capturas, textos y PDF en el scratchpad de la sesión (`qa/out/`), fuera del rep
 
   Ver `docs/mantencion/trinorma/DESPLIEGUE.md`.
 - **Decisiones pendientes:** las de «FUNCTIONAL FINDING» arriba.
+
+## Verificación del 21-11 por la tarde: decisiones C8, C9 y unión de Arauco
+
+Recorrido en Chromium contra el dev :3003, con la base `bodega_trinorma` después de aplicar los maestros y volver a importar. Verificado:
+
+- **PASS. Selector de faena del Panel:** ofrece «Arauco» y ya no ofrece «Arauco (anterior)» ni «Horcones».
+- **PASS. Panel con la faena Arauco, de junio de 2025 a noviembre de 2026:** trabajos por tipo, equipos con más correctivas (JK2385) y «Sin pauta definida» con 4 equipos. Sin errores de consola ni de red.
+- **PASS. Panel acotado a KCH-133:** el rótulo dice «KCH-133 · SRCJ-47». La ficha de flota de KCH-133 muestra la patente SRCJ-47.
+- **PASS. Detalle de un trabajo del consolidado y de uno del formulario de noviembre**, con el Jefe de Mantención y con el administrador de contrato de Biodiversa:
+  - «Datos originales» no trae ninguna dirección de correo ni los encabezados «CORREO» o «Dirección de correo electrónico»;
+  - REALIZA_RESPONSABLE y CONDUCTOR siguen visibles.
+
+  La única dirección que aparece en la página es la cuenta de la sesión, en el menú lateral.
+- **Puertas:**
+  - typecheck y lint de los archivos tocados: OK;
+  - `trinorma-maestros-pglite`: 25 de 25, con 5 casos nuevos (folio que no se traspasa en dos situaciones, códigos antes de propietarios, todo o nada en los códigos, unión con folio);
+  - historial, consolidado y equipos faltantes en PGlite: 35 de 35;
+  - `historical-privacy`: 3 de 3.
+  - `test:fast`: 1.431 archivos y 21.503 pruebas pasan, 0 fallas.
+- **No se corrió** la suite completa de `test:pglite` ni la E2E después de este cambio. Se corrieron sólo las suites PGlite de los archivos tocados. El cambio no toca pantallas cubiertas por E2E, salvo el detalle del historial, que se verificó en el navegador.

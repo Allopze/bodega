@@ -1,16 +1,21 @@
 /**
  * scripts/apply-trinorma-maestros.ts
  *
- * Maestros de faenas y equipos de la Fase 1 Trinorma (CONTRATOS.md, WP1). Cinco pasos,
+ * Maestros de faenas y equipos de la Fase 1 Trinorma (CONTRATOS.md, WP1). Seis pasos,
  * todos idempotentes y en UNA transacción; sin `--apply` el informe es el de una corrida
  * real y la transacción se deshace.
  *
  *   1. Tipos: Flor del Laja → depósito, Oficina Central → administración.
- *   2. Unión de las dos «Arauco» (HORCONES + MANT-ARA). SÓLO con `--unir-arauco`: en
- *      producción necesita autorización explícita del usuario, aparte, al ver el informe.
+ *   2. Unión de las dos «Arauco» (HORCONES + MANT-ARA), con el traspaso del folio de
+ *      Mantención. SÓLO con `--unir-arauco`. El usuario eligió el 2026-11-21 unirlas con el
+ *      nombre «Arauco» y el contrato «Horcones» (el contrato no lo crea este script); como
+ *      toda carga en producción, `--apply` corre después de revisar la simulación.
  *   3. Alias de faena que no son ya el nombre exacto de una faena.
- *   4. Propietarios desde el inventario de octubre (sólo con `--inventario <xlsx>`).
- *   5. «Ubicación por confirmar» a los equipos activos de faenas inactivas y de Pacífico.
+ *   4. Códigos de los tres tractos de Biodiversa que la carga de vencimientos del 13-11 rotó
+ *      (decisión del usuario, 2026-11-21). Va antes de los propietarios: con los códigos
+ *      rotados, el inventario no los reconoce.
+ *   5. Propietarios desde el inventario de octubre (sólo con `--inventario <xlsx>`).
+ *   6. «Ubicación por confirmar» a los equipos activos de faenas inactivas y de Pacífico.
  *
  * Ningún paso cambia la faena de un equipo (sólo cambia por «Trasladar equipos») y el
  * informe nunca imprime nombres de personas: los propietarios `tercero` salen por cantidad.
@@ -24,9 +29,11 @@ import { readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 import { and, eq, inArray } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { contracts, fleetOwners, fuelVehicles, mantHistoricalRecords, users, worksiteAliases, worksites } from "@/db/schema"
+import {
+  contracts, fleetOwners, fuelVehicles, mantFolioCounters, mantHistoricalRecords, mantRecords, mantWorkOrders, mantWorksiteSettings, users, worksiteAliases, worksites,
+} from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
-import { matchVehicle, type IdentifiedVehicle } from "@/lib/mantencion/equipment-identity"
+import { equipmentCodeKey, matchVehicle, plateKey, type IdentifiedVehicle } from "@/lib/mantencion/equipment-identity"
 import { cleanName, nameKey } from "@/lib/mantencion/normalize"
 import { loadXlsxTolerant } from "@/lib/reports/xlsx-normalize"
 import { classifyFleetOwnerName, createFleetOwnerTx, setVehicleOwnershipTx, type FleetOwnerKind } from "@/lib/services/fleet-owners"
@@ -69,6 +76,20 @@ export const ALIAS_ASSIGNMENTS: ReadonlyArray<{ alias: string; code: string }> =
 
 export const ARAUCO_NAME = "Arauco"
 export const ARAUCO_OLD_NAME = "Arauco (anterior)"
+
+/**
+ * Los tres tractos MAN TGS 33.400 de Biodiversa. La carga de vencimientos del 2026-11-13 les cambió el
+ * código («la planilla manda en el código»), pero la planilla de la faena los traía rotados. El
+ * emparejamiento correcto es el que había antes, el mismo del inventario de octubre, la base de
+ * equipos del Jefe de Mantención, el GPS, las tarjetas de combustible y los formularios (decisión del
+ * usuario, 2026-11-21). La patente y los vencimientos ya estaban bien: sólo vuelve el código.
+ */
+export const TRACTOR_CODES: ReadonlyArray<{ plate: string; code: string; codeFromVencimientos: string }> = [
+  { plate: "SRCJ-47", code: "KCH-133", codeFromVencimientos: "KCH-136" },
+  { plate: "SRCJ-42", code: "KCH-135", codeFromVencimientos: "KCH-133" },
+  { plate: "SRCJ-39", code: "KCH-136", codeFromVencimientos: "KCH-135" },
+]
+const TRACTOR_REASON = "Trinorma (2026-11-21): vuelve el código anterior a la carga de vencimientos del 13-11, que lo traía rotado; manda el inventario de octubre"
 
 /** Lo que el script aprendió del inventario: una fila por equipo con empresa y (código o patente). */
 export interface InventoryOwnerRow { company: string; code: string; plate: string }
@@ -184,9 +205,16 @@ async function stepArauco(tx: Tx, apply: boolean, actor: Actor, enabled: boolean
   const pendingRows = await tx.select({ key: mantHistoricalRecords.sourceKey }).from(mantHistoricalRecords).where(eq(mantHistoricalRecords.worksiteId, seed.id))
   const renameHorcones = horcones.name !== ARAUCO_NAME
   const renameSeed = nameKey(seed.name) === nameKey(ARAUCO_NAME)
+  // El folio de Mantención lo tiene la Arauco del seed (lo creó la carga de mantención del 13-11) y no la
+  // faena real. El Panel sólo ofrece las faenas con folio: sin traspasarlo, la faena unida no aparece ahí
+  // y la anterior, vacía, sí.
+  const folioOf = async (worksiteId: string) =>
+    (await tx.select({ folioCode: mantWorksiteSettings.folioCode }).from(mantWorksiteSettings).where(eq(mantWorksiteSettings.worksiteId, worksiteId)))[0]?.folioCode
+  const [seedFolio, ownFolio] = [await folioOf(seed.id), await folioOf(horcones.id)]
+  const folioPending = Boolean(seedFolio && !ownFolio)
   const vehicles = await tx.select({ id: fuelVehicles.id }).from(fuelVehicles).where(eq(fuelVehicles.worksiteId, horcones.id))
-  const summary = `${vehicles.length} equipo(s) de ${horcones.code}, ${pendingRows.length} fila(s) de historial en ${seed.code}`
-  const alreadyJoined = !renameHorcones && !renameSeed && pendingRows.length === 0
+  const summary = `${vehicles.length} equipo(s) de ${horcones.code}, ${pendingRows.length} fila(s) de historial en ${seed.code}${folioPending ? `, folio ${seedFolio} de Mantención` : ""}`
+  const alreadyJoined = !renameHorcones && !renameSeed && pendingRows.length === 0 && !folioPending
   if (!enabled) {
     out.push({
       step, item: "Arauco", action: "unir HORCONES con MANT-ARA", result: alreadyJoined ? "ya estaba" : "omitido",
@@ -213,6 +241,64 @@ async function stepArauco(tx: Tx, apply: boolean, actor: Actor, enabled: boolean
     await tx.update(mantHistoricalRecords).set({ worksiteId: horcones.id }).where(eq(mantHistoricalRecords.worksiteId, seed.id))
     await recordAudit({ userId: actor.userId, userEmail: actor.email, action: "update", entityType: "mant_historical_records", entityId: seed.id, entityCode: seed.code, oldState: { worksiteId: seed.id, rows: pendingRows.length }, newState: { worksiteId: horcones.id, rows: pendingRows.length }, reason: REASON, worksiteId: horcones.id }, tx)
     out.push({ step, item: seed.code, action: `mover ${pendingRows.length} fila(s) del historial a ${horcones.code}`, result: result(apply) })
+  }
+  if (folioPending && seedFolio) {
+    const action = `traspasar el folio ${seedFolio} de Mantención a ${horcones.code}`
+    // Un folio ya emitido (orden, registro o contador) se lee con su faena: si el seed lo usó, no se mueve.
+    const [order, record, counter] = await Promise.all([
+      tx.select({ id: mantWorkOrders.id }).from(mantWorkOrders).where(eq(mantWorkOrders.worksiteId, seed.id)).limit(1),
+      tx.select({ id: mantRecords.id }).from(mantRecords).where(eq(mantRecords.worksiteId, seed.id)).limit(1),
+      tx.select({ kind: mantFolioCounters.kind }).from(mantFolioCounters).where(eq(mantFolioCounters.worksiteId, seed.id)).limit(1),
+    ])
+    if (order.length || record.length || counter.length) {
+      out.push({ step, item: seed.code, action, result: "omitido", detail: `${seed.code} ya emitió folios ${seedFolio}: se conserva; ${horcones.code} recibirá uno propio en su primer registro` })
+    } else {
+      await tx.update(mantWorksiteSettings).set({ worksiteId: horcones.id, updatedAt: new Date().toISOString(), updatedBy: actor.userId }).where(eq(mantWorksiteSettings.worksiteId, seed.id))
+      await recordAudit({ userId: actor.userId, userEmail: actor.email, action: "update", entityType: "mant_worksite_settings", entityId: horcones.id, entityCode: seedFolio, oldState: { worksiteId: seed.id, folioCode: seedFolio }, newState: { worksiteId: horcones.id, folioCode: seedFolio }, reason: REASON, worksiteId: horcones.id }, tx)
+      out.push({ step, item: seed.code, action, result: result(apply) })
+    }
+  } else if (seedFolio && ownFolio) {
+    out.push({ step, item: horcones.code, action: "folio de Mantención", result: "ya estaba", detail: `${horcones.code} ya tiene el folio ${ownFolio}; ${seed.code} conserva ${seedFolio}` })
+  }
+}
+
+async function stepTractorCodes(tx: Tx, apply: boolean, actor: Actor, out: Outcome[]) {
+  const step = "4 · Códigos de tres tractos"
+  const vehicles = await tx.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, worksiteId: fuelVehicles.worksiteId }).from(fuelVehicles)
+  const plan: Array<{ vehicle: (typeof vehicles)[number]; target: string }> = []
+  const problems: string[] = []
+  for (const tractor of TRACTOR_CODES) {
+    const matches = vehicles.filter((vehicle) => plateKey(vehicle.plate) === plateKey(tractor.plate))
+    if (matches.length !== 1) { problems.push(`${tractor.plate}: ${matches.length === 0 ? "no está en la flota" : "patente repetida"}`); continue }
+    const vehicle = matches[0]!
+    const current = vehicle.code ? equipmentCodeKey(vehicle.code) : ""
+    if (current === equipmentCodeKey(tractor.code)) { out.push({ step, item: tractor.plate, action: `código ${tractor.code}`, result: "ya estaba" }); continue }
+    if (current !== equipmentCodeKey(tractor.codeFromVencimientos)) {
+      problems.push(`${tractor.plate} tiene ${vehicle.code ?? "sin código"}, que no es el que puso la carga del 13-11 (${tractor.codeFromVencimientos})`)
+      continue
+    }
+    plan.push({ vehicle, target: tractor.code })
+  }
+  // Otro equipo, fuera de los que se corrigen, con uno de los códigos de destino: no se crea un duplicado.
+  const planned = new Set(plan.map(({ vehicle }) => vehicle.id))
+  for (const { target } of plan) {
+    const holder = vehicles.find((vehicle) => !planned.has(vehicle.id) && vehicle.code && equipmentCodeKey(vehicle.code) === equipmentCodeKey(target))
+    if (holder) problems.push(`${target} ya lo lleva ${holder.plate ?? holder.code}`)
+  }
+  if (problems.length > 0) {
+    // Los tres códigos rotan entre sí: se corrigen juntos o no se toca ninguno.
+    out.push({ step, item: "KCH-133/135/136", action: "volver al código anterior al 13-11", result: "omitido", detail: problems.join("; ") })
+    return
+  }
+  // Dos fases: el índice único no admite un código repetido ni por un instante, y estos rotan entre sí.
+  const now = new Date().toISOString()
+  for (const { vehicle } of plan) {
+    await tx.update(fuelVehicles).set({ code: `ZZTMP-${plateKey(vehicle.plate)}`, updatedAt: now }).where(eq(fuelVehicles.id, vehicle.id))
+  }
+  for (const { vehicle, target } of plan) {
+    await tx.update(fuelVehicles).set({ code: target, updatedAt: now }).where(eq(fuelVehicles.id, vehicle.id))
+    await recordAudit({ userId: actor.userId, userEmail: actor.email, action: "update", entityType: "fuel_vehicle", entityId: vehicle.id, entityCode: vehicle.plate ?? target, oldState: { code: vehicle.code }, newState: { code: target }, reason: TRACTOR_REASON, worksiteId: vehicle.worksiteId }, tx)
+    out.push({ step, item: vehicle.plate ?? target, action: `código ${vehicle.code} → ${target}`, result: result(apply) })
   }
 }
 
@@ -243,7 +329,7 @@ async function stepAliases(tx: Tx, apply: boolean, actor: Actor, out: Outcome[])
 const OWNER_PRINTABLE: ReadonlySet<FleetOwnerKind> = new Set(["propia", "relacionada", "financiera"])
 
 async function stepOwners(tx: Tx, apply: boolean, actor: Actor, rows: readonly InventoryOwnerRow[] | undefined, out: Outcome[]) {
-  const step = "4 · Propietarios"
+  const step = "5 · Propietarios"
   if (!rows) {
     out.push({ step, item: "inventario", action: "asignar propietarios", result: "omitido", detail: "sin --inventario no se asignan" })
     return
@@ -321,7 +407,7 @@ async function stepOwners(tx: Tx, apply: boolean, actor: Actor, rows: readonly I
 }
 
 async function stepLocationPending(tx: Tx, apply: boolean, actor: Actor, out: Outcome[]) {
-  const step = "5 · Ubicación por confirmar"
+  const step = "6 · Ubicación por confirmar"
   const { sites, byCode } = await loadSites(tx)
   const pacifico = byCode.get(WORKSITE_CODES.pacifico)
   const targetIds = new Set(sites.filter((site) => !site.isActive).map((site) => site.id))
@@ -346,7 +432,7 @@ async function stepLocationPending(tx: Tx, apply: boolean, actor: Actor, out: Ou
 export interface ApplyMaestrosOptions {
   actorEmail: string
   apply?: boolean
-  /** Filas del inventario ya leídas (`readInventoryOwners`); sin ellas el paso 4 no hace nada. */
+  /** Filas del inventario ya leídas (`readInventoryOwners`); sin ellas el paso 5 no hace nada. */
   inventory?: readonly InventoryOwnerRow[]
   /** Autorización explícita para unir las dos «Arauco». */
   unirArauco?: boolean
@@ -370,6 +456,7 @@ export async function applyTrinormaMaestros(options: ApplyMaestrosOptions): Prom
       await stepKinds(tx, apply, actor, report.outcomes)
       await stepArauco(tx, apply, actor, options.unirArauco ?? false, report.outcomes)
       await stepAliases(tx, apply, actor, report.outcomes)
+      await stepTractorCodes(tx, apply, actor, report.outcomes)
       await stepOwners(tx, apply, actor, options.inventory, report.outcomes)
       await stepLocationPending(tx, apply, actor, report.outcomes)
       for (const owner of await tx.select({ kind: fleetOwners.kind }).from(fleetOwners)) report.ownersByKind[owner.kind as FleetOwnerKind]++

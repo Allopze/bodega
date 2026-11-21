@@ -391,3 +391,35 @@ Ninguna: lo que ya estaba cargado coincide con el archivo.
 - INSPECCION_EQUIPOS_DIARIO: Hallazgos "Mal estado" sin mantención registrada del equipo en los 7 días siguientes (307)
 - INSPECCION_EQUIPOS_DIARIO: Formularios BATEA sueltos (sin tracto) — la batea normalmente se inspecciona junto al tracto (7)
 
+
+## Actualización del 21-11 por la tarde: códigos de los tractos y unión de Arauco
+
+El usuario decidió tres cosas tras un informe de evidencia hecho con Gmail, Drive y archivos locales:
+
+- C8: los tractos vuelven a su código;
+- C9: el correo no se muestra en el detalle del historial;
+- la unión de Arauco, con el nombre «Arauco» y el contrato «Horcones».
+
+En el clon `bodega_trinorma` corrieron, en orden:
+
+1. `apply-trinorma-maestros.ts --inventario … --unir-arauco`, primero en simulación y después `--apply`. Resultado:
+   - la unión: 2 renombres, 27 filas del historial a HORCONES y el folio ARA;
+   - el alias «Horcones»;
+   - los 3 códigos;
+   - propietario para los 3 tractos.
+
+   La segunda corrida no cambió nada (17 «ya estaba»).
+2. `import-consolidado-mantencion.ts --apply` otra vez. Completó los vínculos vacíos:
+
+   | Hoja | Completadas | Sin cambios | Nuevas |
+   |---|---|---|---|
+   | Mantenciones | 64 | 2.280 | 0 |
+   | Inspecciones | 270 | 1.063 | 0 |
+   | Pautas | 1 | 5 | 0 |
+
+Estado final:
+- KCH-133 / SRCJ-47 tiene 18 trabajos y 101 inspecciones; KCH-135 / SRCJ-42, 24 y 92; KCH-136 / SRCJ-39, 22 y 77.
+- Quedan en conflicto 2 mantenciones («KCH-126 / KXZD-19») y 0 inspecciones.
+- La faena «Arauco» (HORCONES) tiene folio ARA, 27 trabajos y 8 equipos. «Arauco (anterior)» queda sin folio, sin trabajos y sin equipos.
+
+En producción, los maestros corren antes que el importador. Por eso la primera importación ya debería ligar estas filas, y sólo deberían quedar en conflicto las 2 de KCH-126.
