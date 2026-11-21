@@ -45,6 +45,7 @@ function cellView(cell: GridCell, target: number): { text: string; className: st
     case "sin_dato": return { text: "s/d", className: "text-[var(--color-text-muted)]", title: `${formatHoursValue(cell.engineHours)} h de motor, sin dato de ralentí: el equipo no distingue ralentí de trabajo` }
     case "fs": return { text: "FS", className: NEUTRAL_CELL, title: "Fuera de servicio o en mantención" }
     case "sp": return { text: "SP", className: "bg-[var(--color-info-tint)] text-[var(--color-info-ink)]", title: "Sin operación programada" }
+    case "uso_personal": return { text: "UP", className: NEUTRAL_CELL, title: "Uso personal: el día no cuenta en las horas ni en el ralentí" }
     case "ss": return { text: "SS", className: "bg-[var(--color-signal-tint)] text-[var(--color-signal-ink)]", title: "Sin señal: el equipo no transmite desde antes de ese día" }
     default: return { text: "", className: "", title: "Sin telemetría ese día" }
   }
@@ -71,6 +72,7 @@ function Legend({ target }: { target: number }) {
     { box: "text-[var(--color-text-muted)]", sample: "s/d", text: "con motor, sin dato de ralentí" },
     { box: NEUTRAL_CELL, sample: "FS", text: "fuera de servicio o en mantención" },
     { box: "bg-[var(--color-info-tint)] text-[var(--color-info-ink)]", sample: "SP", text: "sin operación programada" },
+    { box: NEUTRAL_CELL, sample: "UP", text: "uso personal (no cuenta en los totales)" },
     { box: "bg-[var(--color-signal-tint)] text-[var(--color-signal-ink)]", sample: "SS", text: "sin señal (no transmite hace días)" },
     { box: "border border-dashed border-[var(--color-border-strong)]", sample: "", text: "vacío: sin telemetría o sin datos" },
   ]

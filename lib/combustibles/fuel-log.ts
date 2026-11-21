@@ -29,6 +29,8 @@ import {
   worksites,
 } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { loadInPersonalUseSql } from "./personal-use-fuel-sql"
+import { personalUseOnDaySql, qualified } from "@/lib/fleet/personal-use-sql"
 
 import { FUEL_LOAD_ORIGIN_LABEL, FUEL_LOAD_STATE_LABEL, FUEL_LOAD_STATE_SLUGS, fuelLogBranchesFor, type FieldLoadAttention, type FuelLogSource, type FuelLogRow, type FuelLogFilters, type FuelLoadOriginSlug } from "./fuel-log-shared"
 export type { FuelLogSource, FuelLogRow, FuelLogFilters, FieldLoadAttention }
@@ -295,6 +297,8 @@ function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern
       equipmentLoadId: sql<string | null>`${fuelEquipmentLoads.id}`.as("equipmentLoadId"),
       reviewFlagged: sql<boolean | null>`(${fuelEquipmentLoads.reviewStatus} = 'flagged')`.as("reviewFlagged"),
       reviewFlagReason: sql<string | null>`(${fuelEquipmentLoads.flagReasons} ->> 0)`.as("reviewFlagReason"),
+      // Marca de registro (no filtra ni resta): el día de la carga proyectada cae en un período de uso personal.
+      personalUse: sql<boolean>`${loadInPersonalUseSql()}`.as("personalUse"),
     })
     .from(fuelTaeSubmissions)
     // Una carga proyectada tiene a lo sumo una fila (índice único por `tae_submission_id`).
@@ -354,6 +358,8 @@ function buildInvoicedBranch(session: Session, filters: FuelLogFilters, searchPa
       equipmentLoadId: sql<string | null>`NULL::text`.as("equipmentLoadId"),
       reviewFlagged: sql<boolean | null>`NULL::boolean`.as("reviewFlagged"),
       reviewFlagReason: sql<string | null>`NULL::text`.as("reviewFlagReason"),
+      // `load_date` ya es el día civil `YYYY-MM-DD`: se compara tal cual con los períodos.
+      personalUse: sql<boolean>`${personalUseOnDaySql(fuelLoads.vehicleId, qualified(fuelLoads.loadDate))}`.as("personalUse"),
     })
     .from(fuelLoads)
     .leftJoin(worksites, eq(fuelLoads.worksiteId, worksites.id))
@@ -450,6 +456,8 @@ function buildOperationBranch(session: Session, filters: FuelLogFilters, searchP
       equipmentLoadId: sql<string | null>`${fuelEquipmentLoads.id}`.as("equipmentLoadId"),
       reviewFlagged: sql<boolean | null>`(${fuelEquipmentLoads.reviewStatus} = 'flagged')`.as("reviewFlagged"),
       reviewFlagReason: sql<string | null>`(${fuelEquipmentLoads.flagReasons} ->> 0)`.as("reviewFlagReason"),
+      // Marca de registro (no filtra ni resta): el día de la carga proyectada cae en un período de uso personal.
+      personalUse: sql<boolean>`${loadInPersonalUseSql()}`.as("personalUse"),
     })
     .from(fuelOperationRecords)
     .innerJoin(fuelOperationBatches, eq(fuelOperationRecords.batchId, fuelOperationBatches.id))

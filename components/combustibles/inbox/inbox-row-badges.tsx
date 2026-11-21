@@ -1,4 +1,5 @@
 import { MetaBadge } from "@/components/states/state-badge"
+import { Badge } from "@/components/ui/badge"
 import {
   ANOMALY_SEVERITY_LABELS,
   ANOMALY_STATUS_LABELS,
@@ -30,6 +31,7 @@ export function InboxRowBadges({
   caseStatus,
   decided,
   fresh = false,
+  personalUse = false,
   className,
 }: {
   /** La etiqueta principal: «Lectura menor a la anterior», «Sello repetido»… */
@@ -41,6 +43,8 @@ export function InboxRowBadges({
   decided?: Pick<FuelInboxDecided, "outcome"> | null
   /** Llegó después de la última visita y no se abrió: lleva el punto «Nuevo». */
   fresh?: boolean
+  /** La carga cae en un día de uso personal del equipo: no suma en gestión, pero se decide igual. */
+  personalUse?: boolean
   className?: string
 }) {
   return (
@@ -62,6 +66,9 @@ export function InboxRowBadges({
       {severity ? <MetaBadge meta={{ label: ANOMALY_SEVERITY_LABELS[severity], variant: anomalySeverityVariant(severity) }} size="sm" /> : null}
       {caseStatus && !decided ? <MetaBadge meta={{ label: ANOMALY_STATUS_LABELS[caseStatus], variant: "outline" }} size="sm" /> : null}
       {decided ? <MetaBadge meta={{ label: decided.outcome, variant: decidedVariant(decided.outcome) }} size="sm" /> : null}
+      {personalUse ? (
+        <Badge variant="warning" size="sm" title="El equipo estaba en uso personal ese día: no suma en costos ni consumo de gestión.">Uso personal</Badge>
+      ) : null}
     </div>
   )
 }

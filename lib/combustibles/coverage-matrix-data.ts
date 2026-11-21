@@ -91,7 +91,7 @@ async function copecRows(months: string[], from: string, today: string): Promise
 }
 
 async function telemetryRow(session: Session, months: string[], from: string, today: string): Promise<CoverageRow[]> {
-  const d = dailyTelemetry(session, parseControlFilters({ desde: from, hasta: today }))
+  const d = dailyTelemetry(session, parseControlFilters({ desde: from, hasta: today }), "include")
   const [perMonth, [first]] = await Promise.all([
     db.select({
       month: d.month,

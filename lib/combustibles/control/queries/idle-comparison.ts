@@ -5,6 +5,7 @@ import { fuelEquipmentLoads } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { telemetryLitersPerHour } from "../calc/idle"
 import { mandanteWorksitesSql, periodSql, statisticallyValidLoadSql, type ControlFilters } from "../filters"
+import { loadNotInPersonalUseSql, performanceTaintedByPersonalUseSql } from "@/lib/combustibles/personal-use-fuel-sql"
 import { dailyTelemetry, equipmentLabel } from "./idle"
 
 /**
@@ -34,7 +35,7 @@ export interface LitersPerHourComparisonRow {
 }
 
 export async function getLitersPerHourComparison(session: Session | null, filters: ControlFilters): Promise<LitersPerHourComparisonRow[]> {
-  const d = dailyTelemetry(session, filters)
+  const d = dailyTelemetry(session, filters, "exclude")
   const [telemetry, loads] = await Promise.all([
     db.select({
       vehicleId: d.vehicleId,
@@ -57,6 +58,10 @@ export async function getLitersPerHourComparison(session: Session | null, filter
     }).from(fuelEquipmentLoads)
       .where(and(
         statisticallyValidLoadSql,
+        // Los dos lados son gestión: la telemetría ya omite los días de uso personal, y las cargas también.
+        // Un tramo sale si cae en el período o es la primera carga después (su L/h incluye las horas del dueño).
+        loadNotInPersonalUseSql(),
+        sql`not ${performanceTaintedByPersonalUseSql()}`,
         eq(fuelEquipmentLoads.performanceUnit, "liters_per_hour"),
         // Lado cargas: la faena de la carga (`fuel_equipment_loads.worksite_id`), no la actual del equipo.
         worksiteScopeSql(session, fuelEquipmentLoads.worksiteId, filters.worksiteId),

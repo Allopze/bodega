@@ -24,6 +24,8 @@ import { getVehiclePurchaseSummary, type VehiclePurchaseSummary } from "@/lib/se
 import { logger } from "@/lib/logger"
 import { listAssignmentWindows } from "@/lib/services/contracts/assignments"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
+import { indexPersonalUse, isPersonalUseDay, personalUseDaysIn, type PersonalUseIndex } from "@/lib/fleet/personal-use"
+import { loadPersonalUseIndex } from "@/lib/services/fleet-personal-use"
 import { loadMergedGpsByVehicle } from "@/lib/services/fleet-gps-latest"
 import { maxMeterRatePerDayOf, meterSeriesAdvance, meterSeriesCoversPeriod, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
 import { loadFleet } from "@/lib/services/mantencion/fleet"
@@ -130,6 +132,12 @@ export type OperationalAsset = {
   gpsMaintenanceNextReading: number | null
   gpsMaintenanceRemaining: number | null
   gpsMaintenanceReadingAt: string | null
+  /**
+   * Días del período en que el equipo estuvo en uso personal (`personalUseDaysIn`). Su combustible,
+   * compras, litros y km de esos días no se suman en las cifras de arriba; la tabla lo avisa.
+   * 0 en los instrumentos de servicio, que no son flota.
+   */
+  personalUseDays: number
   /** Litros de la serie operacional (`fuel_equipment_loads`) que cuentan en el período. */
   fuelLiters: number | null
   fuelLoadCount: number | null
@@ -260,6 +268,12 @@ function computeGpsAdvance(
   series: ReadonlyMap<string, MeterSeriesPoint[]>,
   period: { from: string; to: string },
   jumpRule: { config: string | null },
+  /**
+   * Día calendario de Chile (`YYYY-MM-DD`) de uso personal del equipo: el par de lecturas que
+   * recorre uno de esos días no suma al avance (`meterSeriesAdvance`). La cobertura del período
+   * sigue midiéndose con TODAS las lecturas, que no se quitan.
+   */
+  isExcludedDay?: (day: string) => boolean,
 ): { advance: number | null; source: GpsAdvanceSource | null; status: GpsPerformanceStatus } {
   if (vehicle.performanceUnit !== "km_per_liter" && vehicle.performanceUnit !== "liters_per_hour") {
     return { advance: null, source: null, status: "not_applicable" }
@@ -285,7 +299,7 @@ function computeGpsAdvance(
     meterType === "odometer" ? "km" : "hora",
     vehicle.equipmentTypeSlug ?? undefined,
   )
-  const advance = meterSeriesAdvance(points, maxPerDay).advance
+  const advance = meterSeriesAdvance(points, maxPerDay, isExcludedDay).advance
   return advance != null && advance > 0
     ? { advance, source, status: "ok" }
     : { advance: null, source, status: "insufficient_series" }
@@ -524,6 +538,15 @@ export async function getOperationalControlHub(
     degradedSources,
   )) ?? new Map<string, { id: string; name: string }>()
 
+  // Uso personal de los equipos del lote: UNA consulta para todos. Si falla, la sección se anuncia
+  // como degradada y las cifras de km se calculan sin descontarlo (las de plata y litros salen de
+  // SQL y no dependen de esta lectura).
+  const personalUseIndex: PersonalUseIndex = (await settleAttention(
+    "uso personal",
+    () => loadPersonalUseIndex(vehicles.map((vehicle) => vehicle.id)),
+    degradedSources,
+  )) ?? indexPersonalUse([])
+
   // La serie de medidores GPS se filtra por instantes de día chileno: el
   // período es una fecha civil, no un corte UTC.
   const gpsPeriodStart = chileDayStartInstant(period.from)
@@ -607,7 +630,13 @@ export async function getOperationalControlHub(
     const fuel = fuelByVehicle.get(vehicle.id)
     const vehicleDocuments = documentsByVehicle.get(vehicle.id) ?? []
     const gps = gpsByVehicle.get(vehicle.id)
-    const gpsAdvance = computeGpsAdvance(vehicle, gpsSeries, period, gpsJumpRule)
+    const gpsAdvance = computeGpsAdvance(
+      vehicle,
+      gpsSeries,
+      period,
+      gpsJumpRule,
+      (day) => isPersonalUseDay(personalUseIndex, vehicle.id, day, today),
+    )
     const maintenance = maintenanceByVehicle.get(vehicle.id)
     const workOrder = workOrdersByVehicle?.get(vehicle.id)
     const fuelBilledAmount = canViewFuel && canViewCosts ? fuelValue(fuel?.billedAmount, 0) : null
@@ -712,6 +741,7 @@ export async function getOperationalControlHub(
       gpsMaintenanceNextReading: maintenance?.gpsStatus?.nextReading ?? null,
       gpsMaintenanceRemaining: maintenance?.gpsStatus?.remaining ?? null,
       gpsMaintenanceReadingAt: maintenance?.gpsReadingAt ?? null,
+      personalUseDays: personalUseDaysIn(personalUseIndex, vehicle.id, period.from, period.to, today),
       fuelLiters: canViewFuel ? fuelValue(fuel?.liters, 0) : null,
       fuelLoadCount: canViewFuel ? fuelValue(fuel?.loadCount, 0) : null,
       lastFuelLoadAt: canViewFuel ? fuelValue(fuel?.lastLoadAt, null) : null,
@@ -781,6 +811,7 @@ export async function getOperationalControlHub(
     gpsMaintenanceNextReading: null,
     gpsMaintenanceRemaining: null,
     gpsMaintenanceReadingAt: null,
+    personalUseDays: 0,
     // Tampoco tienen serie de combustible: no son `fuel_vehicles` y no
     // aparecen en las cargas. Null, no 0, para no simular un historial vacío.
     fuelLiters: null,

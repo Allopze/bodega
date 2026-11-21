@@ -24,8 +24,9 @@ import {
   type PerformanceStatus,
   type PerformanceUnit,
 } from "@/lib/combustibles/control/contracts"
-import { buildLoadWhere, chileDateSql, countableLoadSql, statisticallyValidLoadSql } from "@/lib/combustibles/control/filters"
+import { buildLoadWhere, buildManagementLoadWhere, chileDateSql, countableLoadSql, statisticallyValidLoadSql } from "@/lib/combustibles/control/filters"
 import { dailyTelemetry } from "@/lib/combustibles/control/queries/idle"
+import { loadInPersonalUseSql, loadNotInPersonalUseSql, performanceTaintedByPersonalUseSql } from "@/lib/combustibles/personal-use-fuel-sql"
 import { getEquipmentStats } from "@/lib/combustibles/control/queries/performance"
 import { controlFiltersFromPeriod } from "@/lib/combustibles/control/queries/period-filters"
 import { loadPerformanceControlContext, thresholdForEquipmentType } from "@/lib/combustibles/control/settings"
@@ -189,7 +190,7 @@ export async function getEquipmentFuelSummary(session: Session, vehicleId: strin
 const SUMMARY_CASE_LIMIT = 1000
 
 function emptyLoads(): EquipmentFileLoads {
-  return { count: 0, liters: 0, rows: [], hiddenCount: 0 }
+  return { count: 0, liters: 0, keptCount: 0, keptLiters: 0, rows: [], hiddenCount: 0 }
 }
 
 /* ── Cargas del período ──────────────────────────────────────────────────── */
@@ -203,6 +204,10 @@ async function getLoads(session: Session, vehicle: EquipmentFileVehicle, period:
     db.select({
       count: sql<number>`(count(*) filter (where ${countableLoadSql}))::int`,
       liters: sql<number>`coalesce(sum(${fuelEquipmentLoads.liters}) filter (where ${countableLoadSql}), 0)::float8`,
+      // Lo mismo sin los días de uso personal: es la cifra de gestión (el tile «Litros»); `count` y `liters`
+      // siguen siendo los de las filas que se listan, con su marca.
+      keptCount: sql<number>`(count(*) filter (where ${countableLoadSql} and ${loadNotInPersonalUseSql()}))::int`,
+      keptLiters: sql<number>`coalesce(sum(${fuelEquipmentLoads.liters}) filter (where ${countableLoadSql} and ${loadNotInPersonalUseSql()}), 0)::float8`,
       visible: sql<number>`(count(*) filter (where ${fuelEquipmentLoads.voidedAt} is null and ${fuelEquipmentLoads.duplicateOfId} is null))::int`,
     }).from(fuelEquipmentLoads).where(where),
     db.select({
@@ -217,6 +222,9 @@ async function getLoads(session: Session, vehicle: EquipmentFileVehicle, period:
       performanceValue: fuelEquipmentLoads.performanceValue,
       performanceStatus: fuelEquipmentLoads.performanceStatus,
       reviewStatus: fuelEquipmentLoads.reviewStatus,
+      // Es un registro, no un agregado: la carga se ve igual, con la marca «Uso personal». Sólo las cifras de
+      // gestión (litros del mes, rendimiento) la dejan fuera.
+      personalUse: loadInPersonalUseSql(),
       submissionSource: fuelTaeSubmissions.source,
       submissionStatus: fuelTaeSubmissions.status,
     }).from(fuelEquipmentLoads)
@@ -242,12 +250,15 @@ async function getLoads(session: Session, vehicle: EquipmentFileVehicle, period:
       originLabel: FUEL_LOAD_ORIGIN_LABEL[origin],
       stateLabel: row.submissionStatus ? (TAE_STATUS_LABELS[row.submissionStatus]?.label ?? null) : null,
       reviewStatus: review,
+      personalUse: row.personalUse === true,
       href: fuelLoadHrefFromEquipmentLoad({ source: row.source, taeSubmissionId: row.taeSubmissionId, operationRecordId: row.operationRecordId }),
     }
   })
   return {
     count: toNumber(totals[0]?.count),
     liters: toNumber(totals[0]?.liters),
+    keptCount: toNumber(totals[0]?.keptCount),
+    keptLiters: toNumber(totals[0]?.keptLiters),
     rows: loadRows,
     hiddenCount: Math.max(0, visibleCount - loadRows.length),
   }
@@ -275,6 +286,10 @@ async function getPerformance(session: Session, vehicle: EquipmentFileVehicle, u
         eq(fuelEquipmentLoads.vehicleId, vehicle.id),
         worksiteScopeSql(session, fuelEquipmentLoads.worksiteId),
         statisticallyValidLoadSql,
+        // Estas cargas forman el promedio y el rango normal: sin las del uso personal ni la primera después
+        // (su rendimiento se calculó contra una lectura anterior y suma los km del dueño).
+        loadNotInPersonalUseSql(),
+        sql`not ${performanceTaintedByPersonalUseSql()}`,
         sql`${chileDateSql(fuelEquipmentLoads.occurredAt)} >= ${historyFrom}::date`,
         sql`${chileDateSql(fuelEquipmentLoads.occurredAt)} <= ${period.to}::date`,
       ))
@@ -282,7 +297,7 @@ async function getPerformance(session: Session, vehicle: EquipmentFileVehicle, u
       .limit(1000),
     db.select({ n: sql<number>`count(*)::int` }).from(fuelEquipmentLoads)
       .where(and(
-        buildLoadWhere(session, filters),
+        buildManagementLoadWhere(session, filters),
         eq(fuelEquipmentLoads.vehicleId, vehicle.id),
         countableLoadSql,
         eq(fuelEquipmentLoads.reviewStatus, "flagged"),
@@ -348,6 +363,8 @@ async function getLitersByMonth(session: Session, vehicle: EquipmentFileVehicle,
       eq(fuelEquipmentLoads.vehicleId, vehicle.id),
       worksiteScopeSql(session, fuelEquipmentLoads.worksiteId),
       countableLoadSql,
+      // Son litros de gestión: los días de uso personal del equipo no suman.
+      loadNotInPersonalUseSql(),
       inArray(fuelEquipmentLoads.month, litersMonthKeys(endMonth)),
     ))
     .groupBy(fuelEquipmentLoads.month)
@@ -357,7 +374,7 @@ async function getLitersByMonth(session: Session, vehicle: EquipmentFileVehicle,
 /* ── Motor en vacío ──────────────────────────────────────────────────────── */
 
 async function getIdle(session: Session, vehicle: EquipmentFileVehicle, period: ResolvedFuelPeriod): Promise<EquipmentFileIdle | null> {
-  const d = dailyTelemetry(session, controlFiltersFromPeriod(period))
+  const d = dailyTelemetry(session, controlFiltersFromPeriod(period), "exclude")
   // Los totales y la serie salen del mismo `dailyTelemetry` (un registro por equipo y día, ya dentro del alcance de faena):
   // el gráfico diario y las cifras de arriba no pueden discrepar.
   const [[row], days] = await Promise.all([

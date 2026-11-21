@@ -13,6 +13,7 @@ export const flotaModule = {
     "flota:transfer",
     "flota:view_shifts",
     "flota:manage_shifts",
+    "flota:personal_use",
   ] as const,
 
   permissionMeta: {
@@ -28,6 +29,7 @@ export const flotaModule = {
     "flota:transfer": { id: "p-flot-transfer", description: "Trasladar equipos entre faenas y anular traslados" },
     "flota:view_shifts": { id: "p-flot-view-shifts", description: "Ver turnos de operación y ralentí por operador" },
     "flota:manage_shifts": { id: "p-flot-manage-shifts", description: "Registrar, editar y anular turnos de operación" },
+    "flota:personal_use": { id: "p-flot-personal-use", description: "Marcar uso personal de equipos" },
   },
 
   nav: [
@@ -131,5 +133,9 @@ export const flotaModule = {
     { roleSlug: "admin_contrato", permission: "flota:view_shifts" },
     { roleSlug: "administrador", permission: "flota:manage_shifts" },
     { roleSlug: "admin_contrato", permission: "flota:manage_shifts" },
+    // Los mismos roles que trasladan equipos (decisión del usuario 2026-11-20).
+    { roleSlug: "administrador", permission: "flota:personal_use" },
+    { roleSlug: "jefe_mantencion", permission: "flota:personal_use" },
+    { roleSlug: "jefa_chome", permission: "flota:personal_use" },
   ],
 } as const satisfies ModuleManifest

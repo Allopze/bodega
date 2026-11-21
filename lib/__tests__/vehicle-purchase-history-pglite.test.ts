@@ -140,6 +140,35 @@ describe("getVehiclePurchaseHistory", () => {
     expect(item!.vehicleId).toBe(IDS.machineBio)
   })
 
+  it("marca «uso personal» la compra cuya OC se emitió dentro de un período del equipo; no oculta filas ni cambia el costo", async () => {
+    await testDb.insert(schema.fuelVehiclePersonalUsePeriods).values({
+      id: "pu-purchases", vehicleId: IDS.truckAra, startedOn: "2026-10-10", endedOn: "2026-10-19",
+    })
+    await insertRequest("r-pu-in")
+    await insertItem("i-pu-in", "r-pu-in", { vehicleId: IDS.truckAra, createdAt: "2026-10-05T12:00:00.000Z" })
+    await insertOrder("oc-pu-in", "i-pu-in", { issuedAt: "2026-10-12T15:00:00.000Z" })
+    await insertRequest("r-pu-out")
+    await insertItem("i-pu-out", "r-pu-out", { vehicleId: IDS.truckAra, createdAt: "2026-10-06T12:00:00.000Z" })
+    await insertOrder("oc-pu-out", "i-pu-out", { issuedAt: "2026-10-25T15:00:00.000Z" })
+    // Sin OC todavía: no hay fecha de emisión, no hay marca.
+    await insertRequest("r-pu-none")
+    await insertItem("i-pu-none", "r-pu-none", { vehicleId: IDS.truckAra, createdAt: "2026-10-07T12:00:00.000Z" })
+    // Otro equipo con la misma fecha de emisión: el período es de Ara, no suyo.
+    await insertRequest("r-pu-other")
+    await insertItem("i-pu-other", "r-pu-other", { vehicleId: IDS.truckCho, createdAt: "2026-10-08T12:00:00.000Z" })
+    await insertOrder("oc-pu-other", "i-pu-other", { issuedAt: "2026-10-12T15:00:00.000Z" })
+
+    const history = await getVehiclePurchaseHistory(IDS.truckAra)
+    const byItem = new Map(history.map((record) => [record.requestItemId, record]))
+
+    expect(history).toHaveLength(3)
+    expect(byItem.get("i-pu-in")).toMatchObject({ personalUse: true, subtotal: 40_000, orderId: "oc-pu-in" })
+    expect(byItem.get("i-pu-out")).toMatchObject({ personalUse: false, subtotal: 40_000 })
+    expect(byItem.get("i-pu-none")).toMatchObject({ personalUse: false, orderId: null })
+    const other = await getVehiclePurchaseHistory(IDS.truckCho)
+    expect(other.find((record) => record.requestItemId === "i-pu-other")).toMatchObject({ personalUse: false })
+  })
+
   describe("identidad del producto (catálogo de repuestos)", () => {
     let sparePartId = ""
     let sparePartSku = ""

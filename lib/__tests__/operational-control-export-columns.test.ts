@@ -68,6 +68,7 @@ const asset: OperationalAsset = {
   openWorkOrders: 2,
   inWorkshop: true,
   workshopHours: 52.46,
+  personalUseDays: 0,
 }
 
 function keys(cols: ReturnType<typeof buildOperationalAssetExportColumns>) {
@@ -76,7 +77,8 @@ function keys(cols: ReturnType<typeof buildOperationalAssetExportColumns>) {
 
 // Sin el `key` interno ni «Clase» (la hoja sólo lleva vehículos). «Contrato» es el
 // nombre del contrato vigente del equipo, no una clave: va justo después de «Faena».
-const BASE = ["code", "name", "worksite", "contractName", "status"]
+// «Días de uso personal excluidos» va con las columnas base: afecta a todas las cifras de la fila.
+const BASE = ["code", "name", "worksite", "contractName", "status", "personalUseDays"]
 const INSPECTION_KEYS = ["inspections", "inspectionCompliance", "openFindings", "criticalOpenFindings", "openFindingsWithWorkOrder", "openFindingsWithoutWorkOrder"]
 const FUEL_KEYS = ["gpsPerformance", "gpsPerformanceSource", "fuelLiters", "fuelLoadCount", "lastFuelLoadAt", "fuelPerformance", "flaggedLoads", "openAnomalyCases", "criticalOpenAnomalyCases", "idlePct", "litersIdle"]
 const WORK_ORDER_KEYS = ["openWorkOrders", "inWorkshop", "workshopHours"]
@@ -318,5 +320,14 @@ describe("buildOperationalAssetExportRow", () => {
     const row = buildOperationalAssetExportRow(asset, false, false)
     expect(row).not.toHaveProperty("nextExpiryDate")
     expect(row).not.toHaveProperty("gpsOdometer")
+  })
+})
+
+describe("uso personal en el Excel", () => {
+  it("la columna «Días de uso personal excluidos» sale siempre y lleva el número", () => {
+    const columns = buildOperationalAssetExportColumns(false, false)
+    expect(columns.find((column) => column.key === "personalUseDays")).toMatchObject({ header: "Días de uso personal excluidos" })
+    expect(buildOperationalAssetExportRow({ ...asset, personalUseDays: 3 }, false, false).personalUseDays).toBe(3)
+    expect(buildOperationalAssetExportRow({ ...asset, personalUseDays: 0 }, false, false).personalUseDays).toBe(0)
   })
 })

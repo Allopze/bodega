@@ -2780,6 +2780,13 @@
       "when": 1795187209721,
       "tag": "0396_unique_ozymandias",
       "breakpoints": true
+    },
+    {
+      "idx": 397,
+      "version": "7",
+      "when": 1795196803640,
+      "tag": "0397_natural_marten_broadcloak",
+      "breakpoints": true
     }
   ]
 }

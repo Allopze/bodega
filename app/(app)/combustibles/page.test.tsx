@@ -10,6 +10,7 @@ import { buildPanelSteps } from "@/lib/combustibles/panel/steps"
 const requirePermission = vi.hoisted(() => vi.fn())
 const loadPanelData = vi.hoisted(() => vi.fn())
 const resolveFuelPeriodForPage = vi.hoisted(() => vi.fn())
+const getPersonalUseDaysInPeriod = vi.hoisted(() => vi.fn())
 
 vi.mock("next/navigation", () => ({
   redirect: (to: string) => { throw new Error(`NEXT_REDIRECT:${to}`) },
@@ -24,6 +25,7 @@ vi.mock("@/lib/auth/can", () => ({
 }))
 vi.mock("@/lib/combustibles/period/server", () => ({ resolveFuelPeriodForPage }))
 vi.mock("@/lib/combustibles/panel/data", () => ({ loadPanelData, panelLinker: () => (href: string) => href }))
+vi.mock("@/lib/combustibles/panel/queries", () => ({ getPersonalUseDaysInPeriod }))
 vi.mock("@/lib/combustibles/section-nav", () => ({
   fuelAddDataOptions: (session: Session) => [{ kind: "planilla", label: "Tengo una planilla", description: "x", href: "/combustibles/fuentes/agregar/planilla", allowed: session.user.permissions.includes("combustibles:import" as never) }],
 }))
@@ -102,6 +104,7 @@ describe("página del Panel de combustible", () => {
     requirePermission.mockResolvedValue(session(["combustibles:view", "combustibles:approve_flagged", "combustibles:register_load", "combustibles:import"]))
     resolveFuelPeriodForPage.mockResolvedValue(period)
     loadPanelData.mockResolvedValue(jefatura)
+    getPersonalUseDaysInPeriod.mockResolvedValue(0)
   })
 
   it("exige combustibles:view en la ruta del Panel y manda a /forbidden si falta", async () => {
@@ -252,6 +255,42 @@ describe("página del Panel de combustible", () => {
     await renderPage()
     expect(screen.queryByTestId("filtro-faena")).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /Exportar Excel/ })).not.toBeInTheDocument()
+  })
+
+  it("avisa «Excluye uso personal» sólo cuando el período y el alcance tienen días de uso personal", async () => {
+    await renderPage()
+    expect(screen.queryByText("Excluye uso personal")).not.toBeInTheDocument()
+    cleanup()
+
+    getPersonalUseDaysInPeriod.mockResolvedValue(4)
+    await renderPage({ faena: "ws-2" })
+    expect(screen.getByText("Excluye uso personal")).toBeInTheDocument()
+    // La consulta mide el mismo período y la faena que acotan los gráficos.
+    expect(getPersonalUseDaysInPeriod).toHaveBeenLastCalledWith(expect.anything(), period.from, period.to, { worksiteId: "ws-2" })
+  })
+
+  it("la nota también está en la variante de consulta, que sólo ve los gráficos", async () => {
+    requirePermission.mockResolvedValue(session(["combustibles:view"]))
+    getPersonalUseDaysInPeriod.mockResolvedValue(1)
+    await renderPage()
+    expect(screen.getByText("Excluye uso personal")).toBeInTheDocument()
+  })
+
+  it("terreno y contrato no tienen gráficos ni nota", async () => {
+    requirePermission.mockResolvedValue(session(["combustibles:view", "combustibles:register_load"]))
+    loadPanelData.mockResolvedValue({
+      variant: "terreno", degraded: [], total: 5, counts: { all: 0, toValidate: 0, withObservation: 0 }, recent: [], toFix: [], ranking: [], planilla: undefined,
+    })
+    getPersonalUseDaysInPeriod.mockResolvedValue(5)
+    await renderPage()
+    expect(screen.queryByText("Excluye uso personal")).not.toBeInTheDocument()
+  })
+
+  it("si la consulta de uso personal cae, el Panel sigue sin la nota", async () => {
+    getPersonalUseDaysInPeriod.mockRejectedValue(new Error("db caída"))
+    await renderPage()
+    expect(screen.queryByText("Excluye uso personal")).not.toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "Consumo" })).toBeInTheDocument()
   })
 
   it("elige la variante por el permiso de la sesión y se la pasa a la carga de datos", async () => {

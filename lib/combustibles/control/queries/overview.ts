@@ -4,7 +4,8 @@ import { db } from "@/db"
 import { fuelEquipmentLoads, fuelEquipmentTypes, fuelSupplyMedia, fuelVehicles, worksites } from "@/db/schema"
 import type { PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import { worksiteScopeSql } from "@/lib/auth/scope"
-import { buildLoadWhere, countableLoadSql, loadPerformanceUnitSql, statisticallyValidLoadSql, type ControlFilters } from "@/lib/combustibles/control/filters"
+import { buildManagementLoadWhere, countableLoadSql, loadPerformanceUnitSql, statisticallyValidLoadSql, type ControlFilters } from "@/lib/combustibles/control/filters"
+import { performanceTaintedByPersonalUseSql } from "@/lib/combustibles/personal-use-fuel-sql"
 import { buildCrosstab, globalRatio, type Crosstab, type MonthMediumRow } from "@/lib/combustibles/control/view-helpers"
 import { toNumber as num } from "./shared"
 import { supplyMediumNameSql } from "./supply-medium-name"
@@ -16,7 +17,14 @@ import { supplyMediumNameSql } from "./supply-medium-name"
  * calculado y sin revisión pendiente (`statisticallyValidLoadSql`), separadas por
  * la unidad con la que se calculó cada carga (`loadPerformanceUnitSql`): cambiar
  * la unidad del equipo no reescribe el pasado ni mezcla km con horas.
+ *
+ * Son cifras de GESTIÓN: `buildManagementLoadWhere` deja fuera las cargas de los días de uso
+ * personal del equipo, y las razones km/L y L/h dejan fuera además la primera carga posterior
+ * (`performanceTaintedByPersonalUseSql`), cuyo tramo incluye los km u horas del dueño.
  */
+
+/** Tramo con rendimiento calculado, sin decisión pendiente y no contaminado por el uso personal. */
+const managementValidLoadSql = and(statisticallyValidLoadSql, sql`not ${performanceTaintedByPersonalUseSql()}`)!
 
 /* ── Cifras de cabecera ──────────────────────────────────────────────────── */
 
@@ -45,16 +53,16 @@ export async function getOverviewHeader(session: Session, filters: ControlFilter
     totalLiters: sql<number>`coalesce(sum(${fuelEquipmentLoads.liters}) filter (where ${countableLoadSql}), 0)::float8`,
     loadCount: sql<number>`(count(*) filter (where ${countableLoadSql}))::int`,
     equipmentCount: sql<number>`(count(distinct ${fuelEquipmentLoads.vehicleId}) filter (where ${countableLoadSql}))::int`,
-    kmSum: sql<number>`coalesce(sum(${fuelEquipmentLoads.meterDelta}) filter (where ${statisticallyValidLoadSql} and ${km}), 0)::float8`,
-    kmLiters: sql<number>`coalesce(sum(${fuelEquipmentLoads.accumulatedLiters}) filter (where ${statisticallyValidLoadSql} and ${km}), 0)::float8`,
-    hourSum: sql<number>`coalesce(sum(${fuelEquipmentLoads.meterDelta}) filter (where ${statisticallyValidLoadSql} and ${hours}), 0)::float8`,
-    hourLiters: sql<number>`coalesce(sum(${fuelEquipmentLoads.accumulatedLiters}) filter (where ${statisticallyValidLoadSql} and ${hours}), 0)::float8`,
+    kmSum: sql<number>`coalesce(sum(${fuelEquipmentLoads.meterDelta}) filter (where ${managementValidLoadSql} and ${km}), 0)::float8`,
+    kmLiters: sql<number>`coalesce(sum(${fuelEquipmentLoads.accumulatedLiters}) filter (where ${managementValidLoadSql} and ${km}), 0)::float8`,
+    hourSum: sql<number>`coalesce(sum(${fuelEquipmentLoads.meterDelta}) filter (where ${managementValidLoadSql} and ${hours}), 0)::float8`,
+    hourLiters: sql<number>`coalesce(sum(${fuelEquipmentLoads.accumulatedLiters}) filter (where ${managementValidLoadSql} and ${hours}), 0)::float8`,
     flaggedCount: sql<number>`(count(*) filter (where ${inReview}))::int`,
     excludedKm: sql<number>`(count(*) filter (where ${computedInReview} and ${km}))::int`,
     excludedHours: sql<number>`(count(*) filter (where ${computedInReview} and ${hours}))::int`,
   }).from(fuelEquipmentLoads)
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
-    .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId)).where(buildLoadWhere(session, filters))
+    .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId)).where(buildManagementLoadWhere(session, filters))
   return {
     totalLiters: num(row?.totalLiters),
     loadCount: num(row?.loadCount),
@@ -80,7 +88,7 @@ export async function getLitersByMonthAndMedium(session: Session, filters: Contr
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
     .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
     .leftJoin(fuelSupplyMedia, eq(fuelSupplyMedia.id, fuelEquipmentLoads.supplyMediumId))
-    .where(and(buildLoadWhere(session, filters), countableLoadSql))
+    .where(and(buildManagementLoadWhere(session, filters), countableLoadSql))
     .groupBy(fuelEquipmentLoads.month, fuelSupplyMedia.id, fuelSupplyMedia.name, fuelSupplyMedia.sortOrder)
     .orderBy(asc(fuelEquipmentLoads.month), asc(fuelSupplyMedia.sortOrder))
   return rows.map((row) => ({ ...row, liters: num(row.liters) }))
@@ -107,7 +115,7 @@ export async function getWorksiteMediumCrosstab(session: Session, filters: Contr
     .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
     .innerJoin(worksites, eq(worksites.id, fuelEquipmentLoads.worksiteId))
     .leftJoin(fuelSupplyMedia, eq(fuelSupplyMedia.id, fuelEquipmentLoads.supplyMediumId))
-    .where(and(buildLoadWhere(session, filters), countableLoadSql, eq(loadPerformanceUnitSql, unit)))
+    .where(and(buildManagementLoadWhere(session, filters), countableLoadSql, eq(loadPerformanceUnitSql, unit)))
     .groupBy(worksites.id, worksites.name, fuelSupplyMedia.id, fuelSupplyMedia.name, fuelSupplyMedia.sortOrder)
     .orderBy(desc(sql`sum(${liters}) over (partition by ${worksites.id})`), asc(worksites.name), asc(fuelSupplyMedia.sortOrder))
   return buildCrosstab(rows.map((row) => ({ ...row, liters: num(row.liters) })))
@@ -145,8 +153,8 @@ export async function getMeterSeries(session: Session, filters: ControlFilters):
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
     .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
     .where(and(
-      buildLoadWhere(session, filters),
-      statisticallyValidLoadSql,
+      buildManagementLoadWhere(session, filters),
+      managementValidLoadSql,
       sql`${loadPerformanceUnitSql} in ('km_per_liter', 'liters_per_hour')`,
     ))
     .groupBy(fuelEquipmentLoads.month, loadPerformanceUnitSql)

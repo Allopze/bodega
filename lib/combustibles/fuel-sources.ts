@@ -26,6 +26,12 @@ export function copecTctSource(product: CopecTctProduct): string {
   return COPEC_TCT_SOURCE_BY_PRODUCT[product]
 }
 
+/** Fuente de cada registro TCT y la cuenta de su detalle por transacción, como la arma
+ *  `copec-sync` (`canal:producto`, p. ej. `tct:diesel`). */
+export const COPEC_TCT_ACCOUNT_BY_SOURCE: ReadonlyArray<readonly [source: string, account: string]> =
+  (Object.keys(COPEC_TCT_SOURCE_BY_PRODUCT) as CopecTctProduct[])
+    .map((product) => [COPEC_TCT_SOURCE_BY_PRODUCT[product], `tct:${product}`] as const)
+
 export const ARAMCO_SOURCES = [
   "Aramco Fleet Diesel",
   "Aramco Fleet AdBlue",

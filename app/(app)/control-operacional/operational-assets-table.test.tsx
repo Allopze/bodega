@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { OperationalAsset } from "@/lib/services/operational-control"
 import { OperationalAssetsTable } from "./operational-assets-table"
@@ -24,7 +24,7 @@ const asset = (overrides: Partial<OperationalAsset> = {}): OperationalAsset => (
   gpsMaintenanceRemaining: null, gpsMaintenanceReadingAt: null, fuelLiters: 150, fuelLoadCount: 3, lastFuelLoadAt: null,
   fuelPerformanceValue: 12.5, fuelPerformanceUnit: "km_per_liter", flaggedLoads: 1, openAnomalyCases: 5, criticalOpenAnomalyCases: 2,
   fuelBilledAmount: 50_000, maintenanceCost: 0, purchaseAmount: 0, totalCost: 50_000, idleHours: null, idlePct: null, litersIdle: null,
-  meterMismatch: false, openWorkOrders: 2, inWorkshop: true, workshopHours: 10,
+  meterMismatch: false, openWorkOrders: 2, inWorkshop: true, workshopHours: 10, personalUseDays: 0,
   ...overrides,
 } as OperationalAsset)
 
@@ -117,5 +117,36 @@ describe("OperationalAssetsTable", () => {
     render(<OperationalAssetsTable assets={[asset({ meterMismatch: true })]} {...props} showMeterMismatch />)
     const headers = within(screen.getByRole("table", { name: "Activos operacionales" })).getAllByRole("columnheader").map((header) => header.textContent)
     expect(headers).toContain("Discrepancia GPS")
+  })
+})
+
+describe("OperationalAssetsTable: uso personal", () => {
+  const noteOf = (text: string) => screen.queryAllByText(text)
+
+  it("con N días dice «Excluye N días de uso personal» en la fila y en la tarjeta móvil", () => {
+    render(<OperationalAssetsTable assets={[asset({ personalUseDays: 3 })]} {...props} />)
+    // Una en la tabla y una en la tarjeta móvil (ambas están en el DOM).
+    expect(noteOf("Excluye 3 días de uso personal")).toHaveLength(2)
+  })
+
+  it("con 1 día lo dice en singular", () => {
+    render(<OperationalAssetsTable assets={[asset({ personalUseDays: 1 })]} {...props} />)
+    expect(noteOf("Excluye 1 día de uso personal").length).toBeGreaterThan(0)
+    expect(noteOf("Excluye 1 días de uso personal")).toHaveLength(0)
+  })
+
+  it("con 0 días no hay nota", () => {
+    render(<OperationalAssetsTable assets={[asset({ personalUseDays: 0 })]} {...props} />)
+    expect(screen.queryByText(/de uso personal/)).toBeNull()
+  })
+
+  it("el tooltip dice qué deja fuera la exclusión, también con el foco del teclado", async () => {
+    render(<OperationalAssetsTable assets={[asset({ personalUseDays: 3 })]} {...props} />)
+    const table = screen.getByRole("table", { name: "Activos operacionales" })
+    const note = within(table).getByText("Excluye 3 días de uso personal")
+    expect(note.getAttribute("tabindex")).toBe("0")
+    fireEvent.focus(note)
+    const tip = await screen.findAllByText("Su combustible, compras, litros y km de esos días no se suman")
+    expect(tip.length).toBeGreaterThan(0)
   })
 })

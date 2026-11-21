@@ -9,6 +9,7 @@ import { VehiclePurchasesCard } from "@/components/fleet/vehicle-purchases-card"
 import { can } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { getFleetVehicleDetail } from "@/lib/services/fleet"
+import { listPersonalUsePeriods } from "@/lib/services/fleet-personal-use"
 import { listVehicleStays } from "@/lib/services/fleet-stays"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { TransferButton } from "@/components/fleet/transfer/transfer-button"
@@ -22,8 +23,9 @@ import { FleetDocumentUpload, FleetDocumentsPanel } from "../fleet-documents-pan
 import { VehicleExpiries } from "../vehicle-expiries"
 import { VehicleStaysCard } from "./vehicle-stays-card"
 import { openVehicleFichaArea } from "../_ficha/access"
-import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaTabs } from "../_ficha/ficha-chrome"
+import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaPersonalUseBadge, VehicleFichaTabs } from "../_ficha/ficha-chrome"
 import { VehicleContractCard } from "./vehicle-contract-card"
+import { VehiclePersonalUseCard } from "./vehicle-personal-use-card"
 
 export const metadata: Metadata = { title: "Vehículo · Flota" }
 
@@ -77,11 +79,14 @@ export default async function FlotaVehiclePage({
   // «Trasladar» exige el permiso, el interruptor del submódulo (apagado de fábrica) y alcance sobre la faena actual.
   const canTransfer = vehicle.isActive && can(session, "flota:transfer") && canAccessWorksite(session, vehicle.worksiteId)
     && await isRouteOperational("/flota/traslados")
-  const stays = await listVehicleStays(vehicle.id)
+  // Marcar el uso personal del dueño es de quien tiene `flota:personal_use`, con la faena del equipo en su alcance.
+  // Verlo no pide permiso: las cifras de gestión lo excluyen y quien las mira tiene que poder saber por qué.
+  const canMarkPersonalUse = can(session, "flota:personal_use") && canAccessWorksite(session, vehicle.worksiteId)
+  const [stays, personalUsePeriods] = await Promise.all([listVehicleStays(vehicle.id), listPersonalUsePeriods(vehicle.id)])
 
   return (
     <PageContainer width="workbench">
-      <PageHeader title={ctx.label} description={vehicleFichaDescription(ctx)} breadcrumb={vehicleFichaBreadcrumb(ctx, "flota")} actions={<><VehicleFichaEditAction ctx={ctx} />{canTransfer && <TransferButton initialVehicleId={vehicle.id} label="Trasladar" variant="secondary" />}</>} />
+      <PageHeader title={ctx.label} description={vehicleFichaDescription(ctx)} breadcrumb={vehicleFichaBreadcrumb(ctx, "flota")} actions={<><VehicleFichaPersonalUseBadge periods={personalUsePeriods} /><VehicleFichaEditAction ctx={ctx} />{canTransfer && <TransferButton initialVehicleId={vehicle.id} label="Trasladar" variant="secondary" />}</>} />
       <VehicleFichaTabs ctx={ctx} active="flota" />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -215,6 +220,13 @@ export default async function FlotaVehiclePage({
         contractOptions={contractCard.contractOptions}
         today={todayInChile()}
         canChange={canChangeContract}
+      />
+
+      <VehiclePersonalUseCard
+        vehicleId={vehicle.id}
+        periods={personalUsePeriods}
+        canMark={canMarkPersonalUse}
+        today={todayInChile()}
       />
 
       <Card id="historial-estado" className="scroll-mt-4">

@@ -77,6 +77,32 @@ describe("dailyAdvanceFromSeries", () => {
   })
 })
 
+describe("dailyAdvanceFromSeries con uso personal", () => {
+  const series = [
+    { value: 100, occurredAt: at("2026-11-01") },
+    { value: 130, occurredAt: at("2026-11-02") },
+    { value: 150, occurredAt: at("2026-11-03") },
+    { value: 190, occurredAt: at("2026-11-07") },
+  ]
+
+  it("sin la función de días excluidos el resultado es el de siempre", () => {
+    expect(dailyAdvanceFromSeries(series, 1_500)).toEqual([
+      { day: "2026-11-02", advance: 30 }, { day: "2026-11-03", advance: 20 }, { day: "2026-11-07", advance: 40 },
+    ])
+  })
+
+  it("omite el par que recorre un día excluido, aunque la lectura que lo cierra no sea de ese día", () => {
+    // 3 → 7 de noviembre recorre los días 4 a 7: con el 5 excluido sale entero.
+    const out = dailyAdvanceFromSeries(series, 1_500, (day) => day === "2026-11-05")
+    expect(out).toEqual([{ day: "2026-11-02", advance: 30 }, { day: "2026-11-03", advance: 20 }])
+  })
+
+  it("el tramo que sale del último día excluido recorre días de la operación y cuenta", () => {
+    const out = dailyAdvanceFromSeries(series, 1_500, (day) => day === "2026-11-02")
+    expect(out).toEqual([{ day: "2026-11-03", advance: 20 }, { day: "2026-11-07", advance: 40 }])
+  })
+})
+
 describe("semanas y baldes de alertas", () => {
   it("weekStart devuelve el lunes", () => {
     expect(weekStart("2026-11-13")).toBe("2026-11-09") // viernes
@@ -125,6 +151,16 @@ describe("buildGpsUsage", () => {
   ]
 
   const data = buildGpsUsage({ vehicles, meterRows, linkedExtra: new Set(["v3"]), rule: { config: null }, period })
+
+  it("con uso personal, el equipo no suma km ni horas en esos días y los demás no cambian", () => {
+    const personalUse = new Map([["v1", [{ id: "pu-1", vehicleId: "v1", startedOn: "2026-11-02", endedOn: "2026-11-02", note: null }]]])
+    const filtered = buildGpsUsage({ vehicles, meterRows, linkedExtra: new Set(["v3"]), rule: { config: null }, period, personalUse })
+    expect(filtered.km.current).toBe(70) // 50 + 20: el +30 del 2 de noviembre sale
+    expect(filtered.km.previous).toBe(10)
+    expect(filtered.hours.current).toBe(14) // v2 no tiene uso personal
+    expect(filtered.topByKm.map((row) => [row.vehicleId, row.km])).toEqual([["v1", 70]])
+    expect(filtered.buckets.find((bucket) => bucket.key === "2026-11-02")?.km).toBe(0)
+  })
 
   it("suma km y horas del período y del anterior", () => {
     expect(data.km.current).toBe(100) // 50 + 30 + 20

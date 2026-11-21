@@ -293,3 +293,50 @@ describe("contractVehicleIds", () => {
     ], "c", abril).has("x")).toBe(true)
   })
 })
+
+/**
+ * Uso personal (plan «Uso personal de equipos», Task 7): en un mes con costo C y uso personal P,
+ * Control operacional y Costo por contrato muestran C − P, y contratos + «Sin contrato» +
+ * «Por repartir» suman C − P. Lo que queda del TCT mensual tras descontar el período sigue la
+ * regla actual: cruza dos ventanas, así que va a «Por repartir».
+ */
+describe("getContractCostBreakdown con uso personal", () => {
+  const APRIL = { from: "2026-04-01", to: "2026-04-30" }
+  const V_PU = "veh-cc-uso-personal"
+
+  beforeAll(async () => {
+    await testDb.insert(schema.fuelVehicles).values({
+      id: V_PU, plate: "PU-0001", code: "KP-1", type: "x", equipmentTypeId: IDS.eqType, meterType: "hour_meter",
+      performanceUnit: "liters_per_hour", worksiteId: IDS.wsA,
+    })
+    // Cambia de contrato el 15 de abril; uso personal del 6 al 15 (10 de 30 días).
+    await addAssignment({ contractId: C_A1, vehicleId: V_PU, validFrom: "2026-04-01", validTo: "2026-04-14" })
+    await addAssignment({ contractId: C_A2, vehicleId: V_PU, validFrom: "2026-04-15" })
+    await testDb.insert(schema.fuelVehiclePersonalUsePeriods).values({ id: "cc-pu-1", vehicleId: V_PU, startedOn: "2026-04-06", endedOn: "2026-04-15" })
+
+    await addFuel({ vehicle: V_PU, worksite: IDS.wsA, plate: "PU-0001", date: "2026-04-08", amount: 200_000 }) // dentro: excluida (iría a A1)
+    await addFuel({ vehicle: V_PU, worksite: IDS.wsA, plate: "PU-0001", date: "2026-04-20", amount: 50_000 }) // cuenta (A2)
+    await addFuel({ vehicle: V_PU, worksite: IDS.wsA, plate: "PU-0001", date: "2026-04-01", amount: 300_000, granularity: "period_aggregate", account: "tct:gasolina" }) // × 20/30
+    await addPurchase({ worksite: IDS.wsA, vehicle: V_PU, issuedAt: "2026-04-09T15:00:00.000Z", subtotal: 100_000 }) // dentro: excluida
+    await addPurchase({ worksite: IDS.wsA, vehicle: V_PU, issuedAt: "2026-04-22T15:00:00.000Z", subtotal: 20_000 }) // cuenta (A2)
+  }, 60_000)
+
+  it("contratos + Sin contrato + Por repartir suman C − P, igual que el Panel", async () => {
+    const { hub, breakdown } = await breakdownFor(session(), APRIL)
+    const vehicles = hub.assets.filter((asset) => asset.kind === "vehicle")
+    const rows = breakdown.worksites.flatMap((worksite) => worksite.rows).filter((row) => row.kind !== "no_equipment")
+    const total = rows.reduce((acc, row) => acc + (row.total ?? 0), 0)
+
+    // C = 200.000 + 50.000 + 300.000 + 100.000 + 20.000 = 670.000; P = 200.000 + 100.000 + 100.000.
+    expect(total).toBeCloseTo(270_000, 4)
+    const panel = vehicles.reduce((acc, asset) => acc + (asset.fuelBilledAmount ?? 0) + (asset.purchaseAmount ?? 0), 0)
+    expect(panel).toBeCloseTo(270_000, 4)
+
+    const rowOf = (kind: string, contractId?: string) =>
+      breakdown.worksites.find((w) => w.worksiteId === IDS.wsA)?.rows.find((r) => r.kind === kind && (contractId === undefined || r.contractId === contractId))
+    expect(rowOf("contract", C_A1)).toMatchObject({ fuel: 0, purchases: 0 })
+    expect(rowOf("contract", C_A2)).toMatchObject({ fuel: 50_000, purchases: 20_000 })
+    // El TCT cruza el cambio de contrato: lo que queda tras el uso personal va a «Por repartir».
+    expect(rowOf("pending")?.fuel).toBeCloseTo(200_000, 4)
+  })
+})

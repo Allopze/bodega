@@ -23,6 +23,8 @@ import {
   purchaseRequests,
   users,
 } from "@/db/schema"
+import { isoTextDaySql } from "@/lib/combustibles/control/queries/field-filters"
+import { personalUseOnDaySql } from "@/lib/fleet/personal-use-sql"
 import { itemStatusLabel } from "@/lib/work-queue-labels"
 
 export interface VehiclePurchaseRecord {
@@ -58,6 +60,11 @@ export interface VehiclePurchaseRecord {
   /** `null` = sin OC todavía o costo pendiente. */
   unitPrice:       number | null
   subtotal:        number | null
+  /**
+   * La OC se emitió un día en que el equipo estaba en uso personal: la compra se ve (es un
+   * registro) pero no suma en el costo de Control operacional. Sin OC, `false`.
+   */
+  personalUse:     boolean
 }
 
 export async function getVehiclePurchaseHistory(
@@ -88,6 +95,11 @@ export async function getVehiclePurchaseHistory(
       orderStatus:    purchaseOrders.status,
       unitPrice:      purchaseOrderItems.unitPrice,
       subtotal:       purchaseOrderItems.subtotal,
+      // Mismo día que usa la exclusión de Control operacional: el de emisión de la OC, en hora de Chile.
+      personalUse:    personalUseOnDaySql(
+        purchaseRequestItems.vehicleId,
+        sql`to_char(${isoTextDaySql(purchaseOrders.issuedAt)}, 'YYYY-MM-DD')`,
+      ),
     })
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
@@ -144,6 +156,7 @@ export async function getVehiclePurchaseHistory(
       orderStatus:     row.orderStatus,
       unitPrice:       hasOrder ? row.unitPrice : null,
       subtotal:        hasOrder ? row.subtotal : null,
+      personalUse:     hasOrder && row.personalUse === true,
     }
   })
 }

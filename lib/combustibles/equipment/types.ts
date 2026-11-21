@@ -44,6 +44,8 @@ export interface EquipmentFileLoad {
   /** Estado de la fila de terreno («Por validar», «Validada»…); `null` en la planilla, que no tiene estado. */
   stateLabel: string | null
   reviewStatus: "ok" | "flagged" | "approved" | "rejected"
+  /** La carga cae en un día de uso personal del equipo: se ve igual, con la marca, pero no suma en gestión. */
+  personalUse: boolean
   /** Ficha de la carga (`fuelLoadHref`); `null` si no se puede armar. */
   href: string | null
 }
@@ -52,6 +54,9 @@ export interface EquipmentFileLoads {
   /** Cargas que cuentan (sin anuladas, duplicadas ni rechazadas) y sus litros en el período. */
   count: number
   liters: number
+  /** Lo mismo sin las cargas de los días de uso personal: las cifras de gestión (el tile «Litros») usan éstas. */
+  keptCount: number
+  keptLiters: number
   /** Las más recientes del período, con las rechazadas y por decidir a la vista (con su estado). */
   rows: EquipmentFileLoad[]
   /** Cuántas cargas del período no caben en `rows`. */

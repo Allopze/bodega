@@ -40,7 +40,7 @@ function row(overrides: Partial<EnrichedRow> = {}): EnrichedRow {
     sealRemoved: null, sealInstalled: null, evidenceCount: 4, notes: null, statusLabel: "submitted",
     createdByName: null, updatedByName: null, createdAt: null, updatedAt: null,
     anomalyCount: null, reviewMark: null, reviewMarkNotes: null, reviewMarkId: null, reviewMarkedBy: null,
-    origin: "qr", worksiteId: "w-1", vehicleId: "veh-1", equipmentLoadId: "el-1", reviewFlagged: null, reviewFlagReason: null,
+    origin: "qr", worksiteId: "w-1", vehicleId: "veh-1", equipmentLoadId: "el-1", reviewFlagged: null, reviewFlagReason: null, personalUse: false,
     hrefs: { detail: "/combustibles/cargas/terreno/tae-1", equipment: null, history: null, evidence: null, decide: null, requested: null, cases: null },
     ...overrides,
   } as EnrichedRow

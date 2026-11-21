@@ -93,8 +93,17 @@ function PendingCell({ row }: { row: EnrichedRow }) {
 function StateCell({ row }: { row: EnrichedRow }) {
   // La planilla no tiene un estado propio: llega importada y se queda así.
   // Con punto, igual que el resto de los estados de la columna: un solo estilo de insignia.
-  if (row.source === "operation_manual") return <Badge variant="default" size="sm" dot>Importada</Badge>
-  return row.statusLabel ? <StateBadge state={row.statusLabel} entity="fuel_log" size="sm" /> : <>—</>
+  const state = row.source === "operation_manual"
+    ? <Badge variant="default" size="sm" dot>Importada</Badge>
+    : row.statusLabel ? <StateBadge state={row.statusLabel} entity="fuel_log" size="sm" /> : <>—</>
+  if (!row.personalUse) return state
+  // La carga sigue en la lista y en el total: la marca avisa que en gestión ese día no cuenta (ver la ficha del equipo).
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {state}
+      <Badge variant="warning" size="sm" title="El equipo estaba en uso personal ese día: no suma en costos ni consumo de gestión.">Uso personal</Badge>
+    </span>
+  )
 }
 
 function EquipmentCell({ row }: { row: EnrichedRow }) {

@@ -68,6 +68,7 @@ export function InboxDetailSheet({ item, canReviewCases, canResolveCases }: { it
               severity={row.severity}
               caseStatus={kindCase?.status}
               decided={decided}
+              personalUse={row.personalUse}
             />
             <SheetTitle>{row.equipmentLabel}{row.worksiteName ? ` · ${row.worksiteName}` : ""}</SheetTitle>
             <SheetDescription>{QUESTION[row.kind]}</SheetDescription>

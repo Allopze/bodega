@@ -6,6 +6,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vite
 import path from "node:path"
 import * as schema from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { todayInChile } from "@/lib/utils"
 
 // ── In-memory PostgreSQL database & migrations ────────────────────────────
 const pg = new PGlite()
@@ -685,5 +686,174 @@ describe("kilometraje_regresivo / horometro_regresivo (batch — más allá de T
 
     const { cases } = await getAnomalyCases({ ruleCode: "horometro_regresivo" }, TEST_SESSION)
     expect(cases.some((c) => c.referenceEntityType === "fuel_load" && c.vehicleId === vehLoadId)).toBe(true)
+  })
+})
+
+/**
+ * Uso personal (plan «Uso personal de equipos», Task 12): los detectores batch de consumo no abren
+ * casos por lo que el equipo hizo mientras estaba en uso personal. Cada caso tiene su control: el
+ * mismo dato en un equipo sin período SÍ abre caso, así la ausencia del caso no es un detector roto.
+ * El detector de medidor regresivo NO cambia: un medidor que retrocede es un error de datos.
+ */
+describe("uso personal en los detectores batch", () => {
+  const wsId = nanoid()
+  const eqTypeId = nanoid()
+  const productId = nanoid()
+  const supplierUsual = nanoid()
+  const supplierOther = nanoid()
+  const userId = nanoid()
+  const opBatchId = nanoid()
+  const importBatchId = nanoid()
+  const syncRunId = nanoid()
+
+  async function addVehicle(input: { plate: string; usualSupplier?: string; inactive?: boolean; performanceUnit?: string }) {
+    const id = nanoid()
+    await inMemoryDb.insert(schema.fuelVehicles).values({
+      id, plate: `${input.plate}${nanoid().slice(0, 4).toUpperCase()}`, type: "camion",
+      equipmentTypeId: eqTypeId, worksiteId: wsId, isActive: true,
+      ...(input.usualSupplier ? { usualFuelSupplierId: input.usualSupplier } : {}),
+      ...(input.performanceUnit ? { performanceUnit: input.performanceUnit } : {}),
+      ...(input.inactive ? { operationalStatus: "mantencion" } : {}),
+    })
+    if (input.inactive) {
+      await inMemoryDb.insert(schema.fuelVehicleOperationalIntervals).values({
+        id: nanoid(), vehicleId: id, status: "mantencion",
+        startedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), reason: "Fixture de prueba",
+      })
+    }
+    return id
+  }
+
+  async function markPersonalUse(vehicleId: string, startedOn: string, endedOn: string | null) {
+    await inMemoryDb.insert(schema.fuelVehiclePersonalUsePeriods).values({ id: nanoid(), vehicleId, startedOn, endedOn })
+  }
+
+  beforeAll(async () => {
+    await inMemoryDb.insert(schema.worksites).values({ id: wsId, name: "Faena uso personal", code: `UP-${nanoid().slice(0, 6)}`, isActive: true })
+    await inMemoryDb.insert(schema.users).values({ id: userId, name: "Test uso personal", email: `up-${nanoid()}@example.com`, hashedPassword: "x", isActive: true })
+    await inMemoryDb.insert(schema.fuelEquipmentTypes).values({ id: eqTypeId, slug: `up-camion-${nanoid().slice(0, 6)}`, name: "Camión uso personal" })
+    await inMemoryDb.insert(schema.fuelProducts).values({ id: productId, code: `UP-${nanoid().slice(0, 6)}`, name: "Diésel uso personal", category: "diesel", unit: "liter" })
+    await inMemoryDb.insert(schema.fuelSuppliers).values([{ id: supplierUsual, name: "Habitual UP" }, { id: supplierOther, name: "Otro UP" }])
+    await inMemoryDb.insert(schema.fuelOperationBatches).values({
+      id: opBatchId, archivoNombre: "up.xlsx", hashArchivo: nanoid(), estado: "importado", periodoDesde: "2026-06-01", periodoHasta: "2026-06-30", importadoPor: userId,
+    })
+    await inMemoryDb.insert(schema.fuelImportBatches).values({
+      id: importBatchId, worksiteId: wsId, fuente: "Copec", archivoNombre: "up-var.xlsx", hashArchivo: nanoid(),
+      estado: "importado", periodoDesde: "2026-06-01", periodoHasta: "2026-08-31", importadoPor: userId,
+    })
+    await inMemoryDb.insert(schema.fuelProviderSyncRuns).values({
+      id: syncRunId, provider: "copec", requestedFrom: "2026-01-01", requestedTo: "2026-12-31", correlationId: nanoid(),
+    })
+  })
+
+  beforeEach(() => {
+    vi.stubEnv("FUEL_VARIATION_SCAN_FROM", "2026-07-01T00:00:00.000Z")
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it("rendimiento_fuera_historico: la observación atípica de un día de uso personal no abre caso", async () => {
+    const withPeriod = await addVehicle({ plate: "UPR", performanceUnit: "km_per_liter" })
+    const control = await addVehicle({ plate: "UPC", performanceUnit: "km_per_liter" })
+    await markPersonalUse(withPeriod, "2026-06-10", "2026-06-12")
+    for (const [index, vehicleId] of [withPeriod, control].entries()) {
+      // Cada equipo con su patente: la identidad de la fila es (faena, patente, fecha, litros, horómetro).
+      const plate = `UPTEST${index}`
+      const normal = Array.from({ length: 7 }, (_, i) => ({
+        id: nanoid(), batchId: opBatchId, worksiteId: wsId, vehicleId, plate,
+        fecha: `2026-06-${String(i + 1).padStart(2, "0")}`, liters: 10, monto: 100, rendimiento: 10 + (i % 2) * 0.2,
+      }))
+      await inMemoryDb.insert(schema.fuelOperationRecords).values([
+        ...normal,
+        { id: nanoid(), batchId: opBatchId, worksiteId: wsId, vehicleId, plate, fecha: "2026-06-11", liters: 10, monto: 100, rendimiento: 30 },
+      ])
+    }
+
+    await runAllBatchRules()
+
+    const { cases } = await getAnomalyCases({ ruleCode: "rendimiento_fuera_historico" }, TEST_SESSION)
+    expect(cases.some((c) => c.vehicleId === control)).toBe(true)
+    expect(cases.some((c) => c.vehicleId === withPeriod)).toBe(false)
+  })
+
+  it("proveedor_no_habitual: la carga de un día de uso personal no abre caso", async () => {
+    const withPeriod = await addVehicle({ plate: "UPS", usualSupplier: supplierUsual })
+    const control = await addVehicle({ plate: "UPT", usualSupplier: supplierUsual })
+    await markPersonalUse(withPeriod, "2026-06-10", "2026-06-20")
+    for (const vehicleId of [withPeriod, control]) {
+      await inMemoryDb.insert(schema.fuelLoads).values({
+        id: nanoid(), loadDate: "2026-06-15", month: "2026-06", serviceType: "TCT", vehicleId, fuelSupplierId: supplierOther,
+        worksiteId: wsId, product: "PETROLEO DIESEL", productId, liters: 50, baseAmount: 25000, totalAmount: 29750, createdBy: userId,
+      })
+    }
+    // Fuera del período sí cuenta: la exclusión es por día, no por equipo.
+    await inMemoryDb.insert(schema.fuelLoads).values({
+      id: nanoid(), loadDate: "2026-06-25", month: "2026-06", serviceType: "TCT", vehicleId: withPeriod, fuelSupplierId: supplierOther,
+      worksiteId: wsId, product: "PETROLEO DIESEL", productId, liters: 50, baseAmount: 25000, totalAmount: 29750, createdBy: userId,
+    })
+
+    await runAllBatchRules()
+
+    const { cases } = await getAnomalyCases({ ruleCode: "proveedor_no_habitual" }, TEST_SESSION)
+    const byLoad = (vehicleId: string) => cases.filter((c) => c.vehicleId === vehicleId)
+    expect(byLoad(control)).toHaveLength(1)
+    // Sólo el caso de la carga del 25 de junio, la que no está en el período.
+    expect(byLoad(withPeriod)).toHaveLength(1)
+    expect(byLoad(withPeriod)[0]?.referenceEntityId).not.toBe(byLoad(control)[0]?.referenceEntityId)
+  })
+
+  it("consumo_durante_inactividad: las cargas de un día de uso personal no abren caso", async () => {
+    const today = todayInChile()
+    const withPeriod = await addVehicle({ plate: "UPI", inactive: true })
+    const control = await addVehicle({ plate: "UPJ", inactive: true })
+    await markPersonalUse(withPeriod, today, null)
+    for (const vehicleId of [withPeriod, control]) {
+      await inMemoryDb.insert(schema.fuelTaeSubmissions).values({
+        id: nanoid(), clientSubmissionId: nanoid(), source: "public_pwa", publicResultToken: nanoid(32),
+        worksiteId: wsId, vehicleId, productId, equipmentCodeSnapshot: "UPI",
+        loadedAt: new Date().toISOString(), submittedAt: new Date().toISOString(),
+        driverNameSnapshot: "Conductor", supervisorNameSnapshot: "Supervisor",
+        manualIdentity: false, meterType: "odometer", liters: 10, status: "validated",
+      })
+      await inMemoryDb.insert(schema.fuelProviderTransactions).values({
+        id: nanoid(), syncRunId, provider: "copec", sourceAccount: "tct:diesel",
+        identityKey: nanoid(), fingerprint: nanoid(), sourceRowKey: nanoid(), payloadHash: nanoid(),
+        worksiteId: wsId, vehicleId, sourcePlate: "UPI", occurredAt: new Date().toISOString(),
+        quantity: 10, amount: 1000, status: "accepted", granularity: "transaction",
+      })
+    }
+
+    await runAllBatchRules()
+
+    const { cases } = await getAnomalyCases({ ruleCode: "consumo_durante_inactividad" }, TEST_SESSION)
+    expect(cases.some((c) => c.vehicleId === control)).toBe(true)
+    expect(cases.some((c) => c.vehicleId === withPeriod)).toBe(false)
+  })
+
+  it("variacion_brusca_consumo: un registro que se solapa con el uso personal no abre caso ni deja comparar los vecinos", async () => {
+    const withPeriod = await addVehicle({ plate: "UPV" })
+    const control = await addVehicle({ plate: "UPW" })
+    await markPersonalUse(withPeriod, "2026-07-10", "2026-07-12")
+    const record = (vehicleId: string, from: string, to: string, liters: number) => ({
+      id: nanoid(), batchId: importBatchId, worksiteId: wsId, vehicleId, patente: "UPV", cantidadUnidad: liters, monto: liters * 500,
+      numeroTransacciones: 2, numeroTarjetas: 1, periodoDesde: from, periodoHasta: to, rendimientoPromedio: 10,
+      fuente: "Copec TCT Diesel", createdAt: "2026-07-02T00:00:00.000Z", updatedAt: "2026-07-02T00:00:00.000Z",
+    })
+    // Junio 100 → julio 250 (tocado por el uso personal) → agosto 260. Si julio sólo se quitara de la
+    // lista, junio (100) y agosto (260) pasarían por consecutivos y abrirían un caso falso.
+    await inMemoryDb.insert(schema.fuelConsumptionRecords).values([
+      record(withPeriod, "2026-06-01", "2026-06-30", 100),
+      record(withPeriod, "2026-07-01", "2026-07-31", 250),
+      record(withPeriod, "2026-08-01", "2026-08-31", 260),
+      record(control, "2026-06-01", "2026-06-30", 100),
+      record(control, "2026-07-01", "2026-07-31", 250),
+    ])
+
+    await runAllBatchRules()
+
+    const { cases } = await getAnomalyCases({ ruleCode: "variacion_brusca_consumo" }, TEST_SESSION)
+    expect(cases.some((c) => c.vehicleId === control)).toBe(true)
+    expect(cases.some((c) => c.vehicleId === withPeriod)).toBe(false)
   })
 })

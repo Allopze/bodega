@@ -4,6 +4,7 @@ import { db } from "@/db"
 import { fuelTelemetryDaily, fuelVehicles } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { stayWorksiteOnDaySql } from "@/lib/fleet/stays-sql"
+import { notPersonalUseOnDaySql } from "@/lib/fleet/personal-use-sql"
 import { idlePct } from "../calc/idle"
 import { mandanteWorksitesSql, selectedMonthKeys, type ControlFilters } from "../filters"
 
@@ -39,8 +40,16 @@ function vehicleScopeSql(session: Session | null, filters: ControlFilters): SQL 
   )
 }
 
+/**
+ * Uso personal en la telemetría: `"exclude"` deja fuera los días de uso personal
+ * del equipo (todo agregado de gestión de horas, ralentí o litros); `"include"`
+ * los conserva (cobertura de fuentes y sincronización, que miran el dato crudo).
+ * Es obligatorio para que cada llamador lo decida.
+ */
+export type TelemetryPersonalUse = "exclude" | "include"
+
 /** Un registro por equipo y día, ya dentro del alcance y del período. */
-export function dailyTelemetry(session: Session | null, filters: ControlFilters) {
+export function dailyTelemetry(session: Session | null, filters: ControlFilters, personalUse: TelemetryPersonalUse) {
   return db.selectDistinctOn([fuelTelemetryDaily.vehicleId, fuelTelemetryDaily.day], {
     vehicleId: fuelTelemetryDaily.vehicleId,
     code: fuelVehicles.code,
@@ -53,7 +62,11 @@ export function dailyTelemetry(session: Session | null, filters: ControlFilters)
     litersIdle: fuelTelemetryDaily.litersIdle,
   }).from(fuelTelemetryDaily)
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelTelemetryDaily.vehicleId))
-    .where(and(vehicleScopeSql(session, filters), telemetryPeriodSql(filters)))
+    .where(and(
+      vehicleScopeSql(session, filters),
+      telemetryPeriodSql(filters),
+      personalUse === "exclude" ? notPersonalUseOnDaySql(fuelTelemetryDaily.vehicleId, sql`${fuelTelemetryDaily.day}`) : undefined,
+    ))
     .orderBy(fuelTelemetryDaily.vehicleId, fuelTelemetryDaily.day, desc(fuelTelemetryDaily.operatingHours))
     .as("d")
 }
@@ -128,7 +141,7 @@ export interface IdleEquipmentMonthRow extends IdleStats {
 
 /** V-01..V-05: equipo × mes, y la fila de total general. */
 export async function getIdleEquipmentMonths(session: Session | null, filters: ControlFilters): Promise<{ rows: IdleEquipmentMonthRow[]; total: IdleStats | null }> {
-  const d = dailyTelemetry(session, filters)
+  const d = dailyTelemetry(session, filters, "exclude")
   const [rows, totalRows] = await Promise.all([
     db.select({ vehicleId: d.vehicleId, code: d.code, plate: d.plate, month: d.month, ...aggregates(d) })
       .from(d).groupBy(d.vehicleId, d.code, d.plate, d.month).orderBy(d.code, d.plate, d.vehicleId, d.month),
@@ -154,7 +167,7 @@ export interface IdleMonthRow {
 
 /** V-06: serie mensual de toda la flota del alcance. */
 export async function getIdleFleetMonths(session: Session | null, filters: ControlFilters): Promise<IdleMonthRow[]> {
-  const d = dailyTelemetry(session, filters)
+  const d = dailyTelemetry(session, filters, "exclude")
   const rows = await db.select({ month: d.month, ...aggregates(d) }).from(d).groupBy(d.month).orderBy(d.month)
   return rows.map((row) => {
     const stats = toStats(row)
@@ -176,7 +189,7 @@ export interface IdleVehicleOption { id: string; label: string; operatingHours: 
 
 /** Equipos con telemetría en el período, el de más horas primero (V-07 parte con ese). */
 export async function listIdleVehicles(session: Session | null, filters: ControlFilters): Promise<IdleVehicleOption[]> {
-  const d = dailyTelemetry(session, filters)
+  const d = dailyTelemetry(session, filters, "exclude")
   const rows = await db.select({ id: d.vehicleId, code: d.code, plate: d.plate, hours: sql<number>`coalesce(sum(${d.operating}), 0)::float8` })
     .from(d).groupBy(d.vehicleId, d.code, d.plate).orderBy(desc(sql`sum(${d.operating})`), d.code, d.plate, d.vehicleId)
   return rows.map((row) => ({ id: row.id, label: equipmentLabel(row.code, row.plate), operatingHours: row.hours }))
@@ -186,7 +199,7 @@ export interface IdleDayPoint { day: string; operatingHours: number; idleHours: 
 
 /** V-07: serie diaria de un equipo. */
 export async function getIdleDailySeries(session: Session | null, filters: ControlFilters, vehicleId: string): Promise<IdleDayPoint[]> {
-  const d = dailyTelemetry(session, filters)
+  const d = dailyTelemetry(session, filters, "exclude")
   const rows = await db.select({ day: d.day, operating: d.operating, idle: d.idle }).from(d).where(eq(d.vehicleId, vehicleId)).orderBy(d.day)
   return rows.map((row) => ({ day: row.day, operatingHours: row.operating, idleHours: row.idle, idlePct: idlePct(row.idle, row.operating) }))
 }
@@ -195,7 +208,7 @@ export interface IdleTopDay { day: string; equipment: string; operatingHours: nu
 
 /** V-09: los días de mayor % en vacío, con al menos 1 hora de funcionamiento (un día de minutos daría 100 % sin significar nada). */
 export async function getIdleTopDays(session: Session | null, filters: ControlFilters, limit = 20): Promise<IdleTopDay[]> {
-  const d = dailyTelemetry(session, filters)
+  const d = dailyTelemetry(session, filters, "exclude")
   const pct = sql<number>`(${d.idle} / ${d.operating} * 100)::float8`
   const rows = await db.select({ day: d.day, code: d.code, plate: d.plate, operating: d.operating, idle: d.idle, pct })
     .from(d).where(sql`${d.operating} >= 1`).orderBy(desc(pct), desc(d.operating), d.day, d.code, d.vehicleId).limit(limit)

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   areas: ["flota"] as string[],
   stays: vi.fn(async (..._args: unknown[]): Promise<unknown[]> => []),
   operational: vi.fn(async (..._args: unknown[]) => true),
+  personalUse: vi.fn(async (..._args: unknown[]): Promise<unknown[]> => []),
 }))
 vi.mock("next/navigation", () => ({
   redirect: (href: string) => { throw new Error(href) },
@@ -32,10 +33,13 @@ vi.mock("../_ficha/ficha-chrome", () => ({
   vehicleFichaBreadcrumb: () => [],
   VehicleFichaTabs: () => <nav aria-label="Ficha de KA-115" />,
   VehicleFichaEditAction: () => null,
+  VehicleFichaPersonalUseBadge: () => null,
 }))
 vi.mock("@/lib/services/fleet", () => ({ getFleetVehicleDetail: mocks.detail }))
 // La tarjeta «Contrato» lee su historial de la base; acá no interesa.
 vi.mock("@/lib/services/vehicle-ficha", () => ({ loadVehicleContractCard: async () => ({ history: [], contractOptions: [] }) }))
+// La tarjeta «Uso personal» lee sus períodos de la base; su prueba es la de la tarjeta.
+vi.mock("@/lib/services/fleet-personal-use", () => ({ listPersonalUsePeriods: (...args: unknown[]) => mocks.personalUse(...args) }))
 vi.mock("@/lib/services/fleet-stays", () => ({ listVehicleStays: (...args: unknown[]) => mocks.stays(...args) }))
 vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: (...args: unknown[]) => mocks.operational(...args) }))
 // El botón trae consigo las acciones de servidor; su prueba es la del modal.
@@ -44,7 +48,7 @@ vi.mock("@/components/fleet/transfer/transfer-button", () => ({
 }))
 vi.mock("@/lib/services/system-settings", () => ({ getFleetAdminSettings: async () => ({ warningDays: 30, defaultVehicleStatus: "operativo" }) }))
 // La hoja «Actualizar vencimientos» importa la acción; su lógica tiene su propia prueba.
-vi.mock("../../actions", () => ({ updateVehicleExpiriesAction: vi.fn() }))
+vi.mock("../../actions", () => ({ updateVehicleExpiriesAction: vi.fn(), savePersonalUsePeriodAction: vi.fn(), deletePersonalUsePeriodAction: vi.fn() }))
 vi.mock("@/components/ui/page-header", () => ({
   PageHeader: ({ title, actions }: { title: string; actions?: React.ReactNode }) => <header><h1>{title}</h1>{actions}</header>,
   Breadcrumbs: () => null,
@@ -84,7 +88,7 @@ async function factValue(performanceUnit: string, label: string) {
 
 afterEach(() => {
   cleanup(); vi.clearAllMocks(); mocks.can.mockReturnValue(false); mocks.areas = ["flota"]; vi.useRealTimers()
-  mocks.stays.mockResolvedValue([]); mocks.operational.mockResolvedValue(true)
+  mocks.stays.mockResolvedValue([]); mocks.operational.mockResolvedValue(true); mocks.personalUse.mockResolvedValue([])
 })
 
 describe("ficha de vehículo: unidad de rendimiento", () => {
@@ -383,5 +387,39 @@ describe("ficha de vehículo: traslados", () => {
     mocks.detail.mockResolvedValue(detail("km_per_liter", { vehicle: { worksiteId: "ws-9" } }))
     render(await FlotaVehiclePage({ params: Promise.resolve({ id: "veh-1" }) }))
     expect(screen.queryByRole("button", { name: "Trasladar" })).toBeNull()
+  })
+})
+
+describe("ficha de vehículo: uso personal", () => {
+  async function renderPage() {
+    mocks.detail.mockResolvedValue(detail("km_per_liter"))
+    render(await FlotaVehiclePage({ params: Promise.resolve({ id: "veh-1" }) }))
+  }
+  const periods = [
+    { id: "p2", vehicleId: "veh-1", startedOn: "2026-11-03", endedOn: null, note: null },
+    { id: "p1", vehicleId: "veh-1", startedOn: "2026-10-12", endedOn: "2026-10-19", note: "Viaje del dueño" },
+  ]
+
+  it("lista los períodos de este equipo, sin permiso de marcar y sin botones", async () => {
+    mocks.personalUse.mockResolvedValue(periods)
+    await renderPage()
+
+    expect(mocks.personalUse).toHaveBeenCalledWith("veh-1")
+    const card = screen.getByRole("heading", { name: "Uso personal" }).closest("div")!.parentElement!
+    expect(card.textContent).toContain("03-11-2026 → (en curso)")
+    expect(card.textContent).toContain("12-10-2026 → 19-10-2026")
+    expect(within(card).queryByRole("button")).toBeNull()
+  })
+
+  it("con el permiso y la faena en su alcance ofrece marcar; sin la faena, no", async () => {
+    mocks.can.mockImplementation((_session, permission) => permission === "flota:personal_use")
+    await renderPage()
+    expect(screen.getByRole("button", { name: "Marcar uso personal" })).toBeInTheDocument()
+    cleanup()
+
+    mocks.detail.mockResolvedValue(detail("km_per_liter", { vehicle: { worksiteId: "ws-9" } }))
+    render(await FlotaVehiclePage({ params: Promise.resolve({ id: "veh-1" }) }))
+    expect(screen.getByText("Este equipo no tiene uso personal marcado")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Marcar uso personal" })).toBeNull()
   })
 })

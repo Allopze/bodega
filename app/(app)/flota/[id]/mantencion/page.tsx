@@ -27,7 +27,8 @@ import { LIFE_PAGE_SIZE } from "@/components/mantencion/jefatura/equipos/equipme
 import { listSchedules } from "@/lib/services/mantencion/schedules"
 import { PERFORMANCE_UNIT_LABELS } from "@/lib/combustibles/control/contracts"
 import { openVehicleFichaArea } from "../_ficha/access"
-import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaTabs } from "../_ficha/ficha-chrome"
+import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaPersonalUseBadge, VehicleFichaTabs } from "../_ficha/ficha-chrome"
+import { listPersonalUsePeriods } from "@/lib/services/fleet-personal-use"
 
 export const metadata: Metadata = { title: "Vehículo · Mantención" }
 export const dynamic = "force-dynamic"
@@ -46,6 +47,8 @@ export default async function EquipmentDetailPage({
 }) {
   const { id } = await params
   const { session, ctx } = await openVehicleFichaArea(id, "mantencion")
+  // Insignia «En uso personal» de la cabecera: informativa, no tumba la página si falla.
+  const personalUsePeriods = await listPersonalUsePeriods(id).catch(() => [])
   const viewer = viewerFromSession(session)
   const header = { title: ctx.label, description: vehicleFichaDescription(ctx), breadcrumb: vehicleFichaBreadcrumb(ctx, "mantencion") }
   const tabs = <VehicleFichaTabs ctx={ctx} active="mantencion" />
@@ -55,7 +58,7 @@ export default async function EquipmentDetailPage({
   if (!ctx.hasMaintenanceProfile) {
     return (
       <PageContainer width="workbench">
-        <PageHeader {...header} actions={<VehicleFichaEditAction ctx={ctx} />} />
+        <PageHeader {...header} actions={<><VehicleFichaPersonalUseBadge periods={personalUsePeriods} /><VehicleFichaEditAction ctx={ctx} /></>} />
         {tabs}
         <EmptyState
           title="Este vehículo no está en el plan de mantención"
@@ -198,7 +201,7 @@ export default async function EquipmentDetailPage({
       newOrder={newOrder}
       header={header}
       tabs={tabs}
-      fichaActions={<VehicleFichaEditAction ctx={ctx} />}
+      fichaActions={<><VehicleFichaPersonalUseBadge periods={personalUsePeriods} /><VehicleFichaEditAction ctx={ctx} /></>}
       showInsurance={!ctx.areas.includes("flota")}
       showIdentity={!ctx.areas.includes("flota")}
     />

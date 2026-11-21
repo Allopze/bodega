@@ -13,6 +13,8 @@ import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { PatenteRankingRow, RendimientoRow } from "./consumption-dashboard"
 import { flagOutliers as flagOutliersGeneric } from "./performance-statistics"
 import { can } from "@/lib/auth/can"
+import { notPersonalUseOnDaySql } from "@/lib/fleet/personal-use-sql"
+import { operationPerformanceTaintedByPersonalUseSql } from "@/lib/combustibles/personal-use-fuel-sql"
 
 export interface OperationsSummary {
   totalLitros: number
@@ -75,7 +77,14 @@ export function flagRendimientoPorUnidad<T extends { rendimiento: number; unidad
  *  mostrar una sección vacía en faenas que no usan este log operacional. */
 export async function getOperationsSummary(session: Session, filters: OperationsFilters = {}): Promise<OperationsSummary | null> {
   const canViewCosts = can(session, "combustibles:view") && can(session, "combustibles:view_costs")
-  const where = buildOperationsWhere(session, filters)
+  // Resumen de gestión: las cargas de un día de uso personal no suman (`fecha` ya es texto YYYY-MM-DD).
+  // `buildOperationsWhere` no cambia: también lo comparte el detalle de registros, que lo ve todo.
+  const where = and(
+    buildOperationsWhere(session, filters),
+    notPersonalUseOnDaySql(fuelOperationRecords.vehicleId, sql`${fuelOperationRecords.fecha}`),
+  )
+
+  const performanceCounted = sql`${fuelOperationRecords.rendimiento} is not null and not ${operationPerformanceTaintedByPersonalUseSql()}`
 
   const [[totals], byEquipoRaw, porFaenaRaw, porProveedorRaw] = await Promise.all([
     db.select({
@@ -95,9 +104,11 @@ export async function getOperationsSummary(session: Session, filters: Operations
       // como rendimiento 0 real: un equipo con la mitad de sus cargas sin
       // lectura mostraba la mitad de su rendimiento. Se promedian sólo las
       // cargas que sí lo traen.
-      rendimiento: sql<number>`case when coalesce(sum(${fuelOperationRecords.liters}) filter (where ${fuelOperationRecords.rendimiento} is not null), 0) > 0
-        then sum(${fuelOperationRecords.rendimiento} * ${fuelOperationRecords.liters}) filter (where ${fuelOperationRecords.rendimiento} is not null)
-             / sum(${fuelOperationRecords.liters}) filter (where ${fuelOperationRecords.rendimiento} is not null)
+      // El primer registro después de un uso personal se midió contra uno de antes: su
+      // rendimiento trae los km del dueño y no entra al promedio (sus litros sí cuentan).
+      rendimiento: sql<number>`case when coalesce(sum(${fuelOperationRecords.liters}) filter (where ${performanceCounted}), 0) > 0
+        then sum(${fuelOperationRecords.rendimiento} * ${fuelOperationRecords.liters}) filter (where ${performanceCounted})
+             / sum(${fuelOperationRecords.liters}) filter (where ${performanceCounted})
         else 0 end`,
       vehicleId: sql<string | null>`max(${fuelOperationRecords.vehicleId})`,
       // Unidad del rendimiento de la patente. No se agrega al groupBy a propósito:
@@ -192,6 +203,8 @@ export async function getScatterObservations(session: Session, filters: Operatio
     .leftJoin(worksites, eq(fuelOperationRecords.worksiteId, worksites.id))
     .where(and(
       where,
+      // Puntos del análisis de gestión (litros vs km u horas): sin las cargas de un día de uso personal.
+      notPersonalUseOnDaySql(fuelOperationRecords.vehicleId, sql`${fuelOperationRecords.fecha}`),
       isNotNull(fuelOperationRecords.horometro),
       sql`${fuelOperationRecords.liters} > 0`,
     ))

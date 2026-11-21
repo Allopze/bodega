@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { elapsedDays, maxMeterRatePerDayOf, meterSeriesAdvance, meterSeriesCoversPeriod, meterSeriesSegments, type MeterSeriesPoint } from "../meter-series"
+import { elapsedDays, maxMeterRatePerDayOf, meterSeriesAdvance, meterSeriesCoversPeriod, meterSeriesSegments, segmentTouchesExcludedDay, type MeterSeriesPoint } from "../meter-series"
 
 /**
  * El recorrido de un equipo en una ventana (Flota) se calcula con las mismas
@@ -201,5 +201,43 @@ describe("meterSeriesSegments", () => {
   it("una serie de una lectura, o vacía, no tiene pares", () => {
     expect(meterSeriesSegments([], KM_CEILING)).toEqual([])
     expect(meterSeriesSegments([at(10_000, 1)], KM_CEILING)).toEqual([])
+  })
+})
+
+describe("meterSeriesAdvance · días de uso personal excluidos", () => {
+  // Días 6 al 10 de marzo en uso personal (días calendario de Chile).
+  const personal = (d: string) => d >= "2026-03-06" && d <= "2026-03-10"
+
+  it("omite exactamente el tramo que recorre días excluidos", () => {
+    const points = [at(1_000, 1), at(1_400, 5), at(2_400, 10), at(2_900, 15)]
+    expect(meterSeriesAdvance(points, KM_CEILING)).toEqual({ advance: 1_900, discardedPairs: 0 })
+    expect(meterSeriesAdvance(points, KM_CEILING, personal)).toEqual({ advance: 900, discardedPairs: 0 })
+  })
+
+  it("un tramo que cruza el período entero tampoco suma", () => {
+    expect(meterSeriesAdvance([at(1_000, 3), at(3_000, 12), at(3_100, 13)], KM_CEILING, personal)).toEqual({ advance: 100, discardedPairs: 0 })
+  })
+
+  it("el tramo que sale del período (desde su último día) sí suma: recorre días de la operación", () => {
+    expect(meterSeriesAdvance([at(2_400, 10), at(2_900, 15)], KM_CEILING, personal)).toEqual({ advance: 500, discardedPairs: 0 })
+  })
+
+  it("usa el día de Chile: una lectura de las 22:30 del 5 (01:30Z del 6) no cae en el período", () => {
+    const late5 = { value: 1_400, occurredAt: "2026-03-06T01:30:00.000Z" }
+    expect(meterSeriesAdvance([at(1_000, 4), late5], KM_CEILING, personal)).toEqual({ advance: 400, discardedPairs: 0 })
+  })
+
+  it("un tramo excluido no es un par descartado ni rompe la base del siguiente", () => {
+    expect(meterSeriesAdvance([at(1_000, 7), at(1_200, 8), at(1_250, 10), at(1_350, 11)], KM_CEILING, personal)).toEqual({ advance: 100, discardedPairs: 0 })
+  })
+
+  it("si todos los tramos caen en el período no hay avance", () => {
+    expect(meterSeriesAdvance([at(1_000, 6), at(1_200, 8)], KM_CEILING, personal)).toEqual({ advance: null, discardedPairs: 0 })
+  })
+
+  it("segmentTouchesExcludedDay mira los días después de la lectura inicial hasta la final", () => {
+    const [inside, leaving] = meterSeriesSegments([at(1_000, 5), at(1_200, 10), at(1_300, 11)], KM_CEILING)
+    expect(segmentTouchesExcludedDay(inside!, personal)).toBe(true)
+    expect(segmentTouchesExcludedDay(leaving!, personal)).toBe(false)
   })
 })

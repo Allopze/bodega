@@ -108,6 +108,11 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
       operationalAssets.some((asset) => pick(asset) != null)
         ? operationalAssets.reduce((sum, asset) => sum + (pick(asset) ?? 0), 0)
         : null
+    // Las cifras de litros, costo y compras de abajo no suman los días de uso personal: se dice una vez.
+    const personalUseDaysTotal = operationalAssets.reduce((sum, asset) => sum + asset.personalUseDays, 0)
+    if (personalUseDaysTotal > 0) {
+      indicatorRows.push(["Días de uso personal excluidos (suma de equipos)", personalUseDaysTotal])
+    }
     if (canViewFuel) {
       indicatorRows.push(["Litros operacionales", sumIfPresent((asset) => asset.fuelLiters)])
     }

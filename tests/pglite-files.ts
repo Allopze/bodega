@@ -643,4 +643,21 @@ export const pgliteTestFiles = [
   "lib/integrations/visionlink/visionlink-hourly-sync-pglite.test.ts",
   "lib/services/fleet-shifts-pglite.test.ts",
   "lib/services/fleet-shifts-views-pglite.test.ts",
+  // Uso personal de equipos: tabla y trigger contra solapes, regla común (SQL), servicio con
+  // auditoría, combustible/OC/km/litros/rendimiento de gestión sin esos días, y pagos intactos.
+  "lib/__tests__/personal-use-schema-pglite.test.ts",
+  "lib/__tests__/personal-use-sql-pglite.test.ts",
+  "lib/__tests__/fleet-personal-use-pglite.test.ts",
+  "lib/__tests__/personal-use-fuel-sql-pglite.test.ts",
+  "lib/__tests__/asset-fuel-summary-personal-use-pglite.test.ts",
+  "lib/__tests__/vehicle-purchase-personal-use-pglite.test.ts",
+  "lib/__tests__/fleet-gps-indicators-personal-use-pglite.test.ts",
+  "lib/__tests__/fuel-management-views-personal-use-pglite.test.ts",
+  "lib/__tests__/fleet-analytics-personal-use-pglite.test.ts",
+  "lib/__tests__/fuel-liters-personal-use-pglite.test.ts",
+  "lib/__tests__/performance-personal-use-pglite.test.ts",
+  "lib/__tests__/personal-use-payments-unchanged-pglite.test.ts",
+  "lib/__tests__/fuel-records-personal-use-pglite.test.ts",
+  "lib/__tests__/tae-anomalies-personal-use-pglite.test.ts",
+  "lib/__tests__/consumption-exact-personal-use-pglite.test.ts",
 ]

@@ -4,7 +4,9 @@ import { db } from "@/db"
 import { purchaseOrderItems, purchaseOrders, purchaseRequestItems } from "@/db/schema"
 import { can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { isoTextDaySql } from "@/lib/combustibles/control/queries/field-filters"
 import type { DatedCost } from "@/lib/contracts/cost-attribution"
+import { notPersonalUseOnDaySql } from "@/lib/fleet/personal-use-sql"
 import { issuedOrderPredicate } from "@/lib/services/operational-period-metrics"
 
 /**
@@ -49,6 +51,11 @@ function emptySummary(vehicleId: string): VehiclePurchaseSummary {
  * con emisión en el período (día civil: `issued_at` es texto y puede traer hora,
  * como el libro del proveedor en `getAssetFuelSummary`) y dentro del alcance de
  * faena de la **OC**. Quien la use debe unir `purchase_orders`.
+ *
+ * Uso personal: se omite la línea cuyo equipo (el del ítem de solicitud) estaba en
+ * uso personal el día de emisión de la OC, en día calendario de Chile. Una línea sin
+ * equipo (`vehicle_id` nulo) pasa. Sus únicos llamadores son Control operacional y
+ * Costo por contrato; Mantención no la usa (suma las compras del equipo por su lado).
  */
 function countedOrderLineWhere(session: Session, period: { from: string; to: string }) {
   return and(
@@ -57,6 +64,7 @@ function countedOrderLineWhere(session: Session, period: { from: string; to: str
     worksiteScopeSql(session, purchaseOrders.worksiteId),
     sql`left(${purchaseOrders.issuedAt}, 10) >= ${period.from}`,
     sql`left(${purchaseOrders.issuedAt}, 10) <= ${period.to}`,
+    notPersonalUseOnDaySql(purchaseRequestItems.vehicleId, sql`to_char(${isoTextDaySql(purchaseOrders.issuedAt)}, 'YYYY-MM-DD')`),
   )
 }
 

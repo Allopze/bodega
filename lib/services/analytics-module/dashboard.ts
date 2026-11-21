@@ -19,6 +19,7 @@ import { buildAlerts } from "./alerts"
 import { can } from "@/lib/auth/can"
 import { issuedOrderPredicate } from "@/lib/services/operational-period-metrics"
 import { accountableProviderTransactionsWhere, providerLoadCountSql } from "@/lib/combustibles/load-status"
+import { providerTxKeptAmountSql, providerTxKeptQuantitySql, providerTxKeptWhereSql } from "@/lib/combustibles/personal-use-fuel-sql"
 import { monthsWithoutProviderData } from "@/lib/combustibles/copec-coverage"
 import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
 import { controlFiltersForRange, isoTextPeriodSql } from "@/lib/combustibles/control/queries/field-filters"
@@ -181,8 +182,14 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
   // conciliación: aceptadas, vigentes y sin doble conteo del agregado mensual TCT
   // (`lib/combustibles/load-status.ts`). `occurred_at` es texto ISO: el día y el
   // mes salen de sus primeros 10 y 7 caracteres, como en el módulo de combustibles.
-  const fuelWhereFor = (from: string, to: string) => and(
+  //
+  // Uso personal: `kept` deja fuera las transacciones de los días de uso personal del equipo (el
+  // TCT mensual no se excluye: sus sumas lo prorratean por días). La tendencia mensual NO lo
+  // filtra en el WHERE sino dentro de la suma: un mes cuyas únicas transacciones fueron de uso
+  // personal sigue teniendo filas, y `monthsWithoutProviderData` no lo confunde con un hueco.
+  const fuelWhereFor = (from: string, to: string, kept = true) => and(
     accountableProviderTransactionsWhere(),
+    kept ? providerTxKeptWhereSql() : undefined,
     fuelScope,
     isoTextPeriodSql(controlFiltersForRange({ from, to }), t.occurredAt),
     filters.worksiteId ? eq(t.worksiteId, filters.worksiteId) : undefined,
@@ -193,10 +200,11 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
   // C-10: la tendencia mensual mira 12 meses que terminan en `hasta`, sin importar `desde`.
   const trend = monthlyTrendWindow(filters.toDate)
   const trendOrderWhere = issuedOrdersWhere(session, trend, filters)
-  const trendFuelWhere = fuelWhereFor(trend.fromDate, trend.toDate)
+  const trendFuelWhere = fuelWhereFor(trend.fromDate, trend.toDate, false)
   // Importes de una fila contable y cuántas cargas representa (un agregado TCT trae su detalle).
-  const fuelAmountSql = sql<number>`COALESCE(SUM(${t.amount}), 0)`
-  const fuelLitersSql = sql<number>`COALESCE(SUM(${t.quantity}), 0)`
+  const fuelAmountSql = sql<number>`COALESCE(SUM(${providerTxKeptAmountSql()}), 0)`
+  const fuelLitersSql = sql<number>`COALESCE(SUM(${providerTxKeptQuantitySql()}), 0)`
+  const fuelTrendAmountSql = sql<number>`COALESCE(SUM(${providerTxKeptAmountSql()}) FILTER (WHERE ${providerTxKeptWhereSql()}), 0)`
   const fuelMonthSql = sql<string>`left(${t.occurredAt}, 7)`
   const fuelLoadsSql = sql<number>`COALESCE(SUM(${providerLoadCountSql()}), 0)`
   const [[purchaseSummary], [previousPurchaseSummary], [fuelSummary], [previousFuelSummary], [approvalSummary], purchaseMonths, fuelMonths, purchaseModules, fuelModules, purchaseSuppliers, fuelSupplierRows, purchaseWorksites, fuelWorksites, vehicleRows, rotationRows, eppRows, recentOrders, [eppWorkerSummary], providerCoverage] = await Promise.all([
@@ -211,7 +219,7 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
     db.select({ pendingApprovals: sql<number>`COUNT(*) FILTER (WHERE ${purchaseRequestItems.status} = 'requested')` }).from(purchaseRequestItems).innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id)).where(and(requestScope, filters.worksiteId ? eq(purchaseRequests.worksiteId, filters.worksiteId) : undefined, dateFilter(filters, purchaseRequests.createdAt))),
     db.select({ month: issuedMonthSql, module: sql<string>`'Compras'`, totalAmount: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(trendOrderWhere).groupBy(issuedMonthSql).orderBy(issuedMonthSql),
     canViewFuelCosts
-      ? db.select({ month: fuelMonthSql, module: sql<string>`'Combustible'`, totalAmount: fuelAmountSql }).from(t).where(trendFuelWhere).groupBy(fuelMonthSql).orderBy(fuelMonthSql)
+      ? db.select({ month: fuelMonthSql, module: sql<string>`'Combustible'`, totalAmount: fuelTrendAmountSql }).from(t).where(trendFuelWhere).groupBy(fuelMonthSql).orderBy(fuelMonthSql)
       : Promise.resolve([]),
     purchaseSpendByRequestType(orderWhere, filters.requestType),
     canViewFuelCosts

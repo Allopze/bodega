@@ -111,7 +111,7 @@ describe("de dónde vino lo cargado", () => {
 describe("últimas cargas del equipo", () => {
   const load = (overrides: Partial<EquipmentFileLoad>): EquipmentFileLoad => ({
     id: "l1", occurredAt: "2026-10-30T12:12:00Z", liters: 185, meterType: "odometer", meterReading: 182310, performanceValue: null, performanceNote: "Lectura menor a la anterior",
-    originLabel: "Registrada en la app", stateLabel: "Por validar", reviewStatus: "flagged", href: "/combustibles/cargas/terreno/s1", ...overrides,
+    originLabel: "Registrada en la app", stateLabel: "Por validar", reviewStatus: "flagged", personalUse: false, href: "/combustibles/cargas/terreno/s1", ...overrides,
   })
 
   it("una carga sin rendimiento dice por qué, y una por decidir se ve con su estado", () => {
@@ -139,5 +139,15 @@ describe("últimas cargas del equipo", () => {
 
   it("sin cargas explica qué hacer", () => {
     expect(html(<EquipmentLoadsTable rows={[]} unit={null} />)).toContain("Sin cargas en este período")
+  })
+
+  it("una carga de un día de uso personal se lista con su marca y no se oculta", () => {
+    const rows = [load({ id: "l1", personalUse: true, stateLabel: "Validada", reviewStatus: "ok" }), load({ id: "l2", personalUse: false, stateLabel: "Validada", reviewStatus: "ok" })]
+    const out = html(<EquipmentLoadsTable rows={rows} unit="km_per_liter" />)
+    expect(out.match(/Uso personal/g)).toHaveLength(1)
+    // Las dos filas siguen en la tabla (más la fila de encabezados).
+    expect(out.match(/<tr/g)).toHaveLength(3)
+    // Sin la marca la carga se ve como siempre.
+    expect(html(<EquipmentLoadsTable rows={[rows[1]!]} unit="km_per_liter" />)).not.toContain("Uso personal")
   })
 })

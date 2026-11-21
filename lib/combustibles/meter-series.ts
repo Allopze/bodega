@@ -174,13 +174,23 @@ export function meterSeriesSegments(points: readonly MeterSeriesPoint[], maxPerD
  * un error de dato sino un hecho físico. Un caso cerrado como `lectura_corregida`
  * NO es un reset: la lectura siguió siendo un error y se descarta igual.
  *
+ * `isExcludedDay` (uso personal del equipo, `lib/fleet/personal-use.ts`): un par
+ * que recorre algún día excluido no se suma, ni cuenta como descartado. Las
+ * lecturas NO se quitan: si se quitaran, el par que salta el hueco sumaría los
+ * km del uso personal. Sin la función, el resultado es el de siempre.
+ *
  * Nunca devuelve un valor negativo, y cada par sumado cabe bajo la cota física.
  */
-export function meterSeriesAdvance(points: readonly MeterSeriesPoint[], maxPerDay: number): MeterSeriesAdvance {
+export function meterSeriesAdvance(
+  points: readonly MeterSeriesPoint[],
+  maxPerDay: number,
+  isExcludedDay?: (day: string) => boolean,
+): MeterSeriesAdvance {
   let advance = 0
   let counted = 0
   let discardedPairs = 0
   for (const segment of meterSeriesSegments(points, maxPerDay)) {
+    if (segment.status === "counted" && isExcludedDay && segmentTouchesExcludedDay(segment, isExcludedDay)) continue
     if (segment.status === "counted") {
       advance += segment.advance
       counted++
@@ -189,4 +199,26 @@ export function meterSeriesAdvance(points: readonly MeterSeriesPoint[], maxPerDa
     }
   }
   return { advance: counted > 0 ? advance : null, discardedPairs }
+}
+
+function pointDay(occurredAt: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(occurredAt) ? occurredAt : todayInChile(occurredAt)
+}
+
+/**
+ * ¿El par recorre algún día excluido? Mira los días calendario de Chile desde el
+ * día siguiente a la lectura inicial hasta el de la lectura final, ambos
+ * inclusivos (dentro de un mismo día, ese día). El tramo que sale del período
+ * desde su último día recorre días de la operación y sí cuenta.
+ */
+export function segmentTouchesExcludedDay(segment: Pick<MeterSeriesSegment, "from" | "to">, isExcludedDay: (day: string) => boolean): boolean {
+  const fromDay = pointDay(segment.from.occurredAt)
+  const toDay = pointDay(segment.to.occurredAt)
+  if (fromDay === toDay) return isExcludedDay(toDay)
+  let cursor = Date.parse(`${fromDay}T00:00:00Z`) + 86_400_000
+  const end = Date.parse(`${toDay}T00:00:00Z`)
+  for (; cursor <= end; cursor += 86_400_000) {
+    if (isExcludedDay(new Date(cursor).toISOString().slice(0, 10))) return true
+  }
+  return false
 }
