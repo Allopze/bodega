@@ -9,7 +9,7 @@
  */
 import { a4PdfOptions, type PdfMargin } from "./page-options"
 
-export type PrintDocumentId = "entrega" | "inspeccion" | "sst" | "re20" | "mantencion" | "mantencion_ot"
+export type PrintDocumentId = "entrega" | "inspeccion" | "sst" | "re20" | "mantencion" | "mantencion_ot" | "mantencion_informe"
 
 export interface PrintDocumentSpec {
   id: PrintDocumentId
@@ -73,6 +73,13 @@ export const PRINT_DOCUMENT_SPECS: Record<PrintDocumentId, PrintDocumentSpec> = 
   mantencion_ot: {
     id: "mantencion_ot",
     path: (id) => `/mantencion/ot/${encodeURIComponent(id)}/print`,
+    waitUntil: "domcontentloaded",
+    waitForImages: false,
+  },
+  /** Informe del Panel de mantención (Trinorma): sin entidad; faena, equipo y período viajan en la query. No se archiva. */
+  mantencion_informe: {
+    id: "mantencion_informe",
+    path: () => "/mantencion/informe",
     waitUntil: "domcontentloaded",
     waitForImages: false,
   },

@@ -11,6 +11,13 @@ const session = vi.hoisted(() => ({ permissions: ["mant:records:view_all"] as st
 const scope = vi.hoisted(() => ({ equipment: 3, records: 5, inWorkshop: 1 }))
 const unassigned = vi.hoisted(() => vi.fn(async () => 2))
 // Los cargadores de series quedan como espías: la página debe pasarles la ventana de los gráficos (`chart`).
+// El equipo que `resolvePanelEquipment` reconoce dentro del alcance (como el servicio real: uno ajeno devuelve null).
+const equipmentInScope = vi.hoisted(() => ({ id: "v-1", code: "KA-1", plate: "AAAA-01", worksiteId: "ws-1", label: "KA-1 · AAAA-01" }))
+const work = vi.hoisted(() => ({
+  load: vi.fn(async (..._args: unknown[]) => ({ rows: [], includesOrders: true })),
+  compliance: vi.fn(async (..._args: unknown[]) => ({ checks: 0, withCompliance: 0, averagePercent: null })),
+  findings: vi.fn(async (..._args: unknown[]) => ({ days: 7, total: 0, withWork: 0, withoutWork: 0, inWindow: 0, unlinked: 0, byEquipment: [] })),
+}))
 const reporteEquipos = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => ({ hasRuns: true })))
 const loaders = vi.hoisted(() => ({
   series: vi.fn(async (..._args: unknown[]) => [{ key: "2026-10", created: 1, closed: 0, backlog: 1 }]),
@@ -42,18 +49,30 @@ vi.mock("@/lib/services/mantencion/indicators", () => ({
   loadRecordIndicators: loaders.records,
   loadOutOfService: loaders.outOfService,
 }))
+vi.mock("@/lib/services/mantencion/maintenance-work", () => ({
+  loadMaintenanceWork: work.load,
+  loadScheduleCompliance: work.compliance,
+  loadFindingsWithoutWork: work.findings,
+  loadPanelEquipment: async () => [{ id: "v-1", label: "KA-1 · AAAA-01" }],
+  resolvePanelEquipment: async (_viewer: unknown, _worksite: unknown, id: string | undefined) => (id === equipmentInScope.id ? equipmentInScope : null),
+  summarizeMaintenanceWork: (rows: unknown[]) => ({ total: rows.length }),
+}))
 vi.mock("@/lib/services/mantencion/reporte-equipos", () => ({ loadReporteEquipos: reporteEquipos }))
 vi.mock("@/components/ui/page-header", () => ({ PageHeader: () => null, Breadcrumbs: () => null }))
 vi.mock("./indicators-sections", () => ({ WorkOrdersSection: () => null, PautasSection: () => null }))
 vi.mock("./reporte-equipos-section", () => ({ ReporteEquiposSection: () => null }))
+vi.mock("./trinorma-sections", () => ({ MaintenanceWorkSection: () => null, FormsIndicatorsSection: () => null }))
+vi.mock("@/components/mantencion/jefatura/panel/panel-export", () => ({ PanelExcelButton: () => null, PanelPdfLink: () => null }))
+vi.mock("@/components/mantencion/jefatura/panel/panel-equipment-filter", () => ({ PanelEquipmentFilter: () => null }))
 
 import MantencionPanelPage from "./page"
-import { BoardExportButton } from "@/components/dashboard/board-export-button"
 import { BoardHeaderActions } from "@/components/dashboard/board-scope"
 import { PageHeader } from "@/components/ui/page-header"
 import { PanelEmptyState } from "@/components/mantencion/jefatura/panel/panel-empty"
+import { PanelExcelButton, PanelPdfLink } from "@/components/mantencion/jefatura/panel/panel-export"
 import { PanelToday } from "@/components/mantencion/jefatura/panel/panel-today"
-import { WorkOrdersSection } from "./indicators-sections"
+import { PautasSection, WorkOrdersSection } from "./indicators-sections"
+import { FormsIndicatorsSection, MaintenanceWorkSection } from "./trinorma-sections"
 import { ReporteEquiposSection } from "./reporte-equipos-section"
 
 afterEach(() => {
@@ -150,11 +169,14 @@ describe("/mantencion/panel · Excel", () => {
   it("la cabecera lleva el control de faena y período; «Exportar Excel» sólo con `mant:export`", async () => {
     const without = findElement(await page(), PageHeader)!.props.actions as ReactNode
     expect(findElement(without, BoardHeaderActions)).not.toBeNull()
-    expect(findElement(without, BoardExportButton)).toBeNull()
+    expect(findElement(without, PanelExcelButton)).toBeNull()
+    expect(findElement(without, PanelPdfLink)).toBeNull()
     session.permissions = ["mant:records:view_all", "mant:export"]
-    const actions = findElement(await page({ faena: "ws-1" }), PageHeader)!.props.actions as ReactNode
+    const actions = findElement(await page({ faena: "ws-1", desde: "2026-11-01", hasta: "2026-11-10" }), PageHeader)!.props.actions as ReactNode
     expect(findElement(actions, BoardHeaderActions)!.props).toMatchObject({ worksiteId: "ws-1" })
-    expect(findElement(actions, BoardExportButton)!.props).toMatchObject({ title: "Panel de mantención", scope: { faena: "Biodiversa" } })
+    // Excel (con la hoja «Trabajos») y PDF reciben la misma faena y el mismo período que la pantalla.
+    expect(findElement(actions, PanelExcelButton)!.props).toMatchObject({ title: "Panel de mantención", scope: { faena: "Biodiversa" }, range: { from: "2026-11-01", to: "2026-11-10" }, faena: "ws-1", equipo: null })
+    expect(findElement(actions, PanelPdfLink)!.props).toMatchObject({ from: "2026-11-01", to: "2026-11-10", faena: "ws-1", equipo: null })
   })
 })
 
@@ -180,5 +202,49 @@ describe("/mantencion/panel · sin equipos en el alcance", () => {
   it("con registros el panel se dibuja aunque la flota activa sea cero", async () => {
     Object.assign(scope, { equipment: 0, records: 2, inWorkshop: 0 })
     expect(findElement(await page(), PanelEmptyState)).toBeNull()
+  })
+})
+
+describe("/mantencion/panel · trabajos de mantención y equipo elegido", () => {
+  it("la sección de trabajos y la de pautas de formularios se pintan con el período y la faena de la pantalla", async () => {
+    const tree = await page({ desde: "2026-11-01", hasta: "2026-11-10", faena: "ws-2" })
+    expect(work.load).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ worksiteId: "ws-2", to: "2026-11-10" }))
+    expect(findElement(tree, MaintenanceWorkSection)!.props).toMatchObject({ includesOrders: true, summary: { total: 0 } })
+    expect(findElement(tree, FormsIndicatorsSection)).not.toBeNull()
+    expect(findElement(tree, PautasSection)).not.toBeNull()
+  })
+
+  it("un equipo del alcance acota las consultas por equipo y deja fuera lo que se mide por faena", async () => {
+    session.permissions = ["mant:records:view_all", "mant:ot:view_all"]
+    const tree = await page({ equipo: "v-1" })
+    expect(work.load).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ vehicleId: "v-1" }))
+    expect(work.findings).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ vehicleId: "v-1" }))
+    expect(loaders.series.mock.calls.at(-1)![1]).toMatchObject({ vehicleId: "v-1" })
+    expect(findElement(tree, MaintenanceWorkSection)!.props).toMatchObject({ equipment: { id: "v-1" } })
+    expect(findElement(tree, PanelToday)).toBeNull()
+    expect(findElement(tree, PautasSection)).toBeNull()
+    expect(findElement(tree, ReporteEquiposSection)).toBeNull()
+    expect(findElement(tree, WorkOrdersSection)).not.toBeNull()
+  })
+
+  it("un equipo fuera del alcance o inventado se ignora, como una faena ajena", async () => {
+    const tree = await page({ equipo: "otro-equipo" })
+    expect(findElement(tree, MaintenanceWorkSection)!.props.equipment).toBeNull()
+    expect(findElement(tree, PanelToday)).not.toBeNull()
+    expect(work.load.mock.calls.at(-1)![1]).not.toHaveProperty("vehicleId")
+  })
+
+  it("el Excel y el PDF llevan el equipo elegido", async () => {
+    session.permissions = ["mant:records:view_all", "mant:export"]
+    const actions = findElement(await page({ equipo: "v-1" }), PageHeader)!.props.actions as ReactNode
+    expect(findElement(actions, PanelExcelButton)!.props).toMatchObject({ equipo: "v-1", scope: { equipo: "KA-1 · AAAA-01" } })
+    expect(findElement(actions, PanelPdfLink)!.props).toMatchObject({ equipo: "v-1" })
+  })
+
+  it("si una consulta de trabajos falla, su sección recibe null y el resto del Panel sigue", async () => {
+    work.findings.mockRejectedValueOnce(new Error("sin base"))
+    const tree = await page()
+    expect(findElement(tree, FormsIndicatorsSection)!.props.findings).toBeNull()
+    expect(findElement(tree, MaintenanceWorkSection)).not.toBeNull()
   })
 })

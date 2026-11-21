@@ -199,7 +199,7 @@ MES OBS_CALIDAD POSIBLE_PRUEBA FOTO FOTO_STICKER CORREO
 - `condition` sale de NIVEL o ESTADO.
 - No se guardan SEGUIMIENTO_TALLER ni OT_SIGUIENTE: el tablero calcula su seguimiento.
 
-**PAUTAS_PREVENTIVAS** (276) va a `mant_historical_schedule_checks`.
+**PAUTAS_PREVENTIVAS** va a `mant_historical_schedule_checks`. Trae **6 pautas** (filas 2–7: 4 reales y 2 de prueba). Debajo, tras una fila en blanco, hay una tabla «Detalle por ítem» de unas 270 filas que no son pautas y no se importa: el informe dice cuántas quedaron fuera.
 
 - Clave: MARCA_TEMPORAL al segundo, `plateKey(PATENTE)` y PAUTA, con prefijo «pauta».
 - `is_test` = ES_PRUEBA ≠ «No».
