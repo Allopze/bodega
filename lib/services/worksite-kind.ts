@@ -4,7 +4,7 @@ import { worksites } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import type { WorksiteAliasActor } from "@/lib/services/worksite-aliases"
 
-import { isWorksiteKind, WORKSITE_KIND_LABELS, type WorksiteKind } from "@/lib/worksites/worksite-kind"
+import { WORKSITE_KIND_LABELS, type WorksiteKind } from "@/lib/worksites/worksite-kind"
 
 export { WORKSITE_KINDS, WORKSITE_KIND_LABELS, isWorksiteKind, type WorksiteKind } from "@/lib/worksites/worksite-kind"
 

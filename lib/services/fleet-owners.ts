@@ -12,7 +12,7 @@ import { cleanName, findByNameKey } from "@/lib/mantencion/normalize"
  * imputa a la faena de origen.
  */
 
-import { FLEET_OWNER_KIND_LABELS, FLEET_OWNER_NAME_MAX_LENGTH, isFleetOwnerKind, type FleetOwnerKind } from "@/lib/fleet/fleet-owner-kinds"
+import { FLEET_OWNER_NAME_MAX_LENGTH, isFleetOwnerKind, type FleetOwnerKind } from "@/lib/fleet/fleet-owner-kinds"
 
 export { FLEET_OWNER_KINDS, FLEET_OWNER_KIND_LABELS, FLEET_OWNER_NAME_MAX_LENGTH, isFleetOwnerKind, type FleetOwnerKind } from "@/lib/fleet/fleet-owner-kinds"
 
