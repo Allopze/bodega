@@ -135,7 +135,7 @@ sobreejecutada compensaba a otra que quedó en cero, y un mes podía marcar 100 
 
 ## 5. Referencias
 
-- Registro navegable de las 22 decisiones y su resolución: [PDTP_DECISIONES_TOMADAS_2026-09-02.html](../../PDTP_DECISIONES_TOMADAS_2026-09-02.html)
-- Registro de las 87 actividades: [PDTP_REGISTRO_ACTIVIDADES_2026-09-01.html](../../PDTP_REGISTRO_ACTIVIDADES_2026-09-01.html)
+- Registro navegable de las 22 decisiones y su resolución: [PDTP_DECISIONES_TOMADAS_2026-09-02.html](./PDTP_DECISIONES_TOMADAS_2026-09-02.html)
+- Registro de las 87 actividades: [PDTP_REGISTRO_ACTIVIDADES_2026-09-01.html](./PDTP_REGISTRO_ACTIVIDADES_2026-09-01.html)
 - Auditoría de origen: [AUDITORIA_PDTP_ACREDITACION_2026-09-01.md](../audits/AUDITORIA_PDTP_ACREDITACION_2026-09-01.md)
 - Plan de trabajo por grupos: [tasks/TODO_PDTP_ACREDITACION_2026-09-01.md](../../tasks/TODO_PDTP_ACREDITACION_2026-09-01.md)

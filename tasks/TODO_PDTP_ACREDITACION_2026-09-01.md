@@ -2,7 +2,7 @@
 
 Estado global: **G2, G3, G4, G7, G8, G10, G11, G12, G18 y G19 implementados**; **G6 implementado**; **G5 con
 el modo cobertura puesto** en cinco de sus siete. Las **22 decisiones abiertas quedaron resueltas** (ver
-[PDTP_DECISIONES_TOMADAS_2026-09-02.md](../PDTP_DECISIONES_TOMADAS_2026-09-02.md)). El resto sin iniciar.
+[PDTP_DECISIONES_TOMADAS_2026-09-02.md](../docs/prevencion/PDTP_DECISIONES_TOMADAS_2026-09-02.md)). El resto sin iniciar.
 
 El programa quedó en **81 actividades activas**: 87 del catálogo menos las 5 retiradas por G12 y la N°21, que
 la D02 mandó retirar y que se aplicó el 2026-09-02. Las decisiones de catálogo y el dato de cursos, planes y

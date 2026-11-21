@@ -16,7 +16,7 @@
         "rule": "tiny-text",
         "value": "*",
         "files": [
-          "mockup-dashboard.html"
+          "docs/demos/mockup-dashboard.html"
         ],
         "createdAt": "2026-10-26T02:20:50.414Z",
         "reason": "Claude: 11px solo en rótulos uppercase, chips, marcadores y ticks del mockup, igual que la convención de la plataforma; el cuerpo usa 13-15px"
@@ -25,7 +25,7 @@
         "rule": "repeated-container-text",
         "value": "*",
         "files": [
-          "mockup-dashboard.html"
+          "docs/demos/mockup-dashboard.html"
         ],
         "createdAt": "2026-10-26T02:21:26.303Z",
         "reason": "Claude: «vs. sep» repetido a propósito; cada cifra declara su propia ventana de comparación (principio de dashboard-domain-shell.tsx); en modo panel la grilla entera cuenta como un contenedor"

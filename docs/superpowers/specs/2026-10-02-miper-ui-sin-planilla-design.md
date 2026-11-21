@@ -4,7 +4,7 @@ Fecha: 2026-10-02 · Estado: **Fases A (con el pulido A2), B, C, D y E implement
 Alcance: todo el submódulo `app/(app)/prevencion/miper` (portada, espacio de trabajo, matriz,
 ficha del riesgo, programa, revisión, historial, importación) y lo mínimo del backend que el
 rediseño necesita.
-Referencia visual: `miper-web-mockup-3.html` (raíz del repo, entregado por el usuario).
+Referencia visual: `docs/demos/miper-web-mockup-3.html` (entregado por el usuario).
 Antecedente: `PLAN_REDISENO_MIPER_2026-09-30.md` (F1–F3). Su modelo de datos, flujo de revisión,
 permisos y metodología RE-04 **se conservan**. Este documento reemplaza sólo su §8 (Experiencia
 de usuario), y en especial el §8.2, que pedía una "grilla editable".
@@ -61,7 +61,7 @@ importados del RE-04 de Biodiversa, viewport de 1440×900, sin errores de consol
 |---|---|
 | Captura | Importación del RE-04 y captura en la plataforma **pesan igual**. |
 | Usuario prioritario | **Prevencionista de faena**. La Jefa y Legal y RRHH usan la misma pantalla en modo revisión o lectura. |
-| Distribución | La del mockup `miper-web-mockup-3.html`: portada por faena → matriz por actividad y tarea → vista de la tarea → editor del riesgo a página completa, con pasos y panel de chequeo. |
+| Distribución | La del mockup `docs/demos/miper-web-mockup-3.html`: portada por faena → matriz por actividad y tarea → vista de la tarea → editor del riesgo a página completa, con pasos y panel de chequeo. |
 | Importar medidas | **Sí**: el importador crea las medidas, el responsable y el plazo del Excel. |
 | Alcance | **Todo el módulo**. |
 | Acciones masivas | **Sí, en una fase propia**. |
