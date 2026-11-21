@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { loadXlsxTolerant } from "@/lib/reports/xlsx-normalize"
 import ExcelJS from "exceljs"
 import { nameKey } from "@/lib/mantencion/normalize"
+import { resolveWorksiteId, type ResolvableAlias } from "@/lib/worksites/resolve-worksite"
 import { parseLegacyDate } from "./legacy-import"
 
 export const HISTORICAL_MAX_BYTES = 5 * 1024 * 1024
@@ -37,7 +38,7 @@ const compact = (value: string | null) => (value ?? "").normalize("NFD").replace
 const isPhotoColumn = (header: string) => /FOTO|IMAGEN|PHOTO|IMAGE/.test(compact(header))
 
 /** Excel guarda fechas como números sin zona horaria. Se leen en UTC para conservar el calendario que muestra la celda. */
-function cellField(cell: ExcelJS.Cell, header: string): HistoricalField {
+export function cellField(cell: ExcelJS.Cell, header: string): HistoricalField {
   const raw = cell.value
   let value = ""
   let formula: string | undefined
@@ -140,12 +141,18 @@ export function resolveHistoricalEquipment(text: string, vehicles: readonly Hist
   return match ? { vehicleId: match.id, state: "linked" } : { vehicleId: null, state: "unmatched" }
 }
 
-export function resolveHistoricalWorksite(text: string, sites: readonly HistoricalWorksite[]): string | null {
+/**
+ * Faena de la fila: nombre exacto y, si no, alias registrado (`worksite_aliases`).
+ * `aliases` es opcional para no cambiar la firma que ya usan quienes llaman sin alias.
+ * El único alias que antes vivía aquí («Cholguan» → «Cholguan - Arauco») se conserva
+ * como último recurso: mientras el alias no esté cargado en la base, no deja de resolverse.
+ */
+export function resolveHistoricalWorksite(text: string, sites: readonly HistoricalWorksite[], aliases: readonly ResolvableAlias[] = []): string | null {
+  const resolved = resolveWorksiteId(text, sites, aliases)
+  if (resolved) return resolved
   const key = nameKey(text)
-  const exact = sites.filter((site) => nameKey(site.name) === key)
-  if (exact.length === 1) return exact[0]!.id
-  if (exact.length > 1) return null
-  const alias = key === "cholguan" ? "cholguan - arauco" : null
-  const matched = alias ? sites.filter((site) => nameKey(site.name) === alias) : []
-  return matched.length === 1 ? matched[0]!.id : null
+  const exactMatches = sites.filter((site) => nameKey(site.name) === key)
+  if (exactMatches.length) return null
+  const legacy = key === "cholguan" ? sites.filter((site) => nameKey(site.name) === "cholguan - arauco") : []
+  return legacy.length === 1 ? legacy[0]!.id : null
 }

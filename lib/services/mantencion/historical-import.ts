@@ -1,6 +1,6 @@
 import { and, asc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
-import { fuelVehicles, mantHistoricalRecords, worksites } from "@/db/schema"
+import { fuelVehicles, mantHistoricalRecords, worksiteAliases, worksites } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import type { MantViewer } from "./access"
@@ -19,9 +19,10 @@ export interface HistoricalPreview { summary: HistoricalSummary; pending: Array<
 const sourceFileName = (fileName: string) => fileName.split(/[\\/]/).pop()?.slice(0, 150) || "consolidado.xlsx"
 
 async function plan(client: Client, rows: HistoricalRow[], fileName: string): Promise<MantActionResult<{ rows: PlannedRow[]; preview: HistoricalPreview }>> {
-  const [vehicles, sites] = await Promise.all([
+  const [vehicles, sites, aliases] = await Promise.all([
     client.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate }).from(fuelVehicles),
     client.select({ id: worksites.id, name: worksites.name }).from(worksites),
+    client.select({ worksiteId: worksiteAliases.worksiteId, aliasKey: worksiteAliases.aliasKey }).from(worksiteAliases),
   ])
   const stored = new Map<string, Stored>()
   const fields = {
@@ -71,7 +72,7 @@ async function plan(client: Client, rows: HistoricalRow[], fileName: string): Pr
   const planned = rows.map((row): PlannedRow => {
     const existing = existingForRow.get(row.sourceKey)
     const match = resolveHistoricalEquipment(row.equipmentText, vehicles)
-    const worksiteId = existing?.worksiteId ?? resolveHistoricalWorksite(row.worksiteText, sites)
+    const worksiteId = existing?.worksiteId ?? resolveHistoricalWorksite(row.worksiteText, sites, aliases)
     const vehicleId = existing?.vehicleId ?? match.vehicleId
     return {
       row, existing, vehicleId, worksiteId,
@@ -158,6 +159,8 @@ export async function listHistoricalRecords(viewer: MantViewer, options: { page?
       sourceKey: mantHistoricalRecords.sourceKey, worksiteText: mantHistoricalRecords.worksiteText, equipmentText: mantHistoricalRecords.equipmentText,
       worksiteId: mantHistoricalRecords.worksiteId, vehicleId: mantHistoricalRecords.vehicleId, equipmentMatch: mantHistoricalRecords.equipmentMatch, orderText: mantHistoricalRecords.orderText,
       kindText: mantHistoricalRecords.kindText, description: mantHistoricalRecords.description, entryDate: mantHistoricalRecords.entryDate, submittedAt: mantHistoricalRecords.submittedAt,
+      // Columnas que agrega el consolidado (Trinorma); vacías en las filas que sólo vienen del formulario.
+      actionType: mantHistoricalRecords.actionType, laborHours: mantHistoricalRecords.laborHours, contractText: mantHistoricalRecords.contractText, isTest: mantHistoricalRecords.isTest, qualityNotes: mantHistoricalRecords.qualityNotes, hoursText: mantHistoricalRecords.hoursText,
     }).from(mantHistoricalRecords).where(where)
       .orderBy(sql`coalesce(${mantHistoricalRecords.entryDate}, left(${mantHistoricalRecords.submittedAt}, 10)) desc`, asc(mantHistoricalRecords.sourceKey))
       .limit(PAGE_SIZE).offset((page - 1) * PAGE_SIZE)
