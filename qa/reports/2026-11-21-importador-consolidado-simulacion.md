@@ -423,3 +423,22 @@ Estado final:
 - La faena «Arauco» (HORCONES) tiene folio ARA, 27 trabajos y 8 equipos. «Arauco (anterior)» queda sin folio, sin trabajos y sin equipos.
 
 En producción, los maestros corren antes que el importador. Por eso la primera importación ya debería ligar estas filas, y sólo deberían quedar en conflicto las 2 de KCH-126.
+
+## Segunda actualización del 21-11: contrato Horcones y dos equipos más
+
+Corrido en el clon, después del segundo informe de evidencia:
+
+- `apply-trinorma-equipos-faltantes.ts --apply`: 2 altas nuevas (12 en total), y la segunda corrida no cambió nada.
+  - GRDW-63, remolque de Chome, va sin código y a Arauco por confirmar. El inventario lo llama KRR-01, pero ese código choca con KRR-001 (JC-6212) en el índice único.
+  - CA-35 / ZV-6852, camioneta de Asir, va a Flor del Laja.
+- `apply-trinorma-maestros.ts --apply`, paso 7: el mandante Celulosa Arauco y Constitución S.A. (93458000-1) y el contrato CTR-2026-0001 «Horcones» en la faena Arauco, desde el 01-08-2025, sin equipos asignados. La segunda corrida no cambió nada.
+- `import-consolidado-mantencion.ts --apply`: 6 mantenciones más quedaron ligadas (3 de GRDW-63 y 3 de ZV-6852).
+
+Quedan sin equipo:
+
+| Caso | Mantenciones | Estado |
+|---|---|---|
+| WX6495 | 4 | Comodín del taller; se le pregunta al Jefe de Mantención |
+| KCH-126 / KXZD-19 | 2 | En conflicto |
+| JN-1255 | 1 | Probablemente KCB-001; se liga a mano |
+| Estructura de limpieza | 1 | No es un vehículo |

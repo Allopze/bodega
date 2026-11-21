@@ -36,6 +36,10 @@ El contrato «Horcones» se crea con los contratos, no en este script.
 |---|---|
 | C8 | Los tractos SRCJ-47, SRCJ-42 y SRCJ-39 vuelven a KCH-133, KCH-135 y KCH-136. La carga de vencimientos del 13-11 los había rotado, porque la planilla de la faena los traía cruzados; manda el inventario de octubre. Lo hace el paso 4 de `scripts/apply-trinorma-maestros.ts`, los tres juntos o ninguno. Las 2 filas «KCH-126 / KXZD-19» quedan para ligar a mano. |
 | C9 | Datos personales, opción B. El detalle del historial no muestra la cuenta de correo con que se envió el formulario (`lib/mantencion/historical-privacy.ts`, aplicado en `getHistoricalRecord`). El dato sigue guardado. El responsable y el conductor se muestran. |
+| C10 | Lecturas: se cargan **junto con** las preventivas que confirme el Jefe de Mantención, nunca solas. La planilla, con plazo al 26-11, está en `~/backups-dev/trinorma-2026-11/`. KCH-129 se carga con la nota de detenido. |
+| C11 | Un solo contrato «Horcones» en la faena Arauco, con mandante Celulosa Arauco y Constitución S.A. (93.458.000-1) e inicio el 01-08-2025. Las Líneas 2 y 3 van en las notas, porque no hay líneas por contrato. No lleva número de OC. Queda sin equipos hasta decidir los de Asir. Lo crea el paso 7 de los maestros. |
+| C12 | Fuera de flota: se dan de alta GRDW-63 (remolque de Chome; sin código, porque KRR-01 choca con KRR-001; Arauco por confirmar) y CA-35 / ZV-6852 (camioneta de Asir, Flor del Laja). No se dan de alta WX-6495 ni JN-1255. |
+| C13 | Traslado de KCH-130 a Arauco: aprobado, pero pendiente. El traslado no admite fechas anteriores al 01-10-2026, y el usuario quería el 01-07-2026. Se le consultó. |
 
 Decisiones anteriores que siguen vigentes:
 

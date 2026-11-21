@@ -69,7 +69,7 @@ const INVENTORY_ROWS: unknown[][] = [
 ]
 
 beforeEach(async () => {
-  await pg.exec("TRUNCATE audit_log, mant_historical_records, worksite_aliases, fuel_vehicles, fleet_owners, worksites, users CASCADE")
+  await pg.exec("TRUNCATE audit_log, mant_historical_records, worksite_aliases, fuel_vehicles, fleet_owners, contracts, clients, worksites, users CASCADE")
   await inMemoryDb.insert(schema.users).values({ id: actor.userId, name: "Jefatura", email: ACTOR, hashedPassword: "x" })
   await inMemoryDb.insert(schema.worksites).values(SITES)
   await inMemoryDb.insert(schema.fuelEquipmentTypes).values({ id: "t1", slug: "t1", name: "Camión", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter" }).onConflictDoNothing()
@@ -94,7 +94,7 @@ beforeEach(async () => {
 })
 
 async function snapshot() {
-  const [worksites, aliases, owners, vehicles, audits, records, folios] = await Promise.all([
+  const [worksites, aliases, owners, vehicles, audits, records, folios, contracts, clients] = await Promise.all([
     inMemoryDb.select().from(schema.worksites),
     inMemoryDb.select().from(schema.worksiteAliases),
     inMemoryDb.select().from(schema.fleetOwners),
@@ -102,8 +102,10 @@ async function snapshot() {
     inMemoryDb.select().from(schema.auditLog),
     inMemoryDb.select().from(schema.mantHistoricalRecords),
     inMemoryDb.select().from(schema.mantWorksiteSettings),
+    inMemoryDb.select().from(schema.contracts),
+    inMemoryDb.select().from(schema.clients),
   ])
-  return { worksites, aliases, owners, vehicles, audits, records, folios }
+  return { worksites, aliases, owners, vehicles, audits, records, folios, contracts, clients }
 }
 
 describe("script apply-trinorma-maestros", () => {
@@ -175,11 +177,18 @@ describe("script apply-trinorma-maestros", () => {
     expect(pending("v1")).toBe(false)
     expect(pending("v4")).toBe(false)
     expect(pending("v6")).toBe(false) // inactivo
+    // 7 · contrato «Horcones» de la faena Arauco, con su mandante y sin equipos asignados
+    expect(state.clients).toEqual([expect.objectContaining({ name: "Celulosa Arauco y Constitución S.A.", rut: expect.stringMatching(/^93\.?458\.?000-1$/) })])
+    expect(state.contracts).toEqual([expect.objectContaining({
+      name: "Horcones", worksiteId: "w-hor", clientId: state.clients[0]!.id, startDate: "2025-08-01", status: "active",
+      code: expect.stringMatching(/^CTR-\d{4}-\d{4}$/), notes: expect.stringContaining("CE01 Línea 2"),
+    })])
+    expect(await inMemoryDb.select().from(schema.contractVehicleAssignments)).toHaveLength(0)
     // la faena de ningún equipo cambió
     for (const vehicle of state.vehicles) expect(vehicle.worksiteId).toBe(worksiteBefore[vehicle.id])
     // auditoría
     const types = new Set(state.audits.map((a) => a.entityType))
-    for (const type of ["worksite", "worksite_alias", "fleet_owner", "fuel_vehicle", "mant_historical_records"]) expect(types.has(type)).toBe(true)
+    for (const type of ["worksite", "worksite_alias", "fleet_owner", "fuel_vehicle", "mant_historical_records", "client", "contract"]) expect(types.has(type)).toBe(true)
     expect(state.audits.every((a) => a.userId === actor.userId)).toBe(true)
   })
 

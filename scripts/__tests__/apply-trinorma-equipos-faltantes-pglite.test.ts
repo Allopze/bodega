@@ -24,6 +24,7 @@ const SITES = [
   { id: "w-bio", code: "BIODIVERSA", name: "Biodiversa" },
   { id: "w-ten", code: "TENO-ARAUCO", name: "Teno - Arauco" },
   { id: "w-ofi", code: "OFICINA-CENTRAL", name: "Oficina Central" },
+  { id: "w-hor", code: "HORCONES", name: "Arauco" },
 ]
 const TYPES = [
   { slug: "camioneta", name: "Camioneta", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter" },
@@ -64,7 +65,7 @@ describe.sequential("alta de los equipos que faltaban en la flota", () => {
     const { applyTrinormaEquiposFaltantes } = await load()
     const before = await inMemoryDb.select().from(schema.fuelVehicles)
     const report = await applyTrinormaEquiposFaltantes({ actorEmail: ACTOR, inventory })
-    expect(report.outcomes.filter((o) => o.result === "dry-run")).toHaveLength(9)
+    expect(report.outcomes.filter((o) => o.result === "dry-run")).toHaveLength(11)
     expect(report.outcomes.find((o) => o.item === "KRR-002")).toMatchObject({ result: "ya estaba" })
     expect(await inMemoryDb.select().from(schema.fuelVehicles)).toHaveLength(before.length)
     expect(await inMemoryDb.select().from(schema.fleetOwners)).toHaveLength(0)
@@ -73,13 +74,16 @@ describe.sequential("alta de los equipos que faltaban en la flota", () => {
   it("con --apply crea los equipos con su faena, su estadía, la marca y la bitácora; no toca los que ya existían", async () => {
     const { applyTrinormaEquiposFaltantes } = await load()
     const report = await applyTrinormaEquiposFaltantes({ actorEmail: ACTOR, apply: true, inventory })
-    expect(report.outcomes.filter((o) => o.result === "aplicado")).toHaveLength(9)
-    const created = await inMemoryDb.select().from(schema.fuelVehicles).where(inArray(schema.fuelVehicles.plate, ["DLSD-56", "LCCY-14", "JF-6641", "SXCV-49"]))
+    expect(report.outcomes.filter((o) => o.result === "aplicado")).toHaveLength(11)
+    const created = await inMemoryDb.select().from(schema.fuelVehicles).where(inArray(schema.fuelVehicles.plate, ["DLSD-56", "LCCY-14", "JF-6641", "SXCV-49", "GRDW-63", "ZV-6852"]))
     const byPlate = new Map(created.map((vehicle) => [vehicle.plate, vehicle]))
     expect(byPlate.get("DLSD-56")).toMatchObject({ code: "H-1", worksiteId: "w-sf", locationPendingConfirmation: false, meterType: "hour_meter" })
     expect(byPlate.get("LCCY-14")).toMatchObject({ code: "H-13", worksiteId: "w-pac", locationPendingConfirmation: true })
     expect(byPlate.get("JF-6641")).toMatchObject({ code: "KCB-003", worksiteId: "w-flor", locationPendingConfirmation: true, meterType: "none" })
     expect(byPlate.get("SXCV-49")).toMatchObject({ code: null, worksiteId: "w-ofi" })
+    // Segunda tanda: el remolque va sin código (KRR-01 chocaría con KRR-001) y a Arauco por confirmar.
+    expect(byPlate.get("GRDW-63")).toMatchObject({ code: null, worksiteId: "w-hor", locationPendingConfirmation: true, meterType: "none" })
+    expect(byPlate.get("ZV-6852")).toMatchObject({ code: "CA-35", worksiteId: "w-flor", locationPendingConfirmation: false })
     // El disparador abrió su estadía en la faena del alta.
     const stays = await inMemoryDb.select().from(schema.fuelVehicleWorksiteIntervals).where(eq(schema.fuelVehicleWorksiteIntervals.vehicleId, byPlate.get("DLSD-56")!.id))
     expect(stays).toMatchObject([{ worksiteId: "w-sf", source: "alta" }])
@@ -90,7 +94,7 @@ describe.sequential("alta de los equipos que faltaban en la flota", () => {
     // El que ya existía sigue igual.
     expect((await inMemoryDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, "v-krr")))[0]).toMatchObject({ worksiteId: "w-bio", code: null })
     const audits = await inMemoryDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityType, "fuel_vehicle"))
-    expect(audits).toHaveLength(9)
+    expect(audits).toHaveLength(11)
   })
 
   it("una segunda corrida no cambia nada", async () => {

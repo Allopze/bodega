@@ -108,6 +108,10 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
      La carga de vencimientos del 13-11 los había rotado, porque la planilla de la faena los traía cruzados. Manda el inventario de octubre. Se corrigen los tres juntos o ninguno: si alguno tiene otro código, el paso se omite y lo informa. Las patentes y los vencimientos no cambian;
    - asigna propietarios a unos 160 equipos (162 en el clon, con los tres tractos). Los terceros salen sólo por cantidad;
    - pone la marca «ubicación por confirmar» a 32 equipos (Pacífico y faenas cerradas);
+   - **crea el contrato «Horcones» de la faena Arauco** y su mandante, Celulosa Arauco y Constitución S.A. (93.458.000-1), con inicio el 01-08-2025. Decisión del usuario, 21-11:
+     - un solo contrato, con las Líneas 2 y 3 descritas en las notas (la plataforma no tiene líneas dentro de un contrato);
+     - el cobro (plazo de 30 días, ciclo del 21 al 20, cobro por viaje) lo carga Facturación: el servicio operacional no escribe esos campos;
+     - **sin equipos asignados**. Falta decidir los de Asir (KA-137, KRR-005) y trasladar KCH-130;
    - no mueve ningún equipo de faena.
 
    En el clon del 21-11, la segunda corrida no hizo nada.
@@ -118,19 +122,23 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
    apply-trinorma-equipos-faltantes.ts --actor-email <correo> --inventario <INVENTARIO….xlsx>
    ```
 
-   Da de alta 10 equipos que el consolidado trae y la flota no:
+   Da de alta 12 equipos que el consolidado trae y la flota no:
    - CA-85, H-1, H-2, H-13;
    - KCB-001, KCB-002, KCB-003, KCB-010;
-   - KRR-002 y SXCV-49.
+   - KRR-002 y SXCV-49;
+   - **el remolque GRDW-63, sin código.** El inventario lo llama KRR-01, que para el índice único es el mismo código que KRR-001 (otro carro, JC-6212), y la base del Jefe de Mantención lo llama H-4. Va a Arauco con «ubicación por confirmar». El código se le pregunta al Jefe en su planilla;
+   - **CA-35 (ZV-6852),** camioneta de Asir en Flor del Laja.
 
-   La faena sale de la base de noviembre del Jefe de Mantención, o del inventario de octubre. Los de Pacífico y KCB-003 van con «ubicación por confirmar». No crea:
+   La faena sale de la base de noviembre del Jefe de Mantención, o del inventario de octubre. Los de Pacífico, KCB-003 y GRDW-63 van con «ubicación por confirmar». No crea:
    - CA-47, CA-81 y CA-82, que están dados de baja;
    - la estructura de limpieza y la hidrolavadora, que no tienen código ni patente;
-   - LCTC-21, que es CR-50.
+   - LCTC-21, que es CR-50;
+   - WX-6495, una grúa de Asir sin código, cuyo texto el taller usa como comodín para otros trabajos;
+   - JN-1255, que no es un equipo nuevo: probablemente es JG-1255 (KCB-001). Ese trabajo se liga a mano.
 
-   En el clon: 10 altas, y la segunda corrida no hizo nada.
+   En el clon: 12 altas, y la segunda corrida no hizo nada.
 
-   Corriendo después el importador, se ligan 100 trabajos más: los sin equipo bajan de 112 a 12.
+   Corriendo después el importador, se ligan 106 trabajos más.
 4. **Importador, simulación:**
 
    ```
@@ -147,7 +155,10 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
    | Pautas | 6 (2 de prueba) |
    | Rechazos | 0 |
 
-   Todas las filas resuelven su faena. Con los equipos faltantes ya dados de alta, 12 mantenciones quedan sin equipo: patentes que no están en ninguna planilla (WX-6495, GRDW-63, ZV-6852) y la estructura de limpieza.
+   Todas las filas resuelven su faena. Con los equipos faltantes ya dados de alta, quedan 6 mantenciones sin equipo, todas para ligar a mano o dejar así:
+   - las 4 de «WX6495 (FLOR DEL LAJA)»;
+   - JN-1255;
+   - la estructura de limpieza.
 
    Con los códigos de los tractos corregidos en el paso 1, las 64 mantenciones y 270 inspecciones de KCH-133, KCH-135 y KCH-136 se ligan solas: en el clon, 18, 24 y 22 trabajos, y 101, 92 y 77 inspecciones. Quedan 2 mantenciones en conflicto, «KCH-126 / KXZD-19» del 08-08-2025, para ligar a mano.
 
@@ -163,6 +174,8 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
    SELECT count(*) FROM mant_historical_schedule_checks; -- 6
    SELECT count(*) FROM mant_historical_records WHERE equipment_match = 'conflict' AND vehicle_id IS NULL;  -- 2
    SELECT code, plate FROM fuel_vehicles WHERE plate IN ('SRCJ-39', 'SRCJ-42', 'SRCJ-47') ORDER BY code;  -- KCH-133 SRCJ-47, KCH-135 SRCJ-42, KCH-136 SRCJ-39
+   SELECT c.code, c.name, w.code, cl.rut FROM contracts c JOIN worksites w ON w.id = c.worksite_id JOIN clients cl ON cl.id = c.client_id
+    WHERE c.name = 'Horcones';  -- CTR-AAAA-NNNN · Horcones · HORCONES · 93458000-1
    SELECT w.code, w.name, s.folio_code FROM worksites w LEFT JOIN mant_worksite_settings s ON s.worksite_id = w.id
     WHERE w.code IN ('HORCONES', 'MANT-ARA');  -- HORCONES «Arauco» ARA; MANT-ARA «Arauco (anterior)» sin folio
    ROLLBACK;
@@ -184,8 +197,12 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
 
 - Encender «Exigir el tipo de acción» cuando el Jefe de Mantención lo pida.
 - **No volver a correr `scripts/apply-vencimientos-planilla-2026-11.ts`** con la planilla de noviembre: volvería a rotar los códigos de los tres tractos.
-- Crear el contrato «Horcones» de la faena Arauco cuando se carguen los contratos. Antes hay que confirmar el mandante con Finanzas:
-  - las HES son de Celulosa Arauco y Constitución S.A.;
-  - pero una factura de diciembre de 2025 se emitió a Maderas Arauco S.A.
-- **Faenas de KCH-129 y KCH-130, probablemente cruzadas.** La carga del 13-11 dejó KCH-129 (KXZD-19) en Horcones, ahora Arauco. El inventario de octubre lo pone en Cabrero, y pone KCH-130 (KXZD-20) en Horcones. Se corrige con «Trasladar equipos» cuando se encienda (C4).
-- Decisión pendiente del usuario: el traslado (C4).
+- **Lecturas y última preventiva (lo que falta para el Panel del 01-12).** La planilla del Jefe de Mantención (`~/backups-dev/trinorma-2026-11/`) vence el jueves 26-11. Con ella de vuelta se cargan, juntas, las 12 lecturas y las preventivas que él confirme, cada una con su respaldo. KCH-129 lleva la nota de detenido. **Las lecturas no se cargan solas:** sin preventiva registrada, el Panel supone que la última se hizo en el último múltiplo de 10.000 km, y ese «al día» no tiene respaldo. La planilla también le pregunta si la pauta de 10.000 km es la real, porque en los formularios el aceite de motor se cambia cada 37.000 a 50.000 km.
+- **Contrato «Horcones»:**
+  - Facturación carga el cobro: plazo de 30 días, ciclo del 21 al 20, cobro por viaje;
+  - los equipos se asignan después de decidir los de Asir (KA-137, KRR-005) y trasladar KCH-130.
+- **Faenas de KCH-129 y KCH-130, cruzadas.** KCH-130 trabaja en Arauco desde el 01-07-2026, pero la plataforma lo tiene en Santa Fe. KCH-129 está detenido en Cabrero desde fines de julio, pero la plataforma lo tiene en Arauco. Para corregirlo:
+  - un traslado por pantalla o con `transferVehiclesTx` admite fechas solo desde el día 1 del mes anterior (hoy, el 01-10-2026);
+  - una fecha anterior es trabajo de la reconstrucción del recorrido (`scripts/reconstruct-worksite-stays.ts`), que salta los equipos que ya tienen un traslado.
+
+  Decisión pendiente del usuario.

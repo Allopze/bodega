@@ -16,6 +16,10 @@
  *      rotados, el inventario no los reconoce.
  *   5. Propietarios desde el inventario de octubre (sólo con `--inventario <xlsx>`).
  *   6. «Ubicación por confirmar» a los equipos activos de faenas inactivas y de Pacífico.
+ *   7. El contrato «Horcones» de la faena Arauco y su mandante, Celulosa Arauco y Constitución S.A.
+ *      (decisión del usuario, 2026-11-21). Sólo lo operacional: nombre, mandante, faena e inicio;
+ *      el cobro (plazo, ciclo, tarifas) es de Facturación y queda descrito en las notas. Sin equipos
+ *      asignados: falta decidir los de Asir y trasladar KCH-130.
  *
  * Ningún paso cambia la faena de un equipo (sólo cambia por «Trasladar equipos») y el
  * informe nunca imprime nombres de personas: los propietarios `tercero` salen por cantidad.
@@ -36,6 +40,7 @@ import { recordAudit } from "@/lib/audit"
 import { equipmentCodeKey, matchVehicle, plateKey, type IdentifiedVehicle } from "@/lib/mantencion/equipment-identity"
 import { cleanName, nameKey } from "@/lib/mantencion/normalize"
 import { loadXlsxTolerant } from "@/lib/reports/xlsx-normalize"
+import { createMandante, saveOperationalContract } from "@/lib/services/contracts/contracts"
 import { classifyFleetOwnerName, createFleetOwnerTx, setVehicleOwnershipTx, type FleetOwnerKind } from "@/lib/services/fleet-owners"
 import { addWorksiteAliasTx, worksiteAliasConflict } from "@/lib/services/worksite-aliases"
 import { setWorksiteKindTx, WORKSITE_KIND_LABELS, type WorksiteKind } from "@/lib/services/worksite-kind"
@@ -89,6 +94,25 @@ export const TRACTOR_CODES: ReadonlyArray<{ plate: string; code: string; codeFro
   { plate: "SRCJ-42", code: "KCH-135", codeFromVencimientos: "KCH-133" },
   { plate: "SRCJ-39", code: "KCH-136", codeFromVencimientos: "KCH-135" },
 ]
+/**
+ * El contrato de la faena Arauco (decisión del usuario, 2026-11-21): uno solo, porque L2 y L3 tienen el
+ * mismo mandante, administrador, tarifas y estado de pago. Para el cliente son dos centros con OC, HES y
+ * facturas separadas; la plataforma no tiene líneas dentro de un contrato, así que van en las notas.
+ * Datos del informe de evidencia del 21-11: las facturas de octubre (13563 y 13589) salieron a Celulosa
+ * Arauco y Constitución; el «Maderas Arauco» del estado de pago es un error de la plantilla.
+ */
+export const HORCONES_CONTRACT = {
+  name: "Horcones",
+  mandante: { rut: "93.458.000-1", name: "Celulosa Arauco y Constitución S.A." },
+  startDate: "2025-08-01",
+  notes: [
+    "Celulosa Planta Arauco, dos centros del cliente con OC, HES y facturas separadas: CE07 Línea 3 desde agosto de 2025 y CE01 Línea 2 desde mayo de 2026 (fecha inferida de la primera OC y del primer estado de pago que la incluye).",
+    "Sin contrato marco: una OC por período (código de proveedor 14038).",
+    "Cobro por viaje, sin costo fijo; período del 21 al 20; pago a 30 días desde la recepción de la factura (OC de octubre de 2026); CLP.",
+    "Un solo estado de pago, con una hoja por línea. Fuente: informe de evidencia del 2026-11-21.",
+  ].join(" "),
+} as const
+
 const TRACTOR_REASON = "Trinorma (2026-11-21): vuelve el código anterior a la carga de vencimientos del 13-11, que lo traía rotado; manda el inventario de octubre"
 
 /** Lo que el script aprendió del inventario: una fila por equipo con empresa y (código o patente). */
@@ -427,6 +451,29 @@ async function stepLocationPending(tx: Tx, apply: boolean, actor: Actor, out: Ou
   if (marked.size === 0) out.push({ step, item: "equipos", action: "marcar ubicación por confirmar", result: "ya estaba", detail: `${already} ya marcados de ${vehicles.length}` })
 }
 
+async function stepHorconesContract(tx: Tx, apply: boolean, actor: Actor, out: Outcome[]) {
+  const step = "7 · Contrato Horcones"
+  const { byCode } = await loadSites(tx)
+  const site = byCode.get(WORKSITE_CODES.horcones)
+  const item = `«${HORCONES_CONTRACT.name}»`
+  if (!site) { out.push({ step, item, action: "crear el contrato", result: "omitido", detail: `falta la faena ${WORKSITE_CODES.horcones}` }); return }
+  const existing = await tx.select({ code: contracts.code, name: contracts.name }).from(contracts).where(eq(contracts.worksiteId, site.id))
+  const same = existing.find((row) => nameKey(row.name) === nameKey(HORCONES_CONTRACT.name))
+  if (same) { out.push({ step, item, action: `contrato de ${site.name}`, result: "ya estaba", detail: same.code }); return }
+  // Los servicios de contratos abren su propia transacción; dentro de la del script es un punto de guardado.
+  const client = tx as unknown as Parameters<typeof createMandante>[2]
+  const mandante = await createMandante(actor, HORCONES_CONTRACT.mandante, client)
+  if (!mandante.ok) { out.push({ step, item: HORCONES_CONTRACT.mandante.name, action: "crear el mandante", result: "omitido", detail: mandante.message }); return }
+  out.push({ step, item: HORCONES_CONTRACT.mandante.name, action: `mandante ${HORCONES_CONTRACT.mandante.rut}`, result: mandante.existed ? "ya estaba" : result(apply) })
+  const saved = await saveOperationalContract(actor, {
+    worksiteId: site.id, clientId: mandante.id, name: HORCONES_CONTRACT.name, startDate: HORCONES_CONTRACT.startDate, status: "active",
+  }, client)
+  if (!saved.ok) { out.push({ step, item, action: "crear el contrato", result: "omitido", detail: saved.message }); return }
+  await tx.update(contracts).set({ notes: HORCONES_CONTRACT.notes, updatedAt: new Date().toISOString() }).where(eq(contracts.id, saved.id))
+  await recordAudit({ userId: actor.userId, userEmail: actor.email, action: "update", entityType: "contract", entityId: saved.id, entityCode: saved.code, newState: { notes: HORCONES_CONTRACT.notes }, reason: REASON, worksiteId: site.id }, tx)
+  out.push({ step, item, action: `crear el contrato de ${site.name} desde el ${HORCONES_CONTRACT.startDate}, sin equipos asignados`, result: result(apply), detail: saved.code })
+}
+
 /* ── Orquestación ────────────────────────────────────────────────────────── */
 
 export interface ApplyMaestrosOptions {
@@ -459,6 +506,7 @@ export async function applyTrinormaMaestros(options: ApplyMaestrosOptions): Prom
       await stepTractorCodes(tx, apply, actor, report.outcomes)
       await stepOwners(tx, apply, actor, options.inventory, report.outcomes)
       await stepLocationPending(tx, apply, actor, report.outcomes)
+      await stepHorconesContract(tx, apply, actor, report.outcomes)
       for (const owner of await tx.select({ kind: fleetOwners.kind }).from(fleetOwners)) report.ownersByKind[owner.kind as FleetOwnerKind]++
       // La simulación corre el mismo código y lo deshace: lo que informa es lo que `--apply` haría.
       if (!apply) throw new DryRunRollback()
