@@ -16,6 +16,8 @@ function queryChain(data: unknown[]) {
 
 vi.mock("@/db", () => ({
   db: {
+    // `loadConsumptionKept`: ningún registro con uso personal.
+    selectDistinct: () => queryChain([]),
     select: (projection: Record<string, unknown>) => {
       projections.push(projection)
       return queryChain(results.shift() ?? [])

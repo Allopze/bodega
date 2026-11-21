@@ -16,7 +16,7 @@ import { buildConsumptionWhere, type ConsumptionFilters } from "./consumption-qu
 import { mergeFuelControlWorksites, percentVariation, type FuelControlWorksiteRow } from "./fuel-control-overview.helpers"
 import { can } from "@/lib/auth/can"
 import { notPersonalUseOnDaySql } from "@/lib/fleet/personal-use-sql"
-import { consumptionKeptQuantitySql } from "./consumption-dashboard"
+import { consumptionKeptQuantitySql, loadConsumptionKept } from "./consumption-dashboard"
 
 export interface FuelControlOverview {
   billed: {
@@ -70,6 +70,7 @@ export async function getFuelControlOverview(session: Session, options: FuelCont
     notPersonalUseOnDaySql(fuelLoads.vehicleId, sql`${fuelLoads.loadDate}`),
   )
   const tctWhere = buildConsumptionWhere(session, filters)
+  const kept = await loadConsumptionKept()
 
   const [[billing], [previousBilling], billedByWorksite, tctByWorksite, taeResult] = await Promise.all([
     db.select({
@@ -91,8 +92,8 @@ export async function getFuelControlOverview(session: Session, options: FuelCont
     db.select({
       worksiteId: fuelConsumptionRecords.worksiteId,
       worksiteName: worksites.name,
-      // Un registro por período (TCT importado) cuenta la fracción de sus días fuera del uso personal.
-      liters: sql<number>`coalesce(sum(${consumptionKeptQuantitySql()}), 0)`,
+      // Un registro por período (TCT importado) sin las cargas de los días de uso personal de su equipo.
+      liters: sql<number>`coalesce(sum(${consumptionKeptQuantitySql(kept)}), 0)`,
     }).from(fuelConsumptionRecords)
       .innerJoin(worksites, eq(worksites.id, fuelConsumptionRecords.worksiteId))
       .where(tctWhere)

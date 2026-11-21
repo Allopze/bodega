@@ -169,6 +169,14 @@ usan; ninguno reimplementa el cruce.
     personal que se solapan con él. Cuando hay detalle de transacciones para la
     patente, el agregado ya no cuenta (`load-status.ts`) y no hay nada que
     prorratear. *(decisión del agente)*
+  - **Registro de consumo con detalle de Copec** (`fuel_consumption_records`, la
+    vista Consumo): el dueño carga con la tarjeta de Chome, así que sus cargas son
+    transacciones Copec con día y patente. Cuando la cuenta del registro
+    (`tct:diesel`, `tct:bluemax`) trae ese detalle para el equipo y la patente, se
+    descuentan **exactas** las transacciones aceptadas de sus días de uso personal,
+    la misma cifra que excluye Control operacional; sólo sin detalle se prorratea.
+    *(decisión del usuario 2026-11-20, al revisar que Consumo y Control
+    operacional daban cifras distintas para el mismo equipo y mes)*
 - **Cargas en terreno (litros):** se excluye la carga cuyo día cae en el período.
 - **Rendimiento (km/L, L/h):** se excluyen las cargas del período **y la primera
   carga después del período**. Su `performance_value` se calculó contra una

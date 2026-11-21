@@ -58,6 +58,20 @@ La falla preexistente es `lib/__tests__/module-toggles.test.ts` («mantiene inve
 - **Usuario sin `flota:personal_use`:** lo cubre la E2E (ve el bloque, no el botón).
 - **Móvil:** no se recorrió.
 
-## Pendiente de decisión (revisión final, punto 4)
+## Consumo: descuento exacto (revisión final, punto 4, resuelto)
 
-Consumo (`fuel_consumption_records`) prorratea el registro mensual de Copec por días, como manda la spec. Control operacional, Flota y Analítica excluyen las transacciones exactas del período. En un mismo equipo y mes con uso personal, las dos cifras difieren. Hay que decidir si, cuando la patente tiene transacciones, Consumo debe restar lo exacto en vez de prorratear.
+Antes Consumo (`fuel_consumption_records`) prorrateaba por días el registro mensual de Copec, mientras Control operacional, Flota y Analítica excluían las transacciones exactas del período, así que para un mismo equipo y mes las cifras diferían. El usuario aclaró que el dueño carga con la tarjeta de Chome: sus cargas son transacciones con día. Desde entonces, cuando la cuenta del registro trae detalle para el equipo y la patente, Consumo descuenta exactas esas transacciones, y sólo prorratea si no hay detalle.
+
+- **Clon, KA-137, del 20-10 al 26-10:**
+  - **Diesel:** $1.608.519 → $1.242.836 (−$365.683). El prorrateo daba −$363.214.
+  - **BlueMax:** $45.846 → $37.937 (−$7.909). El prorrateo daba −$10.352.
+  - **Total descontado:** $373.592, exactamente lo que excluye Control operacional.
+- **Rendimiento:** la primera versión calculaba el descuento con subconsultas por registro dentro de cada suma. Postgres estimaba el plan por encima del umbral del JIT y cada consulta tardaba 1,1 s (2,7 s el rendimiento ponderado), aunque nadie tuviera uso personal. La versión final hace dos pasos: primero calcula lo exacto sólo para los registros que se cruzan con un período, buscándolos desde los períodos; después las sumas usan un `case` por id, sin subconsultas. Con eso cada vista de Consumo tarda 3–4 ms sin períodos y 7–8 ms con uno (clon, año 2026, 633 registros). Una prueba impide volver a meter subconsultas en esas sumas.
+- **Pruebas:** `consumption-exact-personal-use-pglite` cubre:
+  - el descuento exacto por cuenta;
+  - el borde horario del último día;
+  - que las transacciones pendientes y reemplazadas no se descuentan;
+  - el tope en 0;
+  - el prorrateo sin detalle o con otra fuente;
+  - el cuadre con Control operacional;
+  - la guardia de las subconsultas.

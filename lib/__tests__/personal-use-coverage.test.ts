@@ -94,6 +94,7 @@ const EXEMPT_FILES: Record<string, string> = {
   "lib/services/stock-availability.ts": "bodega (stock)",
   "lib/services/dashboard-metrics.ts": "conteo de solicitudes de compra pendientes (Inicio)",
   "app/(app)/reportes/page.tsx": "conteos de compras por estado (reportes)",
+  "lib/combustibles/personal-use-fuel-sql.ts": "es la regla común: sus sumas son el descuento exacto del uso personal en Consumo",
 }
 
 /** Pagos, conciliaciones y Mantención: ven TODO, nunca importan la regla. */

@@ -659,4 +659,5 @@ export const pgliteTestFiles = [
   "lib/__tests__/personal-use-payments-unchanged-pglite.test.ts",
   "lib/__tests__/fuel-records-personal-use-pglite.test.ts",
   "lib/__tests__/tae-anomalies-personal-use-pglite.test.ts",
+  "lib/__tests__/consumption-exact-personal-use-pglite.test.ts",
 ]

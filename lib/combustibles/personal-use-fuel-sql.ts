@@ -1,4 +1,4 @@
-import { sql, type SQL } from "drizzle-orm"
+import { sql, type AnyColumn, type SQL } from "drizzle-orm"
 import { fuelEquipmentLoads, fuelOperationRecords, fuelProviderTransactions, fuelVehiclePersonalUsePeriods } from "@/db/schema"
 import { isoTextDaySql } from "@/lib/combustibles/control/queries/field-filters"
 import { keptFractionSql, notPersonalUseOnDaySql, personalUseOnDaySql, qualified } from "@/lib/fleet/personal-use-sql"
@@ -51,6 +51,51 @@ export function providerTxKeptAmountSql(): SQL<number> {
 /** Litros de la transacción para gestión, con la misma regla que el monto. */
 export function providerTxKeptQuantitySql(): SQL<number> {
   return keptOf(qualified(T.quantity))
+}
+
+/**
+ * Detalle de Copec que compone un registro por período (`fuel_consumption_records`):
+ * las transacciones aceptadas del equipo en esa cuenta (`tct:diesel`, `tct:bluemax`)
+ * y esa patente, con día de Chile en `from..to`. Todo lo que recibe es de la
+ * consulta externa y va calificado: esto corre dentro de una subconsulta.
+ *
+ * Corre una vez por registro, así que es cara de estimar: úsala sólo sobre pocas
+ * filas (`loadConsumptionKept`), nunca dentro de un agregado del tablero, donde el
+ * plan cruza el umbral del JIT de Postgres (más de 1 s por consulta aunque nadie
+ * tenga uso personal). Va por la patente porque es lo que tiene índice, y no
+ * repite `accountableProviderTransactionsWhere`, cuyos `not in` se estimaban otra
+ * vez por cada registro. Basta con `accepted`: el sync deja una fila corregida en
+ * `superseded`.
+ */
+function providerTxDetailWhereSql(vehicleId: AnyColumn | SQL, plate: AnyColumn | SQL, account: SQL, from: SQL, to: SQL): SQL {
+  return sql`${qualified(T.sourcePlate)} = ${qualified(plate)}
+    and ${qualified(T.vehicleId)} = ${qualified(vehicleId)}
+    and ${qualified(T.sourceAccount)} = ${account}
+    and ${qualified(T.granularity)} = 'transaction'
+    and ${qualified(T.status)} = 'accepted'
+    and ${qualified(T.quantity)} is not null
+    and ${providerTxDaySql()} between ${from} and ${to}`
+}
+
+/** ¿Copec trae el detalle por transacción de esa cuenta para el equipo y la patente en `from..to`? */
+export function providerTxHasDetailSql(vehicleId: AnyColumn | SQL, plate: AnyColumn | SQL, account: SQL, from: SQL, to: SQL): SQL<boolean> {
+  return sql<boolean>`exists (select 1 from ${T} where ${providerTxDetailWhereSql(vehicleId, plate, account, from, to)})`
+}
+
+/**
+ * Monto o litros del detalle que cayeron en días de uso personal del equipo. El
+ * dueño carga con la tarjeta de Chome: esas cargas están en el detalle con su día,
+ * así que un registro por período puede descontarlas exactas en vez de prorratear.
+ */
+export function providerTxPersonalUseTotalSql(
+  column: "amount" | "quantity", vehicleId: AnyColumn | SQL, plate: AnyColumn | SQL, account: SQL, from: SQL, to: SQL,
+): SQL<number> {
+  const value = column === "amount" ? T.amount : T.quantity
+  return sql<number>`coalesce((
+    select sum(${qualified(value)}) from ${T}
+    where ${providerTxDetailWhereSql(vehicleId, plate, account, from, to)}
+      and ${personalUseOnDaySql(T.vehicleId, providerTxDaySql())}
+  ), 0)`
 }
 
 /** Día calendario de Chile de una carga en terreno, `YYYY-MM-DD`. */
