@@ -1,3 +1,4 @@
+import type { ActionType, ActionTypeOrUnknown, Specialty } from "@/lib/mantencion/action-type"
 import type { MantUnit } from "@/lib/mantencion/types"
 import type {
   OtEventType,
@@ -139,6 +140,18 @@ export interface WorkOrderDetail extends WorkOrderListRow {
   unit: MantUnit
   repairDescription: string | null
   observations: string | null
+  /** Trinorma R4. Lo declarado; null en las OT anteriores. */
+  actionType: ActionType | null
+  /** Lo que se muestra: el declarado o el que dicen las casillas; «sin_clasificar» = «No informado». */
+  effectiveActionType: ActionTypeOrUnknown
+  specialties: Specialty[]
+  laborHours: number | null
+  /** Faena donde se ejecutó, si no fue la del equipo (la de imputación es `worksiteId`). */
+  executionWorksiteId: string | null
+  executionWorksiteName: string | null
+  workPerformed: string | null
+  /** Días calendario entre el ingreso y la salida del taller; null mientras falte alguno de los dos. */
+  daysStopped: number | null
   requestedByUserId: string
   requestedByName: string
   assignedByName: string | null

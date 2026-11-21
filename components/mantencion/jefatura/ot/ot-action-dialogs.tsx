@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation, type OperationResult } from "@/lib/hooks/use-operation"
-import { OT_ITEM_KIND_LABELS, OT_ITEM_MAX_PER_KIND, type OtItemKind } from "@/lib/mantencion/work-order-states"
+import { OT_ITEM_KIND_LABELS, OT_ITEM_MAX_PER_KIND, OT_LABOR_HOURS_MAX, type OtItemKind } from "@/lib/mantencion/work-order-states"
 import type { MantUnit } from "@/lib/mantencion/types"
 import type { WorkOrderDetail, WorkOrderItemDetail } from "@/lib/services/mantencion/work-orders/types"
 import { toast } from "@/lib/toast"
@@ -389,15 +389,27 @@ export function ItemsDialog({ open, onOpenChange, base, folio, items }: DialogPr
 export function FinishDialog({ open, onOpenChange, base, folio, entryAt }: DialogProps & { entryAt: string | null }) {
   const [exitAt, setExitAt] = React.useState(chileNowLocal)
   const [note, setNote] = React.useState("")
+  const [workPerformed, setWorkPerformed] = React.useState("")
+  const [laborHours, setLaborHours] = React.useState("")
+  const [hoursError, setHoursError] = React.useState<string | undefined>()
   const op = useOtAction(() => onOpenChange(false))
   function submit(event: React.FormEvent) {
     event.preventDefault()
-    op.run(() => finishWorkOrderAction({ ...base, exitAt: chileLocalDateTimeToUtc(exitAt), note: note.trim() || null }), "Salida de taller registrada")
+    const hoursText = laborHours.trim().replace(",", ".")
+    const hours = hoursText === "" ? null : Number(hoursText)
+    if (hours !== null && (!Number.isFinite(hours) || hours < 0 || hours > OT_LABOR_HOURS_MAX)) {
+      setHoursError(`Indica horas entre 0 y ${OT_LABOR_HOURS_MAX.toLocaleString("es-CL")}.`)
+      return
+    }
+    setHoursError(undefined)
+    op.run(() => finishWorkOrderAction({
+      ...base, exitAt: chileLocalDateTimeToUtc(exitAt), note: note.trim() || null, workPerformed: workPerformed.trim() || null, laborHours: hours,
+    }), "Salida de taller registrada")
   }
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!op.pending) onOpenChange(next) }}>
       <DialogContent>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} noValidate>
           <DialogHeader>
             <DialogTitle>Registrar la salida de {folio}</DialogTitle>
             <DialogDescription>Exige todos los ítems marcados y al menos un registro de mantención vigente enlazado a la orden.</DialogDescription>
@@ -405,6 +417,12 @@ export function FinishDialog({ open, onOpenChange, base, folio, entryAt }: Dialo
           <div className="flex flex-col gap-4">
             <Field label="Fecha y hora de salida" htmlFor="ot-exit-at" required>
               <DateTimePicker id="ot-exit-at" value={exitAt} onChange={setExitAt} min={entryAt ? isoToChileLocal(entryAt) : undefined} />
+            </Field>
+            <Field label="Trabajo realizado (opcional)" htmlFor="ot-exit-work" helper="Qué se hizo, en palabras de quien lo hizo.">
+              <Textarea id="ot-exit-work" value={workPerformed} rows={3} maxLength={4000} onChange={(event) => setWorkPerformed(event.target.value)} />
+            </Field>
+            <Field label="Horas hombre (opcional)" htmlFor="ot-exit-hours" error={hoursError} helper="Total de horas de trabajo de las personas que intervinieron.">
+              <Input id="ot-exit-hours" type="number" inputMode="decimal" min={0} max={OT_LABOR_HOURS_MAX} step="0.25" value={laborHours} onChange={(event) => setLaborHours(event.target.value)} />
             </Field>
             <Field label="Nota (opcional)" htmlFor="ot-exit-note">
               <Textarea id="ot-exit-note" value={note} rows={2} maxLength={1000} onChange={(event) => setNote(event.target.value)} />

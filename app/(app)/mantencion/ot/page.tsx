@@ -19,8 +19,9 @@ import { allWorksitesLabel } from "@/lib/auth/worksite-label"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
 import { workOrderVisibility } from "@/lib/services/mantencion/work-orders/access"
 import {
-  listAssignableMechanics, listWorkOrderEquipmentOptions, listWorkOrders, listWorksiteMechanics, loadWorkOrderFilterOptions, type WorkOrderTab,
+  listAssignableMechanics, listExecutionWorksiteOptions, listWorkOrderEquipmentOptions, listWorkOrders, listWorksiteMechanics, loadWorkOrderFilterOptions, type WorkOrderTab,
 } from "@/lib/services/mantencion/work-orders/query"
+import { getOperationalSettings } from "@/lib/services/system-settings"
 import { todayInChile } from "@/lib/utils"
 import { OtExportButton } from "./ot-export-button"
 
@@ -74,13 +75,15 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
     redirect(`${PATHNAME}?${target.toString()}`)
   }
 
-  const [options, list, equipment, mechanics, worksiteMechanics] = await Promise.all([
+  const [options, list, equipment, mechanics, worksiteMechanics, executionWorksites, settings] = await Promise.all([
     loadWorkOrderFilterOptions(viewer),
     listWorkOrders(viewer, filters),
     listWorkOrderEquipmentOptions(viewer),
     canCreate && canManage ? listAssignableMechanics() : Promise.resolve(null),
     // Sin jefatura, la OT queda asignada al mecánico de la faena del equipo.
     canCreate && !canManage ? listWorksiteMechanics(viewer) : Promise.resolve(null),
+    canCreate ? listExecutionWorksiteOptions() : Promise.resolve([]),
+    getOperationalSettings(),
   ])
 
   const pagination = resolvePagination({ pageParam: String(filters.page), totalItems: list.total, pageSize: filters.pageSize })
@@ -99,6 +102,8 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
     equipment,
     mechanics,
     worksiteMechanics,
+    worksites: executionWorksites,
+    actionTypeRequired: settings.mantencionActionTypeRequired === 1,
     today: todayInChile(),
     defaultRequesterName: session.user.name ?? "",
   }

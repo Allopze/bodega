@@ -13,7 +13,8 @@ import { buildXlsxBuffer } from "@/lib/reports/export-module/excel-builder"
 import type { ReportCell, ReportData, ReportSheet } from "@/lib/reports/export-module/types"
 import { todayInChile } from "@/lib/utils"
 import { viewerFromSession } from "../access"
-import { workOrdersWhere, type WorkOrderListFilters } from "./query"
+import { ACTION_TYPE_LABELS, SPECIALTY_LABELS, workOrderActionType } from "@/lib/mantencion/action-type"
+import { daysStopped, specialtiesOf, workOrdersWhere, type WorkOrderListFilters } from "./query"
 
 /**
  * Libro «Órdenes de trabajo»: la hoja principal (una fila por OT), «Ítems» e
@@ -28,6 +29,8 @@ export type WorkOrderExportOutcome =
   | { ok: true; data: { base64: string; filename: string; truncated: boolean; rowLimit: number } }
   | { ok: false; message: string }
 
+/** En el libro, «No informado» (no «Sin clasificar») cuando no se puede saber: así lo pide Trinorma para las OT anteriores. */
+const ACTION_TYPE_LABELS_EXPORT = { ...ACTION_TYPE_LABELS, sin_clasificar: "No informado" } as const
 const yesNo = (value: boolean) => (value ? "Sí" : "No")
 const EVENT_LABELS: Record<OtEventType, string> = {
   created: "Creada",
@@ -58,12 +61,14 @@ export async function exportWorkOrders(input: {
 
   const requester = alias(users, "requester")
   const assignee = alias(users, "assignee")
+  const executionWorksite = alias(worksites, "execution_worksite")
   const rows = await db
-    .select({ ot: mantWorkOrders, worksiteName: worksites.name, requestedByName: requester.name, assignedToName: assignee.name })
+    .select({ ot: mantWorkOrders, worksiteName: worksites.name, requestedByName: requester.name, assignedToName: assignee.name, executionWorksiteName: executionWorksite.name })
     .from(mantWorkOrders)
     .innerJoin(worksites, eq(worksites.id, mantWorkOrders.worksiteId))
     .innerJoin(requester, eq(requester.id, mantWorkOrders.requestedByUserId))
     .leftJoin(assignee, eq(assignee.id, mantWorkOrders.assignedToUserId))
+    .leftJoin(executionWorksite, eq(executionWorksite.id, mantWorkOrders.executionWorksiteId))
     .where(where)
     .orderBy(desc(mantWorkOrders.createdAt), asc(mantWorkOrders.id))
     .limit(WORK_ORDERS_EXPORT_LIMIT + 1)
@@ -92,7 +97,7 @@ export async function exportWorkOrders(input: {
   }
   const leadHeaders = ["Folio", "Faena", "Equipo", "Patente"]
 
-  const otRows: ReportCell[][] = kept.map(({ ot, worksiteName, requestedByName, assignedToName }) => [
+  const otRows: ReportCell[][] = kept.map(({ ot, worksiteName, requestedByName, assignedToName, executionWorksiteName }) => [
     ot.folio,
     OT_STATUS_LABELS[ot.status as OtStatus],
     worksiteName,
@@ -124,12 +129,20 @@ export async function exportWorkOrders(input: {
     ot.rejectionCount,
     ot.voidReason ?? "",
     excelDateTime(ot.createdAt),
+    // Trinorma R4: al final, para no mover las columnas que ya conocen quienes usan el libro.
+    ACTION_TYPE_LABELS_EXPORT[workOrderActionType(ot)],
+    specialtiesOf(ot.specialties).map((specialty) => SPECIALTY_LABELS[specialty]).join(", "),
+    ot.laborHours,
+    daysStopped(ot.workshopEntryAt, ot.workshopExitAt),
+    executionWorksiteName ?? "",
+    ot.workPerformed ?? "",
   ])
   const otHeaders = [
     "Folio", "Estado", "Faena", "Equipo", "Patente", "Tipo de equipo", "Reparación", "Mantención", "Fecha de la orden", "Solicitante", "Creada por",
     "Mecánico", "Reparación solicitada", "Observaciones", "Taller", "Nombre del taller", "Encargado del taller", "Operador",
     "Ingreso a taller", "Lectura de ingreso", "Unidad", "Entrega estimada", "Salida de taller", "Recepción del equipo", "Recibió", "Conformidad en faena",
     "Recibió en faena", "Cerrada", "Veces devuelta", "Motivo de anulación", "Creada",
+    "Tipo de acción", "Especialidades", "Horas hombre", "Días detenido", "Faena de ejecución", "Trabajo realizado",
   ]
 
   const sheets: ReportSheet[] = [
@@ -166,7 +179,7 @@ export async function exportWorkOrders(input: {
     worksheetName: "Órdenes de trabajo",
     headers: otHeaders,
     rows: otRows,
-    columnFormats: { 8: EXCEL_DATE_FORMAT, 18: EXCEL_DATETIME_FORMAT, 19: "#,##0.0", 21: EXCEL_DATE_FORMAT, 22: EXCEL_DATETIME_FORMAT, 23: EXCEL_DATETIME_FORMAT, 25: EXCEL_DATETIME_FORMAT, 27: EXCEL_DATETIME_FORMAT, 30: EXCEL_DATETIME_FORMAT },
+    columnFormats: { 8: EXCEL_DATE_FORMAT, 18: EXCEL_DATETIME_FORMAT, 19: "#,##0.0", 21: EXCEL_DATE_FORMAT, 22: EXCEL_DATETIME_FORMAT, 23: EXCEL_DATETIME_FORMAT, 25: EXCEL_DATETIME_FORMAT, 27: EXCEL_DATETIME_FORMAT, 30: EXCEL_DATETIME_FORMAT, 33: "#,##0.00" },
     sheets,
     rowLimitApplied: truncated,
   }

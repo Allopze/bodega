@@ -181,7 +181,7 @@ export async function applyChange(
   ctx: LockedContext,
   patch: OtPatch,
   events: EventSpec[],
-  audit: { action?: "update" | "status_change"; reason?: string | null } = {},
+  audit: { action?: "update" | "status_change"; reason?: string | null; oldState?: Record<string, unknown>; newState?: Record<string, unknown> } = {},
 ): Promise<OtRow> {
   const { tx, ot, actor } = ctx
   const [row] = await tx
@@ -210,8 +210,8 @@ export async function applyChange(
     entityId: ot.id,
     entityCode: ot.folio,
     worksiteId: ot.worksiteId,
-    oldState: { status: ot.status, version: ot.version },
-    newState: { status: row.status, version: row.version, events: events.map((event) => event.type) },
+    oldState: { status: ot.status, version: ot.version, ...audit.oldState },
+    newState: { status: row.status, version: row.version, events: events.map((event) => event.type), ...audit.newState },
     reason: audit.reason ?? undefined,
   }, tx)
   return row

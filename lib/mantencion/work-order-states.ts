@@ -58,6 +58,8 @@ export const OT_ITEM_KIND_LABELS: Record<OtItemKind, string> = {
 }
 /** Máximo de ítems por lista, como el talonario. */
 export const OT_ITEM_MAX_PER_KIND = 12
+/** Tope de las horas hombre de una OT (Trinorma R4): un error de tipeo, no un trabajo real, pasa de esto. */
+export const OT_LABOR_HOURS_MAX = 10_000
 
 export const OT_ITEM_ORIGINS = ["solicitud", "taller"] as const
 export type OtItemOrigin = (typeof OT_ITEM_ORIGINS)[number]

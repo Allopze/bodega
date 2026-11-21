@@ -11,7 +11,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace: vi.fn(), 
 vi.mock("@/app/(app)/mantencion/ot/actions", () => ({ createWorkOrderAction: (...args: unknown[]) => createWorkOrderAction(...args) }))
 vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 
-const { NewWorkOrderCta, buildCreatePayload } = await import("./new-ot-sheet")
+const { NewWorkOrderCta, buildCreatePayload, checksForActionType } = await import("./new-ot-sheet")
 
 const EQUIPMENT = [
   { id: "veh-1", code: "KA-135", plate: "RBYD-98", typeName: "Camión", worksiteId: "ws-1", worksiteName: "Biodiversa", unit: "km" as const },
@@ -136,11 +136,57 @@ describe("buildCreatePayload", () => {
   const values = {
     vehicleId: "veh-1", repair: false, maintenance: true, requestDate: "2026-11-02", requesterName: "  Ana  ", repairDescription: "ignorada", observations: "  ",
     annexItems: ["x"], maintenanceItems: [" Cambio de aceite ", "", "  "], assignedToUserId: "",
+    actionType: "" as const, specialties: [] as never[], executionWorksiteId: "",
   }
   it("descarta la reparación si no se marcó, recorta textos y quita líneas vacías", () => {
     expect(buildCreatePayload(values, "cid")).toEqual({
       clientRequestId: "cid", vehicleId: "veh-1", repair: false, maintenance: true, requestDate: "2026-11-02", requesterName: "Ana", repairDescription: null,
       observations: null, annexItems: ["x"], maintenanceItems: ["Cambio de aceite"], assignedToUserId: null,
+      actionType: null, specialties: [], executionWorksiteId: null,
     })
+  })
+
+  it("lleva el tipo de acción, las especialidades y la faena de ejecución", () => {
+    expect(buildCreatePayload({ ...values, actionType: "preventiva", specialties: ["mecanica", "soldadura"], executionWorksiteId: "ws-2" }, "cid")).toMatchObject({
+      actionType: "preventiva", specialties: ["mecanica", "soldadura"], executionWorksiteId: "ws-2",
+    })
+  })
+
+  it("el tipo prellena las casillas: correctiva = reparación; preventiva y predictiva = mantención", () => {
+    expect(checksForActionType("correctiva")).toEqual({ repair: true, maintenance: false })
+    expect(checksForActionType("preventiva")).toEqual({ repair: false, maintenance: true })
+    expect(checksForActionType("predictiva")).toEqual({ repair: false, maintenance: true })
+  })
+})
+
+describe("clasificación Trinorma en el formulario", () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(cleanup)
+
+  it("muestra la faena de imputación del equipo (no editable) y marca el tipo como obligatorio con el interruptor", async () => {
+    render(<NewWorkOrderCta {...BASE} actionTypeRequired worksites={[{ id: "ws-1", name: "Biodiversa" }, { id: "ws-2", name: "Santa Fe" }]} />)
+    const sheet = await openSheet()
+    fireEvent.focus(sheet.getByRole("combobox", { name: /Equipo/ }))
+    fireEvent.mouseDown(await screen.findByRole("option", { name: /KA-135 · RBYD-98/ }))
+    const imputation = sheet.getByRole("textbox", { name: /Faena de imputación/ }) as HTMLInputElement
+    expect(imputation.value).toBe("Biodiversa")
+    expect(imputation.readOnly).toBe(true)
+    expect(sheet.getByText("Tipo de acción").parentElement?.textContent).toContain("*")
+    expect(sheet.getByText("Faena de ejecución (opcional)")).toBeTruthy()
+  })
+
+  it("las especialidades viajan en el payload", async () => {
+    createWorkOrderAction.mockResolvedValue({ ok: false, message: "x" })
+    render(<NewWorkOrderCta {...BASE} />)
+    const sheet = await openSheet()
+    fireEvent.focus(sheet.getByRole("combobox", { name: /Equipo/ }))
+    fireEvent.mouseDown(await screen.findByRole("option", { name: /EX-04/ }))
+    fireEvent.click(sheet.getByRole("checkbox", { name: "Eléctrica" }))
+    fireEvent.click(sheet.getByRole("checkbox", { name: "Mecánica" }))
+    fireEvent.click(sheet.getByRole("button", { name: "Crear orden" }))
+    await waitFor(() => expect(createWorkOrderAction).toHaveBeenCalled())
+    const payload = JSON.parse(String((createWorkOrderAction.mock.calls[0]![1] as FormData).get("payload")))
+    expect(payload.specialties).toEqual(["mecanica", "electrica"])
+    expect(payload.actionType).toBeNull()
   })
 })

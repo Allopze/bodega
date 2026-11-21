@@ -5,6 +5,7 @@ import {
   fuelEquipmentTypes, fuelVehicles, mantEquipmentProfiles, mantRecords, mantWorkOrderEvents, mantWorkOrderItems, mantWorkOrders,
   preventionInspectionFindings, users, worksites,
 } from "@/db/schema"
+import { SPECIALTIES, isActionType, workOrderActionType, type Specialty } from "@/lib/mantencion/action-type"
 import { daysBetween } from "@/lib/mantencion/readings"
 import {
   OT_OPEN_STATUSES, type OtEventType, type OtItemDone, type OtItemKind, type OtItemOrigin, type OtStatus, type OtWorkshopKind,
@@ -100,6 +101,18 @@ function daysInWorkshop(row: { status: string; workshopEntryAt: string | null; w
   return null
 }
 
+/** Días calendario (Chile) entre el ingreso y la salida de taller; null si falta alguno. Lo comparten el detalle, el PDF y el Excel. */
+export function daysStopped(entryAt: string | null, exitAt: string | null): number | null {
+  if (!entryAt || !exitAt) return null
+  return Math.max(0, daysBetween(todayInChile(entryAt), todayInChile(exitAt)))
+}
+
+/** Especialidades guardadas, sólo las conocidas y en orden canónico. */
+export function specialtiesOf(value: readonly string[] | null | undefined): Specialty[] {
+  const stored = new Set(value ?? [])
+  return SPECIALTIES.filter((specialty) => stored.has(specialty))
+}
+
 type ListSource = {
   id: string; folio: string; status: string; vehicleId: string; equipmentSnapshot: typeof mantWorkOrders.$inferSelect["equipmentSnapshot"]
   worksiteId: string; worksiteName: string; repair: boolean; maintenance: boolean; requestDate: string; requesterName: string
@@ -136,6 +149,7 @@ function toListRow(row: ListSource, today: string): WorkOrderListRow {
 }
 
 const assignee = alias(users, "assignee")
+const executionWorksite = alias(worksites, "execution_worksite")
 
 const listColumns = {
   id: mantWorkOrders.id,
@@ -233,6 +247,14 @@ export async function loadWorkOrderFilterOptions(viewer: MantViewer): Promise<Wo
 }
 
 /**
+ * Faenas activas para elegir la «Faena de ejecución» de una OT. No se recorta por alcance: el taller
+ * de otra faena puede atender equipos ajenos, y la faena de imputación sigue siendo la del equipo.
+ */
+export async function listExecutionWorksiteOptions(): Promise<Array<{ id: string; name: string }>> {
+  return db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name))
+}
+
+/**
  * Equipos del alcance de quien mira (un rol global o `view_all`, todos; si no, los de sus faenas).
  * Sirve al selector del alta y al filtro «Equipo» de la lista, también para roles de sólo lectura:
  * que pueda CREAR sobre ese equipo lo valida `createWorkOrder`, no esta lectura.
@@ -296,9 +318,10 @@ export async function loadWorkOrderEntryCatalogs(): Promise<{ workshops: Array<{
 /** `null` si no existe o está fuera del alcance (la página responde notFound). */
 export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promise<WorkOrderDetail | null> {
   const [head] = await db
-    .select({ ot: mantWorkOrders, worksiteName: worksites.name })
+    .select({ ot: mantWorkOrders, worksiteName: worksites.name, executionWorksiteName: executionWorksite.name })
     .from(mantWorkOrders)
     .innerJoin(worksites, eq(worksites.id, mantWorkOrders.worksiteId))
+    .leftJoin(executionWorksite, eq(executionWorksite.id, mantWorkOrders.executionWorksiteId))
     .where(eq(mantWorkOrders.id, id))
     .limit(1)
   if (!head) return null
@@ -353,6 +376,14 @@ export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promi
     unit: ot.equipmentSnapshot.unit,
     repairDescription: ot.repairDescription,
     observations: ot.observations,
+    actionType: isActionType(ot.actionType) ? ot.actionType : null,
+    effectiveActionType: workOrderActionType(ot),
+    specialties: specialtiesOf(ot.specialties),
+    laborHours: ot.laborHours,
+    executionWorksiteId: ot.executionWorksiteId,
+    executionWorksiteName: head.executionWorksiteName ?? null,
+    workPerformed: ot.workPerformed,
+    daysStopped: daysStopped(ot.workshopEntryAt, ot.workshopExitAt),
     requestedByUserId: ot.requestedByUserId,
     requestedByName: nameOf(ot.requestedByUserId) ?? ot.requesterName,
     assignedByName: nameOf(ot.assignedByUserId),
