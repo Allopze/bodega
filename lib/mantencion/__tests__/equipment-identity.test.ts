@@ -16,6 +16,13 @@ describe("equipmentCodeKey", () => {
     expect(equipmentCodeKey(raw)).toBe(key)
   })
 
+  it("calca la expresión del índice SQL, también con letras no ASCII", () => {
+    // regexp_replace(upper(regexp_replace(code, '[^A-Za-z0-9]', '', 'g')), '^([A-Z]+)0+([0-9])', '\1\2')
+    const sql = (code: string) => code.replace(/[^A-Za-z0-9]/g, "").toUpperCase().replace(/^([A-Z]+)0+([0-9])/, "$1$2")
+    for (const code of ["CAÑ-10", "CAN-10", "ká-071", "KRR-010", "T.O 38", "H-4"]) expect(equipmentCodeKey(code)).toBe(sql(code))
+    expect(equipmentCodeKey("CAÑ-10")).not.toBe(equipmentCodeKey("CAN-10"))
+  })
+
   it("no confunde un cero que no está a la izquierda", () => {
     expect(equipmentCodeKey("GR-10")).toBe("GR10")
     expect(equipmentCodeKey("GR-100")).not.toBe(equipmentCodeKey("GR-10"))

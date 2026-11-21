@@ -6,9 +6,10 @@
  * mismo equipo de muchas formas: «Ka-128», «TO.38», «KRR-010», «SJFC66»,
  * «SR-CJ-44». Para compararlos:
  *
- * - código: mayúsculas, sólo letras y dígitos, y sin ceros a la izquierda en la
- *   parte numérica que sigue a las letras («KRR-010» = «KRR-10» = «krr10»).
- *   Es exactamente la expresión del índice único; si cambia una, cambia la otra.
+ * - código: sólo letras y dígitos ASCII, mayúsculas, y sin ceros a la izquierda
+ *   en la parte numérica que sigue a las letras («KRR-010» = «KRR-10» = «krr10»).
+ *   Es la misma expresión del índice único, en el mismo orden; si cambia una,
+ *   cambia la otra (lo prueba `equipment-identity.test.ts` contra la expresión SQL).
  * - patente: mayúsculas, sólo letras y dígitos («SR-CJ-44» = «SRCJ44»). Los
  *   ceros de una patente sí importan, no se quitan.
  *
@@ -26,9 +27,16 @@ function compactUpper(raw: string | null | undefined): string {
     .replace(ALNUM, "")
 }
 
-/** Clave de comparación de un código interno. Vacío → `""`. */
+/**
+ * Clave de comparación de un código interno. Vacío → `""`.
+ *
+ * Calca paso a paso la expresión del índice `fuel_vehicles_code_key_unique`:
+ * primero borra todo lo que no sea letra o dígito ASCII, después pasa a
+ * mayúsculas y quita los ceros a la izquierda de la parte numérica. Sin
+ * normalizar tildes: el índice no lo hace, y una «Ñ» se borra en los dos lados.
+ */
 export function equipmentCodeKey(raw: string | null | undefined): string {
-  return compactUpper(raw).replace(/^([A-Z]+)0+([0-9])/, "$1$2")
+  return (raw ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().replace(/^([A-Z]+)0+([0-9])/, "$1$2")
 }
 
 /** Clave de comparación de una patente. Vacío → `""`. */

@@ -12,21 +12,9 @@ import { cleanName, findByNameKey } from "@/lib/mantencion/normalize"
  * imputa a la faena de origen.
  */
 
-export const FLEET_OWNER_KINDS = ["propia", "relacionada", "financiera", "tercero"] as const
-export type FleetOwnerKind = (typeof FLEET_OWNER_KINDS)[number]
+import { FLEET_OWNER_KIND_LABELS, FLEET_OWNER_NAME_MAX_LENGTH, isFleetOwnerKind, type FleetOwnerKind } from "@/lib/fleet/fleet-owner-kinds"
 
-export const FLEET_OWNER_KIND_LABELS: Record<FleetOwnerKind, string> = {
-  propia: "Propia",
-  relacionada: "Relacionada",
-  financiera: "Financiera",
-  tercero: "Tercero",
-}
-
-export function isFleetOwnerKind(value: unknown): value is FleetOwnerKind {
-  return typeof value === "string" && (FLEET_OWNER_KINDS as readonly string[]).includes(value)
-}
-
-export const FLEET_OWNER_NAME_MAX_LENGTH = 120
+export { FLEET_OWNER_KINDS, FLEET_OWNER_KIND_LABELS, FLEET_OWNER_NAME_MAX_LENGTH, isFleetOwnerKind, type FleetOwnerKind } from "@/lib/fleet/fleet-owner-kinds"
 
 export interface FleetOwnerActor {
   userId: string | null

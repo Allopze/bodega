@@ -505,6 +505,11 @@ export async function parseConsolidatedWorkbook(buffer: ArrayBuffer | Uint8Array
       const category = text(row.get("CATEGORIA"))
       equipment.push({ rowNumber: row.rowNumber, code: text(row.get("ID_EQUIPO")), plate: text(row.get("PATENTE")), category, type: text(row.get("TIPO")), notEquipment: nameKey(category).startsWith("no es equipo") })
     }
+    // Hace auditable el rechazo de «lo que no es equipo»: cuántas filas de EQUIPOS lo son (sin copiar
+    // sus textos, que pueden ser nombres de personas). Las filas de mantención que apunten a ellas se
+    // cuentan como rechazadas en su hoja.
+    const notEquipmentRows = equipment.filter((row) => row.notEquipment).length
+    notes.push(`${CONSOLIDATED_SHEETS.equipment}: ${notEquipmentRows} de ${equipment.length} filas tienen categoría «No es equipo»; se usan para rechazar las filas de las otras hojas que las nombren.`)
   } else notes.push(`No se encontró la hoja ${CONSOLIDATED_SHEETS.equipment}: no se pudo clasificar lo que no es equipo ni cotejar la flota.`)
   const quality: ConsolidatedQualityRow[] = []
   const qualitySheet = sheetOf(CONSOLIDATED_SHEETS.quality)

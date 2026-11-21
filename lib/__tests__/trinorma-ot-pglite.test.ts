@@ -233,9 +233,14 @@ describe("término del trabajo: trabajo realizado y horas hombre", () => {
     expect(audits.some((audit) => stateOf(audit.newState).laborHours === 5.5)).toBe(true)
 
     const detail = await loadWorkOrderDetail(await viewerOf(IDS.jefe), id)
+    // Días detenido = días civiles de Chile entre ingreso (hace 2 h) y salida (hace 1 min): 0, salvo
+    // que la corrida caiga entre las 00:00 y las 02:00 de Chile, cuando el ingreso fue el día anterior.
+    const stored = await row(id)
+    const chileDay = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago" }).format(new Date(iso))
+    const expectedDays = chileDay(stored.workshopEntryAt!) === chileDay(stored.workshopExitAt!) ? 0 : 1
     expect(detail).toMatchObject({
       actionType: "correctiva", effectiveActionType: "correctiva", specialties: ["mecanica"], laborHours: 5.5,
-      workPerformed: "Se cambió la manguera", daysStopped: 0, executionWorksiteName: null,
+      workPerformed: "Se cambió la manguera", daysStopped: expectedDays, executionWorksiteName: null,
     })
   })
 

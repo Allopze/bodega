@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { toast } from "@/lib/toast"
-import { FLEET_OWNER_KINDS, FLEET_OWNER_KIND_LABELS, type FleetOwnerKind } from "@/lib/services/fleet-owners"
+import { FLEET_OWNER_KINDS, FLEET_OWNER_KIND_LABELS, type FleetOwnerKind } from "@/lib/fleet/fleet-owner-kinds"
 import { saveVehicleOwnershipAction } from "../../actions"
 import { loadVehicleOwnershipAction, type VehicleOwnershipPayload } from "./edit-vehicle-action"
 

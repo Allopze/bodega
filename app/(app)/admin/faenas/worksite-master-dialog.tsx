@@ -9,7 +9,7 @@ import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useOperation } from "@/lib/hooks/use-operation"
-import { WORKSITE_KINDS, WORKSITE_KIND_LABELS, type WorksiteKind } from "@/lib/services/worksite-kind"
+import { WORKSITE_KINDS, WORKSITE_KIND_LABELS, type WorksiteKind } from "@/lib/worksites/worksite-kind"
 import { addWorksiteAliasAction, removeWorksiteAliasAction, setWorksiteKindAction } from "./actions"
 
 export interface WorksiteMasterTarget {
