@@ -191,4 +191,12 @@ Esta lista es explícita a propósito: nada de esto debe darse por hecho al carg
 - `test:fast`: 1.433 archivos y 21.536 pruebas en verde. Fallaban 2 casos de `app/(app)/mantencion/equipos/actions.test.ts`, que esperaban la forma vieja de la entrada del plan; se corrigieron y se agregó un caso para la sección de la declarada (5 de 5).
 - `test:pglite`: 434 archivos y 5.556 pruebas en verde. Falla solo `module-toggles`, que viene de antes y no es de este trabajo: las rutas `/apps/recientes` y `/apps/visita` de TI.
 - `db:verify-migrations`: 400 entradas hasta la 0399, con los checksums verificados.
-- **No se corrió la E2E** sobre estos commits. Los recorridos de la ficha, el formulario, el Panel, el PDF y los Excel se verificaron a mano en el navegador (arriba).
+- **E2E** (22-11), aislada en un worktree desechable con base `bodega_e2e_trinorma` y puerto 3150:
+  - **Primera pasada:** 18 specs de las áreas tocadas (Mantención, indicadores, Control operacional, Flota, traslados, contratos por faena, densidad de KPI y tablero). Pasaron 139.
+  - **Fallaron 6, por tres causas:**
+    - 3 por la regla nueva: los datos E2E dejaban tres camiones a 39.900 km sin preventiva, que ahora salen «sin información de preventiva» y no «próximos». Se corrigió la siembra dándoles una preventiva declarada a los 30.000 km.
+    - 1 por la concesión del administrador de contrato (d4156824c): la spec de OT esperaba «sin acceso para abrirlo». Se actualizó.
+    - 2 por el aviso `POST /api/apps/visita` abortado, que es de TI y ya estaba en `main`.
+  - **Segunda pasada:** las 10 specs de Mantención. Pasaron 59; quedaron las 2 del aviso de TI y 2 por interferencia entre los 2 procesos en paralelo sobre la misma base.
+  - **Tercera pasada:** con un solo proceso, la app del mecánico y la OT pasaron completas (16 de 16).
+  - **Resultado:** solo queda la falla del aviso de visitas de TI, que no es de este trabajo.
