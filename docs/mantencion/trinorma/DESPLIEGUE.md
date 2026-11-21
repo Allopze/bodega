@@ -13,15 +13,18 @@ Rama `feat/mantencion-trinorma`, sobre `main` a47271fd3, que ya incluye la 0397 
 | WP1 | Tipo y alias de faena, empresa propietaria y «ubicación por confirmar»; `scripts/apply-trinorma-maestros.ts` |
 | WP4 | Panel de mantención con el historial: trabajos por tipo, días en taller, horas hombre, pautas, hallazgos, filtro por equipo, Excel y PDF por faena |
 | WP2 | Importador del consolidado: `scripts/import-consolidado-mantencion.ts` |
+| 0399 | Preventiva declarada anterior a la plataforma (opción A del usuario, 21-11): migración `0399_fixed_dreadnoughts`, estado «sin información de preventiva», validaciones del servidor, ficha, formulario, exportaciones y `scripts/apply-trinorma-lecturas-preventivas.ts` |
 
-**Migraciones.** Producción está en la 0396. Este deploy aplica la **0397** (uso personal) y la **0398**. La 0398 es aditiva:
+**Migraciones.** Producción está en la 0396 (397 migraciones, verificado el 21-11). Este deploy aplica la **0397** (uso personal), la **0398** y la **0399**, en el mismo deploy. Las dos últimas son aditivas:
 
 - tablas nuevas;
 - columnas nulas o con valor por defecto;
 - índices y CHECK;
 - sin DROP.
 
-Se aplicó sin errores sobre un clon de producción del 21-11. Eso incluye el índice único de código de equipo: producción no tiene códigos duplicados.
+Probadas el 21-11 sobre una copia limpia de producción (el respaldo de ese día, restaurado en `bodega_prodtest_0399`): las tres entraron sin errores (397 → 400) con el camino completo de `npm run db:migrate`, y el índice único de código se creó porque no hay duplicados. La consulta de duplicados en producción, en solo lectura, dio 0 filas el mismo 21-11.
+
+**Cambio visible del estado de las pautas.** Un equipo con pauta y lectura que no tiene ninguna preventiva (firmada ni declarada) y ya pasó el primer servicio queda «Sin información de preventiva», ya no «al día» por convención. Un equipo nuevo que todavía no llega al primer servicio sigue calculando la próxima en la base. Hoy no cambia nada a la vista en producción: ningún equipo tiene lectura.
 
 **Permisos.** No hay permisos nuevos. Sí hay una concesión nueva, decidida por el usuario el 2026-11-21: el administrador de contrato recibe `mant:records:view_worksite` y `mant:export`, es decir, ve y exporta el Panel, los registros, el historial y los equipos de **sus** faenas. Va en `GRANT_ADDITIONS` y la aplica una sola vez el paso `sync-rbac` que `deploy-prod.sh` ya corre.
 
@@ -59,16 +62,18 @@ Se aplicó sin errores sobre un clon de producción del 21-11. Eso incluye el í
 
 ## 3. Deploy
 
-Lo corre el usuario con `scripts/deploy-prod.sh`. El servicio `migrate` aplica la 0397 y la 0398.
+Lo corre el usuario con `scripts/deploy-prod.sh`. El servicio `migrate` aplica la 0397, la 0398 y la 0399.
 
 Verificación de solo lectura:
 
 ```sql
 BEGIN READ ONLY;
-SELECT count(*) FROM drizzle.__drizzle_migrations;                       -- 399
+SELECT count(*) FROM drizzle.__drizzle_migrations;                       -- 400
 SELECT indexname FROM pg_indexes WHERE indexname = 'fuel_vehicles_code_key_unique';
 SELECT count(*) FROM worksites WHERE kind = 'operacion';                 -- todas, hasta correr los maestros
 SELECT to_regclass('mant_historical_inspections');
+SELECT count(*) FROM information_schema.columns
+ WHERE table_name = 'mant_equipment_profiles' AND column_name LIKE 'prior_preventive%';  -- 6
 ROLLBACK;
 ```
 
@@ -182,6 +187,20 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
    ```
 
    Después, abrir `/mantencion/panel` con la faena Biodiversa y el período de junio de 2025 a noviembre de 2026. En el clon dio: 485 trabajos, 52 % de correctivas (189 de 366 clasificados), 121 días en taller y 1.670,5 horas hombre.
+
+7. **Pauta, lecturas y preventivas declaradas,** cuando vuelva la planilla del Jefe de Mantención (plazo: jueves 26-11):
+   1. **La pauta primero** (hoja 1). Si el Jefe la corrige, se cambia en la plataforma (Pautas) antes de cargar nada. El cargador no aplica sin `--pauta-confirmada`.
+   2. **Cargador, en simulación el mismo día que vuelva la planilla:**
+
+      ```
+      apply-trinorma-lecturas-preventivas.ts --file <planilla devuelta.xlsx> --actor-email <correo de quien carga> --declarada-por <correo del Jefe de Mantención> --pauta-confirmada --report <informe.md>
+      ```
+
+      Quien carga y quien declara tienen que tener `mant:equipment:manage` (jefatura de mantención o administración). Por equipo carga la lectura inicial y la preventiva declarada **juntas**. Para cargarla, el Jefe tiene que haber elegido «Confirma» o «Corrige», indicado el servicio de pauta y puesto un respaldo. Sin respaldo, el equipo va al listado de pendientes y no se le carga nada, ni siquiera la lectura.
+
+      Para Arauco usa la lectura de noviembre de la hoja 3, si viene. La nota de la planilla (KCH-129, detenido) queda en la fuente y en el historial.
+   3. **`--apply`** con la autorización del usuario, **a más tardar el 29-11**, para tener dos días de margen. Después, revisar el Panel de Biodiversa, su PDF y su Excel: la preventiva declarada se ve como «Declarada, anterior a la plataforma» con su respaldo, y los equipos sin preventiva como «Sin información de preventiva».
+   4. **Congelar cambios** en Mantención hasta la auditoría del 01-12.
 
 ## 5. Reversión
 

@@ -3,6 +3,7 @@ import type { Session } from "next-auth"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { EQUIPMENT_STATE_LABEL } from "@/lib/mantencion/format"
+import { preventiveOriginLabel } from "@/lib/mantencion/preventive-origin"
 import { stateRank } from "@/lib/mantencion/status"
 import { EXCEL_DATE_FORMAT, excelPlainDate } from "@/lib/reports/excel-dates"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
@@ -56,6 +57,8 @@ const COLUMNS: Array<{ header: string; key: string; width: number; numeric?: boo
   { header: "Intervalo que toca", key: "nextInterval", width: 18, numeric: true },
   { header: "Última preventiva (lectura)", key: "lastReading", width: 25, numeric: true },
   { header: "Fecha de la última preventiva", key: "lastDate", width: 27, date: true },
+  { header: "Origen de la última preventiva", key: "lastOrigin", width: 34 },
+  { header: "Respaldo", key: "lastEvidence", width: 24 },
   { header: "En taller", key: "workshop", width: 10 },
 ]
 
@@ -80,6 +83,9 @@ function rowValues(row: FleetRow) {
     nextInterval: status.nextIntervalValue,
     lastReading: status.lastPreventive?.reading ?? null,
     lastDate: excelPlainDate(status.lastPreventive?.date),
+    // La declarada (anterior a la plataforma) nunca sale como firmada: rótulo y respaldo (folio en la firmada).
+    lastOrigin: preventiveOriginLabel(status.lastPreventive),
+    lastEvidence: status.lastPreventive?.evidence?.trim() || "",
     workshop: row.workshop ? "Sí" : "No",
   }
 }

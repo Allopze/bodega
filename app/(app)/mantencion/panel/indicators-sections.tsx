@@ -274,11 +274,13 @@ export function WorkOrdersSection({
 // ── Sección 2: Pautas y disponibilidad ─────────────────────────────────────
 
 /** Estados que se dibujan en la barra de hoy: la flota activa (los dados de baja no cuentan). */
-const PAUTA_BAR_STATES = ["vencida", "proxima", "al_dia", "sin_lecturas", "sin_pauta"] as const satisfies readonly MantEquipmentState[]
+const PAUTA_BAR_STATES = ["vencida", "proxima", "sin_preventiva", "al_dia", "sin_lecturas", "sin_pauta"] as const satisfies readonly MantEquipmentState[]
 
 const PAUTA_COLOR: Record<(typeof PAUTA_BAR_STATES)[number], string> = {
   vencida: CHART_COLORS.danger,
   proxima: CHART_COLORS.signal,
+  // Sin información de preventiva: no se sabe cuándo toca, no es «al día»; mismo tono neutro que «sin lecturas».
+  sin_preventiva: CHART_COLORS.neutral,
   al_dia: CHART_COLORS.brand,
   sin_lecturas: CHART_COLORS.neutral,
   sin_pauta: CHART_COLORS.slate,
@@ -360,7 +362,7 @@ export function PautasSection({
               valueKind: compliance.percent === null ? "text" : "number",
               secondary: compliance.percent === null
                 ? "Aún no hay equipos con pauta"
-                : `${formatQty(compliance.onTime)} de ${plural(compliance.withSchedule, "equipo con pauta", "equipos con pauta")}${pautas.counts.sin_lecturas > 0 ? ` · ${pautas.counts.sin_lecturas} sin lecturas` : ""} · hoy`,
+                : `${formatQty(compliance.onTime)} de ${plural(compliance.withSchedule, "equipo con pauta", "equipos con pauta")}${pautas.counts.sin_lecturas > 0 ? ` · ${pautas.counts.sin_lecturas} sin lecturas` : ""}${pautas.counts.sin_preventiva > 0 ? ` · ${pautas.counts.sin_preventiva} sin información de preventiva` : ""} · hoy`,
               tone: pautas.counts.vencida > 0 ? "signal" : undefined,
               href: pautas.counts.vencida > 0 ? equiposHref({ estado: "vencida" }) : equiposHref({}),
             }

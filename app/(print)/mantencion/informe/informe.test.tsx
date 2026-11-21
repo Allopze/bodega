@@ -62,6 +62,14 @@ describe("informe del Panel de mantención (PDF)", () => {
     expect(screen.getByText(/no es el semáforo de la plataforma/i)).toBeTruthy()
   })
 
+  it("«Sin información de preventiva» sale como estado propio y con su aviso, sin contarse como al día", async () => {
+    const { InformeDocument } = await import("./informe-document")
+    const base = report()
+    render(<InformeDocument data={report({ pautas: { ...base.pautas!, counts: { ...base.pautas!.counts, sin_preventiva: 3, al_dia: 1 } } })} logoSrc="/chome_logo.svg" />)
+    expect(screen.getByRole("cell", { name: "Sin información de preventiva" }).nextElementSibling?.textContent).toBe("3")
+    expect(screen.getByText(/3 equipos están sin información de preventiva/)).toBeTruthy()
+  })
+
   it("una consulta caída se imprime como «no disponible», nunca como cero", async () => {
     const { InformeDocument } = await import("./informe-document")
     render(<InformeDocument data={report({ work: null, findings: null, degraded: ["trabajos de mantención"] })} logoSrc="/chome_logo.svg" />)

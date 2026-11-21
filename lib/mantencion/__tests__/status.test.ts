@@ -3,7 +3,7 @@ import {
   equipmentStatus, findDuplicatePreventive, newerPreventive, NEXT_THRESHOLD, stateRank, WORKSHOP_UPDATE_DAYS, workshopState,
   type PreventiveRef, type StatusInput,
 } from "../status"
-import { MANT_EQUIPMENT_STATES, type MantReading } from "../types"
+import { MANT_EQUIPMENT_STATES, type MantPreventiveSummary, type MantReading } from "../types"
 
 const KM = [10_000, 20_000, 40_000, 80_000, 160_000]
 const HORAS = [300, 600, 900, 1_200]
@@ -121,27 +121,27 @@ describe("regla 6 · estado de mantención", () => {
 })
 
 describe("la preventiva que manda: firmada contra declarada (Trinorma, 2026-11-21)", () => {
-  const declared = { reading: 414_394, date: "2026-08-20", intervalValue: 40_000, origin: "declarada" as const, evidence: "OT 35513" }
+  const declared: MantPreventiveSummary = { reading: 414_394, date: "2026-08-20", intervalValue: 40_000, origin: "declarada", evidence: "OT 35513" }
 
   it("una firmada más antigua que la declarada: manda la declarada", () => {
-    const signed = { reading: 373_935, date: "2026-04-24", intervalValue: 40_000, origin: "firmada" as const, evidence: "MP-BIO-0001" }
+    const signed: MantPreventiveSummary = { reading: 373_935, date: "2026-04-24", intervalValue: 40_000, origin: "firmada", evidence: "MP-BIO-0001" }
     expect(newerPreventive(signed, declared)).toBe(declared)
   })
 
   it("una firmada más nueva que la declarada: manda la firmada", () => {
-    const signed = { reading: 454_100, date: "2026-12-10", intervalValue: 40_000, origin: "firmada" as const, evidence: "MP-BIO-0002" }
+    const signed: MantPreventiveSummary = { reading: 454_100, date: "2026-12-10", intervalValue: 40_000, origin: "firmada", evidence: "MP-BIO-0002" }
     expect(newerPreventive(signed, declared)).toBe(signed)
   })
 
   it("misma fecha: manda la de mayor lectura", () => {
-    const signed = { reading: 414_500, date: "2026-08-20", intervalValue: 40_000, origin: "firmada" as const, evidence: "MP-BIO-0003" }
+    const signed: MantPreventiveSummary = { reading: 414_500, date: "2026-08-20", intervalValue: 40_000, origin: "firmada", evidence: "MP-BIO-0003" }
     expect(newerPreventive(declared, signed)).toBe(signed)
     expect(newerPreventive(signed, { ...declared, reading: 414_600 })).toEqual({ ...declared, reading: 414_600 })
   })
 
   it("un equipo sin ninguna preventiva: no hay preventiva y el estado es «sin información de preventiva»", () => {
     expect(newerPreventive(null, null)).toBeNull()
-    expect(equipmentStatus(input({ readings: [reading(435_410)], lastPreventive: newerPreventive(null, null) })).state).toBe("sin_preventiva")
+    expect(equipmentStatus(input({ readings: [reading(435_410)], lastPreventive: newerPreventive<MantPreventiveSummary>(null, null) })).state).toBe("sin_preventiva")
   })
 
   it("con una sola de las dos, manda esa", () => {

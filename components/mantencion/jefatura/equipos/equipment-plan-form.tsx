@@ -32,6 +32,7 @@ export function EquipmentPlanForm({
   schedules,
   initial,
   readingLocked,
+  extra,
   onCancel,
   onSaved,
 }: {
@@ -41,6 +42,8 @@ export function EquipmentPlanForm({
   schedules: EquipmentFormCatalogs["schedules"]
   initial: EquipmentPlanFormValues
   readingLocked: boolean
+  /** Una sección más dentro del mismo `<form>` (la preventiva declarada), con los errores por campo y la pauta elegida. */
+  extra?: (context: { error: (field: string) => string | undefined; scheduleId: string }) => React.ReactNode
   onCancel: () => void
   onSaved: () => void
 }) {
@@ -68,6 +71,7 @@ export function EquipmentPlanForm({
         <EquipmentPlanFields unit={unit} schedules={schedules} values={values} readingLocked={readingLocked} error={error} onChange={patch} />
       </div>
       <EquipmentStatusFields retired={values.retired} reason={values.retiredReason} error={error("retiredReason")} onChange={patch} />
+      {extra?.({ error, scheduleId: values.scheduleId })}
       <div className="mt-6 flex flex-wrap gap-2">
         <SubmitButton label="Guardar cambios" loadingLabel="Guardando…" />
         <Button type="button" variant="secondary" onClick={onCancel}>Cancelar</Button>

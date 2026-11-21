@@ -13,6 +13,7 @@ import { updateEquipmentPlanAction } from "@/app/(app)/mantencion/equipos/action
 import { exportEquipmentHistoryAction } from "@/app/(app)/mantencion/equipos/[id]/actions"
 import { toast } from "@/lib/toast"
 import { EquipmentPlanForm } from "./equipment-plan-form"
+import { EMPTY_PRIOR_PREVENTIVE, EquipmentPriorPreventiveFields } from "./equipment-prior-preventive-fields"
 import { EquipmentHistoryList } from "./equipment-history-list"
 import { EquipmentInsuranceCard, insuranceNeedsAttention } from "./equipment-insurance-card"
 import { EquipmentLifeSection } from "./equipment-life-section"
@@ -116,6 +117,15 @@ export function EquipmentDetailView({
               schedules={edit.schedules}
               initial={edit.initial}
               readingLocked={data.recordCount > 0}
+              extra={({ error, scheduleId }) => (
+                <EquipmentPriorPreventiveFields
+                  unit={data.unit}
+                  intervals={scheduleId ? (edit.scheduleIntervals?.[scheduleId] ?? []) : []}
+                  hasSchedule={Boolean(scheduleId)}
+                  initial={edit.priorPreventive ?? EMPTY_PRIOR_PREVENTIVE}
+                  error={error}
+                />
+              )}
               onCancel={() => setEditing(false)}
               onSaved={() => setEditing(false)}
             />

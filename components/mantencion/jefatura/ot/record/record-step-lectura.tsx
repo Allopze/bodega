@@ -1,5 +1,6 @@
 "use client"
 
+import { isDeclaredPreventive, PRIOR_PREVENTIVE_LABEL, preventiveSupportText } from "@/lib/mantencion/preventive-origin"
 import * as React from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -77,7 +78,7 @@ function PautaPanel({ draft, dispatch, row, analysis }: { draft: FlowDraft; disp
       <p className="mt-1 text-[var(--color-text-muted)]">
         {manual
           ? `Elegida a mano. Por la lectura correspondía la de ${formatReading(suggestion.intervalValue, unit)}.`
-          : `Lectura ${formatReading(value, unit)} → toca la de ${formatReading(intervalValue, unit)}${last ? ` (última preventiva: ${formatReading(last.intervalValue, unit)}, ${formatDate(last.date)})` : ""}.`}
+          : `Lectura ${formatReading(value, unit)} → toca la de ${formatReading(intervalValue, unit)}${last ? ` (${lastPreventiveLabel(last)}: ${formatReading(last.intervalValue, unit)}, ${formatDate(last.date)}${preventiveSupportText(last) ? `; ${preventiveSupportText(last)!.toLowerCase()}` : ""})` : ""}.`}
       </p>
       {open ? (
         <div className="mt-2 flex flex-col gap-3">
@@ -187,4 +188,9 @@ export function RecordStepLectura({ draft, dispatch, row, onConfirm }: {
       </Field>
     </div>
   )
+}
+
+/** «última preventiva» o, si es la declarada, «última preventiva declarada, anterior a la plataforma»: nunca parece una firmada. */
+function lastPreventiveLabel(last: Parameters<typeof isDeclaredPreventive>[0]) {
+  return isDeclaredPreventive(last) ? `última preventiva ${PRIOR_PREVENTIVE_LABEL.toLowerCase()}` : "última preventiva"
 }

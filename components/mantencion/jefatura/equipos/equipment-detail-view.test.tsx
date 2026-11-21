@@ -159,3 +159,61 @@ describe("ficha del equipo: crear una orden de trabajo y el enlace a Flota", () 
     expect(screen.queryByRole("button", { name: "Editar mantención" })).toBeNull()
   })
 })
+
+describe("ficha del equipo: preventiva declarada, anterior a la plataforma", () => {
+  const prior = { date: "2026-03-10", reading: 60_000, intervalValue: 20_000, evidence: "OT-1234", declaredByName: "Marta Rojas", source: "Editar mantención" }
+
+  it("si manda la declarada, dice «Declarada, anterior a la plataforma», el respaldo y quién la declaró; nunca un folio", () => {
+    render(view({
+      status: { ...data().status, lastPreventive: { reading: 60_000, date: "2026-03-10", intervalValue: 20_000, origin: "declarada", evidence: "OT-1234" } },
+      priorPreventive: prior,
+    }))
+    expect(screen.getByText("Declarada, anterior a la plataforma")).toBeDefined()
+    expect(screen.getByText(/Respaldo: OT-1234/)).toBeDefined()
+    expect(screen.getByText(/Declarada por Marta Rojas/)).toBeDefined()
+    expect(screen.queryByText(/Folio/)).toBeNull()
+    expect(screen.queryByText("Preventiva declarada")).toBeNull()
+  })
+
+  it("la firmada muestra su folio y, si hay una declarada guardada que ya no manda, ésta sale aparte y rotulada", () => {
+    render(view({
+      status: { ...data().status, lastPreventive: { reading: 80_000, date: "2026-09-29", intervalValue: 40_000, origin: "firmada", evidence: "MANT-BIO-0012" } },
+      priorPreventive: prior,
+    }))
+    expect(screen.getByText("Folio MANT-BIO-0012")).toBeDefined()
+    expect(screen.getByText("Preventiva declarada")).toBeDefined()
+    expect(screen.getByText("Declarada, anterior a la plataforma")).toBeDefined()
+    expect(screen.getByText(/Respaldo: OT-1234/)).toBeDefined()
+  })
+
+  it("«Editar mantención» trae la sección con lo guardado, el servicio de la pauta y la marca de que la sección viene", () => {
+    const edit = {
+      schedules: [{ id: "s1", name: "Camiones y tractos", unit: "km" as const, intervalCount: 2 }],
+      initial: { scheduleId: "s1", initialReading: "90.000", initialReadingDate: "2026-09-01", retired: false, retiredReason: "" },
+      scheduleIntervals: { s1: [20_000, 40_000] },
+      priorPreventive: { date: "2026-03-10", reading: "60.000", interval: "20000", evidence: "OT-1234" },
+    }
+    render(<EquipmentDetailView data={data({ priorPreventive: prior })} edit={edit} canSeeSchedules={false} canExport={false} justCreated={false} header={HEADER} />)
+    fireEvent.click(screen.getByRole("button", { name: "Editar mantención" }))
+    const form = screen.getByRole("form", { name: "Editar mantención" })
+    expect(within(form).getByText("Preventiva anterior a la plataforma (declarada)")).toBeDefined()
+    expect(within(form).getByText(/no un registro firmado/)).toBeDefined()
+    expect((form.querySelector('input[name="priorPreventiveForm"]') as HTMLInputElement).value).toBe("1")
+    expect((within(form).getByLabelText(/^Respaldo/) as HTMLInputElement).value).toBe("OT-1234")
+    expect((within(form).getByLabelText(/^Lectura de la preventiva/) as HTMLInputElement).value).toBe("60.000")
+    expect((form.querySelector('input[name="priorPreventiveInterval"]') as HTMLInputElement).value).toBe("20000")
+    expect((form.querySelector('input[name="priorPreventiveDate"]') as HTMLInputElement).value).toBe("2026-03-10")
+  })
+
+  it("sin pauta la sección lo dice y no deja elegir el servicio", () => {
+    const edit = {
+      schedules: [],
+      initial: { scheduleId: "", initialReading: "", initialReadingDate: "", retired: false, retiredReason: "" },
+    }
+    render(<EquipmentDetailView data={data({ schedule: null })} edit={edit} canSeeSchedules={false} canExport={false} justCreated={false} header={HEADER} />)
+    fireEvent.click(screen.getByRole("button", { name: "Editar mantención" }))
+    const form = screen.getByRole("form", { name: "Editar mantención" })
+    expect(within(form).getByText(/no tiene pauta: asígnale una/)).toBeDefined()
+    expect(within(form).getByRole("combobox", { name: /^Servicio de la pauta/ }).hasAttribute("disabled")).toBe(true)
+  })
+})

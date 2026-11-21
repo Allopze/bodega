@@ -2,10 +2,11 @@ import type { EquipmentHistoryEntry } from "@/lib/services/mantencion/equipment-
 import type { EquipmentInsurance } from "@/lib/services/mantencion/equipment-life"
 import type { VehiclePurchaseRecord } from "@/lib/services/vehicle-purchase-history"
 import type { MantGpsReadingSource } from "@/lib/mantencion/gps-estimate"
-import type { MantEquipmentState, MantEquipmentStatus, MantUnit } from "@/lib/mantencion/types"
+import type { MantEquipmentState, MantEquipmentStatus, MantPreventiveSummary, MantUnit } from "@/lib/mantencion/types"
 import type { EquipmentLifeData } from "./equipment-life-section"
 import type { EquipmentFormCatalogs } from "./equipment-form-types"
 import type { EquipmentPlanFormValues } from "./equipment-plan-form"
+import type { PriorPreventiveValues } from "./equipment-prior-preventive-fields"
 
 /** Lo que la ficha en modo lectura muestra del equipo, ya resuelto en el servidor. */
 export interface EquipmentDetailData {
@@ -29,7 +30,7 @@ export interface EquipmentDetailData {
     nextReading: number | null
     remaining: number | null
     nextIntervalValue: number | null
-    lastPreventive: { reading: number; date: string; intervalValue: number } | null
+    lastPreventive: MantPreventiveSummary | null
   }
   /** Correctiva abierta con el equipo en taller: ingreso, días detenido y fecha de la última novedad (`YYYY-MM-DD`). */
   workshop: { entryDate: string | null; daysStopped: number | null; stale: boolean; lastActivityDate: string } | null
@@ -38,6 +39,11 @@ export interface EquipmentDetailData {
   gpsReadingAt: string | null
   /** Fuente de la estimación (GPS o horómetro de Cat vía VisionLink); ausente = GPS. */
   gpsReadingSource?: MantGpsReadingSource | null
+  /**
+   * La preventiva anterior a la plataforma que jefatura declaró, guardada en el plan del equipo, aunque
+   * ya mande una firmada más nueva. `null` = ninguna declarada. Nunca se muestra como un registro firmado.
+   */
+  priorPreventive?: PriorPreventiveView | null
   recordCount: number
   /** Hoja de vida: historial completo de mantenciones dentro del alcance de lectura. */
   life: EquipmentLifeData
@@ -54,6 +60,17 @@ export interface EquipmentDetailData {
   purchaseLinks: { canOpenRequests: boolean; canOpenOrders: boolean; canOpenSpareParts: boolean; newRequestHref: string | null }
 }
 
+/** La preventiva declarada, con quién la declaró (nombre del usuario) y por qué vía. */
+export interface PriorPreventiveView {
+  date: string
+  reading: number
+  intervalValue: number
+  /** Número de orden de trabajo o de factura. */
+  evidence: string
+  declaredByName: string | null
+  source: string | null
+}
+
 /**
  * Lo que hace falta para «Editar mantención» (pauta, lectura inicial y baja): sólo se carga si la
  * persona puede administrar equipos. La identidad se edita en «Editar vehículo» (paso 4b).
@@ -61,4 +78,8 @@ export interface EquipmentDetailData {
 export interface EquipmentEditData {
   schedules: EquipmentFormCatalogs["schedules"]
   initial: EquipmentPlanFormValues
+  /** Intervalos de cada pauta (por id), para elegir el servicio de la preventiva declarada. */
+  scheduleIntervals?: Record<string, number[]>
+  /** La preventiva declarada guardada, ya como texto de formulario; vacía si no hay. */
+  priorPreventive?: PriorPreventiveValues
 }

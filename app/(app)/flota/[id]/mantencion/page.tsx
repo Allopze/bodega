@@ -1,11 +1,11 @@
 import type { Metadata } from "next"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelVehicles } from "@/db/schema"
+import { fuelVehicles, users } from "@/db/schema"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { EquipmentDetailView } from "@/components/mantencion/jefatura/equipos/equipment-detail-view"
-import type { EquipmentDetailData, EquipmentEditData } from "@/components/mantencion/jefatura/equipos/equipment-detail-types"
+import type { EquipmentDetailData, EquipmentEditData, PriorPreventiveView } from "@/components/mantencion/jefatura/equipos/equipment-detail-types"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
@@ -18,6 +18,7 @@ import { countEquipmentRecords } from "@/lib/services/mantencion/equipment"
 import { loadEquipmentInsurance, loadEquipmentWorkOrders, loadLifeRows, loadLifeTotals } from "@/lib/services/mantencion/equipment-life"
 import { listHistoricalRecords } from "@/lib/services/mantencion/historical-import"
 import { listEquipmentHistory } from "@/lib/services/mantencion/equipment-history"
+import { loadEquipmentCurrents } from "@/lib/services/mantencion/equipment-resolve"
 import { loadFleet } from "@/lib/services/mantencion/fleet"
 import { listAssignableMechanics, listExecutionWorksiteOptions, listWorkOrderEquipmentOptions, listWorksiteMechanics } from "@/lib/services/mantencion/work-orders/query"
 import { todayInChile } from "@/lib/utils"
@@ -127,6 +128,7 @@ export default async function EquipmentDetailPage({
     }
   }
 
+  const priorPreventive = await loadPriorPreventive(id)
   const { status, workshop } = row
   const data: EquipmentDetailData = {
     vehicleId: row.vehicleId,
@@ -155,6 +157,7 @@ export default async function EquipmentDetailPage({
     gpsStatus: row.gpsStatus,
     gpsReadingAt: row.gpsReadingAt,
     gpsReadingSource: row.gpsReadingSource,
+    priorPreventive,
     recordCount,
     life: {
       rows: life.rows,
@@ -191,6 +194,10 @@ export default async function EquipmentDetailPage({
           retired: row.retired,
           retiredReason: row.retiredReason ?? "",
         },
+        scheduleIntervals: Object.fromEntries(schedules.map((item) => [item.id, item.intervals])),
+        priorPreventive: priorPreventive
+          ? { date: priorPreventive.date, reading: formatNumber(priorPreventive.reading), interval: String(priorPreventive.intervalValue), evidence: priorPreventive.evidence }
+          : undefined,
       }
     : null
 
@@ -209,6 +216,30 @@ export default async function EquipmentDetailPage({
       showIdentity={!ctx.areas.includes("flota")}
     />
   )
+}
+
+/**
+ * La preventiva anterior a la plataforma que jefatura declaró, con el nombre de quien la declaró;
+ * `null` si no hay (las cuatro columnas van juntas). Se lee del perfil, no del estado: aparece
+ * aunque ya mande una preventiva firmada más nueva.
+ */
+async function loadPriorPreventive(vehicleId: string): Promise<PriorPreventiveView | null> {
+  const [current] = await loadEquipmentCurrents(db, vehicleId)
+  const fields = current?.fields
+  if (!current || !fields?.priorPreventiveDate || fields.priorPreventiveReading == null || fields.priorPreventiveInterval == null || !fields.priorPreventiveEvidence) return null
+  let declaredByName: string | null = null
+  if (current.priorPreventiveDeclaredBy) {
+    const [user] = await db.select({ name: users.name }).from(users).where(eq(users.id, current.priorPreventiveDeclaredBy)).limit(1)
+    declaredByName = user?.name ?? null
+  }
+  return {
+    date: fields.priorPreventiveDate,
+    reading: fields.priorPreventiveReading,
+    intervalValue: fields.priorPreventiveInterval,
+    evidence: fields.priorPreventiveEvidence,
+    declaredByName,
+    source: current.priorPreventiveSource,
+  }
 }
 
 /** Unidad de rendimiento del vehículo en el padrón (`km/L`, `L/h`); `null` si no mide. */

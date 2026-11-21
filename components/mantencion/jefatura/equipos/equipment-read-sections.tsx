@@ -3,10 +3,11 @@ import Link from "next/link"
 import { DetailItem } from "@/components/ui/detail-item"
 import { MANT_GPS_SOURCE_LABEL } from "@/lib/mantencion/gps-estimate"
 import { formatReading, recordKindText, remainingText, unitName } from "@/lib/mantencion/format"
+import { isDeclaredPreventive, PRIOR_PREVENTIVE_LABEL, preventiveSupportText } from "@/lib/mantencion/preventive-origin"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { SectionCard } from "../shared/section-card"
 import { EquipmentStateBadge } from "../shared/equipment-state-badge"
-import type { EquipmentDetailData } from "./equipment-detail-types"
+import type { EquipmentDetailData, PriorPreventiveView } from "./equipment-detail-types"
 
 /**
  * Un tramo que no se parte a la mitad: una fecha («29-10-↵2026») o una lectura
@@ -42,6 +43,24 @@ function WorkshopNote({ workshop }: { workshop: NonNullable<EquipmentDetailData[
   )
 }
 
+/**
+ * De dónde sale una preventiva. La firmada muestra su folio; la declarada, el rótulo «Declarada,
+ * anterior a la plataforma», su respaldo y quién la declaró: nunca parece un registro firmado.
+ */
+function PreventiveOrigin({ preventive, declaredBy }: { preventive: { origin?: "firmada" | "declarada"; evidence?: string | null }; declaredBy?: PriorPreventiveView | null }) {
+  const support = preventiveSupportText(preventive)
+  if (!isDeclaredPreventive(preventive)) {
+    return support ? <span className="block text-xs font-normal text-[var(--color-text-muted)]">{support}</span> : null
+  }
+  return (
+    <span className="mt-0.5 block text-xs font-normal text-[var(--color-text-muted)]">
+      <span className="font-semibold text-[var(--color-text)]">{PRIOR_PREVENTIVE_LABEL}</span>
+      {support ? <> · {support}</> : null}
+      {declaredBy?.declaredByName ? <> · Declarada por {declaredBy.declaredByName}{declaredBy.source ? ` (${declaredBy.source})` : ""}</> : null}
+    </span>
+  )
+}
+
 /** Estado de mantención del equipo: lectura, próxima mantención y última preventiva. */
 export function EquipmentStatusCard({ data }: { data: EquipmentDetailData }) {
   const { status, unit } = data
@@ -62,8 +81,22 @@ export function EquipmentStatusCard({ data }: { data: EquipmentDetailData }) {
         <DetailItem
           layout="stacked"
           label="Última preventiva"
-          value={last ? <ValueOnDate value={recordKindText("P", last.intervalValue, unit)} date={last.date} /> : null}
+          value={last ? <><ValueOnDate value={recordKindText("P", last.intervalValue, unit)} date={last.date} /><PreventiveOrigin preventive={last} declaredBy={data.priorPreventive} /></> : null}
         />
+        {/* La declarada guardada, aunque ya mande una firmada más nueva: dato aparte y rotulado. */}
+        {data.priorPreventive && !isDeclaredPreventive(last) ? (
+          <DetailItem
+            layout="stacked"
+            label="Preventiva declarada"
+            value={(
+              <>
+                <ValueOnDate value={recordKindText("P", data.priorPreventive.intervalValue, unit)} date={data.priorPreventive.date} />
+                <PreventiveOrigin preventive={{ origin: "declarada", evidence: data.priorPreventive.evidence }} declaredBy={data.priorPreventive} />
+                <span className="block text-xs font-normal text-[var(--color-text-muted)]">La firmada más reciente es la que manda en el estado.</span>
+              </>
+            )}
+          />
+        ) : null}
       </dl>
       {data.gpsStatus ? (
         <div className="mt-4 border-t border-[var(--color-border)] pt-3">

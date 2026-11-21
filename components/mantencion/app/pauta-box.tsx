@@ -1,5 +1,6 @@
 "use client"
 
+import { isDeclaredPreventive, PRIOR_PREVENTIVE_LABEL, preventiveSupportText } from "@/lib/mantencion/preventive-origin"
 import { useState, type Dispatch } from "react"
 import { formatReading } from "@/lib/mantencion/format"
 import type { FleetRow } from "@/lib/mantencion/client/fleet-view"
@@ -37,7 +38,7 @@ export function PautaBox({ draft, dispatch, row, analysis }: { draft: FlowDraft;
   const why = manual
     ? <>Elegida a mano. Por la lectura correspondía la de <span className="nw">{formatReading(suggestion.intervalValue, unit)}</span>.</>
     : <>Lectura <span className="nw">{formatReading(value, unit)}</span> → toca la de <span className="nw">{formatReading(intervalValue, unit)}</span>
-        {last ? <> (última preventiva: <span className="nw">{formatReading(last.intervalValue, unit)}</span>, {formatDate(last.date)}).</> : "."}</>
+        {last ? <> ({isDeclaredPreventive(last) ? `última preventiva ${PRIOR_PREVENTIVE_LABEL.toLowerCase()}` : "última preventiva"}: <span className="nw">{formatReading(last.intervalValue, unit)}</span>, {formatDate(last.date)}{preventiveSupportText(last) ? `; ${preventiveSupportText(last)!.toLowerCase()}` : ""}).</> : "."}</>
   const open = draft.intervalOpen || manual
 
   return (

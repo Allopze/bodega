@@ -212,6 +212,18 @@ describe("PautasSection", () => {
     expect(region.textContent).not.toMatch(/sin_pauta|sin_lecturas/)
   })
 
+  it("«Sin información de preventiva» sale en el gráfico, en su tabla y en el texto de cobertura, no como al día", () => {
+    render(<PautasSection {...common} {...base} pautas={{ ...base.pautas, counts: counts({ vencida: 1, al_dia: 4, sin_preventiva: 3, sin_pauta: 1 }) }} showRanking />)
+    const region = screen.getByRole("region", { name: "Pautas y disponibilidad" })
+    const chart = within(region).getByRole("img", { name: /^Equipos por estado de pauta hoy/ })
+    expect(within(chart).getByRole("link", { name: "Sin información de preventiva" }).getAttribute("href")).toBe("/mantencion/equipos?estado=sin_preventiva")
+    const stat = within(region).getByRole("link", { name: /Equipos con la pauta al día/ })
+    expect(stat.textContent).toContain("3 sin información de preventiva")
+    // 4 al día sobre 1 + 4 + 3 con pauta = 50 %: los sin información cuentan en el total, no como al día.
+    expect(stat.textContent).toContain("50%")
+    expect(region.textContent).not.toMatch(/sin_preventiva/)
+  })
+
   it("con empate en la cima no hay un «equipo con más»: se dice cuántos empatan", () => {
     render(
       <PautasSection
