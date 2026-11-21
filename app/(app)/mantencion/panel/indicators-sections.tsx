@@ -9,6 +9,7 @@ import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import type { ChartWindow, IndicatorGranularity } from "@/lib/indicators/period"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { EQUIPMENT_STATE_LABEL, formatHours, plural } from "@/lib/mantencion/format"
+import { PRIOR_PREVENTIVE_LABEL } from "@/lib/mantencion/preventive-origin"
 import type { MantEquipmentState } from "@/lib/mantencion/types"
 import { OT_STATUS_LABELS, type OtStatus } from "@/lib/mantencion/work-order-states"
 import {
@@ -21,7 +22,7 @@ import {
   type WorkOrderPeriodStats,
   type WorkOrderSeriesPoint,
 } from "@/lib/services/mantencion/indicators"
-import { formatPercent, formatQty } from "@/lib/utils"
+import { formatDate, formatPercent, formatQty } from "@/lib/utils"
 import { layoutChartSlots, type SlotSpan } from "@/lib/indicators/chart-layout"
 import {
   OutOfServiceChart,
@@ -337,6 +338,7 @@ export function PautasSection({
   }
 
   const compliance = pautas ? pautaCompliance(pautas.counts) : null
+  const declared = pautas?.declaredPreventives ?? []
   const equiposHref = (params: Record<string, string | null | undefined>) => withParams("/mantencion/equipos", { faena, ...params })
   const recordsHref = withParams("/mantencion/registros", {
     revision: "todos",
@@ -362,7 +364,7 @@ export function PautasSection({
               valueKind: compliance.percent === null ? "text" : "number",
               secondary: compliance.percent === null
                 ? "Aún no hay equipos con pauta"
-                : `${formatQty(compliance.onTime)} de ${plural(compliance.withSchedule, "equipo con pauta", "equipos con pauta")}${pautas.counts.sin_lecturas > 0 ? ` · ${pautas.counts.sin_lecturas} sin lecturas` : ""}${pautas.counts.sin_preventiva > 0 ? ` · ${pautas.counts.sin_preventiva} sin información de preventiva` : ""} · hoy`,
+                : `${formatQty(compliance.onTime)} de ${plural(compliance.withSchedule, "equipo con pauta", "equipos con pauta")}${pautas.counts.sin_lecturas > 0 ? ` · ${pautas.counts.sin_lecturas} sin lecturas` : ""}${pautas.counts.sin_preventiva > 0 ? ` · ${pautas.counts.sin_preventiva} sin información de preventiva` : ""}${declared.length > 0 ? ` · ${declared.length} con preventiva declarada, anterior a la plataforma` : ""} · hoy`,
               tone: pautas.counts.vencida > 0 ? "signal" : undefined,
               href: pautas.counts.vencida > 0 ? equiposHref({ estado: "vencida" }) : equiposHref({}),
             }
@@ -457,6 +459,28 @@ export function PautasSection({
                   rows={pautaSegments.map((segment) => [segment.detail ?? segment.label, segment.value])}
                   excel={excel}
                 />
+                {declared.length > 0 && (
+                  <>
+                    {/* El % al día cuenta estas preventivas igual que las firmadas: se dice cuántas son y se muestra su respaldo. */}
+                    <p className="mt-3 text-xs text-[var(--color-text-muted)]">
+                      {declared.length === 1 ? "1 equipo" : `${declared.length} equipos`} con la preventiva declarada, anterior a la plataforma (no firmada): su estado se apoya en esa declaración.
+                    </p>
+                    <ChartDataTable
+                      caption="Preventivas declaradas"
+                      headers={["Equipo", "Estado", "Fecha", "Lectura", "Servicio", "Respaldo", "Origen"]}
+                      rows={declared.map((row) => [
+                        row.code === row.plate ? row.plate : `${row.code} · ${row.plate}`,
+                        EQUIPMENT_STATE_LABEL[row.state],
+                        formatDate(row.date),
+                        formatQty(row.reading),
+                        formatQty(row.intervalValue),
+                        row.evidence,
+                        PRIOR_PREVENTIVE_LABEL,
+                      ])}
+                      excel={excel}
+                    />
+                  </>
+                )}
               </ChartFrame>
             </ChartSlot>
           )}

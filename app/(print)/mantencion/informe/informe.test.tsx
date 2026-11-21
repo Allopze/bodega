@@ -70,6 +70,17 @@ describe("informe del Panel de mantención (PDF)", () => {
     expect(screen.getByText(/3 equipos están sin información de preventiva/)).toBeTruthy()
   })
 
+  it("lista las preventivas declaradas con su respaldo y, sin ninguna, no hay tabla", async () => {
+    const { InformeDocument } = await import("./informe-document")
+    const base = report()
+    const { unmount } = render(<InformeDocument data={report({ pautas: { ...base.pautas!, declaredPreventives: [{ vehicleId: "v-9", code: "KA-9", plate: "ZZZZ-09", state: "al_dia" as const, date: "2026-03-10", reading: 60_000, intervalValue: 20_000, evidence: "OT-1234" }] } })} logoSrc="/chome_logo.svg" />)
+    expect(screen.getByRole("heading", { name: "Preventivas declaradas (anteriores a la plataforma)" })).toBeTruthy()
+    expect(screen.getByRole("cell", { name: "OT-1234" })).toBeTruthy()
+    unmount()
+    render(<InformeDocument data={report()} logoSrc="/chome_logo.svg" />)
+    expect(screen.queryByRole("heading", { name: /Preventivas declaradas/ })).toBeNull()
+  })
+
   it("una consulta caída se imprime como «no disponible», nunca como cero", async () => {
     const { InformeDocument } = await import("./informe-document")
     render(<InformeDocument data={report({ work: null, findings: null, degraded: ["trabajos de mantención"] })} logoSrc="/chome_logo.svg" />)

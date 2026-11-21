@@ -97,6 +97,8 @@ export interface EquipmentCurrent {
   /** Quién declaró la preventiva anterior a la plataforma y de dónde salió (para la bitácora). */
   priorPreventiveDeclaredBy: string | null
   priorPreventiveSource: string | null
+  /** Última modificación del perfil: el formulario la devuelve para no pisar una edición concurrente. */
+  profileUpdatedAt: string
 }
 
 export interface EquipmentCatalogs {
@@ -204,6 +206,7 @@ export async function loadEquipmentCurrents(client: Reader, vehicleId?: string):
       priorPreventiveEvidence: mantEquipmentProfiles.priorPreventiveEvidence,
       priorPreventiveDeclaredBy: mantEquipmentProfiles.priorPreventiveDeclaredBy,
       priorPreventiveSource: mantEquipmentProfiles.priorPreventiveSource,
+      profileUpdatedAt: mantEquipmentProfiles.updatedAt,
     })
     .from(mantEquipmentProfiles)
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantEquipmentProfiles.vehicleId))
@@ -253,6 +256,7 @@ export async function loadEquipmentCurrents(client: Reader, vehicleId?: string):
       },
       priorPreventiveDeclaredBy: row.priorPreventiveDeclaredBy,
       priorPreventiveSource: row.priorPreventiveSource,
+      profileUpdatedAt: row.profileUpdatedAt,
     })
   }
   return currents
@@ -313,6 +317,8 @@ export interface EquipmentPlanInput {
    * `null` o todo vacío = se borra. Quién la declaró y de dónde salió van a la ficha y a la bitácora.
    */
   priorPreventive?: (PriorPreventiveInput & { declaredBy?: string | null; source?: string | null }) | null
+  /** `profileUpdatedAt` que vio el formulario; si la ficha cambió después, no se guarda (edición concurrente). */
+  expectedUpdatedAt?: string | null
 }
 
 export interface PriorPreventiveInput {
@@ -329,6 +335,21 @@ export interface ResolvedPriorPreventive {
   evidence: string
 }
 
+/** Textos de relleno que no son un respaldo, aunque no estén vacíos. */
+const EVIDENCE_PLACEHOLDERS = new Set(["-", "--", "?", "x", "no", "na", "n/a", "s/r", "sr", "s/n", "sin", "sin respaldo", "no tiene", "pendiente", "ninguno", "nada"])
+
+/**
+ * ¿El respaldo es una referencia verificable? Un número de orden de trabajo o de factura siempre
+ * lleva un número: sin dígitos, o si es un relleno conocido («S/R», «N/A», «-»…), no sirve.
+ */
+export function isEvidenceReference(text: string | null | undefined): boolean {
+  const value = (text ?? "").trim()
+  if (!value || EVIDENCE_PLACEHOLDERS.has(value.toLowerCase())) return false
+  return /\d/.test(value)
+}
+
+export const EVIDENCE_REFERENCE_MESSAGE = "El respaldo tiene que ser un número de orden de trabajo o de factura (por ejemplo, «OT 35513» o «Factura 9876»)."
+
 /**
  * La última preventiva anterior a la plataforma, DECLARADA por jefatura con su respaldo (Trinorma,
  * decisión del usuario del 2026-11-21, opción A). Reglas del servidor, no sólo del formulario:
@@ -340,7 +361,14 @@ export interface ResolvedPriorPreventive {
  */
 export function resolvePriorPreventive(
   input: PriorPreventiveInput,
-  plan: { initialReading: number | null; initialReadingDate: string | null; hasSchedule: boolean; intervals: readonly number[] },
+  plan: {
+    initialReading: number | null
+    initialReadingDate: string | null
+    hasSchedule: boolean
+    intervals: readonly number[]
+    /** El servicio de la declaración guardada: sigue valiendo aunque la pauta se haya republicado sin él. */
+    storedInterval?: number | null
+  },
   today: string,
 ): { value: ResolvedPriorPreventive | null; errors: FieldErrors } {
   const errors: FieldErrors = {}
@@ -357,6 +385,7 @@ export function resolvePriorPreventive(
   if (input.intervalValue === null) errors.priorPreventiveInterval = "Indica qué servicio de la pauta fue."
   if (!evidence) errors.priorPreventiveEvidence = "Indica el respaldo: número de orden de trabajo o de factura."
   else if (evidence.length > 120) errors.priorPreventiveEvidence = "El respaldo es demasiado largo (máximo 120 caracteres)."
+  else if (!isEvidenceReference(evidence)) errors.priorPreventiveEvidence = EVIDENCE_REFERENCE_MESSAGE
 
   if (plan.initialReading === null || !plan.initialReadingDate) {
     errors.priorPreventiveDate ??= "Primero indica la lectura inicial: la preventiva declarada no puede ser posterior a ella."
@@ -369,7 +398,7 @@ export function resolvePriorPreventive(
     }
   }
   if (!plan.hasSchedule) errors.priorPreventiveInterval ??= "Asigna una pauta: el servicio tiene que existir en ella."
-  else if (input.intervalValue !== null && !plan.intervals.includes(input.intervalValue)) {
+  else if (input.intervalValue !== null && !plan.intervals.includes(input.intervalValue) && input.intervalValue !== plan.storedInterval) {
     errors.priorPreventiveInterval = `Ese servicio no existe en la pauta del equipo (${plan.intervals.join(", ")}).`
   }
   if (Object.keys(errors).length > 0) return { value: null, errors }
@@ -394,7 +423,15 @@ export function resolveEquipmentPlan(
   /** Unidad del equipo; `null` si su tipo todavía no se resolvió (el error ya está en el tipo). */
   unit: MantUnit | null,
   current: EquipmentCurrent | null,
-  options: { today: string; ignoreLockedInitialReading?: boolean },
+  options: {
+    today: string
+    ignoreLockedInitialReading?: boolean
+    /**
+     * Revisa la lectura inicial contra la preventiva declarada GUARDADA (por defecto sí). Sólo lo
+     * apaga «Editar mantención» cuando trae una declaración nueva, que se valida aparte.
+     */
+    checkStoredPrior?: boolean
+  },
 ): { value: ResolvedEquipmentPlan; errors: FieldErrors; notices: string[] } {
   const errors: FieldErrors = {}
   const notices: string[] = []
@@ -431,6 +468,19 @@ export function resolveEquipmentPlan(
     errors.initialReadingDate = "La fecha de la lectura no es válida."
   } else if (initialReadingDate > today) {
     errors.initialReadingDate = "La fecha de la lectura no puede ser futura."
+  }
+
+  // La declarada no puede quedar después de la lectura inicial ni por encima de ella, venga el cambio
+  // de donde venga (formulario, importación de equipos).
+  const priorDate = current?.fields.priorPreventiveDate ?? null
+  const priorReading = current?.fields.priorPreventiveReading ?? null
+  if ((options.checkStoredPrior ?? true) && priorDate && priorReading !== null && !errors.initialReading && !errors.initialReadingDate) {
+    if (initialReading === null) {
+      errors.initialReading = "No se puede quitar la lectura inicial: el equipo tiene una preventiva declarada. Bórrala primero."
+    } else {
+      if (initialReading < priorReading) errors.initialReading = `La lectura inicial no puede ser menor que la de la preventiva declarada (${priorReading}).`
+      if (initialReadingDate && initialReadingDate < priorDate) errors.initialReadingDate = `La fecha de la lectura inicial no puede ser anterior a la de la preventiva declarada (${priorDate}).`
+    }
   }
 
   return { value: { schedule, initialReading, initialReadingDate }, errors, notices }

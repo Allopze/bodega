@@ -394,6 +394,24 @@ export interface PautaState {
    * «Equipos en taller 6» sobre «En taller 4 OT» se leía como una contradicción (crítica 2026-11-15).
    */
   inWorkshopByOrder: number
+  /**
+   * Equipos cuyo estado se apoya en una preventiva DECLARADA (anterior a la plataforma), no firmada: el
+   * Panel, su PDF y su Excel lo dicen y muestran el respaldo. Ausente = ninguno.
+   */
+  declaredPreventives?: DeclaredPreventiveRow[]
+}
+
+export interface DeclaredPreventiveRow {
+  vehicleId: string
+  code: string
+  plate: string
+  state: MantEquipmentState
+  /** `YYYY-MM-DD` */
+  date: string
+  reading: number
+  intervalValue: number
+  /** Respaldo: número de orden de trabajo o de factura. */
+  evidence: string
 }
 
 /** Estado de las pautas hoy: la única fuente es `loadFleet`. */
@@ -407,6 +425,13 @@ export async function loadPautaState(viewer: MantViewer, worksiteId: string | un
     total: fleet.length,
     inWorkshop: inWorkshop.length,
     inWorkshopByOrder: inWorkshop.filter((row) => row.workshop?.workOrderId).length,
+    declaredPreventives: fleet
+      .filter((row) => row.status.lastPreventive?.origin === "declarada")
+      .map((row) => {
+        const last = row.status.lastPreventive!
+        return { vehicleId: row.vehicleId, code: row.code, plate: row.plate, state: row.status.state, date: last.date, reading: last.reading, intervalValue: last.intervalValue, evidence: last.evidence?.trim() ?? "" }
+      })
+      .sort((a, b) => a.code.localeCompare(b.code, "es", { numeric: true })),
   }
 }
 

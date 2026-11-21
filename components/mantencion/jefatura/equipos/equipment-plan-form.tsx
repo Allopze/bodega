@@ -33,6 +33,7 @@ export function EquipmentPlanForm({
   initial,
   readingLocked,
   extra,
+  expectedUpdatedAt,
   onCancel,
   onSaved,
 }: {
@@ -44,6 +45,8 @@ export function EquipmentPlanForm({
   readingLocked: boolean
   /** Una sección más dentro del mismo `<form>` (la preventiva declarada), con los errores por campo y la pauta elegida. */
   extra?: (context: { error: (field: string) => string | undefined; scheduleId: string }) => React.ReactNode
+  /** `updated_at` del plan al abrir el formulario; el servidor no guarda si cambió después. */
+  expectedUpdatedAt?: string
   onCancel: () => void
   onSaved: () => void
 }) {
@@ -63,6 +66,7 @@ export function EquipmentPlanForm({
   return (
     <form action={formAction} noValidate aria-label="Editar mantención" className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:p-6">
       <input type="hidden" name="vehicleId" value={vehicleId} />
+      {expectedUpdatedAt ? <input type="hidden" name="expectedUpdatedAt" value={expectedUpdatedAt} /> : null}
       {!state.ok && state.message && !state.fieldErrors && <Callout tone="danger" role="alert" className="mb-4">{state.message}</Callout>}
       <p className="mb-4 text-sub">
         La pauta, la lectura inicial y el estado del equipo en Mantención. El código, la patente, el tipo, la marca y la faena se cambian en «Editar vehículo».

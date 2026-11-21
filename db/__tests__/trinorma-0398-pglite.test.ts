@@ -1,6 +1,6 @@
 /**
  * Migración 0398 (Trinorma, 2026-11-21): aditiva, con el índice único de código
- * normalizado, y reversible con `docs/mantencion/trinorma/0398-reversion.sql`.
+ * normalizado, y reversible con `db/repairs/trinorma/0398-reversion.sql`.
  */
 import { PGlite } from "@electric-sql/pglite"
 import { mkdtemp, readFile, readdir, symlink, writeFile, mkdir } from "node:fs/promises"
@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 
 const MIGRATIONS = path.resolve(process.cwd(), "db/migrations")
-const REVERSION = path.resolve(process.cwd(), "docs/mantencion/trinorma/0398-reversion.sql")
+const REVERSION = path.resolve(process.cwd(), "db/repairs/trinorma/0398-reversion.sql")
 
 /** Catálogo comparable: columnas, restricciones e índices de `public`. */
 async function catalog(pg: PGlite) {

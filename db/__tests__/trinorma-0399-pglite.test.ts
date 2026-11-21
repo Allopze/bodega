@@ -1,7 +1,7 @@
 /**
  * Migración 0399 (Trinorma, preventiva declarada anterior a la plataforma, 2026-11-21): aditiva,
  * con las cuatro columnas juntas y el respaldo obligatorio, y reversible con
- * `docs/mantencion/trinorma/0399-reversion.sql`.
+ * `db/repairs/trinorma/0399-reversion.sql`.
  */
 import { PGlite } from "@electric-sql/pglite"
 import { mkdtemp, readFile, readdir, symlink, writeFile, mkdir } from "node:fs/promises"
@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 
 const MIGRATIONS = path.resolve(process.cwd(), "db/migrations")
-const REVERSION = path.resolve(process.cwd(), "docs/mantencion/trinorma/0399-reversion.sql")
+const REVERSION = path.resolve(process.cwd(), "db/repairs/trinorma/0399-reversion.sql")
 
 /** Catálogo comparable: columnas, restricciones e índices de `public`. */
 async function catalog(pg: PGlite) {

@@ -196,7 +196,7 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
       apply-trinorma-lecturas-preventivas.ts --file <planilla devuelta.xlsx> --actor-email <correo de quien carga> --declarada-por <correo del Jefe de Mantención> --pauta-confirmada --report <informe.md>
       ```
 
-      Quien carga y quien declara tienen que tener `mant:equipment:manage` (jefatura de mantención o administración). Por equipo carga la lectura inicial y la preventiva declarada **juntas**. Para cargarla, el Jefe tiene que haber elegido «Confirma» o «Corrige», indicado el servicio de pauta y puesto un respaldo. Sin respaldo, el equipo va al listado de pendientes y no se le carga nada, ni siquiera la lectura.
+      Quien carga y quien declara tienen que tener `mant:equipment:manage` (jefatura de mantención o administración). Por equipo carga la lectura inicial y la preventiva declarada **juntas**. Para cargarla, el Jefe tiene que haber elegido «Confirma» o «Corrige», indicado el servicio de pauta y puesto un respaldo. El respaldo tiene que ser un número de orden de trabajo o de factura: un relleno como «S/R», «N/A» o «-», o un texto sin número, no sirve. Sin respaldo válido, el equipo va al listado de pendientes y no se le carga nada, ni siquiera la lectura. Tampoco se cargan los equipos dados de baja.
 
       Para Arauco usa la lectura de noviembre de la hoja 3, si viene. La nota de la planilla (KCH-129, detenido) queda en la fuente y en el historial.
    3. **`--apply`** con la autorización del usuario, **a más tardar el 29-11**, para tener dos días de margen. Después, revisar:
@@ -206,7 +206,7 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
 
 ## 5. Reversión
 
-- **Código.** Volver a desplegar el commit anterior. La 0398 es aditiva: el código anterior la ignora. Si de verdad hubiera que deshacer el esquema, `docs/mantencion/trinorma/0398-reversion.sql` va a una migración **nueva**. Nunca se toca el journal.
+- **Código.** Volver a desplegar el commit anterior. La 0398 es aditiva: el código anterior la ignora. Si de verdad hubiera que deshacer el esquema, `db/repairs/trinorma/0399-reversion.sql` y después `db/repairs/trinorma/0398-reversion.sql` van a migraciones **nuevas**, en ese orden. Ambas están probadas en PGlite. Nunca se toca el journal.
 - **Datos.** La vuelta atrás segura es el respaldo del paso 2.3. Para deshacer sólo la importación, tomar la hora del registro `mant_historical_import` en `audit_log`, en una transacción y con respaldo:
   - borrar las filas de `mant_historical_findings`, `mant_historical_inspections` y `mant_historical_schedule_checks` importadas desde esa hora;
   - borrar las de `mant_historical_records` con `source_file` del consolidado;

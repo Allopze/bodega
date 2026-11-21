@@ -35,7 +35,7 @@ import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { matchVehicle, plateKey } from "@/lib/mantencion/equipment-identity"
 import { loadXlsxTolerant } from "@/lib/reports/xlsx-normalize"
-import { loadEquipmentCurrent } from "@/lib/services/mantencion/equipment-resolve"
+import { EVIDENCE_REFERENCE_MESSAGE, isEvidenceReference, loadEquipmentCurrent } from "@/lib/services/mantencion/equipment-resolve"
 import { updateEquipmentPlanTx } from "@/lib/services/mantencion/equipment"
 
 export const MANAGE_PERMISSION = "mant:equipment:manage"
@@ -241,6 +241,7 @@ export function buildCandidate(row: PreventiveRow, november: NovemberReading | n
   const intervalValue = parseService(row.service)
   if (intervalValue === null) return { ok: false, reason: "falta el «Servicio de pauta» (vacío u «Otro»): no se sabe a qué servicio de la pauta corresponde" }
   if (!row.evidence) return { ok: false, reason: "falta el respaldo (OT o factura): sin respaldo no se carga nada del equipo, ni su lectura" }
+  if (!isEvidenceReference(row.evidence)) return { ok: false, reason: `el respaldo «${row.evidence}» no sirve: ${EVIDENCE_REFERENCE_MESSAGE.charAt(0).toLowerCase()}${EVIDENCE_REFERENCE_MESSAGE.slice(1)} No se carga nada del equipo.` }
   const notes: string[] = []
   let evidence = row.evidence
   if (evidence.length > EVIDENCE_MAX) return { ok: false, reason: `el respaldo supera los ${EVIDENCE_MAX} caracteres y no se recorta` }
@@ -275,8 +276,11 @@ export function buildCandidate(row: PreventiveRow, november: NovemberReading | n
   return {
     ok: true,
     value: {
-      initialReading: reading.value, initialReadingDate: reading.date, readingFrom, sheet2Reading,
-      prior: { date: priorDate!, reading: priorReading!, intervalValue, evidence }, source, notes,
+      // La base guarda las lecturas con un decimal (numeric(14,1)): se redondea igual, así una segunda
+      // corrida compara lo mismo que quedó guardado.
+      initialReading: oneDecimal(reading.value), initialReadingDate: reading.date, readingFrom,
+      sheet2Reading: sheet2Reading ? { ...sheet2Reading, value: oneDecimal(sheet2Reading.value) } : sheet2Reading,
+      prior: { date: priorDate!, reading: oneDecimal(priorReading!), intervalValue, evidence }, source, notes,
     },
   }
 }
@@ -298,6 +302,7 @@ interface Actor { userId: string; email: string }
 class DryRunRollback extends Error {}
 
 const near = (a: number | null | undefined, b: number | null | undefined) => a != null && b != null && Math.abs(a - b) < 0.05
+const oneDecimal = (value: number) => Math.round(value * 10) / 10
 
 async function resolveManager(tx: Tx, email: string, role: string): Promise<Actor> {
   const [user] = await tx.select({ id: users.id, email: users.email }).from(users)
@@ -370,6 +375,7 @@ export async function applyTrinormaLecturasPreventivas(options: ApplyLecturasOpt
         const current = await loadEquipmentCurrent(tx, match.vehicleId)
         if (!current) { pending("el equipo está en la flota, pero no en Mantención"); continue }
         if (!current.scheduleId) { pending("el equipo no tiene pauta asignada en Mantención"); continue }
+        if (!current.active) { pending("el equipo está dado de baja: no se le carga lectura ni preventiva"); continue }
 
         const built = buildCandidate(row, novemberRows[0] ?? null, options.fileName)
         if (!built.ok) { pending(built.reason); continue }
@@ -415,7 +421,7 @@ export async function applyTrinormaLecturasPreventivas(options: ApplyLecturasOpt
         loaded.push(item)
         report.outcomes.push({
           item, row: row.row, result: apply ? "cargado" : "dry-run",
-          detail: `lectura ${target.initialReading} km al ${target.initialReadingDate} (${target.readingFrom}); preventiva ${target.prior.date}, ${target.prior.reading} km, servicio ${target.prior.intervalValue}${target.notes.length ? `; ${target.notes.join("; ")}` : ""}`,
+          detail: `lectura ${target.initialReading} km al ${target.initialReadingDate} (${target.readingFrom}); preventiva ${target.prior.date}, ${target.prior.reading} km, servicio ${target.prior.intervalValue}, respaldo «${target.prior.evidence}»${target.notes.length ? `; ${target.notes.join("; ")}` : ""}`,
         })
       }
 

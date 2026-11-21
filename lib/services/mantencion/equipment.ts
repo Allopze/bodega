@@ -379,8 +379,15 @@ export async function updateEquipmentPlanTx(
   if (!status.active && current.active && !isValidReason(status.retiredReason)) {
     return equipmentFailure({ retiredReason: reasonRequiredMessage("el motivo de la baja") })
   }
+  // Edición concurrente: si la ficha cambió después de abrir el formulario (otra persona o la carga de
+  // la planilla), no se guarda; un formulario viejo borraría lo que se cargó entretanto.
+  if (input.expectedUpdatedAt && input.expectedUpdatedAt !== current.profileUpdatedAt) {
+    return equipmentFailure({}, "La ficha cambió mientras la editabas. Recarga la página y vuelve a intentarlo.")
+  }
   const today = todayInChile()
-  const plan = resolveEquipmentPlan(await loadScheduleCatalog(tx), input, current.unit, current, { today })
+  // Con una declaración nueva en la entrada, ésa se valida contra la lectura (abajo); sin ella, la
+  // lectura se valida contra la declaración guardada.
+  const plan = resolveEquipmentPlan(await loadScheduleCatalog(tx), input, current.unit, current, { today, checkStoredPrior: input.priorPreventive === undefined })
   if (Object.keys(plan.errors).length > 0) return equipmentFailure(plan.errors)
 
   const { schedule, initialReading, initialReadingDate } = plan.value
@@ -396,7 +403,7 @@ export async function updateEquipmentPlanTx(
   if (input.priorPreventive !== undefined) {
     const intervals = schedule ? ((await getCurrentScheduleSnapshots([schedule.id], tx))[0]?.intervals ?? []) : []
     const empty = { date: null, reading: null, intervalValue: null, evidence: null }
-    const resolved = resolvePriorPreventive(input.priorPreventive ?? empty, { initialReading, initialReadingDate, hasSchedule: !!schedule, intervals }, today)
+    const resolved = resolvePriorPreventive(input.priorPreventive ?? empty, { initialReading, initialReadingDate, hasSchedule: !!schedule, intervals, storedInterval: prior.intervalValue }, today)
     if (Object.keys(resolved.errors).length > 0) return equipmentFailure(resolved.errors)
     const value = resolved.value
     // La misma declaración vuelve con cada guardado del formulario: si no cambió, se conserva quién la

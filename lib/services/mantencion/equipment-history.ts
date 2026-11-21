@@ -70,8 +70,10 @@ const FIELD_ORDER = Object.keys(EQUIPMENT_FIELD_LABELS) as Array<keyof Equipment
 export function diffEquipmentFields(before: EquipmentFields, after: EquipmentFields): MantFieldChanges {
   const changes: MantFieldChanges = {}
   for (const key of FIELD_ORDER) {
-    // `undefined` (un alta sin esos campos) y `null` son lo mismo: sin valor.
-    if ((before[key] ?? null) !== (after[key] ?? null)) changes[EQUIPMENT_FIELD_LABELS[key]] = { from: before[key] ?? null, to: after[key] ?? null }
+    // Un campo opcional que la versión nueva no trae (`undefined`) no es parte de esta edición: los
+    // caminos que no manejan la preventiva declarada (padrón, importación) no la «borran» en el historial.
+    if (after[key] === undefined) continue
+    if ((before[key] ?? null) !== after[key]) changes[EQUIPMENT_FIELD_LABELS[key]] = { from: before[key] ?? null, to: after[key] }
   }
   return changes
 }

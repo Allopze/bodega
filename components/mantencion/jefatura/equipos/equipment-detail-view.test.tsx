@@ -192,6 +192,7 @@ describe("ficha del equipo: preventiva declarada, anterior a la plataforma", () 
       initial: { scheduleId: "s1", initialReading: "90.000", initialReadingDate: "2026-09-01", retired: false, retiredReason: "" },
       scheduleIntervals: { s1: [20_000, 40_000] },
       priorPreventive: { date: "2026-03-10", reading: "60.000", interval: "20000", evidence: "OT-1234" },
+      expectedUpdatedAt: "2026-11-20T15:00:00.123456+00:00",
     }
     render(<EquipmentDetailView data={data({ priorPreventive: prior })} edit={edit} canSeeSchedules={false} canExport={false} justCreated={false} header={HEADER} />)
     fireEvent.click(screen.getByRole("button", { name: "Editar mantención" }))
@@ -199,6 +200,8 @@ describe("ficha del equipo: preventiva declarada, anterior a la plataforma", () 
     expect(within(form).getByText("Preventiva anterior a la plataforma (declarada)")).toBeDefined()
     expect(within(form).getByText(/no un registro firmado/)).toBeDefined()
     expect((form.querySelector('input[name="priorPreventiveForm"]') as HTMLInputElement).value).toBe("1")
+    // La marca de la ficha viaja tal cual para detectar una edición concurrente.
+    expect((form.querySelector('input[name="expectedUpdatedAt"]') as HTMLInputElement).value).toBe("2026-11-20T15:00:00.123456+00:00")
     expect((within(form).getByLabelText(/^Respaldo/) as HTMLInputElement).value).toBe("OT-1234")
     expect((within(form).getByLabelText(/^Lectura de la preventiva/) as HTMLInputElement).value).toBe("60.000")
     expect((form.querySelector('input[name="priorPreventiveInterval"]') as HTMLInputElement).value).toBe("20000")

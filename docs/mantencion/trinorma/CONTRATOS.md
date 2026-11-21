@@ -52,7 +52,7 @@ Decisiones anteriores que siguen vigentes:
 
 ## 2. Esquema nuevo (migración `0398_furry_luckman`, ya generada)
 
-**No editar** `db/schema/*`, `db/migrations/*` ni los archivos `meta`. La reversión compensatoria está en `0398-reversion.sql` y la prueba `db/__tests__/trinorma-0398-pglite.test.ts`.
+**No editar** `db/schema/*`, `db/migrations/*` ni los archivos `meta`. La reversión compensatoria está en `db/repairs/trinorma/0398-reversion.sql` y la prueba `db/__tests__/trinorma-0398-pglite.test.ts`.
 
 | Tabla.columna | Significado |
 |---|---|

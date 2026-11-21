@@ -80,6 +80,8 @@ export interface EquipmentEditData {
   initial: EquipmentPlanFormValues
   /** Intervalos de cada pauta (por id), para elegir el servicio de la preventiva declarada. */
   scheduleIntervals?: Record<string, number[]>
+  /** `profileUpdatedAt` al abrir la ficha: viaja al servidor para no pisar una edición concurrente. */
+  expectedUpdatedAt?: string
   /** La preventiva declarada guardada, ya como texto de formulario; vacía si no hay. */
   priorPreventive?: PriorPreventiveValues
 }

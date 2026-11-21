@@ -352,8 +352,48 @@ describe.sequential("carga de lecturas y preventivas declaradas", () => {
       return result.ok ? {} : result.fieldErrors
     }
     expect(await fail({ ...declaration, evidence: "  " })).toHaveProperty("priorPreventiveEvidence")
+    expect(await fail({ ...declaration, evidence: "S/R" })).toHaveProperty("priorPreventiveEvidence")
     expect(await fail({ ...declaration, date: "2026-12-31" })).toHaveProperty("priorPreventiveDate")
     expect(await fail({ ...declaration, reading: (loaded!.initialReading ?? 0) + 1 })).toHaveProperty("priorPreventiveReading")
     expect(await fail({ ...declaration, intervalValue: 12_345 })).toHaveProperty("priorPreventiveInterval")
+  })
+
+  // Auditoría del 2026-11-22: respaldo de relleno, equipo dado de baja, lecturas con dos decimales,
+  // lectura inicial bajo la declarada por otra puerta y edición concurrente.
+  it("auditoría: rellenos, bajas, decimales, lectura bajo la declarada y edición concurrente", async () => {
+    const { applyTrinormaLecturasPreventivas } = await load()
+    const { updateEquipmentPlan } = await import("@/lib/services/mantencion/equipment")
+    await inMemoryDb.update(schema.fuelVehicles).set({ isActive: false }).where(eq(schema.fuelVehicles.id, "v-131"))
+    const rows: Row2[] = [
+      { code: "KA-141", plate: "SGCP-77", reading: 436_251, readingDate: "20-11-2026", formDate: "28-01-2026", formOdo: 360_093, answer: "Confirma", service: "40.000 km", evidence: "S/R" },
+      { code: "KCH-131", plate: "PFVP-52", reading: 547_394, readingDate: "30-10-2026", formDate: "09-10-2026", formOdo: 543_054, answer: "Confirma", service: "40.000 km", evidence: "OT 33533" },
+      { code: "KA-143", plate: "SJFC-66", reading: 390_447.35, readingDate: "20-11-2026", formDate: "09-04-2026", formOdo: 339_990.15, answer: "Confirma", service: "40.000 km", evidence: "OT 33716" },
+    ]
+    const bytes = await planilla(rows)
+    const first = await applyTrinormaLecturasPreventivas({ ...common, bytes, pautaConfirmada: true, apply: true })
+    const byItem = new Map(first.outcomes.map((o) => [o.item, o]))
+    expect(byItem.get("KA-141 SGCP-77")).toMatchObject({ result: "pendiente", detail: expect.stringMatching(/respaldo «S\/R» no sirve/) })
+    expect(byItem.get("KCH-131 PFVP-52")).toMatchObject({ result: "pendiente", detail: expect.stringMatching(/dado de baja/) })
+    expect(byItem.get("KA-143 SJFC-66")).toMatchObject({ result: "cargado", detail: expect.stringMatching(/respaldo «OT 33716»/) })
+    expect(await profileOf("v-141")).toMatchObject({ initialReading: null, priorPreventiveDate: null })
+    expect(await profileOf("v-131")).toMatchObject({ initialReading: null, priorPreventiveDate: null })
+    // Dos decimales: se guardan con uno y la segunda corrida da «ya estaba», no un conflicto.
+    expect(await profileOf("v-143")).toMatchObject({ initialReading: 390_447.4, priorPreventiveReading: 339_990.2 })
+    const second = await applyTrinormaLecturasPreventivas({ ...common, bytes, pautaConfirmada: true, apply: true })
+    expect(second.outcomes.find((o) => o.item === "KA-143 SJFC-66")?.result).toBe("ya estaba")
+
+    const loaded = await profileOf("v-143")
+    const admin = { userId: "u-carga", email: ACTOR }
+    // Sin la sección de la declarada, la lectura inicial no puede quedar bajo la declarada guardada.
+    const lower = await updateEquipmentPlan(admin, "v-143", { scheduleId: loaded.scheduleId, initialReading: 300_000, initialReadingDate: "2026-01-01" }, { active: true, retiredReason: "" })
+    expect(lower.ok).toBe(false)
+    expect(lower.ok ? {} : lower.fieldErrors).toMatchObject({ initialReading: expect.stringMatching(/preventiva declarada/) })
+    // Un formulario abierto antes de la carga no la pisa.
+    const stale = await updateEquipmentPlan(admin, "v-143", {
+      scheduleId: loaded.scheduleId, initialReading: null, initialReadingDate: null,
+      priorPreventive: { date: null, reading: null, intervalValue: null, evidence: null }, expectedUpdatedAt: "2026-01-01 00:00:00+00",
+    }, { active: true, retiredReason: "" })
+    expect(stale).toMatchObject({ ok: false, message: expect.stringMatching(/cambió mientras la editabas/) })
+    expect(await profileOf("v-143")).toMatchObject({ initialReading: 390_447.4, priorPreventiveDate: "2026-04-09" })
   })
 })

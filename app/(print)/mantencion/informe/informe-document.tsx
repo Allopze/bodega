@@ -157,6 +157,26 @@ export function InformeDocument({ data, logoSrc }: { data: PanelReportData; logo
               {pautas.counts.sin_preventiva === 1 ? "1 equipo está" : `${pautas.counts.sin_preventiva} equipos están`} sin información de preventiva: tienen pauta y lectura, pero ninguna preventiva firmada ni declarada, así que no se puede calcular cuándo toca. No cuentan como al día.
             </p>
           ) : null}
+          {pautas.declaredPreventives && pautas.declaredPreventives.length > 0 ? (
+            <>
+              <h3>Preventivas declaradas (anteriores a la plataforma)</h3>
+              <p className="note">Estos equipos tienen como última preventiva una declarada por jefatura, no un registro firmado en la plataforma; cuentan en el estado de las pautas con ese respaldo.</p>
+              <table>
+                <thead><tr><th>Equipo</th><th>Fecha</th><th className="num">Lectura</th><th className="num">Servicio</th><th>Respaldo</th></tr></thead>
+                <tbody>
+                  {pautas.declaredPreventives.map((row) => (
+                    <tr key={row.vehicleId}>
+                      <td>{row.code === row.plate ? row.plate : `${row.code} · ${row.plate}`}</td>
+                      <td>{formatDate(row.date)}</td>
+                      <td className="num">{formatQty(row.reading)}</td>
+                      <td className="num">{formatQty(row.intervalValue)}</td>
+                      <td>{row.evidence}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          ) : null}
           <p className="note">
             {pautaCounts && pautaCounts.percent !== null
               ? `${formatPercent(pautaCounts.percent, 0)} de los equipos con pauta está al día (${pautaCounts.onTime} de ${pautaCounts.withSchedule}); los equipos sin pauta definida no entran en ese porcentaje.`

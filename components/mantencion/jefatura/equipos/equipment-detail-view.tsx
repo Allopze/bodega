@@ -117,6 +117,7 @@ export function EquipmentDetailView({
               schedules={edit.schedules}
               initial={edit.initial}
               readingLocked={data.recordCount > 0}
+              expectedUpdatedAt={edit.expectedUpdatedAt}
               extra={({ error, scheduleId }) => (
                 <EquipmentPriorPreventiveFields
                   unit={data.unit}

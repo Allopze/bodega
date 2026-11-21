@@ -27,6 +27,7 @@ import { getVehiclePurchaseHistory } from "@/lib/services/vehicle-purchase-histo
 import type { NewOtSheetProps } from "@/components/mantencion/jefatura/ot/new-ot-sheet"
 import { LIFE_PAGE_SIZE } from "@/components/mantencion/jefatura/equipos/equipment-life-section"
 import { listSchedules } from "@/lib/services/mantencion/schedules"
+import { getCurrentScheduleSnapshots } from "@/lib/services/mantencion/schedule-versions"
 import { PERFORMANCE_UNIT_LABELS } from "@/lib/combustibles/control/contracts"
 import { openVehicleFichaArea } from "../_ficha/access"
 import { vehicleFichaBreadcrumb, vehicleFichaDescription, VehicleFichaEditAction, VehicleFichaOwnership, VehicleFichaPersonalUseBadge, VehicleFichaTabs } from "../_ficha/ficha-chrome"
@@ -128,7 +129,9 @@ export default async function EquipmentDetailPage({
     }
   }
 
-  const priorPreventive = await loadPriorPreventive(id)
+  const [priorPreventive, profileUpdatedAt] = await Promise.all([loadPriorPreventive(id), loadProfileUpdatedAt(id)])
+  // El servidor valida el servicio contra la versión PUBLICADA de la pauta, no contra su borrador.
+  const publishedSchedules = schedules ? await getCurrentScheduleSnapshots(schedules.map((item) => item.id)) : []
   const { status, workshop } = row
   const data: EquipmentDetailData = {
     vehicleId: row.vehicleId,
@@ -194,7 +197,8 @@ export default async function EquipmentDetailPage({
           retired: row.retired,
           retiredReason: row.retiredReason ?? "",
         },
-        scheduleIntervals: Object.fromEntries(schedules.map((item) => [item.id, item.intervals])),
+        scheduleIntervals: Object.fromEntries(publishedSchedules.map((item) => [item.id, item.intervals])),
+        expectedUpdatedAt: profileUpdatedAt ?? undefined,
         priorPreventive: priorPreventive
           ? { date: priorPreventive.date, reading: formatNumber(priorPreventive.reading), interval: String(priorPreventive.intervalValue), evidence: priorPreventive.evidence }
           : undefined,
@@ -216,6 +220,12 @@ export default async function EquipmentDetailPage({
       showIdentity={!ctx.areas.includes("flota")}
     />
   )
+}
+
+/** `updated_at` del plan del equipo, tal cual, para que el servidor detecte una edición concurrente. */
+async function loadProfileUpdatedAt(vehicleId: string): Promise<string | null> {
+  const [current] = await loadEquipmentCurrents(db, vehicleId)
+  return current?.profileUpdatedAt ?? null
 }
 
 /**

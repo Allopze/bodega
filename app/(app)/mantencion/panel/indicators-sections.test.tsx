@@ -227,6 +227,22 @@ describe("PautasSection", () => {
     expect(region.textContent).not.toMatch(/sin_preventiva/)
   })
 
+  it("las preventivas declaradas se cuentan bajo el % al día y se listan con su respaldo y su origen", () => {
+    render(<PautasSection {...common} {...base} pautas={{ ...base.pautas, declaredPreventives: [{ vehicleId: "v-9", code: "KA-9", plate: "ZZZZ-09", state: "al_dia" as const, date: "2026-03-10", reading: 60_000, intervalValue: 20_000, evidence: "OT-1234" }] }} showRanking />)
+    const region = screen.getByRole("region", { name: "Pautas y disponibilidad" })
+    expect(within(region).getByRole("link", { name: /Equipos con la pauta al día/ }).textContent).toContain("1 con preventiva declarada, anterior a la plataforma")
+    const table = within(region).getByRole("table", { name: "Preventivas declaradas" })
+    expect(table.textContent).toContain("KA-9 · ZZZZ-09")
+    expect(table.textContent).toContain("OT-1234")
+    expect(table.textContent).toContain("Declarada, anterior a la plataforma")
+  })
+
+  it("sin preventivas declaradas no hay línea ni tabla", () => {
+    render(<PautasSection {...common} {...base} showRanking />)
+    expect(screen.queryByRole("table", { name: "Preventivas declaradas" })).toBeNull()
+    expect(screen.queryByText(/preventiva declarada/)).toBeNull()
+  })
+
   it("con empate en la cima no hay un «equipo con más»: se dice cuántos empatan", () => {
     render(
       <PautasSection

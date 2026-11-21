@@ -128,6 +128,7 @@ export async function updateEquipmentPlanAction(_prev: ActionState, formData: Fo
             source: "Editar mantención",
           }
           : undefined,
+        expectedUpdatedAt: text(formData, "expectedUpdatedAt", 64) || null,
       },
       { active: !retired, retiredReason: text(formData, "retiredReason", 1000) },
     )
