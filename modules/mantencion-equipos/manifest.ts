@@ -151,6 +151,12 @@ export const mantencionEquiposModule = {
     { roleSlug: "admin_contrato", permission: "mant:ot:create" },
     { roleSlug: "admin_contrato", permission: "mant:ot:receive" },
     { roleSlug: "admin_contrato", permission: "mant:ot:conform" },
+    // Además ve el Panel, los registros, el historial y los equipos de sus faenas,
+    // y los exporta (Excel y el informe PDF del Panel). Decisión del usuario del
+    // 2026-11-21 (Trinorma): el administrador de contrato muestra el tablero de su
+    // faena en la auditoría. En producción lo aplica `GRANT_ADDITIONS`.
+    { roleSlug: "admin_contrato", permission: "mant:records:view_worksite" },
+    { roleSlug: "admin_contrato", permission: "mant:export" },
     // Jefatura de mantención: recibe el aviso, asigna y gestiona. No da la
     // conformidad: sería aprobar su propio trabajo.
     { roleSlug: "jefe_mantencion", permission: "mant:ot:view_worksite" },

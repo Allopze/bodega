@@ -4,7 +4,7 @@ Para el Jefe de Mantención y los administradores de contrato. Explica dónde es
 
 ## Para la auditoría: el Panel de mantención
 
-**Dónde:** Control operacional → Mantención → **Panel de mantención**.
+**Dónde:** Control operacional → Mantención → **Panel de mantención**. El Jefe de Mantención ve todas las faenas. El administrador de contrato ve y exporta sólo las suyas.
 
 1. Arriba elija la **faena** (por ejemplo, Biodiversa) y el **período**. Para mostrar todo el historial, use de junio de 2025 a hoy.
 2. La sección **Trabajos de mantención** muestra:
@@ -58,6 +58,5 @@ Hoy el tipo de acción es opcional. El Jefe de Mantención puede hacerlo obligat
 
 ## Lo que todavía no está
 
-- **El Panel para los administradores de contrato.** Hoy ven las órdenes de trabajo de su faena, pero no el Panel ni la exportación: falta decidir si se les da ese permiso.
-- **Equipos del historial que no están en la flota.** Son 16, entre ellos las grúas H-1, H-2 y H-13 y las bateas KCB. Esos trabajos se ven en el historial sin equipo ligado hasta que se agreguen a la flota.
+- **Trabajos sin equipo ligado.** Las grúas H-1, H-2 y H-13, las bateas KCB y otros equipos que faltaban se agregan a la flota en la carga. Quedan unos pocos trabajos con patentes que no están en ninguna planilla (WX-6495, GRDW-63, ZV-6852): se ven en el historial y se pueden ligar a mano.
 - **Patentes cruzadas.** Las de KCH-133, KCH-135 y KCH-136 hay que confirmarlas contra el padrón. Mientras tanto, sus trabajos del formulario quedan en conflicto, sin equipo ligado, pero cuentan en la faena.

@@ -23,7 +23,7 @@ Rama `feat/mantencion-trinorma`, sobre `main` a47271fd3, que ya incluye la 0397 
 
 Se aplicó sin errores sobre un clon de producción del 21-11. Eso incluye el índice único de código de equipo: producción no tiene códigos duplicados.
 
-**Permisos.** No hay permisos nuevos, así que no hace falta `db:sync-rbac` por esta rama.
+**Permisos.** No hay permisos nuevos. Sí hay una concesión nueva, decidida por el usuario el 2026-11-21: el administrador de contrato recibe `mant:records:view_worksite` y `mant:export`, es decir, ve y exporta el Panel, los registros, el historial y los equipos de **sus** faenas. Va en `GRANT_ADDITIONS` y la aplica una sola vez el paso `sync-rbac` que `deploy-prod.sh` ya corre.
 
 **Parámetros.** En Parámetros operativos → Mantención:
 
@@ -97,7 +97,26 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
 
    En el clon del 21-11: 26 cambios. La segunda corrida no hizo nada.
 2. **Maestros, `--apply`.** La **unión de las dos Arauco** (HORCONES pasa a llamarse «Arauco»; las 18 filas del historial de MANT-ARA pasan a HORCONES; MANT-ARA pasa a «Arauco (anterior)») sólo corre con `--unir-arauco`. Tiene autorización aparte. Si MANT-ARA tuviera equipos o contratos, se omite sola.
-3. **Importador, simulación:**
+3. **Equipos que faltaban en la flota, simulación y luego `--apply`:**
+
+   ```
+   apply-trinorma-equipos-faltantes.ts --actor-email <correo> --inventario <INVENTARIO….xlsx>
+   ```
+
+   Da de alta 10 equipos que el consolidado trae y la flota no:
+   - CA-85, H-1, H-2, H-13;
+   - KCB-001, KCB-002, KCB-003, KCB-010;
+   - KRR-002 y SXCV-49.
+
+   La faena sale de la base de noviembre del Jefe de Mantención, o del inventario de octubre. Los de Pacífico y KCB-003 van con «ubicación por confirmar». No crea:
+   - CA-47, CA-81 y CA-82, que están dados de baja;
+   - la estructura de limpieza y la hidrolavadora, que no tienen código ni patente;
+   - LCTC-21, que es CR-50.
+
+   En el clon: 10 altas, y la segunda corrida no hizo nada.
+
+   Corriendo después el importador, se ligan 100 trabajos más: los sin equipo bajan de 112 a 12.
+4. **Importador, simulación:**
 
    ```
    import-consolidado-mantencion.ts --file <CONSOLIDADO….xlsx> --actor-email <correo> --report <informe.md>
@@ -116,8 +135,8 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
    Todas las filas resuelven su faena. 112 no tienen equipo: 16 equipos que no están en la flota. Hay 66 mantenciones y 270 inspecciones en conflicto por las patentes cruzadas de KCH-133, KCH-135 y KCH-136.
 
    Si el alias «Cholguan» todavía no existe, el importador igual resuelve CHOLGUAN, gracias al respaldo que ya tenía.
-4. **Importador, `--apply`.** La segunda corrida debe dar todo «sin cambios».
-5. **Verificación de solo lectura:**
+5. **Importador, `--apply`.** La segunda corrida debe dar todo «sin cambios».
+6. **Verificación de solo lectura:**
 
    ```sql
    BEGIN READ ONLY;
@@ -145,7 +164,5 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
 - Encender «Exigir el tipo de acción» cuando el Jefe de Mantención lo pida.
 - Decisiones pendientes del usuario:
   - patentes de KCH-133, KCH-135 y KCH-136;
-  - los 16 equipos del consolidado que no están en la flota;
-  - si los administradores de contrato ven el Panel y exportan el PDF;
   - la unión de Arauco;
   - el traslado (C4).
