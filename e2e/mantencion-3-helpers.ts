@@ -74,7 +74,7 @@ export async function fillEquipmentForm(page: Page, values: {
   await page.getByRole("textbox", { name: "Año", exact: true }).fill(values.year)
   await selectRadixById(page, "eq-worksite", values.worksite)
   if (values.schedule) await selectRadixById(page, "eq-schedule", new RegExp(`^${values.schedule}`))
-  if (values.reading) await page.getByLabel(/^Lectura actual/).fill(values.reading)
+  if (values.reading) await page.getByLabel(/^Lectura inicial/).fill(values.reading)
 }
 
 export async function importWorkbook(rows: Array<Array<string | number | null>>): Promise<Buffer> {

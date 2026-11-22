@@ -12,6 +12,9 @@ import { EquipmentPlanFields, type EquipmentPlanValues } from "./equipment-plan-
 import { EquipmentStatusFields } from "./equipment-status-fields"
 import type { EquipmentFormCatalogs } from "./equipment-form-types"
 
+/** ¿Hay al menos un error por campo? Un `{}` no cuenta: el mensaje general tiene que verse. */
+const hasFieldErrors = (state: ActionState) => Object.keys(state.fieldErrors ?? {}).length > 0
+
 type FormAction = (prev: ActionState, formData: FormData) => Promise<ActionState>
 
 export interface EquipmentPlanFormValues extends EquipmentPlanValues {
@@ -67,7 +70,7 @@ export function EquipmentPlanForm({
     <form action={formAction} noValidate aria-label="Editar mantención" className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:p-6">
       <input type="hidden" name="vehicleId" value={vehicleId} />
       {expectedUpdatedAt ? <input type="hidden" name="expectedUpdatedAt" value={expectedUpdatedAt} /> : null}
-      {!state.ok && state.message && !state.fieldErrors && <Callout tone="danger" role="alert" className="mb-4">{state.message}</Callout>}
+      {!state.ok && state.message && !hasFieldErrors(state) && <Callout tone="danger" role="alert" className="mb-4">{state.message}</Callout>}
       <p className="mb-4 text-sub">
         La pauta, la lectura inicial y el estado del equipo en Mantención. El código, la patente, el tipo, la marca y la faena se cambian en «Editar vehículo».
       </p>

@@ -91,3 +91,31 @@ describe("«Editar mantención»", () => {
     expect(updateEquipmentPlan.mock.calls[0]![2]).toEqual({ scheduleId: null, initialReading: null, initialReadingDate: null, expectedUpdatedAt: null })
   })
 })
+
+describe("EQ-1: un error sin campo no lleva `fieldErrors`, para que el formulario muestre el mensaje", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    guard.mockResolvedValue({ session: SESSION })
+  })
+
+  it("«La ficha cambió mientras la editabas» (control de concurrencia) sale con `fieldErrors` indefinido", async () => {
+    updateEquipmentPlan.mockResolvedValue({ ok: false, message: "La ficha cambió mientras la editabas. Recarga la página y vuelve a intentarlo.", fieldErrors: {} })
+    const state = await updateEquipmentPlanAction({ ok: false }, form({ vehicleId: "veh-1", status: "activo" }))
+    expect(state.ok).toBe(false)
+    expect(state.message).toMatch(/La ficha cambió mientras la editabas/)
+    expect(state.fieldErrors).toBeUndefined()
+  })
+
+  it("lo mismo en el alta: «faena que no administras» no queda tras un `{}`", async () => {
+    createEquipment.mockResolvedValue({ ok: false, message: "No administras la faena de ese equipo.", fieldErrors: {} })
+    const state = await createEquipmentAction({ ok: false }, form({ code: "KA-1", worksiteId: "ws-9" }))
+    expect(state.fieldErrors).toBeUndefined()
+    expect(state.message).toMatch(/No administras/)
+  })
+
+  it("con errores de campo se conservan, uno por llave", async () => {
+    updateEquipmentPlan.mockResolvedValue({ ok: false, message: "x", fieldErrors: { initialReading: "Lectura inválida." } })
+    const state = await updateEquipmentPlanAction({ ok: false }, form({ vehicleId: "veh-1", status: "activo" }))
+    expect(state.fieldErrors).toEqual({ initialReading: ["Lectura inválida."] })
+  })
+})

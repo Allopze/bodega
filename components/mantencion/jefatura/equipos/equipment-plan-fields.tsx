@@ -53,7 +53,7 @@ export function EquipmentPlanFields({
           options={offered.map((item) => ({ value: item.id, label: `${item.name} (${item.intervalCount} ${item.intervalCount === 1 ? "intervalo" : "intervalos"})`, textValue: item.name }))}
         />
       </Field>
-      <Field label={`Lectura actual${unit ? ` (${unit})` : ""}`} htmlFor="eq-reading" error={error("initialReading")} helper={readingLocked ? "Fija: el equipo ya tiene registros." : "Opcional. Sirve para calcular la próxima mantención antes del primer registro."}>
+      <Field label={`Lectura inicial${unit ? ` (${unit})` : ""}`} htmlFor="eq-reading" error={error("initialReading")} helper={readingLocked ? "Fija: el equipo ya tiene registros." : "Opcional. Con la lectura inicial y una preventiva (firmada o declarada) se calcula la próxima mantención."}>
         <Input id="eq-reading" name="initialReading" inputMode="numeric" className="font-mono" readOnly={readingLocked} value={values.initialReading} onChange={(e) => onChange({ initialReading: e.target.value })} error={!!error("initialReading")} />
       </Field>
       {!readingLocked && values.initialReading.trim() && (

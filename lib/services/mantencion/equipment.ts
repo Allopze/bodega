@@ -403,7 +403,7 @@ export async function updateEquipmentPlanTx(
   if (input.priorPreventive !== undefined) {
     const intervals = schedule ? ((await getCurrentScheduleSnapshots([schedule.id], tx))[0]?.intervals ?? []) : []
     const empty = { date: null, reading: null, intervalValue: null, evidence: null }
-    const resolved = resolvePriorPreventive(input.priorPreventive ?? empty, { initialReading, initialReadingDate, hasSchedule: !!schedule, intervals, storedInterval: prior.intervalValue }, today)
+    const resolved = resolvePriorPreventive(input.priorPreventive ?? empty, { initialReading, initialReadingDate, hasSchedule: !!schedule, intervals, storedInterval: prior.intervalValue, firstActiveRecord: current.firstActiveRecord, unit: current.unit }, today)
     if (Object.keys(resolved.errors).length > 0) return equipmentFailure(resolved.errors)
     const value = resolved.value
     // La misma declaración vuelve con cada guardado del formulario: si no cambió, se conserva quién la
