@@ -4,7 +4,8 @@ import { MetaBadge } from "@/components/states/state-badge"
 import type { WorkOrderDetail, WorkOrderEventDetail } from "@/lib/services/mantencion/work-orders/types"
 import { formatDate, formatDateTime } from "@/lib/utils"
 import { SectionCard } from "../shared/section-card"
-import { OT_EVENT_LABELS, OT_STATE_META } from "./ot-labels"
+import { ACTION_TYPE_LABELS, SPECIALTY_LABELS, isActionType, type Specialty } from "@/lib/mantencion/action-type"
+import { actionTypeText, laborHoursText, otEventLabel, OT_STATE_META, specialtiesText } from "./ot-labels"
 import { sortEventsNewestFirst } from "./ot-format"
 
 const LINK = "text-sm font-medium text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
@@ -20,6 +21,37 @@ function changeText(event: WorkOrderEventDetail): string | null {
     if (to) return `Nueva fecha: ${to}`
   }
   return null
+}
+
+const record = (value: unknown): Record<string, unknown> => (value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {})
+
+/**
+ * Qué cambió en una corrección de clasificación, una línea por campo («Tipo de acción: Correctiva →
+ * Preventiva»). El `changeSet` trae sólo los campos que cambiaron, con la faena también por nombre.
+ */
+export function classificationChanges(event: WorkOrderEventDetail): string[] {
+  const set = event.changeSet
+  if (event.type !== "edited" || set?.scope !== "clasificacion") return []
+  const before = record(set.before)
+  const after = record(set.after)
+  const lines: string[] = []
+  if ("actionType" in after) {
+    const text = (value: unknown) => (isActionType(value) ? ACTION_TYPE_LABELS[value] : actionTypeText("sin_clasificar"))
+    lines.push(`Tipo de acción: ${text(before.actionType)} → ${text(after.actionType)}`)
+  }
+  if ("specialties" in after) {
+    const text = (value: unknown) => specialtiesText(Array.isArray(value) ? (value.filter((item): item is Specialty => typeof item === "string" && item in SPECIALTY_LABELS)) : [])
+    lines.push(`Especialidades: ${text(before.specialties)} → ${text(after.specialties)}`)
+  }
+  if ("executionWorksiteId" in after) {
+    const text = (name: unknown, id: unknown) => (typeof name === "string" ? name : typeof id === "string" ? id : "La del equipo")
+    lines.push(`Faena de ejecución: ${text(before.executionWorksiteName, before.executionWorksiteId)} → ${text(after.executionWorksiteName, after.executionWorksiteId)}`)
+  }
+  if ("laborHours" in after) {
+    const hours = (value: unknown) => laborHoursText(typeof value === "number" ? value : null)
+    lines.push(`Horas hombre: ${hours(before.laborHours)} → ${hours(after.laborHours)}`)
+  }
+  return lines
 }
 
 /**
@@ -38,6 +70,7 @@ export function OtTimeline({ events }: { events: WorkOrderEventDetail[] }) {
         <ol aria-label="Historial de la orden de trabajo" className="relative ml-3 space-y-5 border-l border-[var(--color-border)] pl-6">
           {sorted.map((event) => {
             const change = changeText(event)
+            const classification = classificationChanges(event)
             return (
               <li key={event.id} className="relative">
                 <span aria-hidden className="absolute -left-[31px] top-1.5 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -50,12 +83,17 @@ export function OtTimeline({ events }: { events: WorkOrderEventDetail[] }) {
                   <span className="inline-flex items-center gap-1"><User size={12} aria-hidden />{event.actorName}</span>
                 </div>
                 <p className="mt-1 flex flex-wrap items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-                  {OT_EVENT_LABELS[event.type] ?? event.type}
+                  {otEventLabel(event)}
                   {event.toStatus && event.fromStatus !== event.toStatus && (
                     <MetaBadge meta={OT_STATE_META[event.toStatus]} size="sm" />
                   )}
                 </p>
                 {change && <p className="mt-0.5 font-mono text-xs tabular-nums text-[var(--color-text-muted)]">{change}</p>}
+                {classification.length > 0 && (
+                  <ul aria-label="Qué cambió" className="mt-0.5 space-y-0.5 text-xs text-[var(--color-text-muted)]">
+                    {classification.map((line) => <li key={line}>{line}</li>)}
+                  </ul>
+                )}
                 {event.reason && (
                   <blockquote className="mt-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-xs text-[var(--color-text-muted)]">
                     <span className="sr-only">Motivo: </span>&ldquo;{event.reason}&rdquo;

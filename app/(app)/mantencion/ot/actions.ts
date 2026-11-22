@@ -62,6 +62,9 @@ const exportFiltersSchema = z.object({
   assignedToUserId: z.string().max(64).optional(),
   from: civilDate().optional(),
   to: civilDate().optional(),
+  /** Día de cierre (`?cerradaDesde=&cerradaHasta=`): comparte `workOrdersWhere` con la lista. */
+  closedFrom: civilDate().optional(),
+  closedTo: civilDate().optional(),
   q: z.string().max(100).optional(),
   /** `?repuestos=pendientes`: el Excel comparte `workOrdersWhere` con la lista; sin este campo el esquema lo descartaría. */
   partsPending: z.boolean().optional(),

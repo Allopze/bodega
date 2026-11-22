@@ -1,17 +1,17 @@
 import { and, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm"
 import type { Tx } from "@/db"
-import { mantDrivers, mantWorkOrderItems, mantWorkOrders, mantWorkshops } from "@/db/schema"
+import { mantDrivers, mantWorkOrderItems, mantWorkOrders, mantWorkshops, worksites } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { getOperationalSettings } from "@/lib/services/system-settings"
 import type { WorkOrderEntryPayload } from "@/lib/mantencion/contracts"
 import {
   OT_ITEM_MAX_PER_KIND, OT_LABOR_HOURS_MAX, OT_TRANSITIONS, type OtItemDone, type OtItemKind, type OtTransition,
 } from "@/lib/mantencion/work-order-states"
-import type { EditWorkOrderInput } from "@/lib/mantencion/work-order-schemas"
+import type { EditWorkOrderInput, ReclassifyWorkOrderInput } from "@/lib/mantencion/work-order-schemas"
 import { isValidReason, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 import { todayInChile } from "@/lib/utils"
 import {
-  canActOnWorkOrder, canEditExecution, canEditRequest, type AccessCheck,
+  canActOnWorkOrder, canEditExecution, canEditRequest, canReclassifyWorkOrder, type AccessCheck,
 } from "./access"
 import { activateWorkOrderCapaEvidence, supersedeWorkOrderCapaEvidence } from "./capa-link"
 import { applyChange, assertNotFuture, CLIENT_OP_EVENTS, linkedRecordState, planFor, refuse, runLocked, type LockedResult, type OtRow } from "./core"
@@ -549,7 +549,8 @@ export async function editWorkOrderRequest(actor: WorkOrderActor, input: EditWor
       imputationWorksiteId: ctx.ot.worksiteId, required: mantencionActionTypeRequired === 1, previousActionType: ctx.ot.actionType,
       previousExecutionWorksiteId: ctx.ot.executionWorksiteId, isEdit: true,
     })
-    const items = normalizeItems(input.annexItems, input.maintenanceItems)
+    // Los ítems de un tipo desmarcado no se guardan (OT-5): sólo cuentan los de REPARACIÓN (anexos) y MANTENCIÓN.
+    const items = normalizeItems(input.repair ? input.annexItems : [], input.maintenance ? input.maintenanceItems : [])
     const patch = {
       ...classification,
       repair: input.repair,
@@ -573,6 +574,77 @@ export async function editWorkOrderRequest(actor: WorkOrderActor, input: EditWor
         items: { before: previousItems, after: rows.map((item) => ({ kind: item.kind, description: item.description })) },
       },
     }], { oldState: summarize(ctx.ot), newState: patch })
+    return { row }
+  })
+}
+
+// ── Corregir la clasificación ───────────────────────────────────────────────
+
+const sameList = (a: readonly string[] | null | undefined, b: readonly string[] | null | undefined) => JSON.stringify(a ?? []) === JSON.stringify(b ?? [])
+
+/**
+ * Corrige tipo de acción, especialidades, faena de ejecución y, si la OT ya pasó por la salida de
+ * taller, horas hombre. Es la puerta para lo que «Editar solicitud» ya no alcanza (OT en taller, por
+ * recibir, por conformidad o cerrada): sólo `mant:ot:manage`, en cualquier estado salvo anulada, con
+ * motivo, y deja el evento `edited` con `scope: "clasificacion"` y qué cambió (antes → después). No
+ * toca el estado ni la versión de nadie más: sólo `version + 1`. Un campo no enviado (`undefined`) se
+ * conserva; `null` lo borra. Nada de esto viaja por la sincronización del teléfono.
+ */
+export async function reclassifyWorkOrder(actor: WorkOrderActor, input: ReclassifyWorkOrderInput): Promise<LockedResult> {
+  return runLocked(actor, input, async (ctx) => {
+    assertAct(canReclassifyWorkOrder(actor, ctx.ot))
+    const reason = (input.reason ?? "").trim()
+    if (!isValidReason(reason)) refuse(`Escribe un motivo de al menos ${REASON_MIN_LENGTH} caracteres.`, "invalid", "reason")
+    const { mantencionActionTypeRequired } = await getOperationalSettings(ctx.tx)
+    const ot = ctx.ot
+    const keep = {
+      actionType: input.actionType === undefined ? ot.actionType : input.actionType,
+      specialties: input.specialties === undefined ? ot.specialties : input.specialties,
+      executionWorksiteId: input.executionWorksiteId === undefined ? ot.executionWorksiteId : input.executionWorksiteId,
+    }
+    const classification = await checkClassification(ctx.tx, keep, {
+      imputationWorksiteId: ot.worksiteId, required: mantencionActionTypeRequired === 1, previousActionType: ot.actionType,
+      previousExecutionWorksiteId: ot.executionWorksiteId, isEdit: true,
+    })
+
+    // Las horas hombre se registran al salir del taller: mientras la OT no haya pasado por la salida, no hay qué corregir.
+    let laborHours = ot.laborHours
+    if (input.laborHours !== undefined && input.laborHours !== ot.laborHours) {
+      if (!ot.workshopExitAt) refuse("Las horas hombre se registran en la salida de taller: esta orden todavía no pasa por ahí.", "invalid", "laborHours")
+      laborHours = input.laborHours
+      if (laborHours !== null && (!Number.isFinite(laborHours) || laborHours < 0 || laborHours > OT_LABOR_HOURS_MAX)) {
+        refuse(`Las horas hombre deben estar entre 0 y ${OT_LABOR_HOURS_MAX.toLocaleString("es-CL")}.`, "invalid", "laborHours")
+      }
+    }
+
+    const before: Record<string, unknown> = {}
+    const after: Record<string, unknown> = {}
+    const patch: Partial<typeof mantWorkOrders.$inferInsert> = {}
+    if (classification.actionType !== ot.actionType) {
+      before.actionType = ot.actionType; after.actionType = classification.actionType; patch.actionType = classification.actionType
+    }
+    if (!sameList(classification.specialties, ot.specialties)) {
+      before.specialties = ot.specialties ?? []; after.specialties = classification.specialties ?? []; patch.specialties = classification.specialties
+    }
+    if (classification.executionWorksiteId !== ot.executionWorksiteId) {
+      before.executionWorksiteId = ot.executionWorksiteId; after.executionWorksiteId = classification.executionWorksiteId
+      patch.executionWorksiteId = classification.executionWorksiteId
+      // Los nombres quedan en el evento: el historial no vuelve a buscar una faena que después se desactive.
+      const ids = [ot.executionWorksiteId, classification.executionWorksiteId].filter((value): value is string => !!value)
+      const names = new Map((ids.length
+        ? await ctx.tx.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, ids))
+        : []).map((row) => [row.id, row.name]))
+      before.executionWorksiteName = ot.executionWorksiteId ? names.get(ot.executionWorksiteId) ?? null : null
+      after.executionWorksiteName = classification.executionWorksiteId ? names.get(classification.executionWorksiteId) ?? null : null
+    }
+    if (laborHours !== ot.laborHours) {
+      before.laborHours = ot.laborHours; after.laborHours = laborHours; patch.laborHours = laborHours
+    }
+    if (Object.keys(after).length === 0) refuse("No cambiaste nada de la clasificación.", "invalid")
+
+    const row = await applyChange(ctx, patch, [{
+      type: "edited", reason, changeSet: { scope: "clasificacion", reason, before, after },
+    }], { reason, oldState: before, newState: after })
     return { row }
   })
 }

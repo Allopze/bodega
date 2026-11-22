@@ -7,7 +7,7 @@ import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { parseZ } from "@/lib/actions/parse-z"
 import {
   assignWorkOrderSchema, changeWorkOrderEstimateSchema, conformWorkOrderSchema, editWorkOrderSchema, finishWorkOrderSchema,
-  markWorkOrderItemsSchema, receiveWorkOrderSchema, rejectWorkOrderSchema, reopenWorkOrderSchema, startWorkOrderSchema,
+  markWorkOrderItemsSchema, receiveWorkOrderSchema, reclassifyWorkOrderSchema, rejectWorkOrderSchema, reopenWorkOrderSchema, startWorkOrderSchema,
   unassignWorkOrderSchema, updateWorkOrderEntrySchema, voidWorkOrderSchema,
 } from "@/lib/mantencion/work-order-schemas"
 import {
@@ -16,7 +16,7 @@ import {
 import type { LockedResult } from "@/lib/services/mantencion/work-orders/core"
 import {
   assignWorkOrder, changeWorkOrderEstimate, conformWorkOrder, editWorkOrderRequest, finishWorkOrder, markWorkOrderItems,
-  receiveWorkOrder, rejectWorkOrder, reopenWorkOrder, startWorkOrder, unassignWorkOrder, updateWorkOrderEntry, voidWorkOrder,
+  receiveWorkOrder, reclassifyWorkOrder, rejectWorkOrder, reopenWorkOrder, startWorkOrder, unassignWorkOrder, updateWorkOrderEntry, voidWorkOrder,
 } from "@/lib/services/mantencion/work-orders/transitions"
 import type { WorkOrderActor } from "@/lib/services/mantencion/work-orders/types"
 import { registerWorkOrderRecordFromWeb, webSyncContext } from "@/lib/services/mantencion/web-record"
@@ -66,6 +66,10 @@ const EXECUTE: Permission[] = ["mant:ot:execute", "mant:ot:manage"]
 
 export async function editWorkOrderAction(input: unknown): Promise<WorkOrderActionState> {
   return run(input, editWorkOrderSchema, ["mant:ot:manage", "mant:ot:create"], "No se pudo guardar la solicitud.", (actor, data) => editWorkOrderRequest(actor, data))
+}
+/** Corrige tipo de acción, especialidades, faena de ejecución y horas hombre de una OT que ya no admite «Editar solicitud»: sólo la jefatura, con motivo. */
+export async function reclassifyWorkOrderAction(input: unknown): Promise<WorkOrderActionState> {
+  return run(input, reclassifyWorkOrderSchema, MANAGE, "No se pudo corregir la clasificación.", (actor, data) => reclassifyWorkOrder(actor, data))
 }
 export async function assignWorkOrderAction(input: unknown): Promise<WorkOrderActionState> {
   return run(input, assignWorkOrderSchema, MANAGE, "No se pudo asignar la orden de trabajo.", (actor, data) => assignWorkOrder(actor, data))

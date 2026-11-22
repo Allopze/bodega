@@ -14,8 +14,9 @@ import type { OtStatus, OtTransition } from "@/lib/mantencion/work-order-states"
 import type { WorkOrderRecordForm } from "@/lib/services/mantencion/web-record"
 import type { WorkOrderDetail, WorkOrderItemDetail } from "@/lib/services/mantencion/work-orders/types"
 import { toast } from "@/lib/toast"
+import { EditOtSheet, type OtRequestSnapshot } from "./edit-ot-sheet"
 import {
-  AssignDialog, EntryDialog, EstimateDialog, FinishDialog, ItemsDialog, ReasonDialog, ReceiptDialog, type OtBase,
+  AssignDialog, EntryDialog, EstimateDialog, FinishDialog, ItemsDialog, ReasonDialog, ReceiptDialog, ReclassifyDialog, type OtBase,
 } from "./ot-action-dialogs"
 import { OtRecordSheet, type RecordKind } from "./record/ot-record-sheet"
 
@@ -62,6 +63,16 @@ export interface OtActionsProps {
    * solicitudes vuelve a validar permiso, alcance y estado de la OT.
    */
   partsRequestHref: string | null
+  /** «Editar solicitud»: estados «Por asignar» y «Asignada», jefatura o quien creó la OT (`detail.canEditRequest`). */
+  canEditRequest: boolean
+  /** «Corregir clasificación»: jefatura, cualquier estado menos anulada, sólo cuando no aplica «Editar solicitud» (`detail.canReclassify`). */
+  canReclassify: boolean
+  /** Lo guardado de la solicitud y la clasificación: precarga «Editar solicitud», «Corregir clasificación» y la salida. */
+  request: OtRequestSnapshot
+  /** Faenas elegibles como «Faena de ejecución»; sólo se cargan si se puede editar o corregir (`null` si no). */
+  executionWorksites: Array<{ id: string; name: string }> | null
+  /** `ops.mantencion.ot_action_type_required` encendido: marca el tipo de acción como obligatorio. */
+  actionTypeRequired: boolean
 }
 
 type RecordOption = { kind: RecordKind; disabled: boolean }
@@ -81,7 +92,7 @@ export function recordOptions(input: { repair: boolean; maintenance: boolean; ha
 
 const KIND_TEXT: Record<RecordKind, string> = { C: "Correctiva", P: "Preventiva" }
 
-type DialogName = "assign" | "entry" | "estimate" | "items" | "finish" | "receive" | "conform" | "reject" | "reopen" | "void" | null
+type DialogName = "edit" | "reclassify" | "assign" | "entry" | "estimate" | "items" | "finish" | "receive" | "conform" | "reject" | "reopen" | "void" | null
 
 /**
  * Acciones del detalle de la OT. Van en `PageHeader.actions` (regla 5 de
@@ -100,7 +111,8 @@ type DialogName = "assign" | "entry" | "estimate" | "items" | "finish" | "receiv
  * En taller, mientras falta el registro que exige la salida, la acción de la
  * etapa es «Registrar trabajo» (correctiva o preventiva, desde el PC) y la
  * salida queda secundaria; con el registro hecho, «Registrar otra…» pasa al menú.
- * El resto (reasignar, desasignar, cambiar la fecha estimada, corregir el
+ * El resto (reasignar, desasignar, editar la solicitud o corregir su
+ * clasificación, cambiar la fecha estimada, corregir el
  * ingreso, pedir repuestos, el PDF y anular) va en «Más acciones»: con todo a la
  * vista, una OT en taller llegaba a siete botones y apretaba el título en la barra
  * superior.
@@ -206,6 +218,8 @@ export function OtActions(props: OtActionsProps) {
             <DropdownMenuItem onSelect={() => setDialog("assign")}>{props.assignedToUserId ? "Reasignar" : "Asignar"}</DropdownMenuItem>
           )}
           {allowed.has("unassign") && <DropdownMenuItem onSelect={unassign}>Desasignar</DropdownMenuItem>}
+          {props.canEditRequest && <DropdownMenuItem onSelect={() => setDialog("edit")}>Editar solicitud</DropdownMenuItem>}
+          {!props.canEditRequest && props.canReclassify && <DropdownMenuItem onSelect={() => setDialog("reclassify")}>Corregir clasificación</DropdownMenuItem>}
           {editExecution && <DropdownMenuItem onSelect={() => setDialog("estimate")}>Cambiar entrega estimada</DropdownMenuItem>}
           {editExecution && props.entry && props.entryCatalogs && (
             <DropdownMenuItem onSelect={() => setDialog("entry")}>Corregir ingreso</DropdownMenuItem>
@@ -240,6 +254,32 @@ export function OtActions(props: OtActionsProps) {
 
       {unassignOp.message && <p role="alert" className="basis-full text-sm text-[var(--color-danger-ink)]">{unassignOp.message}</p>}
 
+      {dialog === "edit" && props.canEditRequest && (
+        <EditOtSheet
+          open
+          onOpenChange={(open) => { if (!open) setDialog(null) }}
+          workOrderId={props.workOrderId}
+          folio={props.folio}
+          version={props.version}
+          request={props.request}
+          executionWorksites={props.executionWorksites ?? []}
+          actionTypeRequired={props.actionTypeRequired}
+        />
+      )}
+      {dialog === "reclassify" && !props.canEditRequest && props.canReclassify && (
+        <ReclassifyDialog
+          {...dialogProps}
+          classification={{
+            actionType: props.request.actionType,
+            specialties: props.request.specialties,
+            executionWorksiteId: props.request.executionWorksiteId,
+            laborHours: props.request.laborHours,
+            hasExit: props.request.hasExit,
+          }}
+          executionWorksites={(props.executionWorksites ?? []).filter((worksite) => worksite.id !== props.request.worksiteId)}
+          actionTypeRequired={props.actionTypeRequired}
+        />
+      )}
       {dialog === "assign" && props.mechanics && (
         <AssignDialog {...dialogProps} mechanics={props.mechanics} currentUserId={props.assignedToUserId} />
       )}
@@ -248,7 +288,7 @@ export function OtActions(props: OtActionsProps) {
       )}
       {dialog === "estimate" && <EstimateDialog {...dialogProps} current={props.estimatedDeliveryDate} />}
       {dialog === "items" && <ItemsDialog {...dialogProps} items={props.items} />}
-      {dialog === "finish" && <FinishDialog {...dialogProps} entryAt={props.entry?.entryAt ?? null} />}
+      {dialog === "finish" && <FinishDialog {...dialogProps} entryAt={props.entry?.entryAt ?? null} savedWorkPerformed={props.request.workPerformed} savedLaborHours={props.request.laborHours} />}
       {dialog === "receive" && <ReceiptDialog {...dialogProps} mode="receive" defaultName={props.actorName} />}
       {dialog === "conform" && <ReceiptDialog {...dialogProps} mode="conform" defaultName={props.actorName} />}
       {dialog === "reject" && <ReasonDialog {...dialogProps} mode="reject" />}

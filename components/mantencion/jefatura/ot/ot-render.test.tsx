@@ -79,6 +79,43 @@ describe("filtros y pestañas de la lista", () => {
     navigation.search = ""
   })
 
+  it("lee cerradaDesde/cerradaHasta (día de cierre) y los limpia con «Limpiar filtros»; una fecha mal formada se ignora", () => {
+    const filters = parseWorkOrderQuery({ estado: "cerrada", cerradaDesde: "2026-11-01", cerradaHasta: "2026-11-15" })
+    expect(filters).toMatchObject({ tab: "cerrada", closedFrom: "2026-11-01", closedTo: "2026-11-15" })
+    expect(hasWorkOrderFilters(filters)).toBe(true)
+    expect(OT_FILTER_PARAMS).toEqual(expect.arrayContaining(["cerradaDesde", "cerradaHasta"]))
+    const ignored = parseWorkOrderQuery({ cerradaDesde: "2026-02-31", cerradaHasta: "ayer" })
+    expect(ignored.closedFrom).toBeUndefined()
+    expect(ignored.closedTo).toBeUndefined()
+    expect(hasWorkOrderFilters(ignored)).toBe(false)
+
+    // Un solo chip removible («Cerradas entre …»), sin control primario nuevo (A2); quitarlo borra los dos extremos.
+    navigation.search = "estado=cerrada&cerradaDesde=2026-11-01&cerradaHasta=2026-11-15&pagina=2"
+    render(<OtListFilters options={{ worksites: [], mechanics: [] }} equipment={[]} />)
+    expect(screen.getByText("Cerradas:")).toBeTruthy()
+    expect(screen.getByText("entre 01-11-2026 y 15-11-2026")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Cerradas desde|Cerrada hasta/ })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Eliminar filtro Cerradas" }))
+    expect(navigation.replace).toHaveBeenCalledWith("/mantencion/ot?estado=cerrada", { scroll: false })
+
+    navigation.replace.mockClear()
+    fireEvent.click(screen.getByRole("button", { name: "Limpiar filtros" }))
+    expect(navigation.replace).toHaveBeenCalledWith("/mantencion/ot?estado=cerrada", { scroll: false })
+    navigation.search = ""
+  })
+
+  it("«Desde» y «Hasta» se rotulan «Pedida desde» y «Pedida hasta»: filtran por la fecha de la orden (OTN-16)", () => {
+    navigation.search = "estado=abiertas&desde=2026-10-01&hasta=2026-10-31"
+    render(<OtListFilters options={{ worksites: [], mechanics: [] }} equipment={[]} />)
+    expect(screen.getByRole("button", { name: /^Pedida desde/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: /^Pedida hasta/ })).toBeTruthy()
+    expect(screen.getByText("Pedida desde:")).toBeTruthy()
+    expect(screen.getByText("Pedida hasta:")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Eliminar filtro Pedida desde" })).toBeTruthy()
+    expect(screen.queryByText("Desde:")).toBeNull()
+    navigation.search = ""
+  })
+
   it("sin el parámetro no hay chip de repuestos", () => {
     navigation.search = "estado=abiertas"
     render(<OtListFilters options={{ worksites: [], mechanics: [] }} equipment={[]} />)
@@ -444,6 +481,33 @@ describe("columna lateral", () => {
     expect(items.at(-1)).toContain("Orden solicitada")
     // El cambio de fecha dice de qué a qué.
     expect(history.getByText("03-11-2026 → 05-11-2026")).toBeTruthy()
+  })
+
+  it("una corrección de clasificación se lee «Clasificación corregida», con el motivo y qué cambió (antes → después)", () => {
+    const detail = otDetail({
+      events: [
+        ...otDetail().events,
+        {
+          id: "e5", type: "edited", fromStatus: null, toStatus: null, reason: "Era una mantención programada", actorName: "Alexis Soto", createdAt: "2026-11-04T10:00:00.000Z",
+          changeSet: {
+            scope: "clasificacion", reason: "Era una mantención programada",
+            before: { actionType: "correctiva", specialties: ["mecanica"], executionWorksiteId: null, executionWorksiteName: null, laborHours: 8 },
+            after: { actionType: "preventiva", specialties: ["mecanica", "soldadura"], executionWorksiteId: "ws-2", executionWorksiteName: "Santa Fe", laborHours: 2.5 },
+          },
+        },
+        { id: "e6", type: "edited", fromStatus: null, toStatus: null, reason: null, actorName: "Ana Pérez", createdAt: "2026-10-30T13:00:00.000Z", changeSet: { before: {}, after: {} } },
+      ],
+    })
+    render(<OtAside detail={detail} />)
+    const history = within(screen.getByRole("list", { name: "Historial de la orden de trabajo" }))
+    const item = history.getByText("Clasificación corregida").closest("li")!
+    expect(item.textContent).toContain("Era una mantención programada")
+    expect(item.textContent).toContain("Tipo de acción: Correctiva → Preventiva")
+    expect(item.textContent).toContain("Especialidades: Mecánica → Mecánica, Soldadura")
+    expect(item.textContent).toContain("Faena de ejecución: La del equipo → Santa Fe")
+    expect(item.textContent).toContain("Horas hombre: 8 h → 2,5 h")
+    // La edición común de la solicitud conserva su rótulo.
+    expect(history.getByText("Solicitud editada")).toBeTruthy()
   })
 
   it("el detalle no dibuja costo de la OT (decisión 2026-11-17)", () => {

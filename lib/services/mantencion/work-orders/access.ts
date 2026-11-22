@@ -163,6 +163,19 @@ export function canEditRequest(viewer: AccessViewer, ot: WorkOrderAccessFacts): 
   return creator ? allow : forbidden("Sólo la jefatura de mantención o quien creó la OT pueden editar la solicitud.")
 }
 
+/**
+ * Corregir la clasificación (tipo de acción, especialidades, faena de ejecución y, tras la salida,
+ * horas hombre) de una OT que ya no admite «Editar solicitud»: sólo la jefatura, con motivo, en
+ * cualquier estado salvo anulada. Alimenta el Panel Trinorma, el PDF y el Excel.
+ */
+export function canReclassifyWorkOrder(viewer: AccessViewer, ot: WorkOrderAccessFacts): AccessCheck {
+  if (!isOtStatus(ot.status) || ot.status === "anulada") {
+    return { ok: false, code: "conflict", message: `La OT está «${statusLabel(ot.status)}»: ya no se puede corregir su clasificación.` }
+  }
+  if (!hasMantPermission(viewer, OT_PERMISSIONS.manage)) return forbidden("Sólo la jefatura de mantención puede corregir la clasificación de una OT.")
+  return allow
+}
+
 /** Todas las transiciones que el usuario podría ejecutar ahora (lo que la UI refleja). */
 export function allowedTransitions(viewer: AccessViewer, ot: WorkOrderAccessFacts): OtTransition[] {
   return (Object.keys(OT_TRANSITIONS) as OtTransition[]).filter((transition) => canActOnWorkOrder(viewer, ot, transition).ok)

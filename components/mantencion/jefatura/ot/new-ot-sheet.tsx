@@ -9,19 +9,21 @@ import {
   Sheet, SheetBody, SheetCloseButton, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger,
 } from "@/components/admin/sheet"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Combobox } from "@/components/ui/combobox"
-import { DatePicker } from "@/components/ui/date-picker"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { SubmitButton } from "@/components/ui/submit-button"
-import { Textarea } from "@/components/ui/textarea"
-import { ACTION_TYPES, ACTION_TYPE_LABELS, SPECIALTIES, SPECIALTY_LABELS, type ActionType, type Specialty } from "@/lib/mantencion/action-type"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { toast } from "@/lib/toast"
 import type { WorkOrderEquipmentOption } from "@/lib/services/mantencion/work-orders/query"
-import { OtItemListEditor } from "./ot-item-list-editor"
+import {
+  buildCreatePayload, checksForActionType, hiddenFieldMessage, OtRequestFields, visibleFieldKeys, type FormValues,
+} from "./ot-request-fields"
+
+// El formulario compartido vive en `ot-request-fields.tsx`; se reexporta por quien ya lo importaba desde aquí.
+export { buildCreatePayload, checksForActionType }
+export type { FormValues }
 
 export interface NewOtSheetProps {
   equipment: WorkOrderEquipmentOption[]
@@ -51,60 +53,11 @@ export interface NewOtSheetProps {
   defaultVehicleId?: string
 }
 
-export interface FormValues {
-  vehicleId: string
-  repair: boolean
-  maintenance: boolean
-  requestDate: string
-  requesterName: string
-  repairDescription: string
-  observations: string
-  annexItems: string[]
-  maintenanceItems: string[]
-  assignedToUserId: string
-  actionType: ActionType | ""
-  specialties: Specialty[]
-  executionWorksiteId: string
-}
-
-/**
- * Al elegir el tipo de acción se prellenan las casillas del papel de forma coherente: correctiva es
- * reparación; preventiva y predictiva son mantención. Siguen editables (una OT puede ser las dos).
- */
-export function checksForActionType(type: ActionType): { repair: boolean; maintenance: boolean } {
-  return type === "correctiva" ? { repair: true, maintenance: false } : { repair: false, maintenance: true }
-}
-
 function initialValues(props: Pick<NewOtSheetProps, "today" | "defaultRequesterName" | "defaultVehicleId">): FormValues {
   return {
     vehicleId: props.defaultVehicleId ?? "", repair: true, maintenance: false, requestDate: props.today, requesterName: props.defaultRequesterName,
     repairDescription: "", observations: "", annexItems: [], maintenanceItems: [], assignedToUserId: "",
     actionType: "", specialties: [], executionWorksiteId: "",
-  }
-}
-
-/** Líneas sin texto fuera: la lista guarda también las que se están escribiendo. */
-function cleanItems(items: string[]): string[] {
-  return items.map((item) => item.trim()).filter(Boolean)
-}
-
-/** Lo que viaja en el campo `payload`: el `createWorkOrderSchema`. */
-export function buildCreatePayload(values: FormValues, clientRequestId: string) {
-  return {
-    clientRequestId,
-    vehicleId: values.vehicleId,
-    repair: values.repair,
-    maintenance: values.maintenance,
-    requestDate: values.requestDate,
-    requesterName: values.requesterName.trim(),
-    repairDescription: values.repair ? values.repairDescription.trim() || null : null,
-    observations: values.observations.trim() || null,
-    annexItems: cleanItems(values.annexItems),
-    maintenanceItems: cleanItems(values.maintenanceItems),
-    assignedToUserId: values.assignedToUserId || null,
-    actionType: values.actionType || null,
-    specialties: values.specialties,
-    executionWorksiteId: values.executionWorksiteId || null,
   }
 }
 
@@ -161,11 +114,15 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
   const executionOptions = (props.worksites ?? [])
     .filter((worksite) => worksite.id !== chosen?.worksiteId)
     .map((worksite) => ({ value: worksite.id, label: worksite.name }))
-  const toggleSpecialty = (specialty: Specialty, checked: boolean) => setValues((current) => ({
-    ...current,
-    specialties: SPECIALTIES.filter((value) => (value === specialty ? checked : current.specialties.includes(value))),
-  }))
   const payload = JSON.stringify(buildCreatePayload(values, clientRequestId))
+  // Un error de un campo que no se ve (p. ej. una lista de ítems oculta) no puede quedar mudo: va como mensaje general.
+  const hasFieldErrors = !!errors && Object.keys(errors).length > 0
+  const visibleKeys = visibleFieldKeys(values, {
+    create: true,
+    executionWorksite: executionOptions.length > 0,
+    mechanic: !!props.mechanics || (!!props.worksiteMechanics && faenaMechanics.length > 1),
+  })
+  const generalMessage = state.ok ? undefined : hasFieldErrors ? hiddenFieldMessage(errors, visibleKeys) : state.message || undefined
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -185,8 +142,8 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
           </SheetHeader>
 
           <SheetBody className="space-y-4">
-            {state.message && !state.ok && !state.fieldErrors && (
-              <p role="alert" tabIndex={-1} data-form-alert className="text-sm text-[var(--color-danger-ink)]">{state.message}</p>
+            {generalMessage && (
+              <p role="alert" tabIndex={-1} data-form-alert className="text-sm text-[var(--color-danger-ink)]">{generalMessage}</p>
             )}
             <input type="hidden" name="payload" value={payload} />
 
@@ -216,106 +173,13 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
                 </Field>
               )}
 
-              <Field label="Tipo de acción" htmlFor="ot-tipo-accion" required={props.actionTypeRequired} error={fieldError("actionType")} helper="Al elegirla se marca Reparación (correctiva) o Mantención (preventiva y predictiva); puedes ajustarlas.">
-                <OptionSelect
-                  id="ot-tipo-accion"
-                  emptyLabel={props.actionTypeRequired ? undefined : "Sin definir"}
-                  placeholder="Elige el tipo de acción"
-                  options={ACTION_TYPES.map((type) => ({ value: type, label: ACTION_TYPE_LABELS[type] }))}
-                  value={values.actionType}
-                  onValueChange={(value) => setValues((current) => {
-                    const type = (ACTION_TYPES as readonly string[]).includes(value) ? (value as ActionType) : ""
-                    return type ? { ...current, actionType: type, ...checksForActionType(type) } : { ...current, actionType: "" }
-                  })}
-                />
-              </Field>
-
-              <fieldset className="flex flex-col gap-2">
-                <legend className="mb-1.5 text-sm font-medium text-[var(--color-text)]">Especialidades</legend>
-                <div className="flex flex-wrap gap-x-6 gap-y-2">
-                  {SPECIALTIES.map((specialty) => (
-                    <Checkbox
-                      key={specialty}
-                      id={`ot-esp-${specialty}`}
-                      label={SPECIALTY_LABELS[specialty]}
-                      checked={values.specialties.includes(specialty)}
-                      onChange={(event) => toggleSpecialty(specialty, event.target.checked)}
-                    />
-                  ))}
-                </div>
-                {fieldError("specialties") && <p role="alert" className="text-xs text-[var(--color-danger)]">{fieldError("specialties")}</p>}
-              </fieldset>
-
-              <fieldset className="flex flex-col gap-2">
-                <legend className="mb-1.5 text-sm font-medium text-[var(--color-text)]">Tipo de trabajo <span aria-hidden className="text-[var(--color-danger)]">*</span></legend>
-                <div className="flex flex-wrap gap-x-6 gap-y-2">
-                  <Checkbox id="ot-reparacion" label="Reparación" checked={values.repair} onChange={(event) => set("repair", event.target.checked)} />
-                  <Checkbox id="ot-mantencion" label="Mantención" checked={values.maintenance} onChange={(event) => set("maintenance", event.target.checked)} />
-                </div>
-                {fieldError("repair", "maintenance") && <p role="alert" className="text-xs text-[var(--color-danger)]">{fieldError("repair", "maintenance")}</p>}
-              </fieldset>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Fecha de la orden" htmlFor="ot-fecha" required error={fieldError("requestDate")}>
-                  <DatePicker id="ot-fecha" value={values.requestDate} onChange={(iso) => set("requestDate", iso)} ariaLabel="Fecha de la orden" />
-                </Field>
-                <Field label="Solicitante" htmlFor="ot-solicitante" required error={fieldError("requesterName")}>
-                  <Input id="ot-solicitante" value={values.requesterName} maxLength={120} onChange={(event) => set("requesterName", event.target.value)} />
-                </Field>
-              </div>
-
-              {values.repair && (
-                <Field label="Reparación" htmlFor="ot-reparacion-desc" required error={fieldError("repairDescription")} helper="Qué hay que reparar, con el detalle que tengas.">
-                  <Textarea
-                    id="ot-reparacion-desc"
-                    value={values.repairDescription}
-                    maxLength={2000}
-                    rows={3}
-                    placeholder="Ej. Pierde aceite por el cárter y hace ruido al frenar."
-                    onChange={(event) => set("repairDescription", event.target.value)}
-                  />
-                </Field>
-              )}
-
-              {values.repair && (
-                <OtItemListEditor
-                  idPrefix="ot-anexo"
-                  legend="Trabajos anexos (reparación)"
-                  helper="Trabajos que se piden junto con la reparación. Opcional."
-                  placeholder="Ej. Cambiar pastillas de freno"
-                  items={values.annexItems}
-                  onChange={(next) => set("annexItems", next)}
-                  error={fieldError("annexItems")}
-                />
-              )}
-
-              {values.maintenance && (
-                <OtItemListEditor
-                  idPrefix="ot-mant"
-                  legend="Mantenciones solicitadas o asignadas en taller"
-                  helper="Cada mantención que se pide hacer. El mecánico marca Sí o No al terminar."
-                  placeholder="Ej. Cambio de aceite y filtros"
-                  items={values.maintenanceItems}
-                  onChange={(next) => set("maintenanceItems", next)}
-                  error={fieldError("maintenanceItems")}
-                />
-              )}
-
-              {executionOptions.length > 0 && (
-                <Field label="Faena de ejecución (opcional)" htmlFor="ot-faena-ejecucion" error={fieldError("executionWorksiteId")} helper="Sólo si el trabajo se hará en el taller de otra faena. Si lo dejas vacío, se hace en la del equipo.">
-                  <OptionSelect
-                    id="ot-faena-ejecucion"
-                    emptyLabel="La misma del equipo"
-                    options={executionOptions}
-                    value={values.executionWorksiteId}
-                    onValueChange={(value) => set("executionWorksiteId", value)}
-                  />
-                </Field>
-              )}
-
-              <Field label="Observaciones" htmlFor="ot-observaciones" error={fieldError("observations")}>
-                <Textarea id="ot-observaciones" value={values.observations} maxLength={2000} rows={2} onChange={(event) => set("observations", event.target.value)} />
-              </Field>
+              <OtRequestFields
+                values={values}
+                setValues={setValues}
+                fieldError={fieldError}
+                actionTypeRequired={props.actionTypeRequired}
+                executionOptions={executionOptions}
+              />
 
               {props.mechanics && (
                 <Field label="Mecánico (opcional)" htmlFor="ot-mecanico" error={fieldError("assignedToUserId")} helper="Si lo dejas vacío, la orden queda por asignar hasta que la asignes.">

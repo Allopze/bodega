@@ -15,7 +15,7 @@ import { canSeeRecord, recordVisibility, type MantViewer } from "../access"
 import { listMantCatalogs } from "../catalogs"
 import { unitFromMeter } from "../fleet"
 import {
-  allowedTransitions, canEditExecution, canEditRequest, canRegisterWorkOrderRecord, canSeeWorkOrder, workOrderVisibility, workOrderVisibilitySql,
+  allowedTransitions, canEditExecution, canEditRequest, canReclassifyWorkOrder, canRegisterWorkOrderRecord, canSeeWorkOrder, workOrderVisibility, workOrderVisibilitySql,
 } from "./access"
 import { linkedRecordState } from "./core"
 import { loadWorkOrderLinkedWork } from "./linked-work"
@@ -38,9 +38,12 @@ export interface WorkOrderListFilters {
   worksiteId?: string
   vehicleId?: string
   assignedToUserId?: string
-  /** Período sobre la fecha de la OT (`request_date`), YYYY-MM-DD. */
+  /** Período sobre la fecha de la orden (`request_date`, «pedida»), YYYY-MM-DD. */
   from?: string
   to?: string
+  /** Día de cierre (`closed_at`, hora de Chile, inclusivo), YYYY-MM-DD: el Panel enlaza «Cerradas» con su período. */
+  closedFrom?: string
+  closedTo?: string
   /** Búsqueda en el servidor: folio, código o patente del equipo, solicitante. */
   q?: string
   /** Sólo las OT abiertas que esperan un repuesto (`?repuestos=pendientes`). */
@@ -64,6 +67,9 @@ function likePattern(text: string): string {
   return `%${text.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
 }
 
+/** Día calendario de Chile de una marca de tiempo (`closed_at`), para comparar con un YYYY-MM-DD. */
+const chileDay = (column: typeof mantWorkOrders.closedAt) => sql`(${column} AT TIME ZONE 'America/Santiago')::date`
+
 /** OT abierta: todo lo que no está cerrado ni anulado. */
 const isOpenSql = () => inArray(mantWorkOrders.status, [...OT_OPEN_STATUSES])
 
@@ -77,6 +83,8 @@ function baseWhere(viewer: MantViewer, filters: Omit<WorkOrderListFilters, "tab"
     filters.assignedToUserId ? eq(mantWorkOrders.assignedToUserId, filters.assignedToUserId) : undefined,
     filters.from ? gte(mantWorkOrders.requestDate, filters.from) : undefined,
     filters.to ? lte(mantWorkOrders.requestDate, filters.to) : undefined,
+    filters.closedFrom ? sql`${chileDay(mantWorkOrders.closedAt)} >= ${filters.closedFrom}::date` : undefined,
+    filters.closedTo ? sql`${chileDay(mantWorkOrders.closedAt)} <= ${filters.closedTo}::date` : undefined,
     q
       ? sql`(${mantWorkOrders.folio} ilike ${likePattern(q)}
           or ${mantWorkOrders.equipmentSnapshot}->>'code' ilike ${likePattern(q)}
@@ -446,6 +454,8 @@ export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promi
     partsUsed,
     allowedTransitions: allowedTransitions(viewer, facts),
     canEditRequest: canEditRequest(viewer, facts).ok,
+    // Una sola puerta: si todavía se puede editar la solicitud, la clasificación se corrige ahí.
+    canReclassify: canReclassifyWorkOrder(viewer, facts).ok && !canEditRequest(viewer, facts).ok,
     canEditExecution: canEditExecution(viewer, facts).ok,
     canRegisterRecord: canRegisterWorkOrderRecord(viewer, facts).ok,
     needsLinkedRecord: recordState !== null && !recordState.linked,

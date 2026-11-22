@@ -63,21 +63,51 @@ function refineRequest<T extends { repair: boolean; maintenance: boolean; repair
   }
 }
 
-export const createWorkOrderSchema = z.object({
+/**
+ * Los ítems de un tipo de trabajo desmarcado no viajan (OT-5): «Trabajos anexos» pertenece a
+ * REPARACIÓN y «Mantenciones solicitadas» a MANTENCIÓN. Si alguien marcó un tipo, escribió ítems,
+ * lo desmarcó y envió, la lista queda oculta en el formulario: guardarla dejaría ítems que nadie ve
+ * y, peor, un error de validación de un campo invisible. Se descartan ANTES de validar.
+ */
+export function dropHiddenItems(input: unknown): unknown {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input
+  const data = input as Record<string, unknown>
+  return {
+    ...data,
+    ...(data.repair === false ? { annexItems: [] } : {}),
+    ...(data.maintenance === false ? { maintenanceItems: [] } : {}),
+  }
+}
+
+export const createWorkOrderSchema = z.preprocess(dropHiddenItems, z.object({
   clientRequestId: z.string().uuid(),
   vehicleId: id,
   ...requestFields,
   /** Sólo jefatura (`mant:ot:manage`): asignar al crear. */
   assignedToUserId: id.nullable(),
-}).superRefine(refineRequest)
+}).superRefine(refineRequest))
 export type CreateWorkOrderInput = z.infer<typeof createWorkOrderSchema>
 
-export const editWorkOrderSchema = z.object({
+export const editWorkOrderSchema = z.preprocess(dropHiddenItems, z.object({
   workOrderId: id,
   expectedVersion,
   ...requestFields,
-}).superRefine(refineRequest)
+}).superRefine(refineRequest))
 export type EditWorkOrderInput = z.infer<typeof editWorkOrderSchema>
+
+/**
+ * «Corregir clasificación»: tipo de acción, especialidades, faena de ejecución y —si la OT ya pasó
+ * por la salida de taller— horas hombre, con motivo. Un campo que no llega (`undefined`) se conserva;
+ * `null` lo borra.
+ */
+export const reclassifyWorkOrderSchema = z.object({
+  workOrderId: id,
+  expectedVersion,
+  ...classificationFields,
+  laborHours: laborHours.nullable().optional(),
+  reason,
+})
+export type ReclassifyWorkOrderInput = z.infer<typeof reclassifyWorkOrderSchema>
 
 export const assignWorkOrderSchema = z.object({ workOrderId: id, expectedVersion, assignedToUserId: id })
 export const unassignWorkOrderSchema = z.object({ workOrderId: id, expectedVersion })

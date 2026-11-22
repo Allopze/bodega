@@ -4,10 +4,11 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import {
   assignWorkOrderAction, changeWorkOrderEstimateAction, finishWorkOrderAction, markWorkOrderItemsAction,
-  receiveWorkOrderAction, conformWorkOrderAction, rejectWorkOrderAction, reopenWorkOrderAction, startWorkOrderAction,
-  updateWorkOrderEntryAction,
+  receiveWorkOrderAction, conformWorkOrderAction, reclassifyWorkOrderAction, rejectWorkOrderAction, reopenWorkOrderAction,
+  startWorkOrderAction, updateWorkOrderEntryAction,
 } from "@/app/(app)/mantencion/ot/[id]/actions"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Combobox } from "@/components/ui/combobox"
 import { DatePicker } from "@/components/ui/date-picker"
 import { DateTimePicker } from "@/components/ui/date-time-picker"
@@ -17,6 +18,7 @@ import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation, type OperationResult } from "@/lib/hooks/use-operation"
+import { ACTION_TYPES, ACTION_TYPE_LABELS, SPECIALTIES, SPECIALTY_LABELS, type ActionType, type Specialty } from "@/lib/mantencion/action-type"
 import { OT_ITEM_KIND_LABELS, OT_ITEM_MAX_PER_KIND, OT_LABOR_HOURS_MAX, type OtItemKind } from "@/lib/mantencion/work-order-states"
 import type { MantUnit } from "@/lib/mantencion/types"
 import type { WorkOrderDetail, WorkOrderItemDetail } from "@/lib/services/mantencion/work-orders/types"
@@ -386,11 +388,21 @@ export function ItemsDialog({ open, onOpenChange, base, folio, items }: DialogPr
 
 // ── Salida de taller ─────────────────────────────────────────────────────────
 
-export function FinishDialog({ open, onOpenChange, base, folio, entryAt }: DialogProps & { entryAt: string | null }) {
+export function FinishDialog({
+  open, onOpenChange, base, folio, entryAt, savedWorkPerformed = null, savedLaborHours = null,
+}: DialogProps & {
+  entryAt: string | null
+  /**
+   * Lo que la OT ya tiene guardado de una salida anterior (tras un rechazo o una reapertura). Se precarga:
+   * antes el diálogo salía vacío y, al reenviar, un «2» pisaba en silencio un «8» (OTN-3).
+   */
+  savedWorkPerformed?: string | null
+  savedLaborHours?: number | null
+}) {
   const [exitAt, setExitAt] = React.useState(chileNowLocal)
   const [note, setNote] = React.useState("")
-  const [workPerformed, setWorkPerformed] = React.useState("")
-  const [laborHours, setLaborHours] = React.useState("")
+  const [workPerformed, setWorkPerformed] = React.useState(savedWorkPerformed ?? "")
+  const [laborHours, setLaborHours] = React.useState(savedLaborHours != null ? String(savedLaborHours) : "")
   const [hoursError, setHoursError] = React.useState<string | undefined>()
   const op = useOtAction(() => onOpenChange(false))
   function submit(event: React.FormEvent) {
@@ -418,7 +430,7 @@ export function FinishDialog({ open, onOpenChange, base, folio, entryAt }: Dialo
             <Field label="Fecha y hora de salida" htmlFor="ot-exit-at" required>
               <DateTimePicker id="ot-exit-at" value={exitAt} onChange={setExitAt} min={entryAt ? isoToChileLocal(entryAt) : undefined} />
             </Field>
-            <Field label="Trabajo realizado (opcional)" htmlFor="ot-exit-work" helper="Qué se hizo, en palabras de quien lo hizo.">
+            <Field label="Trabajo realizado (opcional)" htmlFor="ot-exit-work" helper={savedWorkPerformed || savedLaborHours != null ? "Ya había datos de una salida anterior: revísalos y corrige lo que cambió." : "Qué se hizo, en palabras de quien lo hizo."}>
               <Textarea id="ot-exit-work" value={workPerformed} rows={3} maxLength={4000} onChange={(event) => setWorkPerformed(event.target.value)} />
             </Field>
             <Field label="Horas hombre (opcional)" htmlFor="ot-exit-hours" error={hoursError} helper="Total de horas de trabajo de las personas que intervinieron.">
@@ -512,6 +524,131 @@ export function ReasonDialog({
           </Field>
           <ErrorLine message={op.message} />
           <Footer pending={op.pending} onCancel={() => onOpenChange(false)} submitLabel={reject ? "Rechazar" : "Reabrir"} disabled={!isValidReason(reason)} />
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+
+// ── Corregir la clasificación ────────────────────────────────────────────────
+
+/** Lo guardado que el diálogo precarga: tipo de acción, especialidades, faena de ejecución y horas hombre. */
+export interface OtClassificationSnapshot {
+  actionType: ActionType | null
+  specialties: Specialty[]
+  executionWorksiteId: string | null
+  laborHours: number | null
+  /** La OT ya pasó por la salida de taller: sólo entonces hay horas hombre que corregir. */
+  hasExit: boolean
+}
+
+/**
+ * «Corregir clasificación» (sólo jefatura): para una OT que ya no admite «Editar solicitud» (en taller, por
+ * recibir, por conformidad o cerrada). Precarga lo guardado, pide un motivo y deja el cambio en el historial.
+ * Envía la versión del momento de abrir: un conflicto («cambió en otra sesión») queda dentro del diálogo y no
+ * pisa en silencio lo de la otra sesión.
+ */
+export function ReclassifyDialog({
+  open, onOpenChange, base, folio, classification, executionWorksites, actionTypeRequired,
+}: DialogProps & {
+  classification: OtClassificationSnapshot
+  /** Faenas elegibles como «Faena de ejecución» (ya sin la del equipo). */
+  executionWorksites: Array<{ id: string; name: string }>
+  actionTypeRequired: boolean
+}) {
+  const [actionType, setActionType] = React.useState<ActionType | "">(classification.actionType ?? "")
+  const [specialties, setSpecialties] = React.useState<Specialty[]>(classification.specialties)
+  const [executionWorksiteId, setExecutionWorksiteId] = React.useState(classification.executionWorksiteId ?? "")
+  const [laborHours, setLaborHours] = React.useState(classification.laborHours != null ? String(classification.laborHours) : "")
+  const [reason, setReason] = React.useState("")
+  const [hoursError, setHoursError] = React.useState<string | undefined>()
+  const [expectedVersion] = React.useState(base.expectedVersion)
+  const op = useOtAction(() => onOpenChange(false))
+
+  const toggleSpecialty = (specialty: Specialty, checked: boolean) => setSpecialties((current) => SPECIALTIES.filter((value) => (value === specialty ? checked : current.includes(value))))
+  const hoursText = laborHours.trim().replace(",", ".")
+  const hours = hoursText === "" ? null : Number(hoursText)
+  const changed = (actionType || null) !== classification.actionType
+    || JSON.stringify(specialties) !== JSON.stringify(classification.specialties)
+    || (executionWorksiteId || null) !== classification.executionWorksiteId
+    || (classification.hasExit && hours !== classification.laborHours)
+
+  function submit(event: React.FormEvent) {
+    event.preventDefault()
+    if (classification.hasExit && hours !== null && (!Number.isFinite(hours) || hours < 0 || hours > OT_LABOR_HOURS_MAX)) {
+      setHoursError(`Indica horas entre 0 y ${OT_LABOR_HOURS_MAX.toLocaleString("es-CL")}.`)
+      return
+    }
+    setHoursError(undefined)
+    op.run(() => reclassifyWorkOrderAction({
+      workOrderId: base.workOrderId,
+      expectedVersion,
+      actionType: actionType || null,
+      specialties,
+      executionWorksiteId: executionWorksiteId || null,
+      ...(classification.hasExit ? { laborHours: hours } : {}),
+      reason: reason.trim(),
+    }), "Clasificación corregida")
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!op.pending) onOpenChange(next) }}>
+      <DialogContent>
+        <form onSubmit={submit} noValidate>
+          <DialogHeader>
+            <DialogTitle>Corregir la clasificación de {folio}</DialogTitle>
+            <DialogDescription>
+              Tipo de acción, especialidades, faena de ejecución{classification.hasExit ? " y horas hombre" : ""}. Alimentan el Panel y el Excel; el cambio queda en el historial con su motivo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <Field label="Tipo de acción" htmlFor="ot-reclass-tipo" required={actionTypeRequired}>
+              <OptionSelect
+                id="ot-reclass-tipo"
+                emptyLabel={actionTypeRequired ? undefined : "Sin definir"}
+                placeholder="Elige el tipo de acción"
+                options={ACTION_TYPES.map((type) => ({ value: type, label: ACTION_TYPE_LABELS[type] }))}
+                value={actionType}
+                onValueChange={(value) => setActionType((ACTION_TYPES as readonly string[]).includes(value) ? (value as ActionType) : "")}
+              />
+            </Field>
+            <fieldset className="flex flex-col gap-2">
+              <legend className="mb-1.5 text-sm font-medium text-[var(--color-text)]">Especialidades</legend>
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                {SPECIALTIES.map((specialty) => (
+                  <Checkbox
+                    key={specialty}
+                    id={`ot-reclass-esp-${specialty}`}
+                    label={SPECIALTY_LABELS[specialty]}
+                    checked={specialties.includes(specialty)}
+                    onChange={(event) => toggleSpecialty(specialty, event.target.checked)}
+                  />
+                ))}
+              </div>
+            </fieldset>
+            {(executionWorksites.length > 0 || executionWorksiteId) && (
+              <Field label="Faena de ejecución (opcional)" htmlFor="ot-reclass-faena" helper="Sólo si el trabajo se hizo en el taller de otra faena. Vacío = la del equipo.">
+                <OptionSelect
+                  id="ot-reclass-faena"
+                  emptyLabel="La misma del equipo"
+                  options={executionWorksites.map((worksite) => ({ value: worksite.id, label: worksite.name }))}
+                  value={executionWorksiteId}
+                  onValueChange={setExecutionWorksiteId}
+                />
+              </Field>
+            )}
+            {classification.hasExit && (
+              <Field label="Horas hombre" htmlFor="ot-reclass-hours" error={hoursError} helper="Total de horas de trabajo de las personas que intervinieron.">
+                <Input id="ot-reclass-hours" type="number" inputMode="decimal" min={0} max={OT_LABOR_HOURS_MAX} step="0.25" value={laborHours} onChange={(event) => setLaborHours(event.target.value)} />
+              </Field>
+            )}
+            <Field label="Motivo de la corrección" htmlFor="ot-reclass-reason" required helper={`Al menos ${REASON_MIN_LENGTH} caracteres.`}>
+              <Textarea id="ot-reclass-reason" value={reason} rows={3} maxLength={1000} onChange={(event) => setReason(event.target.value)} placeholder="Ej. Se registró como correctiva, pero fue una mantención programada." />
+            </Field>
+          </div>
+          <ErrorLine message={op.message} />
+          <Footer pending={op.pending} onCancel={() => onOpenChange(false)} submitLabel="Guardar corrección" disabled={!changed || !isValidReason(reason)} />
         </form>
       </DialogContent>
     </Dialog>
