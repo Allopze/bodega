@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { MantApp } from "@/components/mantencion/app/mant-app"
+import { BUILD_ID } from "@/lib/build-info"
 import { MANT_APP_METADATA, MANT_APP_VIEWPORT } from "./app-metadata"
 
 export const dynamic = "force-dynamic"
@@ -31,7 +32,7 @@ export default async function MantencionAppPage() {
   return (
     <MantApp
       sessionUser={{ id, name: name?.trim() || email?.trim() || "Mecánico", email: email ?? "" }}
-      appVersion={process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.trim().slice(0, 12) || "dev"}
+      appVersion={BUILD_ID.slice(0, 40)}
       renderedAt={new Date().toISOString()}
     />
   )

@@ -17,6 +17,7 @@ import { verifyCronSecret } from "@/lib/security/cron-auth"
 import { completeBackupLog, createBackupLog, getBackupById, getBackupConfig } from "@/lib/services/backups"
 import { describeFailedStep, readBackupStatusForRun, successfulBackupCompletion } from "@/lib/services/backup-run"
 import { todayInChile } from "@/lib/utils"
+import { BUILD_ID } from "@/lib/build-info"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       startedAt: startedAt.toISOString(),
     })
 
-    const appVersion = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "unknown"
+    const appVersion = BUILD_ID
     if (status?.BACKUP_STATUS === "OK") {
       await completeBackupLog(runId, await successfulBackupCompletion({
         backupDir,

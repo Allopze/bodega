@@ -16,8 +16,18 @@ const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
 ];
 
+// Identificador del build (ver `lib/build-info.ts`). La hora se fija una sola vez
+// y queda en el entorno, así los procesos hijos del build (workers) ven la misma
+// y el bundle del cliente y el del servidor llevan el mismo valor. El sha lo pasa
+// `scripts/deploy-prod.sh` como build-arg; en un build a mano o en dev va vacío.
+process.env.BODEGA_BUILD_TIME ||= new Date().toISOString();
+
 const nextConfig: NextConfig = {
   output: "standalone",
+  env: {
+    NEXT_PUBLIC_BUILD_SHA: process.env.BODEGA_BUILD_SHA ?? "",
+    NEXT_PUBLIC_BUILD_TIME: process.env.BODEGA_BUILD_TIME,
+  },
   experimental: {
     // scripts/run-resource-guard.sh fija 3 en desarrollo. Sin la variable
     // (por ejemplo en CI) Next conserva su política nativa de workers.
