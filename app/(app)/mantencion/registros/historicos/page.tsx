@@ -11,6 +11,7 @@ import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { can, requireAnyPermission } from "@/lib/auth/can"
+import { FORMS_CUTOVER_DATE, FORMS_LAST_COUNTED_DATE } from "@/lib/mantencion/forms-cutover"
 import { ACTION_TYPE_LABELS, type ActionTypeOrUnknown } from "@/lib/mantencion/action-type"
 import { formatHours, plural } from "@/lib/mantencion/format"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
@@ -30,6 +31,10 @@ function actionLabel(row: { actionType: string | null; kindText: string }): stri
   return row.kindText || "No informada"
 }
 /** Horas hombre normalizadas; si no hay, lo que el formulario escribió. */
+/** La faena por su nombre; el texto crudo del formulario sólo cuando no se resolvió. */
+const worksiteLabel = (row: { worksiteName: string | null; worksiteText: string }) => row.worksiteName || row.worksiteText
+/** Fecha de ingreso; si falta, el día del envío, dicho como tal. */
+const entryLabel = (row: { entryDate: string | null; submittedAt: string }) => row.entryDate ? formatDate(row.entryDate) : row.submittedAt ? `Enviado el ${formatDate(row.submittedAt)}` : "Fecha no informada"
 const hoursLabel = (row: { laborHours: number | null; hoursText: string }) => (row.laborHours !== null ? formatHours(row.laborHours) : row.hoursText.trim() || "—")
 
 type Params = Record<string, string | string[] | undefined>
@@ -48,10 +53,16 @@ export default async function HistoricalRecordsPage({ searchParams }: { searchPa
   const pendingParam = first(raw.vinculo)
   const pending = pendingParam === "equipment" || pendingParam === "conflict" || pendingParam === "worksite" ? pendingParam : undefined
   const page = Number(first(raw.page))
-  const list = await listHistoricalRecords(viewerFromSession(session), { search, vehicleId, page, pending })
+  const from = first(raw.desde).slice(0, 10)
+  const to = first(raw.hasta).slice(0, 10)
+  const worksiteId = first(raw.faena).slice(0, 64)
+  const list = await listHistoricalRecords(viewerFromSession(session), { search, vehicleId, page, pending, from, to, worksiteId })
+  const period = list.applied.from || list.applied.to
+    ? `${list.applied.from ? `desde el ${formatDate(list.applied.from)}` : ""}${list.applied.from && list.applied.to ? " " : ""}${list.applied.to ? `hasta el ${formatDate(list.applied.to)}` : ""}`
+    : ""
   const pagination = resolvePagination({ pageParam: String(list.page), totalItems: list.total, pageSize: list.pageSize })
   const canImport = can(session, "mant:equipment:manage") && can(session, "mant:records:view_all")
-  const filtered = Boolean(search || vehicleId || pending)
+  const filtered = Boolean(search || vehicleId || pending || list.applied.from || list.applied.to || list.applied.worksite)
 
   return (
     <PageContainer>
@@ -62,10 +73,11 @@ export default async function HistoricalRecordsPage({ searchParams }: { searchPa
         actions={canImport ? <Button asChild><Link href={`${PATH}/importar`}>Importar historial anterior</Link></Button> : undefined}
       />
 
-      <HistoricalFilters />
+      <HistoricalFilters worksiteName={list.applied.worksite?.name} />
 
       <p className="mb-3 text-sm text-[var(--color-text-muted)]">
-        {plural(list.total, "trabajo", "trabajos")} {vehicleId ? "de este equipo" : "en el historial anterior"}. No modifican las lecturas, el semáforo de pautas ni las alertas; cuentan en los indicadores de trabajos del Panel.
+        {plural(list.total, "trabajo", "trabajos")} {vehicleId ? "de este equipo" : "en el historial anterior"}
+        {list.applied.worksite ? ` en ${list.applied.worksite.name}` : ""}{period ? ` ${period}` : ""}. No modifican las lecturas, el semáforo de pautas ni las alertas. Cuentan en los indicadores de trabajos del Panel hasta el {formatDate(FORMS_LAST_COUNTED_DATE)}, salvo los marcados como posible prueba; desde el {formatDate(FORMS_CUTOVER_DATE)} la plataforma reemplaza a los formularios.
       </p>
 
       {list.rows.length === 0 ? (
@@ -85,7 +97,7 @@ export default async function HistoricalRecordsPage({ searchParams }: { searchPa
                   // La lista es el contenido de la página: sus tarjetas cuelgan del h1 (paso 6).
                   headingLevel={2}
                   title={row.equipmentText || "Sin equipo"}
-                  description={`${row.worksiteText || "Sin faena"} · ${row.entryDate ? formatDate(row.entryDate) : "Fecha no informada"}`}
+                  description={`${worksiteLabel(row) || "Sin faena"} · ${entryLabel(row)}`}
                   actions={(
                     <Button asChild variant="secondary" size="sm" className="w-full">
                       <Link href={`${PATH}/${row.sourceKey}`} aria-label={`Ver el trabajo de ${row.equipmentText || "equipo no informado"}, orden ${row.orderText || "sin número"}`}>Ver el trabajo</Link>
@@ -137,14 +149,14 @@ export default async function HistoricalRecordsPage({ searchParams }: { searchPa
                 <TableBody>
                   {list.rows.map((row) => (
                     <TableRow key={row.sourceKey}>
-                      <TableCell className="whitespace-nowrap">{row.entryDate ? formatDate(row.entryDate) : "No informada"}</TableCell>
+                      <TableCell className="whitespace-nowrap">{entryLabel(row)}</TableCell>
                       <TableCell>
                         <Link href={`${PATH}/${row.sourceKey}`} className="font-semibold text-[var(--color-primary-ink)] hover:underline">{row.equipmentText || "Sin equipo"}</Link>
                         {!row.vehicleId && <span className={`block ${WARNING_TEXT}`}>Equipo sin identificar</span>}
                         {row.isTest && <Badge variant="warning" className="mt-1">Posible prueba</Badge>}
                       </TableCell>
                       <TableCell>
-                        {row.worksiteText || "No informada"}
+                        {worksiteLabel(row) || "No informada"}
                         {!row.worksiteId && <span className={`block ${WARNING_TEXT}`}>Faena sin identificar</span>}
                       </TableCell>
                       <TableCell>{actionLabel(row)}</TableCell>

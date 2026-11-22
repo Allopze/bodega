@@ -1,11 +1,12 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { eq } from "drizzle-orm"
+import { eq, notInArray } from "drizzle-orm"
 import ExcelJS from "exceljs"
 import path from "node:path"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
+import { parseHistoricalWorkbook } from "@/lib/services/mantencion/historical-workbook"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import type { MantViewer } from "@/lib/services/mantencion/access"
 
@@ -31,6 +32,11 @@ async function workbook(rows: unknown[][]) {
 }
 const sourceRows = [makeRow("19/08/2025 10:00:00", "BIODIVERSA", "KA-1 / BCDF-12"), makeRow("19/08/2025 11:00:00", "ARAUCO", "KA-9 / LPRS-56"), makeRow("19/08/2025 12:00:00", "SANTA FE", "KA-1 / GHJK-34")]
 let source: ArrayBuffer
+let baseKeys: string[] = []
+/** Fecha de ingreso a taller de una fila armada con `makeRow` (columna 16). */
+const withEntry = (row: unknown[], date: string) => row.map((value, cell) => (cell === 15 ? date : value))
+/** Deja sólo las tres filas originales: cada prueba de abajo agrega las suyas y no debe contaminar a las demás. */
+const restoreBase = () => testDb.delete(schema.mantHistoricalRecords).where(notInArray(schema.mantHistoricalRecords.sourceKey, baseKeys))
 
 beforeAll(async () => {
   await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
@@ -42,6 +48,9 @@ beforeAll(async () => {
     { id: "v2", code: "KA-2", plate: "GHJK34", type: "Camión", equipmentTypeId: "type-h", worksiteId: "santa" },
   ])
   source = await workbook(sourceRows)
+  const parsed = await parseHistoricalWorkbook(source)
+  if (!parsed.ok) throw new Error(parsed.message)
+  baseKeys = parsed.rows.map((row) => row.sourceKey)
 }, 120_000)
 
 describe.sequential("importación histórica de mantención", () => {
@@ -78,19 +87,71 @@ describe.sequential("importación histórica de mantención", () => {
     expect(stored.every((record) => record.fields.find((field) => field.header === "Fecha de envío")?.value === "2025-08-19")).toBe(true)
   })
 
-  it("detiene una posible repetición si cambió la hora y no se puede verificar el origen", async () => {
+  it("deja entrar con aviso una respuesta idéntica de otra clave cuyo origen no se puede verificar", async () => {
     const rowWithDifferentTime = sourceRows[0]!.map((value, cell) => cell === 0 ? "19/08/2025 17:00:00" : value)
     const revised = await workbook([rowWithDifferentTime])
-    expect(await previewHistoricalImport(revised, "otra-planilla.xlsx")).toMatchObject({ ok: false, message: expect.stringMatching(/posible|coincide/i) })
-    expect(await commitHistoricalImport(actor, revised, "otra-planilla.xlsx")).toMatchObject({ ok: false })
-    expect(await testDb.select().from(schema.mantHistoricalRecords)).toHaveLength(3)
+    const preview = await previewHistoricalImport(revised, "otra-planilla.xlsx")
+    expect(preview).toMatchObject({ ok: true, data: { summary: { created: 1, possibleDuplicates: 1 } } })
+    if (!preview.ok) throw new Error("sin vista previa")
+    expect(preview.data.duplicates).toEqual([expect.objectContaining({ sheet: "BIODIVERSA", rowNumber: 2, message: expect.stringMatching(/posible duplicado/i) })])
+    expect(await commitHistoricalImport(actor, revised, "otra-planilla.xlsx")).toMatchObject({ ok: true, data: { created: 1, possibleDuplicates: 1 }, message: expect.stringMatching(/posibles duplicados/) })
+    expect(await testDb.select().from(schema.mantHistoricalRecords)).toHaveLength(4)
+    await restoreBase()
   })
 
-  it("detecta una edición del contenido aunque la hora también haya cambiado", async () => {
-    const changed = await workbook([makeRow("19/08/2025 16:20:00", "BIODIVERSA", "KA-1 / BCDF-12", "Descripción editada")])
-    expect(await previewHistoricalImport(changed, "historial.xlsx")).toMatchObject({ ok: false, message: expect.stringMatching(/contenido diferente/i) })
-    expect(await commitHistoricalImport(actor, changed, "historial.xlsx")).toMatchObject({ ok: false })
-    expect(await testDb.select().from(schema.mantHistoricalRecords)).toHaveLength(3)
+  it("deja entrar con aviso una hoja y fila ya cargadas con otro contenido, sin sobrescribirlas", async () => {
+    const shifted = await workbook([makeRow("19/08/2025 16:20:00", "BIODIVERSA", "KA-1 / BCDF-12", "Descripción editada")])
+    expect(await previewHistoricalImport(shifted, "historial.xlsx")).toMatchObject({ ok: true, data: { summary: { created: 1, differing: 0, possibleDuplicates: 1 } } })
+    expect(await commitHistoricalImport(actor, shifted, "historial.xlsx")).toMatchObject({ ok: true, data: { created: 1, possibleDuplicates: 1 } })
+    const stored = await testDb.select().from(schema.mantHistoricalRecords)
+    expect(stored).toHaveLength(4)
+    expect(stored.filter((record) => record.description === "Trabajo histórico")).toHaveLength(3)
+    await restoreBase()
+  })
+
+  it("trata la misma clave con otro contenido como ya cargada: no aborta, completa vínculos y no toca lo guardado", async () => {
+    // Como la dejó el consolidado: misma clave de origen que daría el formulario, con la huella de sus propios campos.
+    const incoming = makeRow("21/08/2025 09:00:00", "BIODIVERSA", "KA-1 / BCDF-12", "Trabajo del consolidado")
+    const parsed = await parseHistoricalWorkbook(await workbook([incoming]))
+    if (!parsed.ok) throw new Error(parsed.message)
+    const row = parsed.rows[0]!
+    const storedFields = [{ header: "Equipo", value: "KA-1 / BCDF-12" }]
+    await testDb.insert(schema.mantHistoricalRecords).values({
+      sourceKey: row.sourceKey, fingerprint: "huella-del-consolidado", sourceFile: "consolidado.xlsx", sourceSheet: "MANTENCIONES", sourceRow: 7,
+      submittedAt: row.submittedAt, worksiteText: "BIODIVERSA", equipmentText: "KA-1 / BCDF-12", equipmentMatch: "unmatched", orderText: "123", kindText: "",
+      readingText: "", description: "Trabajo del consolidado", hoursText: "2", fields: storedFields, importedBy: actor.userId,
+    })
+    const incomingBook = await workbook([incoming, makeRow("21/08/2025 10:00:00", "BIODIVERSA", "KA-1 / BCDF-12", "Otra respuesta")])
+    expect(await previewHistoricalImport(incomingBook, "forms.xlsx")).toMatchObject({ ok: true, data: { summary: { total: 2, created: 1, differing: 1, relinked: 1, possibleDuplicates: 0 } } })
+    expect(await commitHistoricalImport(actor, incomingBook, "forms.xlsx")).toMatchObject({ ok: true, data: { created: 1, differing: 1, relinked: 1 }, message: expect.stringMatching(/ya estaban cargadas con contenido distinto/) })
+    const [kept] = await testDb.select().from(schema.mantHistoricalRecords).where(eq(schema.mantHistoricalRecords.sourceKey, row.sourceKey))
+    expect(kept).toMatchObject({ fingerprint: "huella-del-consolidado", sourceFile: "consolidado.xlsx", sourceSheet: "MANTENCIONES", sourceRow: 7, vehicleId: "v1", worksiteId: "bio", equipmentMatch: "linked" })
+    expect(kept?.fields).toEqual(storedFields)
+    // Reimportar el mismo archivo no cambia nada más.
+    expect(await commitHistoricalImport(actor, incomingBook, "forms.xlsx")).toMatchObject({ ok: true, data: { created: 0, differing: 1, relinked: 0 } })
+    await restoreBase()
+  })
+
+  it("avisa cuántas respuestas son del corte de los formularios o posteriores, con y sin fecha de ingreso", async () => {
+    const book = await workbook([
+      withEntry(makeRow("01/12/2026 08:00:00", "BIODIVERSA", "KA-1 / BCDF-12", "Del corte"), "01/12/2026"),
+      withEntry(makeRow("02/12/2026 08:00:00", "BIODIVERSA", "KA-1 / BCDF-12", "Sin ingreso"), ""),
+      withEntry(makeRow("30/11/2026 08:00:00", "BIODIVERSA", "KA-1 / BCDF-12", "Último día contado"), "30/11/2026"),
+    ])
+    const preview = await previewHistoricalImport(book, "forms-diciembre.xlsx")
+    expect(preview).toMatchObject({ ok: true, data: { summary: { total: 3, created: 3, afterCutover: 2 } } })
+    const committed = await commitHistoricalImport(actor, book, "forms-diciembre.xlsx")
+    expect(committed).toMatchObject({ ok: true, data: { created: 3, afterCutover: 2 }, message: expect.stringContaining("2 respuestas son del 01-12-2026 o posteriores") })
+    expect(await testDb.select().from(schema.mantHistoricalRecords)).toHaveLength(6)
+    await restoreBase()
+  })
+
+  it("el consolidado de Chome se rechaza con el camino correcto, y una hoja ajena con las columnas esperadas", async () => {
+    const book = new ExcelJS.Workbook(); book.addWorksheet("MANTENCIONES").addRow(["ID", "FECHA"])
+    const consolidated = await previewHistoricalImport(await book.xlsx.writeBuffer() as ArrayBuffer, "consolidado.xlsx")
+    expect(consolidated).toMatchObject({ ok: false, message: expect.stringMatching(/script del consolidado/) })
+    const other = new ExcelJS.Workbook(); other.addWorksheet("Hoja1").addRow(["A", "B"])
+    expect(await previewHistoricalImport(await other.xlsx.writeBuffer() as ArrayBuffer, "otra.xlsx")).toMatchObject({ ok: false, message: expect.stringMatching(/exportación de Google Forms/) })
   })
 
   it("protege los antecedentes y el alcance por faena, incluso ante acceso directo", async () => {
@@ -107,11 +168,31 @@ describe.sequential("importación histórica de mantención", () => {
     expect(await getHistoricalRecord(jefe, foreign.sourceKey)).toMatchObject({ equipmentText: "KA-1 / GHJK-34" })
   })
 
-  it("rechaza cambios a una respuesta ya importada sin guardar el resto del archivo", async () => {
+  it("no sobrescribe una respuesta ya importada con otro contenido y sí guarda el resto del archivo", async () => {
     const altered = await workbook([makeRow("19/08/2025 10:00:00", "BIODIVERSA", "KA-1 / BCDF-12", "Cambiado"), makeRow("20/08/2025 10:00:00", "BIODIVERSA", "KA-1 / BCDF-12")])
-    expect(await previewHistoricalImport(altered)).toMatchObject({ ok: false })
-    expect(await commitHistoricalImport(actor, altered, "otro.xlsx")).toMatchObject({ ok: false })
-    expect(await testDb.select().from(schema.mantHistoricalRecords)).toHaveLength(3)
+    expect(await previewHistoricalImport(altered)).toMatchObject({ ok: true, data: { summary: { created: 1, differing: 1 } } })
+    expect(await commitHistoricalImport(actor, altered, "otro.xlsx")).toMatchObject({ ok: true, data: { created: 1, differing: 1 } })
+    const stored = await testDb.select().from(schema.mantHistoricalRecords)
+    expect(stored).toHaveLength(4)
+    expect(stored.some((record) => record.description === "Cambiado")).toBe(false)
+    await restoreBase()
+  })
+
+  it("filtra la lista por período del trabajo y faena, e ignora una faena ajena o fechas inválidas", async () => {
+    const all = await listHistoricalRecords(jefe, {})
+    expect(all.rows.find((row) => row.worksiteId === "bio")?.worksiteName).toBe("Biodiversa")
+    expect(all.rows.find((row) => !row.worksiteId)?.worksiteName).toBeNull()
+    // Las tres filas ingresaron el 18-08-2025: el período es inclusivo en ambos extremos.
+    expect((await listHistoricalRecords(jefe, { from: "2025-08-18", to: "2025-08-18" })).total).toBe(3)
+    expect((await listHistoricalRecords(jefe, { from: "2025-08-19" })).total).toBe(0)
+    expect((await listHistoricalRecords(jefe, { to: "2025-08-17" })).total).toBe(0)
+    expect(await listHistoricalRecords(jefe, { from: "2025-08-19" })).toMatchObject({ applied: { from: "2025-08-19", to: null } })
+    expect((await listHistoricalRecords(jefe, { from: "2025-13-45", to: "no-es-fecha" })).total).toBe(3)
+    expect(await listHistoricalRecords(jefe, { worksiteId: "bio" })).toMatchObject({ total: 1, applied: { worksite: { id: "bio", name: "Biodiversa" } } })
+    expect((await listHistoricalRecords(jefe, { worksiteId: "no-existe" })).total).toBe(3)
+    // Una faena que el supervisor no ve se ignora: sigue viendo lo suyo, no el de Santa Fe ni una lista vacía.
+    expect(await listHistoricalRecords(supervisor, { worksiteId: "santa" })).toMatchObject({ total: 1, applied: { worksite: null } })
+    expect(await listHistoricalRecords(supervisor, { worksiteId: "bio" })).toMatchObject({ total: 1, applied: { worksite: { id: "bio" } } })
   })
 
   it("al reimportar vincula un equipo pendiente sin alterar su contenido", async () => {
