@@ -18,6 +18,7 @@ import {
   getAllPpas,
   recoverStalePpas,
   summarizePpaQueue,
+  failureKindOf,
   type QueuedPpa,
 } from "./offline-queue"
 import { getOrCreateDeviceId, sendHeartbeat } from "./heartbeat"
@@ -77,6 +78,7 @@ async function syncOne(item: QueuedPpa): Promise<{ ok: boolean; token?: string; 
   await updatePpaStatus(item.id, {
     status: "syncing",
     attempts: item.attempts + 1,
+    failureKind: undefined,
   })
 
   try {
@@ -123,7 +125,15 @@ async function syncOne(item: QueuedPpa): Promise<{ ok: boolean; token?: string; 
 
 /** Sincroniza lo pendiente y avisa a TI una sola vez al terminar. Exportada para sus pruebas. */
 export async function syncAllPending(): Promise<QueuedPpa[]> {
-  const pending = await getPendingPpas()
+  // Lo que se rindió por falta de red (`failureKind: "network"`) vuelve a la fila
+  // con sus intentos en cero: el envío está bien y sólo faltaba señal. Antes quedaba
+  // `failed` para siempre y la evaluación no llegaba nunca si nadie apretaba
+  // «Enviar ahora». Un rechazo del servidor no se reintenta: necesita una persona.
+  const retryable = (await getAllPpas())
+    .filter((item) => item.status === "failed" && failureKindOf(item) === "network")
+    .map((item): QueuedPpa => ({ ...item, attempts: 0, failureKind: undefined }))
+  const pending = [...await getPendingPpas(), ...retryable]
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
   let syncedCount = 0
   let lastToken: string | undefined
 

@@ -244,6 +244,30 @@ describe("syncAllPending: failureKind y aviso", () => {
     expect(summarizePpaQueue([saved!])).toMatchObject({ failed: 0, pending: 1 })
   })
 
+  it("lo que se rindió por red se reintenta en la pasada siguiente y se envía", async () => {
+    submit.mockRejectedValue(new TypeError("Failed to fetch"))
+    const item = await enqueuePpa({ a: 1 })
+    await updatePpaStatus(item.id, { attempts: 2 })
+    await syncAllPending()
+    expect(await getPpaById(item.id)).toMatchObject({ status: "failed", failureKind: "network" })
+
+    submit.mockResolvedValue({ ok: true, data: { token: "tok-ok", resultado: "autorizado_auto" } })
+    await syncAllPending()
+    const saved = await getPpaById(item.id)
+    expect(saved).toMatchObject({ status: "synced", token: "tok-ok" })
+    expect(saved?.failureKind).toBeUndefined()
+  })
+
+  it("un rechazo del servidor no se reintenta solo", async () => {
+    submit.mockResolvedValue({ ok: false, message: "Faena no permitida" })
+    const item = await enqueuePpa({ a: 1 })
+    await syncAllPending()
+    submit.mockClear()
+    await syncAllPending()
+    expect(submit).not.toHaveBeenCalled()
+    expect(await getPpaById(item.id)).toMatchObject({ status: "failed", failureKind: "rejected" })
+  })
+
   it("con intentos por delante, un fallo de red lo deja pendiente y sin failureKind", async () => {
     submit.mockRejectedValue(new TypeError("Failed to fetch"))
     const item = await enqueuePpa({ a: 1 })
