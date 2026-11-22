@@ -43,6 +43,20 @@ El contrato «Horcones» se crea con los contratos, no en este script.
 | C14 | La pauta va antes que las lecturas. Si la pauta de 10.000 km no es la que se aplica (en los formularios el aceite de motor se cambia cada 37.000 a 50.000 km), se corrige con el manual del fabricante antes de cargar lecturas y preventivas. Es la hoja 1 de la planilla del Jefe de Mantención. |
 | C15 | Opción A: la última preventiva anterior a la plataforma se **declara** en el plan del equipo (migración 0399), no se fabrica un registro firmado. Condiciones del usuario: respaldo obligatorio (sin OT o factura no se carga); validaciones en el servidor (fecha no posterior a la de la lectura inicial, lectura no mayor que la inicial, servicio existente en la pauta, solo jefatura de mantención y administración); se ve siempre como «Declarada, anterior a la plataforma» con su respaldo; la bitácora guarda quién la declaró, quién la cargó y de qué archivo salió; manda la más reciente entre firmada y declarada (fecha y, si empatan, lectura); sin ninguna preventiva el estado es «Sin información de preventiva», no «al día»; deploy de 0397 a 0399 antes del 26-11, carga real a más tardar el 29-11 y congelamiento hasta el 01-12. |
 
+**Decisiones del 2026-11-21 (noche), tras el tercer informe de evidencia (Gmail, Drive y archivos locales):**
+
+| # | Decisión |
+|---|---|
+| C16 | KA-137 (RXGR-19) **no** va al contrato «Horcones» de Chome: atiende el contrato de Asir de movimientos internos en Planta Arauco (correo del supervisor de Horcones, 23-03-2026). El mismo correo dice que KA-135 (RBYD-98) «atiende contrato Chome». Asir factura aparte (Terciados, Aserraderos y Horcones I, código de proveedor 13019); Chome es el proveedor 14038. KRR-005 sigue sin dato. Las notas del contrato no cambian: ya describen las dos líneas con OC separadas. |
+| C17 | El traslado de KCH-130 (KXZD-20) de Santa Fe a Arauco se registra en la reconstrucción con fecha **07-05-2026**, con respaldo en la OT 33866 (ingreso al taller el 07-05-2026, faena Arauco, 687.185 km), salvo que la acreditación de Planta Arauco muestre otra fecha. Las OT de KCH-130 son de Santa Fe sin interrupción desde septiembre de 2025 hasta el 23-04-2026 (OT 33747), y de Arauco desde el 07-05. Se descartan: el 26-11-2025, porque el correo del 25-11-2025 solo anuncia que Arauco recibirá «un equipo más» y las OT siguientes siguen en Santa Fe; y el 01-07-2026, porque sale de las cargas de combustible (regla del 18-11). Reemplaza la evidencia que pedía C13; la fecha de la corrida (03-12-2026) sigue por confirmar. |
+
+Evidencia del mismo informe que no requiere decisión:
+
+- GRDW-63 no es H-4: en la plataforma, H-4 es una grúa horquilla Hyster H155FT 2012 de Santa Fe, y la planilla de disposición de equipos describe GRDW-63 como batea Machile de respaldo de Calymag. El código sigue pendiente (C12).
+- La OT 33666 («WX6495 (FLOR DEL LAJA)», seleccionadora de avellanas) no es un vehículo: queda en el historial sin equipo, salvo que el Jefe de Mantención diga otra cosa.
+- KCH-129 (KXZD-19): la planilla de vencimientos de Horcones del 05-11 lo pone en Horcones y el 11-11 se despachó «equipo KCH129», pero no carga combustible desde el 29-07 y KXZD-20 sí carga en Arauco todos los meses. Se le pregunta al administrador del contrato Horcones cuál de los dos tiene (hoja 3 de la versión 2 de la planilla). Hasta entonces, KCH-129 no se mueve.
+- El «Contrato ARAUCO-CHOME.pdf» de Drive es el contrato 4600004637 de 2018 entre Maderas Arauco S.A. y Transportes Chome Ltda., para Teno, Cholguán y Valdivia; no es el de Horcones. De él vendría el «Maderas Arauco» de la plantilla del estado de pago de Horcones.
+
 Decisiones anteriores que siguen vigentes:
 
 - El costo se imputa a la faena de origen.

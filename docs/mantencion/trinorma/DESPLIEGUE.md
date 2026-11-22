@@ -116,7 +116,7 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
    - **crea el contrato «Horcones» de la faena Arauco** y su mandante, Celulosa Arauco y Constitución S.A. (93.458.000-1), con inicio el 01-08-2025. Decisión del usuario, 21-11:
      - un solo contrato, con las Líneas 2 y 3 descritas en las notas (la plataforma no tiene líneas dentro de un contrato);
      - el cobro (plazo de 30 días, ciclo del 21 al 20, cobro por viaje) lo carga Facturación: el servicio operacional no escribe esos campos;
-     - **sin equipos asignados**. Falta decidir los de Asir (KA-137, KRR-005) y trasladar KCH-130;
+     - **sin equipos asignados**. KA-137 queda fuera, porque atiende el contrato de Asir (decisión del usuario, 21-11, C16). Falta KRR-005 y trasladar KCH-130;
    - no mueve ningún equipo de faena.
 
    En el clon del 21-11, la segunda corrida no hizo nada.
@@ -220,19 +220,27 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
 - **No volver a correr `scripts/apply-vencimientos-planilla-2026-11.ts`** con la planilla de noviembre: volvería a rotar los códigos de los tres tractos.
 - **Pauta, lecturas y última preventiva (lo que falta para el Panel del 01-12), en este orden:**
   1. **La pauta.** La de «Camiones y tractos» parte en 10.000 km, pero en los formularios el aceite de motor se cambia cada 37.000 a 50.000 km en los 9 equipos con historial. Con la pauta actual casi todo saldría vencido aunque las preventivas estén completas. El Jefe de Mantención la confirma o la corrige con el manual del fabricante; es la hoja 1 de su planilla, marcada como la más importante. Si cambia, se corrige en la plataforma antes de cargar nada.
-  2. **Las 12 lecturas y las preventivas que él confirme,** juntas y cada una con su respaldo. KCH-129 lleva la nota de detenido.
+  2. **Las 12 lecturas y las preventivas que él confirme,** juntas y cada una con su respaldo. La nota de KCH-129 dice que no carga combustible desde el 29-07. Si el administrador del contrato Horcones confirma que está detenido, la nota lo dice al cargar.
 
-  La planilla está en `~/backups-dev/trinorma-2026-11/` y vence el jueves 26-11. **Las lecturas no se cargan solas:** sin preventiva registrada, el Panel supone que la última se hizo en el último múltiplo del intervalo base, y ese «al día» no tiene respaldo.
+  La planilla está en `~/backups-dev/trinorma-2026-11/` y vence el jueves 26-11. La **versión 2** (`…_v2.xlsx`, generada con `generar_planilla_v2.py`) agrega lo que se supo el 21-11 por la noche:
+  - la marca y el modelo de cada camión;
+  - la hoja de consumo de aceite, que confirma 4 preventivas;
+  - las preguntas por KCH-129 y KA-135;
+  - el código de GRDW-63.
+
+  Las hojas 2 y 3 conservan los encabezados y el orden de filas de la versión 1, y el cargador lee las dos versiones igual, cualquiera que devuelva el Jefe. **Las lecturas no se cargan solas:** sin preventiva registrada, el Panel supone que la última se hizo en el último múltiplo del intervalo base, y ese «al día» no tiene respaldo.
 - **Contrato «Horcones»:**
   - Facturación carga el cobro: plazo de 30 días, ciclo del 21 al 20, cobro por viaje;
-  - los equipos se asignan después de decidir los de Asir (KA-137, KRR-005) y trasladar KCH-130.
-- **Faenas de KCH-129 y KCH-130, cruzadas.** KCH-130 trabaja en Arauco desde el 01-07-2026, pero la plataforma lo tiene en Santa Fe. KCH-129 está detenido en Cabrero desde fines de julio, pero la plataforma lo tiene en Arauco. Para corregirlo:
+  - KA-137 no se asigna: atiende el contrato de Asir (C16). Falta decidir KRR-005, y KCH-130 se asigna después de su traslado.
+- **Faenas de KCH-129 y KCH-130, cruzadas.** KCH-130 trabaja en Arauco desde mayo de 2026, pero la plataforma lo tiene en Santa Fe. KCH-129 no carga combustible desde el 29-07 (el inventario lo pone detenido en Cabrero), pero la plataforma lo tiene en Arauco. Para corregirlo:
   - un traslado por pantalla o con `transferVehiclesTx` admite fechas solo desde el día 1 del mes anterior (hoy, el 01-10-2026);
   - una fecha anterior es trabajo de la reconstrucción del recorrido (`scripts/reconstruct-worksite-stays.ts`), que salta los equipos que ya tienen un traslado.
 
   **Decisión del usuario, 21-11: opción B.** No se registra un traslado con fecha 01-10: no se podría deshacer, y la reconstrucción ya no podría corregir julio a septiembre. KCH-130 entra en la reconstrucción de toda la flota.
   - El 01-07 sale de las cargas de combustible, y por la regla del 18-11 (solo evidencia física, nunca Copec ni GPS) no sirve.
-  - Las fuentes tampoco cuadran: hay OT con faena «ARAUCO» desde el 08-05, pero cargó combustible en Calymag hasta el 29-05.
-  - La mejor evidencia física es la **fecha de acreditación de KCH-130 en Planta Arauco**, que la planilla le pide al administrador de contrato Horcones.
+  - **Decisión del usuario, 21-11 por la noche (C16 y C17):** KCH-130 se traslada a Arauco con fecha **07-05-2026**, con respaldo en la OT 33866 (ingreso al taller ese día, faena Arauco, 687.185 km). Sus OT son de Santa Fe sin interrupción hasta el 23-04-2026 y de Arauco desde el 07-05. Si la acreditación de Planta Arauco, que se le pregunta al administrador del contrato Horcones, muestra otra fecha, manda la acreditación.
+  - El 08-05, que citaban versiones anteriores de este documento, es el día en que se registró la OT 33866 en el formulario, no el de su ingreso al taller.
+  - Que siguiera cargando combustible con la tarjeta de Calymag hasta el 29-05 no cambia la fecha: el combustible no prueba faena.
+  - **KCH-129 no se mueve** hasta que el administrador del contrato Horcones diga cuál de los dos camiones tiene: su planilla de vencimientos del 05-11 pone a KCH-129 en Horcones (y no a KCH-130), y el 11-11 se despachó «equipo KCH129». Es la hoja 3 de la versión 2 de la planilla.
   - **Fecha propuesta para la reconstrucción en producción:** jueves 03-12-2026, después de la auditoría. Antes, una corrida en seco en el clon. La fecha la confirma el usuario.
 - **Choques de código por ceros a la izquierda.** Se revisó todo el inventario de octubre (Base de Datos, Dados de baja y Equipos móviles) contra la regla del índice único. El único choque es KRR-01 (GRDW-63) con KRR-001 (JC-6212), y ningún código del inventario choca con otro equipo de la flota.

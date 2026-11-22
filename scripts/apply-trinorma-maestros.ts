@@ -19,7 +19,8 @@
  *   7. El contrato «Horcones» de la faena Arauco y su mandante, Celulosa Arauco y Constitución S.A.
  *      (decisión del usuario, 2026-11-21). Sólo lo operacional: nombre, mandante, faena e inicio;
  *      el cobro (plazo, ciclo, tarifas) es de Facturación y queda descrito en las notas. Sin equipos
- *      asignados: falta decidir los de Asir y trasladar KCH-130.
+ *      asignados: KA-137 queda fuera porque atiende el contrato de Asir (C16); falta KRR-005 y
+ *      trasladar KCH-130.
  *
  * Ningún paso cambia la faena de un equipo (sólo cambia por «Trasladar equipos») y el
  * informe nunca imprime nombres de personas: los propietarios `tercero` salen por cantidad.
