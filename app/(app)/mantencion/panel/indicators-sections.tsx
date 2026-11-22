@@ -51,6 +51,8 @@ export interface Common {
   chartNote: string
   /** Faena elegida (ya validada contra el alcance), o `null` = todas. */
   worksiteId: string | null
+  /** Equipo elegido (ya validado contra el alcance), o `null`/ausente = toda la flota: los enlaces a las OT lo llevan. */
+  equipmentId?: string | null
   /** «01-09-2026 al 13-11-2026 · todas las faenas»: el período; va bajo el título de los rankings y listas. */
   scopeNote: string
   canExport: boolean
@@ -117,8 +119,9 @@ export function WorkOrdersSection({
   stats: WorkOrderPeriodStats | null
   byStatus: Array<{ status: OtStatus; count: number }> | null
 }) {
-  const { worksiteId } = common
+  const { worksiteId, equipmentId } = common
   const faena = worksiteId ?? undefined
+  const equipo = equipmentId ?? undefined
   const open = byStatus ? byStatus.reduce((sum, item) => sum + item.count, 0) : null
   const noData =
     byStatus !== null && series !== null && stats !== null &&
@@ -126,7 +129,7 @@ export function WorkOrdersSection({
     series.every((point) => point.created === 0 && point.closed === 0 && point.backlog === 0)
 
   const links = [
-    { label: "Órdenes de trabajo", href: withParams("/mantencion/ot", { estado: "abiertas", faena }) },
+    { label: "Órdenes de trabajo", href: withParams("/mantencion/ot", { estado: "abiertas", faena, equipo }) },
   ]
 
   if (noData) {
@@ -149,9 +152,11 @@ export function WorkOrdersSection({
     )
   }
 
-  const otHref = (params: Record<string, string | null | undefined>) => withParams("/mantencion/ot", { faena, ...params })
+  const otHref = (params: Record<string, string | null | undefined>) => withParams("/mantencion/ot", { faena, equipo, ...params })
   const closedTrend = stats ? percentChange(stats.closed, stats.closedPrevious) : null
-  const closedList = otHref({ estado: "cerrada" })
+  // Las cifras «cerradas en el período» y el tiempo de reparación miden las OT cerradas en el período: la
+  // lista se abre sobre esos mismos días de cierre, no sobre todas las cerradas de la historia.
+  const closedList = otHref({ estado: "cerrada", cerradaDesde: common.from, cerradaHasta: common.to })
   const segments = (byStatus ?? []).map((item) => ({
     key: item.status,
     label: OT_STATUS_LABELS[item.status],
@@ -366,7 +371,8 @@ export function PautasSection({
                 ? "Aún no hay equipos con pauta"
                 : `${formatQty(compliance.onTime)} de ${plural(compliance.withSchedule, "equipo con pauta", "equipos con pauta")}${pautas.counts.sin_lecturas > 0 ? ` · ${pautas.counts.sin_lecturas} sin lecturas` : ""}${pautas.counts.sin_preventiva > 0 ? ` · ${pautas.counts.sin_preventiva} sin información de preventiva` : ""}${declared.length > 0 ? ` · ${declared.length} con preventiva declarada, anterior a la plataforma` : ""} · hoy`,
               tone: pautas.counts.vencida > 0 ? "signal" : undefined,
-              href: pautas.counts.vencida > 0 ? equiposHref({ estado: "vencida" }) : equiposHref({}),
+              // El porcentaje cuenta los equipos «al día»: la lista es ese conjunto, no su complemento (vencidas).
+              href: equiposHref({ estado: "al_dia" }),
             }
           : { key: "pauta-al-dia", label: "Equipos con la pauta al día", value: "Sin dato", valueKind: "text", secondary: "No se pudo calcular", href: equiposHref({}) },
         records
@@ -452,7 +458,9 @@ export function PautasSection({
                   </>
                 }
               >
-                <BarRankingChartLazy items={pautaSegments} ariaLabel="Equipos por estado de pauta hoy" unit=" equipos" order="input" limit={8} />
+                {/* El gráfico omite los estados en 0 (una fila sin barra ni cifra se lee como un error), como las demás composiciones
+                    de la plataforma; «Ver datos» conserva todos los estados, con su 0. */}
+                <BarRankingChartLazy items={pautaSegments.filter((segment) => segment.value > 0)} ariaLabel="Equipos por estado de pauta hoy" unit=" equipos" order="input" limit={8} />
                 <ChartDataTable
                   caption="Estado de las pautas hoy"
                   headers={["Estado", "Equipos"]}

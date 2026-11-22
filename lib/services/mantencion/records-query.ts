@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, lte, or, sql, type 
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
-  mantRecordCorrectives, mantRecordItems, mantRecords, mantWorkshopUpdates, mantWorksiteSettings, users, worksites,
+  mantRecordCorrectives, mantRecordItems, mantRecords, mantWorkshopUpdates, users, worksites,
   type MantEquipmentSnapshot,
 } from "@/db/schema"
 import { escapeLikePattern } from "@/lib/utils"
@@ -322,17 +322,23 @@ export async function loadRecordFilterOptions(viewer: MantViewer): Promise<Recor
   const visibility = recordVisibility(viewer)
   const visible = recordVisibilitySql(visibility)
   const worksiteIds = visibility.kind === "all" ? [] : visibility.worksiteIds
+  const hasVisibleRecords = sql`${worksites.id} in (select ${mantRecords.worksiteId} from ${mantRecords} where ${visible})`
   const [worksiteRows, executorRows, registrarRows] = await Promise.all([
-    db.select({ id: worksites.id, name: worksites.name })
+    // Faenas activas, como el filtro de OT y el selector del Panel. Una desactivada (unificada) se ofrece sólo
+    // si tiene registros que el usuario ve, rotulada «(inactiva)»: esos registros siguen en la lista y hay que
+    // poder filtrarlos, sin confundirla con la faena vigente de nombre parecido.
+    db.select({
+      id: worksites.id,
+      name: sql<string>`case when ${worksites.isActive} then ${worksites.name} else ${worksites.name} || ' (inactiva)' end`,
+    })
       .from(worksites)
-      .innerJoin(mantWorksiteSettings, eq(mantWorksiteSettings.worksiteId, worksites.id))
-      .where(visibility.kind === "all"
-        ? undefined
-        : or(
-          worksiteIds.length ? inArray(worksites.id, worksiteIds) : sql`false`,
-          sql`${worksites.id} in (select ${mantRecords.worksiteId} from ${mantRecords} where ${visible})`,
-        ))
-      .orderBy(asc(worksites.name)),
+      .where(and(
+        or(eq(worksites.isActive, true), hasVisibleRecords),
+        visibility.kind === "all"
+          ? undefined
+          : or(worksiteIds.length ? inArray(worksites.id, worksiteIds) : sql`false`, hasVisibleRecords),
+      ))
+      .orderBy(desc(worksites.isActive), asc(worksites.name)),
     db.selectDistinct({
       userId: mantRecords.executorUserId,
       workshopId: mantRecords.executorWorkshopId,

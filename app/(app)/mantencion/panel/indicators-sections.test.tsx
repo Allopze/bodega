@@ -136,6 +136,35 @@ describe("WorkOrdersSection", () => {
     expect(within(region).getByRole("link", { name: "Por asignar" }).getAttribute("href")).toContain("faena=ws-1")
   })
 
+  it("PAN-1: «cerradas en el período» y el tiempo de reparación abren la lista con los días de cierre del período", () => {
+    render(<WorkOrdersSection {...common} series={[point("2026-11", { created: 1 })]} stats={stats} byStatus={[{ status: "solicitada", count: 1 }]} />)
+    const region = screen.getByRole("region", { name: "Órdenes de trabajo" })
+    for (const name of [/^OT cerradas en el período/, /^Tiempo medio/]) {
+      expect(within(region).getByRole("link", { name }).getAttribute("href")).toBe("/mantencion/ot?estado=cerrada&cerradaDesde=2026-11-01&cerradaHasta=2026-11-13")
+    }
+  })
+
+  it("PAN-1: con faena y equipo elegidos, ambos viajan junto a los días de cierre", () => {
+    render(<WorkOrdersSection {...common} worksiteId="ws-1" equipmentId="v-1" series={[point("2026-11", { created: 1 })]} stats={stats} byStatus={[{ status: "solicitada", count: 1 }]} />)
+    const region = screen.getByRole("region", { name: "Órdenes de trabajo" })
+    expect(within(region).getByRole("link", { name: /^OT cerradas en el período/ }).getAttribute("href")).toBe("/mantencion/ot?faena=ws-1&equipo=v-1&estado=cerrada&cerradaDesde=2026-11-01&cerradaHasta=2026-11-13")
+  })
+
+  it("PANN-5: con un equipo elegido todos los enlaces a las OT llevan `equipo`", () => {
+    render(<WorkOrdersSection {...common} equipmentId="v-1" series={[point("2026-11", { created: 1 })]} stats={stats} byStatus={[{ status: "solicitada", count: 1 }]} />)
+    const region = screen.getByRole("region", { name: "Órdenes de trabajo" })
+    const otLinks = within(region).getAllByRole("link").filter((link) => (link.getAttribute("href") ?? "").startsWith("/mantencion/ot"))
+    // Encabezado de la sección, dos cifras de la tira y la barra «Por asignar».
+    expect(otLinks.length).toBeGreaterThanOrEqual(4)
+    for (const link of otLinks) expect(link.getAttribute("href")).toContain("equipo=v-1")
+    expect(within(region).getByRole("link", { name: "Por asignar" }).getAttribute("href")).toBe("/mantencion/ot?equipo=v-1&estado=solicitada")
+  })
+
+  it("sin equipo elegido ningún enlace lleva `equipo`", () => {
+    render(<WorkOrdersSection {...common} series={[point("2026-11", { created: 1 })]} stats={stats} byStatus={[{ status: "solicitada", count: 1 }]} />)
+    for (const link of within(screen.getByRole("region", { name: "Órdenes de trabajo" })).getAllByRole("link")) expect(link.getAttribute("href")).not.toContain("equipo=")
+  })
+
   it("sin ninguna OT muestra un solo vacío con su enlace, sin cifras ni gráficos", () => {
     const { container } = render(
       <WorkOrdersSection {...common} series={[point("2026-11")]} stats={{ closed: 0, closedPrevious: 0, mttrHours: null, repairClosed: 0 }} byStatus={[]} />,
@@ -190,9 +219,9 @@ describe("PautasSection", () => {
     const region = screen.getByRole("region", { name: "Pautas y disponibilidad" })
     expect(container.querySelectorAll("[data-kpi-card]")).toHaveLength(0)
     const stat = within(region).getByRole("link", { name: /Equipos con la pauta al día/ })
-    // 5 / (2 + 1 + 5 + 2) = 50 %; con vencidas la cifra lleva a la lista de vencidas.
+    // 5 / (2 + 1 + 5 + 2) = 50 %: la cifra lleva a los equipos «al día» (PAN-6), no a su complemento (vencidas).
     expect(stat.textContent).toContain("50%")
-    expect(stat.getAttribute("href")).toBe("/mantencion/equipos?estado=vencida")
+    expect(stat.getAttribute("href")).toBe("/mantencion/equipos?estado=al_dia")
     const preventivos = within(region).getByRole("link", { name: /Registros preventivos/ })
     expect(preventivos.getAttribute("href")).toContain("tipo=P")
     // 3 vs 2: +50 %.
@@ -210,6 +239,21 @@ describe("PautasSection", () => {
     expect(within(ranking).getByRole("link", { name: "KA-1 · AAAA-01" }).getAttribute("href")).toBe("/flota/v1/mantencion")
     expect(region.textContent).toContain("Sin pauta")
     expect(region.textContent).not.toMatch(/sin_pauta|sin_lecturas/)
+  })
+
+  it("PAN-6: con faena, «Equipos con la pauta al día» lleva a los al día de esa faena", () => {
+    render(<PautasSection {...common} {...base} worksiteId="ws-1" showRanking />)
+    expect(screen.getByRole("link", { name: /Equipos con la pauta al día/ }).getAttribute("href")).toBe("/mantencion/equipos?faena=ws-1&estado=al_dia")
+  })
+
+  it("PANN-18: el gráfico omite los estados en 0, pero «Ver datos» los conserva con su 0", () => {
+    render(<PautasSection {...common} {...base} showRanking />)
+    const region = screen.getByRole("region", { name: "Pautas y disponibilidad" })
+    const chart = within(region).getByRole("img", { name: /^Equipos por estado de pauta hoy/ })
+    expect([...chart.querySelectorAll("li")].map((item) => item.textContent)).toEqual(["Vencida: 2", "Próxima: 1", "Al día: 5", "Sin lecturas: 2", "Sin pauta definida: 3"])
+    expect(within(chart).queryByText(/Sin preventiva/)).toBeNull()
+    const table = within(region).getByRole("table", { name: "Estado de las pautas hoy" })
+    expect(within(table).getByRole("row", { name: /Sin información de preventiva\s*0/ })).toBeTruthy()
   })
 
   it("«Sin información de preventiva» sale en el gráfico, en su tabla y en el texto de cobertura, no como al día", () => {

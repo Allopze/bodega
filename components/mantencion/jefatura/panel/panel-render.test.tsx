@@ -60,6 +60,12 @@ describe("panel sin equipos (UX-13)", () => {
     expect(hasNoEquipmentInScope({ ...empty, inWorkshop: 1 })).toBe(false)
     expect(hasNoEquipmentInScope({ ...empty, records: 1 })).toBe(false)
     expect(hasNoEquipmentInScope({ ...empty, workOrders: 2 })).toBe(false)
+    // PANN-1: trabajos del historial, hallazgos o reportes de turno también sostienen el Panel.
+    expect(hasNoEquipmentInScope({ ...empty, work: 3 })).toBe(false)
+    expect(hasNoEquipmentInScope({ ...empty, findings: 1 })).toBe(false)
+    expect(hasNoEquipmentInScope({ ...empty, reports: 1 })).toBe(false)
+    expect(hasNoEquipmentInScope({ ...empty, work: 0, findings: 0, reports: 0 })).toBe(true)
+    expect(hasNoEquipmentInScope({ ...empty, work: null, findings: null, reports: null })).toBe(true)
   })
 
   it("una consulta que falló no se lee como alcance vacío", () => {
