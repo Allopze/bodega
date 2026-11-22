@@ -21,7 +21,7 @@ const report = (over: Partial<PanelReportData> = {}): PanelReportData => ({
     includesOrders: true,
     summary: {
       total: 10, byType: { preventiva: 4, correctiva: 4, predictiva: 1, sin_clasificar: 1 }, classified: 9, correctivePercent: (4 / 9) * 100,
-      bySource: { historial: 7, ot: 3 }, workshopDays: { total: 15, withData: 3, withoutData: 7, inWorkshop: 1 }, laborHours: { total: 20, withData: 3, withoutData: 7 }, external: 1,
+      bySource: { historial: 7, ot: 3, registro: 2 }, workshopDays: { total: 15, withData: 3, withoutData: 7, inWorkshop: 1 }, laborHours: { total: 20, withData: 3, withoutData: 7 }, external: 1,
       series: [{ key: "2026-10", partial: false, preventiva: 4, correctiva: 4, predictiva: 1, sin_clasificar: 1 }],
       byWorksite: [{ key: "ws-1", name: "Biodiversa", worksiteId: "ws-1", count: 10, correctives: 4, workshopDays: 15, laborHours: 20 }],
       topCorrective: [{ vehicleId: "v-1", label: "KA-1 · AAAA-01", count: 3 }],
@@ -48,7 +48,8 @@ describe("informe del Panel de mantención (PDF)", () => {
     expect(cover.textContent).toContain("Biodiversa")
     expect(cover.textContent).toContain("Octubre 2026")
     expect(cover.textContent).toContain("13-11-2026")
-    expect(screen.getByText(/Fuente: historial de formularios y órdenes de trabajo no anuladas/)).toBeTruthy()
+    expect(screen.getByText(/Fuente: historial de formularios hasta el 30-11-2026 \(sin filas de prueba\), órdenes de trabajo no anuladas que entraron a taller y registros de la plataforma desde el 01-12-2026/)).toBeTruthy()
+    expect(screen.getByText("7 del historial · 3 de OT · 2 registros")).toBeTruthy()
     expect(screen.getByRole("main").hasAttribute("data-print-ready")).toBe(true)
   })
 

@@ -13,8 +13,9 @@ import {
 } from "@/lib/reports/chart-data-export"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
 import { loadMaintenanceWork, resolvePanelEquipment } from "@/lib/services/mantencion/maintenance-work"
-import { WORK_SHEET_HEADERS, workSheetRow } from "@/lib/services/mantencion/maintenance-work-sheet"
-import { todayInChile } from "@/lib/utils"
+import { WORK_SHEET_COLUMN_FORMATS, WORK_SHEET_HEADERS, workSheetRow } from "@/lib/services/mantencion/maintenance-work-sheet"
+import { FORMS_CUTOVER_DATE, FORMS_LAST_COUNTED_DATE } from "@/lib/mantencion/forms-cutover"
+import { formatDate, todayInChile } from "@/lib/utils"
 import type { ExportActionResult } from "@/components/ui/export-button"
 
 /**
@@ -70,18 +71,18 @@ export async function exportPanelBoardAction(input: PanelExportInput): Promise<E
       ...(equipment ? { vehicleId: equipment.id } : {}),
     })
     const rows = work.rows.slice(0, WORK_SHEET_MAX_ROWS)
+    const lastForms = formatDate(FORMS_LAST_COUNTED_DATE)
+    const cutover = formatDate(FORMS_CUTOVER_DATE)
     const notes = [
-      `Fuente: ${work.includesOrders ? "historial de formularios y órdenes de trabajo no anuladas" : "historial de formularios (este perfil no ve todas las órdenes de trabajo de su alcance)"}; sin filas de prueba.`,
-      "«Sin clasificar» = el formulario no indica el tipo de acción. Una celda vacía es un dato que el trabajo no trae, no un cero.",
+      `Fuente: ${work.includesOrders
+        ? `historial de formularios hasta el ${lastForms} (sin filas de prueba), órdenes de trabajo no anuladas que entraron a taller y registros de la plataforma desde el ${cutover}`
+        : `historial de formularios hasta el ${lastForms} (sin filas de prueba) y registros de la plataforma desde el ${cutover}; este perfil no ve todas las órdenes de trabajo de su alcance`}.`,
+      "«Sin clasificar» = el trabajo no indica el tipo de acción. Una celda vacía es un dato que el trabajo no trae, no un cero.",
       ...(work.rows.length > rows.length ? [`La hoja se cortó en ${rows.length} de ${work.rows.length} trabajos: acota el período.`] : []),
     ]
-    const base64 = await buildBoardDataWorkbookBase64(session, {
-      ...board,
-      tables: [
-        ...board.tables,
-        { permission: "mant:export", title: "Trabajos", headers: [...WORK_SHEET_HEADERS], rows: rows.map(workSheetRow), notes },
-      ],
-    })
+    const base64 = await buildBoardDataWorkbookBase64(session, board, [
+      { title: "Trabajos", headers: [...WORK_SHEET_HEADERS], rows: rows.map(workSheetRow), columnFormats: WORK_SHEET_COLUMN_FORMATS, notes },
+    ])
     await recordAudit({
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,

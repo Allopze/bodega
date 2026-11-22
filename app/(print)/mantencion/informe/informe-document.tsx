@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { bucketLabel } from "@/lib/indicators/period"
 import { OT_STATUS_LABELS } from "@/lib/mantencion/work-order-states"
+import { FORMS_CUTOVER_DATE, FORMS_LAST_COUNTED_DATE } from "@/lib/mantencion/forms-cutover"
 import { EQUIPMENT_STATE_LABEL } from "@/lib/mantencion/format"
 import { MANT_EQUIPMENT_STATES } from "@/lib/mantencion/types"
 import { pautaCompliance } from "@/lib/services/mantencion/indicators"
@@ -11,10 +12,20 @@ import type { PanelReportData } from "./report-data"
  * Informe del Panel de mantención para imprimir: portada con faena, período y fecha de emisión; las cifras y las
  * tablas del Panel (sin gráficos) y, al pie, de dónde sale cada dato. Mismas definiciones que la pantalla:
  * los «sin clasificar» van aparte del % de correctivas, «sin pauta definida» tiene su propia cifra y la
- * fuente (historial de formularios u órdenes de trabajo) va rotulada.
+ * fuente (historial de formularios, órdenes de trabajo o registros de la plataforma) va rotulada.
  */
 
 const days = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 1 })
+
+/** «7 del historial · 3 de OT · 2 registros», sin las fuentes en 0. */
+function workSources(bySource: { historial: number; ot: number; registro: number }, includesOrders: boolean): string {
+  const parts = [
+    bySource.historial > 0 ? `${formatQty(bySource.historial)} del historial` : null,
+    includesOrders && bySource.ot > 0 ? `${formatQty(bySource.ot)} de OT` : null,
+    bySource.registro > 0 ? `${formatQty(bySource.registro)} ${bySource.registro === 1 ? "registro" : "registros"}` : null,
+  ].filter((part): part is string => part !== null)
+  return parts.length > 0 ? parts.join(" · ") : "Ninguno en el período"
+}
 
 function Figure({ label, value, aside }: { label: string; value: ReactNode; aside?: ReactNode }) {
   return (
@@ -33,9 +44,11 @@ function Unavailable({ what }: { what: string }) {
 export function InformeDocument({ data, logoSrc }: { data: PanelReportData; logoSrc: string }) {
   const { work, pautas, compliance, findings, outOfService, orderStats, openOrders } = data
   const summary = work?.summary
+  const lastForms = formatDate(FORMS_LAST_COUNTED_DATE)
+  const cutover = formatDate(FORMS_CUTOVER_DATE)
   const source = work?.includesOrders === false
-    ? "historial de formularios (sin filas de prueba); este perfil no ve todas las órdenes de trabajo de su alcance"
-    : "historial de formularios y órdenes de trabajo no anuladas (sin filas de prueba)"
+    ? `historial de formularios hasta el ${lastForms} (sin filas de prueba) y registros de la plataforma desde el ${cutover}; este perfil no ve todas las órdenes de trabajo de su alcance`
+    : `historial de formularios hasta el ${lastForms} (sin filas de prueba), órdenes de trabajo no anuladas que entraron a taller y registros de la plataforma desde el ${cutover}`
   const pautaCounts = pautas ? pautaCompliance(pautas.counts) : null
 
   return (
@@ -61,7 +74,7 @@ export function InformeDocument({ data, logoSrc }: { data: PanelReportData; logo
       {!summary ? <Unavailable what="Trabajos de mantención" /> : (
         <>
           <div className="figures">
-            <Figure label="Trabajos del período" value={formatQty(summary.total)} aside={`${formatQty(summary.bySource.historial)} del historial · ${formatQty(summary.bySource.ot)} de OT`} />
+            <Figure label="Trabajos del período" value={formatQty(summary.total)} aside={workSources(summary.bySource, work?.includesOrders !== false)} />
             <Figure
               label="Correctivas"
               value={summary.correctivePercent === null ? "Sin dato" : formatPercent(summary.correctivePercent, 0)}
@@ -244,7 +257,7 @@ export function InformeDocument({ data, logoSrc }: { data: PanelReportData; logo
       ) : null}
 
       <p className="note muted">
-        Los trabajos, el checklist de pauta y los hallazgos incluyen el historial importado de formularios, que no son registros firmados en la plataforma; el estado de las pautas y las OT son datos nativos.
+        Los trabajos cuentan el historial importado de formularios hasta el {lastForms} y, desde el {cutover}, los registros firmados en la plataforma; las OT cuentan cuando entran a taller. El checklist de pauta y los hallazgos vienen del historial importado de formularios, que no son registros firmados en la plataforma; el estado de las pautas y las OT son datos nativos.
         Generado el {data.issuedOn}.
       </p>
     </main>

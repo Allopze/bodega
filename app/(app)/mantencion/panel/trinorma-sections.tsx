@@ -6,6 +6,7 @@ import { DashboardSection } from "@/components/dashboard/dashboard-section"
 import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { EmptyState } from "@/components/ui/empty-state"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
+import { FORMS_CUTOVER_DATE, FORMS_LAST_COUNTED_DATE } from "@/lib/mantencion/forms-cutover"
 import { plural } from "@/lib/mantencion/format"
 import {
   type FindingsWithoutWork,
@@ -20,7 +21,8 @@ import { WorkTypeChart } from "./indicators-charts-lazy"
 
 /**
  * Las dos secciones que reemplazan al Looker (Trinorma, R5): «Trabajos de mantención» (historial de
- * formularios + órdenes de trabajo) y «Pautas y hallazgos de formularios». Reciben los datos ya cargados; un
+ * formularios hasta el corte, órdenes de trabajo que entraron a taller y registros de la plataforma desde el
+ * corte) y «Pautas y hallazgos de formularios». Reciben los datos ya cargados; un
  * bloque cuya consulta falló llega como `null` y no se pinta (la página avisa arriba), nunca como un cero.
  *
  * Reglas de honestidad:
@@ -48,6 +50,17 @@ function panelHref(common: TrinormaCommon, overrides: Record<string, string | nu
 
 const formatDays = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 1 })
 
+/** «7 del historial · 3 de OT · 2 registros», sin las fuentes en 0 y sin las OT para quien no las ve. */
+function workSourceBreakdown(summary: MaintenanceWorkSummary, includesOrders: boolean): string {
+  const { historial, ot, registro } = summary.bySource
+  const parts = [
+    historial > 0 ? `${formatQty(historial)} del historial` : null,
+    includesOrders && ot > 0 ? `${formatQty(ot)} de OT` : null,
+    registro > 0 ? `${plural(registro, "registro", "registros")}` : null,
+  ].filter((part): part is string => part !== null)
+  return parts.length > 0 ? parts.join(" · ") : "Ninguno en el período"
+}
+
 export function MaintenanceWorkSection({
   summary,
   includesOrders,
@@ -59,13 +72,17 @@ export function MaintenanceWorkSection({
 }) {
   const faena = common.worksiteId ?? undefined
   const links = [
-    { label: "Historial de formularios", href: "/mantencion/registros/historicos" },
+    // La lista del historial recibe el período y la faena de la sección (`desde`, `hasta`, `faena`).
+    { label: "Historial de formularios", href: withParams("/mantencion/registros/historicos", { desde: common.from, hasta: common.to, faena }) },
     ...(includesOrders ? [{ label: "Órdenes de trabajo", href: withParams("/mantencion/ot", { faena }) }] : []),
     ...(common.equipment ? [{ label: "Hoja de vida del equipo", href: vehicleFichaHref(common.equipment.id, "mantencion") }] : []),
   ]
+  const cutover = formatDate(FORMS_CUTOVER_DATE)
   const source = includesOrders
-    ? "historial de formularios y órdenes de trabajo (sin anuladas ni filas de prueba)"
-    : "historial de formularios (sin filas de prueba); tu perfil no ve todas las órdenes de trabajo de su alcance"
+    ? `historial de formularios (hasta el ${formatDate(FORMS_LAST_COUNTED_DATE)}), órdenes de trabajo y registros de la plataforma (desde el ${cutover}); sin anuladas ni filas de prueba`
+    : `historial de formularios (hasta el ${formatDate(FORMS_LAST_COUNTED_DATE)}) y registros de la plataforma (desde el ${cutover}); tu perfil no ve todas las órdenes de trabajo de su alcance`
+  // Qué cuenta y desde cuándo, dicho una sola vez en la sección: ninguna lista reproduce la suma de las tres fuentes.
+  const definition = `Hasta el ${formatDate(FORMS_LAST_COUNTED_DATE)} cuentan los formularios; desde el ${cutover}, los registros firmados en la plataforma. Las OT cuentan cuando entran a taller.`
   const note = common.equipment ? `${common.scopeNote} · ${common.equipment.label}` : common.scopeNote
 
   if (!summary) return null
@@ -77,12 +94,13 @@ export function MaintenanceWorkSection({
         id="trabajos-mantencion"
         title="Trabajos de mantención"
         links={links}
+        note={definition}
         charts={
           <ChartSlot span="full">
             <EmptyState
               compact
               title="No hay trabajos de mantención en este período"
-              description="Aquí se suman el historial de formularios importado y las órdenes de trabajo. Prueba con otro período o importa el historial de formularios."
+              description="Aquí se suman el historial de formularios, las órdenes de trabajo que entraron a taller y los registros de la plataforma. Prueba con otro período."
               action={<Link href="/mantencion/registros/historicos" className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">Ver historial de formularios →</Link>}
             />
           </ChartSlot>
@@ -97,10 +115,8 @@ export function MaintenanceWorkSection({
       key: "trabajos-total",
       label: "Trabajos del período",
       value: summary.total,
-      secondary: includesOrders
-        ? `${formatQty(summary.bySource.historial)} del historial · ${formatQty(summary.bySource.ot)} de OT`
-        : `${formatQty(summary.bySource.historial)} del historial de formularios`,
-      href: "/mantencion/registros/historicos",
+      // Sin `href`: suma tres fuentes y ninguna lista la reproduce (PANN-4); el desglose va en el subtítulo.
+      secondary: workSourceBreakdown(summary, includesOrders),
     },
     {
       key: "trabajos-correctivas",
@@ -137,7 +153,12 @@ export function MaintenanceWorkSection({
   // Por faena (sólo con varias a la vista y sin un equipo elegido: con uno, la faena es una sola).
   const showSites = !common.equipment && summary.byWorksite.length > 0
   const daysByWorksite = showSites ? summary.byWorksite.filter((site) => site.workshopDays > 0) : []
+  // El total de días ya está en la tira: el titular del gráfico dice otra cosa, la faena que más acumula (PANN-18).
+  const topDays = daysByWorksite.reduce((top, site) => (site.workshopDays > top.workshopDays ? site : top), daysByWorksite[0] ?? { name: "", workshopDays: 0 })
   const hoursByWorksite = showSites ? summary.byWorksite.filter((site) => site.laborHours > 0) : []
+  // Igual que los días: el total de horas ya está en la tira; el titular dice la faena que más horas suma.
+  const topHours = hoursByWorksite.reduce((top, site) => (site.laborHours > top.laborHours ? site : top), hoursByWorksite[0] ?? { name: "", laborHours: 0 })
+  const topHoursTies = hoursByWorksite.filter((site) => site.laborHours === topHours.laborHours).length
   const siteHref = (site: { worksiteId: string | null }) => (site.worksiteId ? panelHref(common, { faena: site.worksiteId, equipo: null }) : undefined)
   const corrective = summary.topCorrective
   const spans = spansFor([
@@ -153,6 +174,7 @@ export function MaintenanceWorkSection({
       id="trabajos-mantencion"
       title="Trabajos de mantención"
       links={links}
+      note={definition}
       summary={<SummaryBar numerals="sans" stats={stats} />}
       charts={
         <>
@@ -172,9 +194,12 @@ export function MaintenanceWorkSection({
                 description={sourceDescription}
                 headline={
                   <>
-                    <ChartHeadlineValue>{formatDays(daysByWorksite.reduce((sum, site) => sum + site.workshopDays, 0))}</ChartHeadlineValue>
+                    <ChartHeadlineValue>{formatDays(topDays.workshopDays)}</ChartHeadlineValue>
                     <ChartHeadlineCaption>
-                      días en taller entre {plural(daysByWorksite.length, "faena", "faenas")}; sólo cuentan los trabajos con fecha de ingreso y de salida
+                      {daysByWorksite.filter((site) => site.workshopDays === topDays.workshopDays).length === 1
+                        ? `días en taller en ${topDays.name}, la faena con más`
+                        : `días en taller en cada una de las ${plural(daysByWorksite.filter((site) => site.workshopDays === topDays.workshopDays).length, "faena", "faenas")} con más`}
+                      ; sólo cuentan los trabajos con fecha de ingreso y de salida
                     </ChartHeadlineCaption>
                   </>
                 }
@@ -203,9 +228,12 @@ export function MaintenanceWorkSection({
                 description={sourceDescription}
                 headline={
                   <>
-                    <ChartHeadlineValue>{formatDays(hoursByWorksite.reduce((sum, site) => sum + site.laborHours, 0))}</ChartHeadlineValue>
+                    <ChartHeadlineValue>{formatDays(topHours.laborHours)}</ChartHeadlineValue>
                     <ChartHeadlineCaption>
-                      horas hombre informadas entre {plural(hoursByWorksite.length, "faena", "faenas")}; los trabajos sin horas no suman
+                      {topHoursTies === 1
+                        ? `horas hombre en ${topHours.name}, la faena con más`
+                        : `horas hombre en cada una de las ${plural(topHoursTies, "faena", "faenas")} con más`}
+                      ; los trabajos sin horas no suman
                     </ChartHeadlineCaption>
                   </>
                 }

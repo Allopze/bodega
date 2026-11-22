@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne, sql, type SQL } from "drizzle-orm"
+import { and, asc, eq, inArray, isNotNull, ne, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fuelVehicles,
@@ -6,47 +6,61 @@ import {
   mantHistoricalInspections,
   mantHistoricalRecords,
   mantHistoricalScheduleChecks,
+  mantRecordCorrectives,
+  mantRecords,
   mantWorkOrders,
+  mantWorkshopUpdates,
   worksites,
 } from "@/db/schema"
 import { worksiteScopeSqlFor } from "@/lib/auth/scope"
 import { bucketKey, isPartialBucket, listBuckets, type ChartWindow } from "@/lib/indicators/period"
 import { actionTypeFromText, isActionType, workOrderActionType, type ActionTypeOrUnknown } from "@/lib/mantencion/action-type"
+import { FORMS_CUTOVER_DATE } from "@/lib/mantencion/forms-cutover"
+import { workshopState } from "@/lib/mantencion/status"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { getOperationalSettings } from "@/lib/services/system-settings"
-import { equipmentScope, type MantViewer } from "./access"
+import { equipmentScope, recordVisibility, recordVisibilitySql, type MantViewer } from "./access"
 import type { MantWorksiteScope } from "./fleet"
 import { workOrderVisibility, workOrderVisibilitySql } from "./work-orders/access"
 
 /**
  * «Trabajos de mantención» del Panel (Trinorma, R5): lo que se hizo sobre cada equipo en un período,
- * venga de donde venga. Es la unión de dos fuentes que NO se solapan:
+ * venga de donde venga. Es la unión de tres fuentes que NO se solapan (corte de los formularios de Google,
+ * `lib/mantencion/forms-cutover.ts`, 2026-12-01):
  *
- * - `historial`: `mant_historical_records` sin `is_test` (el consolidado y los formularios anteriores);
- * - `ot`: `mant_work_orders` no anuladas (las órdenes de trabajo de la plataforma).
- *
- * `mant_records` (los registros firmados de la app) NO se suma: es otra sección del Panel y sumarlo
- * contaría dos veces el mismo trabajo cuando una OT lo originó.
+ * - `historial`: `mant_historical_records` sin `is_test`, **sólo antes del corte** (fecha del trabajo < 01-12-2026).
+ *   Una respuesta de Forms posterior al corte queda guardada como evidencia, pero no entra en las cifras;
+ * - `ot`: `mant_work_orders` no anuladas **que ya entraron a taller** (`workshop_entry_at` no nulo): una OT
+ *   «Por asignar» o «Asignada» todavía no es un trabajo hecho. Su fecha es el día de ingreso (hora de Chile);
+ * - `registro`: `mant_records` vigentes, **sin OT** (`work_order_id` nulo) y **desde el corte** (`work_date` >=
+ *   01-12-2026). Lo que tiene OT ya se cuenta por la OT; antes del corte lo cuenta el historial.
  *
  * Reglas:
- * - Fecha del trabajo: el ingreso al taller (historial: `entry_date`; OT: `workshop_entry_at` en hora
- *   de Chile); si falta, la fecha de envío del formulario (historial) o la de solicitud de la OT.
- * - Tipo: OT → `workOrderActionType`; historial → su `action_type` y, si es null, `actionTypeFromText(kind_text)`.
- *   Lo que no dice uno de los tres tipos es `sin_clasificar` y se cuenta aparte, nunca como correctiva.
+ * - Fecha del trabajo: historial → ingreso a taller (`entry_date`) o, si falta, el día de envío del formulario;
+ *   OT → día de ingreso a taller; registro → `work_date`.
+ * - Tipo: OT → `workOrderActionType`; historial → su `action_type` y, si es null, `actionTypeFromText(kind_text)`;
+ *   registro → `P` preventiva, `C` correctiva. Lo que no dice uno de los tres tipos es `sin_clasificar` y se
+ *   cuenta aparte, nunca como correctiva.
  * - Días en taller: salida − ingreso (fechas civiles). Sin una de las dos fechas, o con la salida antes del
- *   ingreso (dato malo), no hay cifra: queda `null` y se informa cuántas filas no la traen. Una OT con
- *   ingreso y sin salida cuenta hasta hoy y va marcada «en taller».
+ *   ingreso (dato malo), no hay cifra: queda `null` y se informa cuántas filas no la traen. Una OT o una
+ *   correctiva con ingreso y sin salida cuenta hasta hoy y va marcada «en taller». Una correctiva de registro
+ *   se deriva con `workshopState` (la misma regla 11 de la ficha); sin taller, `null`.
+ * - Horas: historial y OT traen las suyas; una correctiva de registro, `mant_record_correctives.hours`; una
+ *   preventiva de registro no las informa (`null`).
  * - Alcance: `equipmentScope` (faena de imputación de la fila); las OT además respetan su propia visibilidad
- *   (`workOrderVisibility`): quien no ve OT no recibe sus filas y el Panel lo dice.
+ *   (`workOrderVisibility`) y los registros la de la lista de Registros (`recordVisibility`): quien no ve OT no
+ *   recibe sus filas y el Panel lo dice.
+ * - `loadWorkOfVehicles` (¿hubo trabajo después del hallazgo?) es un hecho del equipo: suma historial, OT y
+ *   todos los registros vigentes, **sin** el corte y sin la restricción de «sin OT».
  */
 
-export type WorkSource = "historial" | "ot"
+export type WorkSource = "historial" | "ot" | "registro"
 
 export interface MaintenanceWorkRow {
-  /** `h:<source_key>` o `ot:<id>`: único entre las dos fuentes. */
+  /** `h:<source_key>`, `ot:<id>` o `r:<id>`: único entre las tres fuentes. */
   id: string
   source: WorkSource
-  /** Folio de la OT o ID del consolidado (`MT-00001`); vacío si no lo trae. */
+  /** Folio de la OT o del registro, o ID del consolidado (`MT-00001`); vacío si no lo trae. */
   reference: string
   /** `YYYY-MM-DD`. */
   date: string
@@ -110,6 +124,13 @@ interface RowFilter {
   vehicleIds?: readonly string[]
   /** Predicado de visibilidad de las OT; `null` = no se leen OT. */
   orderVisibility: SQL | null
+  /** Predicado de visibilidad de los registros firmados; `null` = no se leen. */
+  recordVisibility: SQL | null
+  /**
+   * `panel` aplica el corte de los formularios (historial < corte, registros >= corte y sin OT);
+   * `fact` es «¿hubo trabajo en el equipo?»: sin corte y con todos los registros vigentes.
+   */
+  mode: "panel" | "fact"
   today: string
 }
 
@@ -150,6 +171,8 @@ async function loadHistorialRows(filter: RowFilter): Promise<MaintenanceWorkRow[
     .where(and(
       eq(mantHistoricalRecords.isTest, false),
       sql`${HISTORICAL_DATE} >= ${filter.from} AND ${HISTORICAL_DATE} <= ${filter.to}`,
+      // Desde el corte, el trabajo lo cuentan los registros de la plataforma: el historial no suma dos veces.
+      filter.mode === "panel" ? sql`${HISTORICAL_DATE} < ${FORMS_CUTOVER_DATE}` : undefined,
       worksiteScopeSqlFor(filter.scope, mantHistoricalRecords.worksiteId, filter.worksiteId),
       filter.vehicleIds ? inArray(mantHistoricalRecords.vehicleId, filter.vehicleIds.length ? [...filter.vehicleIds] : ["__none__"]) : undefined,
     ))
@@ -174,11 +197,9 @@ async function loadOrderRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
   if (!filter.orderVisibility) return []
   const entryDay = SANTIAGO_DAY(mantWorkOrders.workshopEntryAt)
   const exitDay = SANTIAGO_DAY(mantWorkOrders.workshopExitAt)
-  const workDate = sql<string>`coalesce(${entryDay}, ${mantWorkOrders.requestDate})`
   const rows = await db.select({
     id: mantWorkOrders.id,
     folio: mantWorkOrders.folio,
-    date: workDate,
     entryDay,
     exitDay,
     vehicleId: mantWorkOrders.vehicleId,
@@ -197,8 +218,10 @@ async function loadOrderRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
     .innerJoin(worksites, eq(worksites.id, mantWorkOrders.worksiteId))
     .where(and(
       ne(mantWorkOrders.status, "anulada"),
+      // Sólo las OT que ya entraron a taller son trabajo hecho; la fecha es el día de ingreso.
+      isNotNull(mantWorkOrders.workshopEntryAt),
       filter.orderVisibility,
-      sql`${workDate} >= ${filter.from} AND ${workDate} <= ${filter.to}`,
+      sql`${entryDay} >= ${filter.from} AND ${entryDay} <= ${filter.to}`,
       worksiteScopeSqlFor(filter.scope, mantWorkOrders.worksiteId, filter.worksiteId),
       filter.vehicleIds ? inArray(mantWorkOrders.vehicleId, filter.vehicleIds.length ? [...filter.vehicleIds] : ["__none__"]) : undefined,
     ))
@@ -208,7 +231,7 @@ async function loadOrderRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
       id: `ot:${row.id}`,
       source: "ot" as const,
       reference: row.folio,
-      date: row.date,
+      date: row.entryDay!,
       vehicleId: row.vehicleId,
       equipmentLabel: equipmentText(row.code, row.plate, ""),
       worksiteId: row.worksiteId,
@@ -222,13 +245,86 @@ async function loadOrderRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
   })
 }
 
+/** Los registros firmados de la plataforma como trabajos (ver la cabecera del archivo para el corte y el «sin OT»). */
+async function loadRecordRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
+  if (!filter.recordVisibility) return []
+  const rows = await db.select({
+    id: mantRecords.id,
+    folio: mantRecords.folio,
+    kind: mantRecords.kind,
+    workDate: mantRecords.workDate,
+    vehicleId: mantRecords.vehicleId,
+    code: fuelVehicles.code,
+    plate: fuelVehicles.plate,
+    worksiteId: mantRecords.worksiteId,
+    worksiteName: worksites.name,
+    executorKind: mantRecords.executorKind,
+    hours: mantRecordCorrectives.hours,
+    inWorkshop: mantRecordCorrectives.inWorkshop,
+    workshopEntryDate: mantRecordCorrectives.workshopEntryDate,
+  })
+    .from(mantRecords)
+    .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantRecords.vehicleId))
+    .innerJoin(worksites, eq(worksites.id, mantRecords.worksiteId))
+    .leftJoin(mantRecordCorrectives, eq(mantRecordCorrectives.recordId, mantRecords.id))
+    .where(and(
+      eq(mantRecords.status, "vigente"),
+      filter.recordVisibility,
+      sql`${mantRecords.workDate} >= ${filter.from} AND ${mantRecords.workDate} <= ${filter.to}`,
+      // Lo que tiene OT ya se cuenta por la OT; antes del corte, por el historial.
+      filter.mode === "panel" ? sql`${mantRecords.workOrderId} IS NULL AND ${mantRecords.workDate} >= ${FORMS_CUTOVER_DATE}` : undefined,
+      worksiteScopeSqlFor(filter.scope, mantRecords.worksiteId, filter.worksiteId),
+      filter.vehicleIds ? inArray(mantRecords.vehicleId, filter.vehicleIds.length ? [...filter.vehicleIds] : ["__none__"]) : undefined,
+    ))
+
+  // Novedades de taller sólo de las correctivas que pasaron por taller: de ahí salen la salida y los días.
+  const inShopIds = rows.filter((row) => row.inWorkshop).map((row) => row.id)
+  const updates = inShopIds.length
+    ? await db.select({
+      recordId: mantWorkshopUpdates.recordId, kind: mantWorkshopUpdates.kind, exitDate: mantWorkshopUpdates.exitDate, createdAt: mantWorkshopUpdates.createdAt,
+    })
+      .from(mantWorkshopUpdates)
+      .where(inArray(mantWorkshopUpdates.recordId, inShopIds))
+      .orderBy(asc(mantWorkshopUpdates.createdAt))
+    : []
+  const updatesByRecord = new Map<string, Array<{ kind: "sigue" | "salio"; createdDate: string; exitDate: string | null }>>()
+  for (const update of updates) {
+    const list = updatesByRecord.get(update.recordId) ?? []
+    list.push({ kind: update.kind as "sigue" | "salio", createdDate: todayInChile(update.createdAt), exitDate: update.exitDate })
+    updatesByRecord.set(update.recordId, list)
+  }
+
+  return rows.map((row) => {
+    const corrective = row.kind === "C"
+    // Mismo cálculo que la ficha del registro (regla 11); sin paso por taller no hay días que inventar.
+    const state = corrective && row.inWorkshop
+      ? workshopState({ inWorkshop: true, entryDate: row.workshopEntryDate, workDate: row.workDate, updates: updatesByRecord.get(row.id) ?? [] }, filter.today)
+      : null
+    return {
+      id: `r:${row.id}`,
+      source: "registro" as const,
+      reference: row.folio ?? "",
+      date: row.workDate,
+      vehicleId: row.vehicleId,
+      equipmentLabel: equipmentText(row.code, row.plate, ""),
+      worksiteId: row.worksiteId,
+      worksiteName: row.worksiteName,
+      actionType: corrective ? "correctiva" as const : "preventiva" as const,
+      laborHours: corrective ? row.hours : null,
+      workshopDays: state?.daysStopped ?? null,
+      inWorkshop: !!state?.inWorkshop,
+      external: row.executorKind === "externo",
+    }
+  })
+}
+
 function sortRows(rows: MaintenanceWorkRow[]): MaintenanceWorkRow[] {
   return rows.sort((a, b) => b.date.localeCompare(a.date) || a.equipmentLabel.localeCompare(b.equipmentLabel, "es") || a.id.localeCompare(b.id))
 }
 
 export interface MaintenanceWorkResult {
   rows: MaintenanceWorkRow[]
-  /** `false` = quien mira no ve órdenes de trabajo: el resultado sólo trae historial y el Panel lo dice. */
+  /** `false` = quien mira no ve órdenes de trabajo: el resultado no trae OT y el Panel lo dice. */
   includesOrders: boolean
 }
 
@@ -247,22 +343,25 @@ export async function loadMaintenanceWork(viewer: MantViewer, query: Maintenance
     ...(query.worksiteId ? { worksiteId: query.worksiteId } : {}),
     ...(query.vehicleId ? { vehicleIds: [query.vehicleId] } : {}),
     orderVisibility,
+    recordVisibility: recordVisibilitySql(recordVisibility(viewer)),
+    mode: "panel",
     today: query.today ?? todayInChile(),
   }
-  const [historial, orders] = await Promise.all([loadHistorialRows(filter), loadOrderRows(filter)])
-  return { rows: sortRows([...historial, ...orders]), includesOrders: orderVisibility !== null }
+  const [historial, orders, records] = await Promise.all([loadHistorialRows(filter), loadOrderRows(filter), loadRecordRows(filter)])
+  return { rows: sortRows([...historial, ...orders, ...records]), includesOrders: orderVisibility !== null }
 }
 
 /**
  * Trabajos de unos equipos sin filtrar por quién pregunta: sólo lo usa la comprobación «¿hubo trabajo después
  * del hallazgo?», que responde un hecho del equipo y devuelve conteos de hallazgos que ya pasaron por el
  * alcance. Con el alcance de lectura, quien no ve OT daría por «sin trabajo» un hallazgo que sí tiene una OT.
+ * Es un hecho, no una cifra del Panel: no aplica el corte de los formularios y suma todos los registros vigentes.
  */
 async function loadWorkOfVehicles(vehicleIds: readonly string[], from: string, to: string, today: string): Promise<MaintenanceWorkRow[]> {
   if (vehicleIds.length === 0) return []
-  const filter: RowFilter = { from, to, scope: "all", vehicleIds, orderVisibility: sql`true`, today }
-  const [historial, orders] = await Promise.all([loadHistorialRows(filter), loadOrderRows(filter)])
-  return [...historial, ...orders]
+  const filter: RowFilter = { from, to, scope: "all", vehicleIds, orderVisibility: sql`true`, recordVisibility: sql`true`, mode: "fact", today }
+  const [historial, orders, records] = await Promise.all([loadHistorialRows(filter), loadOrderRows(filter), loadRecordRows(filter)])
+  return [...historial, ...orders, ...records]
 }
 
 // ── Agregados del Panel (puros) ────────────────────────────────────────────
@@ -329,7 +428,7 @@ export function summarizeMaintenanceWork(
   const { chart, today } = query
   const inPeriod = rows.filter((row) => row.date >= query.from && row.date <= query.to)
   const byType = emptyByType()
-  const bySource: Record<WorkSource, number> = { historial: 0, ot: 0 }
+  const bySource: Record<WorkSource, number> = { historial: 0, ot: 0, registro: 0 }
   const days = { total: 0, withData: 0, withoutData: 0, inWorkshop: 0 }
   const hours = { total: 0, withData: 0, withoutData: 0 }
   let external = 0

@@ -42,7 +42,7 @@ const summary = (over: Partial<MaintenanceWorkSummary> = {}): MaintenanceWorkSum
   byType: { preventiva: 4, correctiva: 4, predictiva: 1, sin_clasificar: 1 },
   classified: 9,
   correctivePercent: (4 / 9) * 100,
-  bySource: { historial: 7, ot: 3 },
+  bySource: { historial: 7, ot: 3, registro: 2 },
   workshopDays: { total: 15, withData: 3, withoutData: 7, inWorkshop: 1 },
   laborHours: { total: 20, withData: 3, withoutData: 7 },
   external: 1,
@@ -63,11 +63,37 @@ describe("Trabajos de mantención", () => {
     const region = screen.getByRole("region", { name: "Trabajos de mantención" })
     expect(within(region).getByText(/^44\s?%$/)).toBeTruthy()
     expect(within(region).getByText(/4 de 9 clasificados · 1 sin clasificar aparte/)).toBeTruthy()
-    expect(within(region).getByText(/7 del historial · 3 de OT/)).toBeTruthy()
+    expect(within(region).getByText("7 del historial · 3 de OT · 2 registros")).toBeTruthy()
     // Los días en taller dicen cuántos trabajos no traen fechas: no son un total «completo».
     expect(within(region).getByText(/3 trabajos con fechas · 7 sin ellas · 1 en taller hoy/)).toBeTruthy()
     // La fuente va rotulada en el gráfico.
-    expect(screen.getByTestId("chart-type").getAttribute("data-source")).toMatch(/historial de formularios y órdenes de trabajo/)
+    expect(screen.getByTestId("chart-type").getAttribute("data-source")).toMatch(/historial de formularios \(hasta el 30-11-2026\), órdenes de trabajo y registros de la plataforma \(desde el 01-12-2026\)/)
+  })
+
+  it("la tira de trabajos no es un enlace (suma tres fuentes que ninguna lista reproduce) y la sección define el corte", () => {
+    render(<MaintenanceWorkSection {...common} summary={summary()} includesOrders />)
+    const region = screen.getByRole("region", { name: "Trabajos de mantención" })
+    expect(within(region).queryByRole("link", { name: /Trabajos del período/ })).toBeNull()
+    expect(within(region).getByText("Hasta el 30-11-2026 cuentan los formularios; desde el 01-12-2026, los registros firmados en la plataforma. Las OT cuentan cuando entran a taller.")).toBeTruthy()
+  })
+
+  it("omite del subtítulo las fuentes en cero, y sin OT visibles no nombra las OT", () => {
+    const { rerender } = render(<MaintenanceWorkSection {...common} summary={summary({ bySource: { historial: 10, ot: 0, registro: 0 } })} includesOrders />)
+    expect(screen.getByText("10 del historial")).toBeTruthy()
+    rerender(<MaintenanceWorkSection {...common} summary={summary({ bySource: { historial: 0, ot: 4, registro: 1 } })} includesOrders={false} />)
+    expect(screen.getByText("1 registro")).toBeTruthy()
+  })
+
+  it("el enlace al historial lleva el período y la faena elegida (y omite la faena si no hay una)", () => {
+    const { rerender } = render(<MaintenanceWorkSection {...common} summary={summary()} includesOrders />)
+    expect(screen.getByRole("link", { name: "Historial de formularios" }).getAttribute("href")).toBe("/mantencion/registros/historicos?desde=2026-10-01&hasta=2026-10-31")
+    rerender(<MaintenanceWorkSection {...common} worksiteId="ws-a" summary={summary()} includesOrders />)
+    expect(screen.getByRole("link", { name: "Historial de formularios" }).getAttribute("href")).toBe("/mantencion/registros/historicos?desde=2026-10-01&hasta=2026-10-31&faena=ws-a")
+  })
+
+  it("el titular de «Días en taller por faena» nombra la faena con más días y no repite el total de la tira", () => {
+    render(<MaintenanceWorkSection {...common} summary={summary()} includesOrders />)
+    expect(screen.getByText(/días en taller en Faena A, la faena con más/)).toBeTruthy()
   })
 
   it("sin permiso de órdenes la fuente lo dice y no hay enlace a las OT", () => {
