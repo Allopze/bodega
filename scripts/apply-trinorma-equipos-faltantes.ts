@@ -16,10 +16,13 @@
  *
  * Segunda tanda (decisión del usuario del 2026-11-21, tras el informe de evidencia), dos más que
  * el consolidado traía sin identificar:
- *   - GRDW-63: remolque de Chome. Va SIN código: el inventario lo llama KRR-01, que para el índice
- *     único es el mismo código que KRR-001 (otro carro, JC-6212), y la base del Jefe de Mantención lo
- *     llama H-4. Se identifica por patente hasta que el Jefe confirme el código. Va a Arauco, donde
- *     tuvo su último trabajo (21-10), con «ubicación por confirmar»: Santa Fe cerró el 30-08.
+ *   - GRDW-63: remolque batea de Chome. Va SIN código: el inventario lo llama KRR-01, que para el
+ *     índice único es el mismo código que KRR-001 (otro carro, JC-6212), y la base del Jefe de
+ *     Mantención lo llama H-4, que es una grúa horquilla Hyster. Se identifica por patente hasta que el
+ *     Jefe confirme el código. Va a Arauco, donde tuvo su último trabajo (21-10), con «ubicación por
+ *     confirmar»: Santa Fe cerró el 30-08. Entra como batea, no como carro (decisión del usuario del
+ *     2026-11-22): la planilla de disposición de equipos y el programa de salida la describen como
+ *     «BATEA MACHILE SRV 203E».
  *   - CA-35 (ZV-6852): camioneta de Asir en Flor del Laja. La flota ya incluye equipos de Asir.
  * WX-6495 (grúa de Asir) no entra: el taller usa ese texto como comodín para otros trabajos.
  *
@@ -70,7 +73,7 @@ export const MISSING_EQUIPMENT: readonly MissingEquipment[] = [
   { code: "KCB-010", plate: "JWPF-10", typeSlug: "batea", brand: "LIBERATO", model: "Acoplado Liberato", year: 2018, worksiteCode: "BIODIVERSA", locationPending: false, source: "base de noviembre (Biodiversa)" },
   { code: "KRR-002", plate: "JC-5652", typeSlug: "carro", brand: "CABURGA", model: null, year: 1998, worksiteCode: "TENO-ARAUCO", locationPending: false, source: "inventario de octubre (Teno)" },
   { code: null, plate: "SXCV-49", typeSlug: "station_wagon", brand: "MERCEDES BENZ", model: "GLE 400 D AUTOMATIC 4X4", year: 2023, worksiteCode: "OFICINA-CENTRAL", locationPending: false, source: "base de noviembre (Administración), sin código" },
-  { code: null, plate: "GRDW-63", typeSlug: "carro", brand: "MACHILE", model: "SRV 203E", year: 2016, worksiteCode: "HORCONES", locationPending: true, source: "remolque de Chome; código por confirmar (KRR-01 en el inventario, H-4 en la base de noviembre); Arauco por confirmar" },
+  { code: null, plate: "GRDW-63", typeSlug: "batea", brand: "MACHILE", model: "SRV 203E", year: 2016, worksiteCode: "HORCONES", locationPending: true, source: "remolque batea de Chome; código por confirmar (KRR-01 en el inventario, H-4 en la base de noviembre); Arauco por confirmar" },
   { code: "CA-35", plate: "ZV-6852", typeSlug: "camioneta", brand: "MITSUBISHI", model: "L200 DCAB 2.5", year: 2006, worksiteCode: "FLOR-DEL-LAJA", locationPending: false, source: "inventario de octubre (camioneta de Asir en Flor del Laja)" },
 ]
 

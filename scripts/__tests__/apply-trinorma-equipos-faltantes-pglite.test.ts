@@ -81,8 +81,8 @@ describe.sequential("alta de los equipos que faltaban en la flota", () => {
     expect(byPlate.get("LCCY-14")).toMatchObject({ code: "H-13", worksiteId: "w-pac", locationPendingConfirmation: true })
     expect(byPlate.get("JF-6641")).toMatchObject({ code: "KCB-003", worksiteId: "w-flor", locationPendingConfirmation: true, meterType: "none" })
     expect(byPlate.get("SXCV-49")).toMatchObject({ code: null, worksiteId: "w-ofi" })
-    // Segunda tanda: el remolque va sin código (KRR-01 chocaría con KRR-001) y a Arauco por confirmar.
-    expect(byPlate.get("GRDW-63")).toMatchObject({ code: null, worksiteId: "w-hor", locationPendingConfirmation: true, meterType: "none" })
+    // Segunda tanda: el remolque batea va sin código (KRR-01 chocaría con KRR-001) y a Arauco por confirmar.
+    expect(byPlate.get("GRDW-63")).toMatchObject({ code: null, type: "batea", worksiteId: "w-hor", locationPendingConfirmation: true, meterType: "none" })
     expect(byPlate.get("ZV-6852")).toMatchObject({ code: "CA-35", worksiteId: "w-flor", locationPendingConfirmation: false })
     // El disparador abrió su estadía en la faena del alta.
     const stays = await inMemoryDb.select().from(schema.fuelVehicleWorksiteIntervals).where(eq(schema.fuelVehicleWorksiteIntervals.vehicleId, byPlate.get("DLSD-56")!.id))

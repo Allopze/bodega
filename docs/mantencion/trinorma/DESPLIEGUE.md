@@ -131,7 +131,7 @@ El correo del actor es el de la cuenta de quien carga. Debe estar activa.
    - CA-85, H-1, H-2, H-13;
    - KCB-001, KCB-002, KCB-003, KCB-010;
    - KRR-002 y SXCV-49;
-   - **el remolque GRDW-63, sin código.** El inventario lo llama KRR-01, que para el índice único es el mismo código que KRR-001 (otro carro, JC-6212), y la base del Jefe de Mantención lo llama H-4. Va a Arauco con «ubicación por confirmar». El código se le pregunta al Jefe en su planilla;
+   - **el remolque batea GRDW-63, sin código y con tipo «Batea»** (decisión del usuario, 22-11: la planilla de disposición de equipos y el programa de salida lo describen como batea). El inventario lo llama KRR-01, que para el índice único es el mismo código que KRR-001 (otro carro, JC-6212), y la base del Jefe de Mantención lo llama H-4, que es una grúa horquilla Hyster. Va a Arauco con «ubicación por confirmar». El código se le pregunta al Jefe en su planilla;
    - **CA-35 (ZV-6852),** camioneta de Asir en Flor del Laja.
 
    La faena sale de la base de noviembre del Jefe de Mantención, o del inventario de octubre. Los de Pacífico, KCB-003 y GRDW-63 van con «ubicación por confirmar». No crea:
