@@ -10,6 +10,7 @@
  */
 
 import { nanoid } from "@/lib/id"
+import type { QueueSnapshot } from "@/lib/pwa/heartbeat"
 
 const DB_NAME = "ppa-offline"
 const DB_VERSION = 1
@@ -33,6 +34,14 @@ export interface QueuedPpa {
   attempts: number
   /** Last error message, if any. */
   lastError?: string
+  /**
+   * Por qué quedó en `failed`: `"rejected"` = el servidor lo rechazó (validación,
+   * alcance, permiso: reintentar no lo arregla y hace falta una persona);
+   * `"network"` = se agotaron los reintentos sin conexión (el envío en sí está
+   * bien). TI sólo debe ver como «con error» lo primero. Los ítems guardados
+   * antes de este campo no lo traen: ver `failureKindOf`.
+   */
+  failureKind?: "rejected" | "network"
   /** Token returned by server after successful sync. */
   token?: string
 }
@@ -166,7 +175,7 @@ export async function enqueuePpa(
  * peor que negarse a aceptar uno nuevo.
  */
 export const MAX_QUEUED_PPAS = 100
-/** Un PPA sin sincronizar más viejo que esto ya no describe la tarea en curso. */
+/** Un PPA ya sincronizado se conserva este tiempo y luego se borra. Los que no salieron NO caducan. */
 export const MAX_PPA_AGE_DAYS = 30
 
 async function assertPpaQueueHasRoom(incomingId: string) {
@@ -181,16 +190,54 @@ async function assertPpaQueueHasRoom(incomingId: string) {
 }
 
 /**
- * Expira por EDAD, con independencia de los reintentos. La limpieza previa
- * exigía `status === "failed" && attempts >= 3`, así que un `pending` viejo o un
- * `failed` con un intento eran residentes permanentes.
+ * Borra por EDAD sólo lo ya sincronizado. Antes también borraba los `pending` y
+ * los `failed` de más de 30 días: una evaluación de terreno que nunca salió (el
+ * teléfono pasó un mes sin señal, o el servidor la rechazó y nadie la miró)
+ * desaparecía sin dejar rastro, y con ella la prueba de que se hizo. Lo que no se
+ * envió se conserva hasta que salga o una persona lo descarte; el techo de
+ * `MAX_QUEUED_PPAS` evita que la cola crezca sin límite.
  */
 export async function purgeExpiredPpas(): Promise<number> {
   const cutoff = Date.now() - MAX_PPA_AGE_DAYS * 86_400_000
   const all = await getAllPpas()
-  const expired = all.filter((item) => Date.parse(item.createdAt) < cutoff)
+  const expired = all.filter((item) => item.status === "synced" && Date.parse(item.createdAt) < cutoff)
   for (const item of expired) await deletePpa(item.id)
   return expired.length
+}
+
+/**
+ * Causa de un `failed`. Un ítem de antes de `failureKind` cuenta como rechazo,
+ * salvo que su último error sea el «Sin conexión» que dejaba la falta de red.
+ */
+export function failureKindOf(item: Pick<QueuedPpa, "failureKind" | "lastError">): "rejected" | "network" {
+  if (item.failureKind) return item.failureKind
+  return item.lastError === "Sin conexión" ? "network" : "rejected"
+}
+
+/**
+ * Lo que la cola le cuenta a TI (ver `lib/pwa/heartbeat.ts`). `failed` son sólo
+ * los rechazos del servidor; lo que se rindió por falta de red sigue siendo
+ * trabajo pendiente y cuenta en `pending`.
+ */
+export function summarizePpaQueue(items: readonly QueuedPpa[]): QueueSnapshot {
+  let pending = 0
+  let failed = 0
+  let oldest: string | null = null
+  let lastAttempt: string | null = null
+  let lastError: { at: string; message: string } | null = null
+  for (const item of items) {
+    if (item.status === "synced") continue
+    if (item.status === "failed" && failureKindOf(item) === "rejected") {
+      failed++
+    } else {
+      pending++
+      if (oldest === null || item.createdAt < oldest) oldest = item.createdAt
+    }
+    const touched = item.updatedAt ?? item.createdAt
+    if (item.attempts > 0 && (lastAttempt === null || touched > lastAttempt)) lastAttempt = touched
+    if (item.lastError && (lastError === null || touched > lastError.at)) lastError = { at: touched, message: item.lastError }
+  }
+  return { pending, failed, oldestPendingAt: oldest, lastAttemptAt: lastAttempt, lastError: lastError?.message ?? null }
 }
 
 /** Get all pending (unsynced) submissions. */
@@ -219,7 +266,7 @@ export async function getPpaById(id: string): Promise<QueuedPpa | undefined> {
 /** Update a submission's status. */
 export async function updatePpaStatus(
   id: string,
-  update: Partial<Pick<QueuedPpa, "status" | "lastError" | "attempts" | "token">>,
+  update: Partial<Pick<QueuedPpa, "status" | "lastError" | "attempts" | "token" | "failureKind">>,
 ): Promise<void> {
   // P1-1: read + write in a single transaction to avoid TOCTOU race
   return withTx("readwrite", (store) =>

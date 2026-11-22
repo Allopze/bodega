@@ -8,10 +8,18 @@
  */
 
 import * as React from "react"
+import { reportPpaHeartbeat } from "@/lib/pwa/hooks"
 
 const SW_URL = "/sw.js"
 
 export function PwaRegister() {
+  // Aviso de apertura: cada carga de /ppa le dice a TI que esta app está viva, con
+  // qué versión y cuánto tiene sin enviar. Va aparte del service worker porque
+  // tiene que salir también en navegadores que no lo soportan.
+  React.useEffect(() => {
+    void reportPpaHeartbeat(true)
+  }, [])
+
   // Falso positivo de React Doctor: los listeners se agregan cuando
   // `register()` resuelve, fuera del alcance que el analizador sigue, y el
   // cleanup de abajo libera los tres recursos (intervalo, `updatefound` y

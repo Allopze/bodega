@@ -7,7 +7,7 @@ import { evaluatePpa } from "@/lib/ppa/evaluation"
 import type { PpaAnswers, PpaStopReason } from "@/lib/ppa/types"
 import { ppaSubmitSchema } from "@/lib/validation/ppa"
 import { submitPpaAction } from "./actions"
-import { usePpaOfflineQueue } from "@/lib/pwa/hooks"
+import { PPA_WORKSITE_KEY, usePpaOfflineQueue } from "@/lib/pwa/hooks"
 import { createPpaSubmissionId } from "@/lib/pwa/offline-queue"
 import { usePpaIdentity } from "./use-ppa-identity"
 import type { PpaFormProps } from "./ppa-form.types"
@@ -168,6 +168,12 @@ export function usePpaForm({
   function doSubmit() {
     setConfirmOpen(false)
     const payload = buildPayload()
+    // Sólo la faena (nunca datos del trabajador): el aviso de estado de esta app
+    // le dice a TI de qué faena es el teléfono. Se guarda aunque el envío falle o
+    // quede en la cola, porque el teléfono está en esa faena igual.
+    try {
+      if (payload.worksiteId) localStorage.setItem(PPA_WORKSITE_KEY, payload.worksiteId)
+    } catch { /* sin almacenamiento: el aviso sale sin faena */ }
 
     startTransition(async () => {
       if (!online) {

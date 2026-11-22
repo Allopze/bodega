@@ -2,6 +2,7 @@ import { STORE, idbGet, idbGetAll, idbPut, req, runTx } from "./db"
 import { requestCredential, type ApiFailure } from "./api"
 import { emit } from "./events"
 import { getDeviceId, getMeta, setMeta } from "./meta"
+import { deviceLabel } from "@/lib/pwa/environment"
 import { hashPin, isValidPin, verifyPinHash } from "./pin"
 import type { DeviceAccount } from "./types"
 
@@ -49,11 +50,8 @@ export function canSync(account: DeviceAccount, now = Date.now()): boolean {
   return account.status === "ok" && !credentialExpired(account, now)
 }
 
-export function deviceLabel(userAgent: string = typeof navigator === "undefined" ? "" : navigator.userAgent): string {
-  const system = /iPad/.test(userAgent) ? "iPad" : /iPhone/.test(userAgent) ? "iPhone" : /Android/.test(userAgent) ? "Android" : /Windows/.test(userAgent) ? "Windows" : /Mac OS X/.test(userAgent) ? "Mac" : "Dispositivo"
-  const browser = /Edg\//.test(userAgent) ? "Edge" : /Firefox\//.test(userAgent) ? "Firefox" : /Chrome\//.test(userAgent) ? "Chrome" : /Safari\//.test(userAgent) ? "Safari" : "navegador"
-  return `${system} · ${browser}`
-}
+// Vive en `lib/pwa/environment.ts` (lo comparten las tres apps del teléfono).
+export { deviceLabel }
 
 export type RegisterResult =
   | { ok: true; account: DeviceAccount }

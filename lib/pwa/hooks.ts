@@ -17,8 +17,10 @@ import {
   countPendingPpas,
   getAllPpas,
   recoverStalePpas,
+  summarizePpaQueue,
   type QueuedPpa,
 } from "./offline-queue"
+import { getOrCreateDeviceId, sendHeartbeat } from "./heartbeat"
 import { ppaSubmitSchema } from "@/lib/validation/ppa"
 import { showSyncNotification } from "./notifications"
 import { useOnlineStatus } from "./use-online-status"
@@ -31,6 +33,24 @@ export { useOnlineStatus }
 /* ── usePpaOfflineQueue ──────────────────────────────────────────────────── */
 
 const MAX_SYNC_ATTEMPTS = 3
+
+/** Dónde se guarda la faena del último envío (la lee el aviso de estado, ver `ppa-form.hooks.ts`). */
+export const PPA_WORKSITE_KEY = "chome:pwa-worksite:ppa"
+
+/**
+ * Avisa a TI cómo está la cola de PPA de este teléfono. En segundo plano y sin
+ * lanzar nunca: ver `heartbeat.ts`. `force` es sólo para la apertura de la app.
+ */
+export async function reportPpaHeartbeat(force: boolean): Promise<void> {
+  try {
+    const snapshot = summarizePpaQueue(await getAllPpas())
+    let worksiteId: string | undefined
+    try { worksiteId = localStorage.getItem(PPA_WORKSITE_KEY) || undefined } catch { /* sin faena */ }
+    await sendHeartbeat("ppa", getOrCreateDeviceId("ppa"), snapshot, { worksiteId }, { force })
+  } catch {
+    // El aviso nunca puede romper la cola.
+  }
+}
 
 async function syncOne(item: QueuedPpa): Promise<{ ok: boolean; token?: string; message?: string }> {
   // Dynamic import to avoid bundling server actions in the SW context
@@ -47,6 +67,7 @@ async function syncOne(item: QueuedPpa): Promise<{ ok: boolean; token?: string; 
     const detalle = shape.error.issues.map((issue) => issue.message).join("; ")
     await updatePpaStatus(item.id, {
       status: "failed",
+      failureKind: "rejected",
       attempts: MAX_SYNC_ATTEMPTS,
       lastError: `Este registro no se puede enviar: ${detalle}`,
     })
@@ -73,7 +94,7 @@ async function syncOne(item: QueuedPpa): Promise<{ ok: boolean; token?: string; 
     // permiso): reintentarlo no lo arregla. Se marca `failed` de una vez, con el
     // motivo visible, en vez de agotar reintentos en silencio.
     const msg = res.message ?? "Error al sincronizar"
-    await updatePpaStatus(item.id, { status: "failed", attempts: MAX_SYNC_ATTEMPTS, lastError: msg })
+    await updatePpaStatus(item.id, { status: "failed", failureKind: "rejected", attempts: MAX_SYNC_ATTEMPTS, lastError: msg })
     return { ok: false, message: msg }
   } catch (e) {
     // P2-3: detect network errors more accurately — Safari sometimes
@@ -87,15 +108,21 @@ async function syncOne(item: QueuedPpa): Promise<{ ok: boolean; token?: string; 
       msg.includes("NetworkError") ||
       msg.includes("Network request failed") ||
       msg.includes("Load failed") // Safari
+    const exhausted = item.attempts + 1 >= MAX_SYNC_ATTEMPTS
     await updatePpaStatus(item.id, {
-      status: item.attempts + 1 >= MAX_SYNC_ATTEMPTS ? "failed" : "pending",
+      status: exhausted ? "failed" : "pending",
+      // Agotar reintentos sin red NO es un rechazo: el envío está bien y sólo
+      // falta conexión. Un error que no es de red tras tres intentos sí necesita
+      // que alguien lo mire.
+      ...(exhausted ? { failureKind: isNetworkError ? "network" as const : "rejected" as const } : {}),
       lastError: isNetworkError ? "Sin conexión" : msg,
     })
     return { ok: false, message: isNetworkError ? "Sin conexión" : msg }
   }
 }
 
-async function syncAllPending(): Promise<QueuedPpa[]> {
+/** Sincroniza lo pendiente y avisa a TI una sola vez al terminar. Exportada para sus pruebas. */
+export async function syncAllPending(): Promise<QueuedPpa[]> {
   const pending = await getPendingPpas()
   let syncedCount = 0
   let lastToken: string | undefined
@@ -129,6 +156,9 @@ async function syncAllPending(): Promise<QueuedPpa[]> {
       url: notificationUrl,
     })
   }
+
+  // Un solo aviso por pasada (no uno por ítem), con el estado ya asentado.
+  void reportPpaHeartbeat(false)
 
   return getPendingPpas()
 }

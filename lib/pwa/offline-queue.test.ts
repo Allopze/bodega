@@ -10,6 +10,8 @@ import {
   countPendingPpas,
   getAllPpas,
   recoverStalePpas,
+  purgeExpiredPpas,
+  MAX_PPA_AGE_DAYS,
 } from "./offline-queue"
 
 beforeEach(async () => {
@@ -185,6 +187,61 @@ describe("offline-queue", () => {
       expect(await recoverStalePpas()).toBe(0)
       expect(await countPendingPpas()).toBe(0)
     })
+  })
+})
+
+/**
+ * Una evaluación de terreno que no salió es la prueba de que se hizo: el borrado
+ * por edad tocaba también los `pending` y `failed` de más de 30 días, y un
+ * teléfono un mes sin señal perdía todo sin dejar rastro.
+ */
+describe("purgeExpiredPpas", () => {
+  /** `enqueuePpa` estampa «ahora»; para envejecer un ítem se reescribe su `createdAt` directo en IndexedDB. */
+  async function backdate(id: string, days: number) {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const open = indexedDB.open("ppa-offline", 1)
+      open.onsuccess = () => resolve(open.result)
+      open.onerror = () => reject(open.error)
+    })
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("submissions", "readwrite")
+      const store = tx.objectStore("submissions")
+      const get = store.get(id)
+      get.onsuccess = () => {
+        const createdAt = new Date(Date.now() - days * 86_400_000).toISOString()
+        store.put({ ...get.result, createdAt })
+      }
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+  }
+
+  it("un PPA sin enviar de 40 días no se borra", async () => {
+    const pending = await enqueuePpa({ a: 1 })
+    const failed = await enqueuePpa({ a: 2 })
+    await updatePpaStatus(failed.id, { status: "failed", failureKind: "rejected", lastError: "motivo" })
+    await backdate(pending.id, 40)
+    await backdate(failed.id, 40)
+
+    expect(await purgeExpiredPpas()).toBe(0)
+    expect(await getPpaById(pending.id)).toBeDefined()
+    expect(await getPpaById(failed.id)).toBeDefined()
+  })
+
+  it("uno enviado de 40 días sí", async () => {
+    const synced = await enqueuePpa({ a: 1 })
+    await updatePpaStatus(synced.id, { status: "synced" })
+    await backdate(synced.id, MAX_PPA_AGE_DAYS + 10)
+
+    expect(await purgeExpiredPpas()).toBe(1)
+    expect(await getPpaById(synced.id)).toBeUndefined()
+  })
+
+  it("uno enviado hace poco se queda", async () => {
+    const synced = await enqueuePpa({ a: 1 })
+    await updatePpaStatus(synced.id, { status: "synced" })
+    expect(await purgeExpiredPpas()).toBe(0)
+    expect(await getPpaById(synced.id)).toBeDefined()
   })
 })
 

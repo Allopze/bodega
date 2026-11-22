@@ -1,18 +1,54 @@
 "use client"
 
 import { useCallback, useEffect, useRef } from "react"
-import { listAccounts } from "@/lib/mantencion/client/accounts"
+import { canSync, getAccount, getActiveAccountId, listAccounts } from "@/lib/mantencion/client/accounts"
 import { refreshCatalog, type RefreshOutcome } from "@/lib/mantencion/client/catalog-sync"
 import { refreshHistory } from "@/lib/mantencion/client/history-sync"
 import { referencedPhotoIds } from "@/lib/mantencion/client/drafts"
 import { collectOrphanPhotos } from "@/lib/mantencion/client/photo-store"
 import { registerBackgroundSync, registerMantServiceWorker, requestPersistentStorage } from "@/lib/mantencion/client/pwa"
-import { pruneSent, resetInterruptedSending } from "@/lib/mantencion/client/queue"
+import { getDeviceId } from "@/lib/mantencion/client/meta"
+import { listQueue, pruneSent, queueStats, resetInterruptedSending } from "@/lib/mantencion/client/queue"
 import { isOnline, startSignalTracking } from "@/lib/mantencion/client/signal"
 import { startSyncLoop, type SyncLoop } from "@/lib/mantencion/client/sync-engine"
+import { sendHeartbeat, type QueueSnapshot } from "@/lib/pwa/heartbeat"
 
 /** Cada cuánto se vuelve a pedir el catálogo (y el historial de la flota) mientras la app está abierta con señal. */
 const CATALOG_REFRESH_MS = 10 * 60_000
+
+/**
+ * Avisa a TI cómo está la cola de este teléfono (todas las cuentas que lo usan).
+ * Si hay una cuenta activa con credencial vigente, el aviso lleva su Bearer: así
+ * el servidor sabe de quién es el teléfono sin que la app diga nada más. En
+ * segundo plano y sin lanzar nunca; `force` es sólo para la apertura de la app.
+ */
+export async function reportMantHeartbeat(force: boolean): Promise<void> {
+  try {
+    const [items, deviceId, activeId] = await Promise.all([listQueue(), getDeviceId(), getActiveAccountId()])
+    const now = Date.now()
+    const stats = queueStats(items, undefined, now)
+    let lastAttemptAt: string | null = null
+    let lastError: { at: string; message: string } | null = null
+    for (const item of items) {
+      if (item.status === "sent") continue
+      if (item.attempts > 0 && (lastAttemptAt === null || item.updatedAt > lastAttemptAt)) lastAttemptAt = item.updatedAt
+      if (item.lastError && (lastError === null || item.updatedAt > lastError.at)) lastError = { at: item.updatedAt, message: item.lastError }
+    }
+    const snapshot: QueueSnapshot = {
+      pending: stats.pending,
+      failed: stats.rejected,
+      oldestPendingAt: stats.oldestPendingMs === null ? null : new Date(now - stats.oldestPendingMs).toISOString(),
+      lastAttemptAt,
+      lastError: lastError?.message ?? null,
+    }
+    const account = activeId ? await getAccount(activeId) : null
+    // La credencial es un secreto: sólo viaja en el encabezado, y sólo si sirve.
+    const bearer = account && canSync(account, now) ? account.token : undefined
+    await sendHeartbeat("mantencion", deviceId, snapshot, { bearer }, { force, now })
+  } catch {
+    // El aviso nunca puede romper la app.
+  }
+}
 
 /**
  * Todo lo que la app hace sola mientras está abierta: seguir la señal, registrar
@@ -31,6 +67,8 @@ export function useMantRuntime(activeUserId: string | null, ready: boolean) {
       // (el barrido toma el cerrojo `mant-sync`, el mismo del motor: ver `queue.ts`).
       await resetInterruptedSending()
       await pruneSent()
+      // Aviso de apertura: al abrir se manda siempre, sin el freno de 5 min.
+      void reportMantHeartbeat(true)
       const accounts = await listAccounts()
       await collectOrphanPhotos(await referencedPhotoIds(accounts.map((account) => account.userId)))
     })().catch(() => {})
@@ -39,7 +77,9 @@ export function useMantRuntime(activeUserId: string | null, ready: boolean) {
 
   useEffect(() => {
     if (!ready) return
-    const sync = startSyncLoop()
+    // `startSyncLoop` no llama al callback cuando otra pestaña tenía el cerrojo
+    // (`busy`); el resto de las pasadas avisa, con freno (ver `heartbeat.ts`).
+    const sync = startSyncLoop(() => { void reportMantHeartbeat(false) })
     loop.current = sync
     return () => { sync.stop(); loop.current = null }
   }, [ready])

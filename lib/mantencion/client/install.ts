@@ -14,6 +14,8 @@
  * este módulo se carga y se guarda en una variable de módulo.
  */
 
+import { isStandalone } from "@/lib/pwa/environment"
+
 export interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>
@@ -86,12 +88,9 @@ export function detectPlatform(userAgent: string, maxTouchPoints: number): Insta
   return "other"
 }
 
-/** Abierta como app instalada (pantalla completa, sin barra del navegador). */
-export function isStandalone(): boolean {
-  if (typeof window === "undefined") return false
-  const iosStandalone = (navigator as Navigator & { standalone?: boolean }).standalone === true
-  return iosStandalone || ["standalone", "fullscreen", "minimal-ui"].some((mode) => window.matchMedia?.(`(display-mode: ${mode})`)?.matches === true)
-}
+// Vive en `lib/pwa/environment.ts` (lo comparten las tres apps del teléfono); se
+// reexporta aquí para quien ya lo importaba desde este módulo.
+export { isStandalone }
 
 /**
  * Dónde corre la app, como texto `plataforma:modo` (`ios:web`, `android:app`…).

@@ -1,11 +1,16 @@
 "use client"
 
 import {
+  countTaeQueue,
   enqueueTaeSubmission,
+  getFailedTaeSubmissions,
+  getPendingTaeSubmissions,
+  getTaeAccessToken,
   registerTaeBackgroundSync,
   updateTaeSubmission,
   type QueuedTaeEvidence,
 } from "@/lib/pwa/tae-offline-queue"
+import { getOrCreateDeviceId, sendHeartbeat, type QueueSnapshot } from "@/lib/pwa/heartbeat"
 import type { FieldLoadSubmitter } from "@/components/combustibles/field-load/types"
 
 export class TaeSubmissionError extends Error {
@@ -31,7 +36,48 @@ export function normalizeQueuedPayload(payload: Record<string, unknown>): Record
   return { ...rest, offline: true, capturedAt: loadedAt }
 }
 
+/**
+ * Avisa a TI cómo está la cola de TAE de este teléfono. En segundo plano y sin
+ * lanzar nunca (ver `lib/pwa/heartbeat.ts`). `force` es sólo para la apertura.
+ *
+ * `failed` ya significa «el servidor lo rechazó»: `sendQueued` devuelve a
+ * `pending` todo error de red, así que aquí no hay que separar nada.
+ */
+export async function reportTaeHeartbeat(force: boolean): Promise<void> {
+  try {
+    const [counts, pending, failed, accessToken] = await Promise.all([
+      countTaeQueue(), getPendingTaeSubmissions(), getFailedTaeSubmissions(), getTaeAccessToken(),
+    ])
+    const unsent = [...pending, ...failed]
+    let lastAttemptAt: string | null = null
+    let lastError: { at: string; message: string } | null = null
+    for (const item of unsent) {
+      if (item.attempts > 0 && (lastAttemptAt === null || item.updatedAt > lastAttemptAt)) lastAttemptAt = item.updatedAt
+      if (item.lastError && (lastError === null || item.updatedAt > lastError.at)) lastError = { at: item.updatedAt, message: item.lastError }
+    }
+    const snapshot: QueueSnapshot = {
+      pending: counts.pending + counts.syncing,
+      failed: counts.failed,
+      oldestPendingAt: pending.length > 0 ? pending.reduce((oldest, item) => (item.createdAt < oldest ? item.createdAt : oldest), pending[0]!.createdAt) : null,
+      lastAttemptAt,
+      lastError: lastError?.message ?? null,
+    }
+    await sendHeartbeat("tae", getOrCreateDeviceId("tae"), snapshot, { linkToken: accessToken ?? undefined }, { force })
+  } catch {
+    // El aviso nunca puede romper el envío.
+  }
+}
+
 export async function sendQueued(item: { id: string; accessToken: string; payload: Record<string, unknown>; evidence: QueuedTaeEvidence[]; attempts: number }) {
+  try {
+    return await sendQueuedAttempt(item)
+  } finally {
+    // Éxito o fallo, el estado de la cola cambió: aviso no forzado (con freno).
+    void reportTaeHeartbeat(false)
+  }
+}
+
+async function sendQueuedAttempt(item: { id: string; accessToken: string; payload: Record<string, unknown>; evidence: QueuedTaeEvidence[]; attempts: number }) {
   await updateTaeSubmission(item.id, { status: "syncing", attempts: item.attempts + 1 })
   const form = new FormData()
   form.set("accessToken", item.accessToken)
