@@ -2,15 +2,11 @@ import { pgTable, text, integer, timestamp, date, index, primaryKey } from "driz
 import { users } from "./users"
 
 /* ── Visitas por app ──────────────────────────────────────────────────────
- * La vista TI › Apps medía el uso sólo con `audit_log`, que registra altas y
- * cambios: una app de consulta (Reportes, Analítica, los Paneles) quedaba en
- * cero aunque se abriera todos los días. Decisión del usuario 2026-11-19:
- * registrar también las visitas.
- *
  * Una fila por persona, app y día civil chileno, con un contador: lo mínimo
- * para saber cuántas personas abren cada app y con qué frecuencia, sin guardar
- * qué pantalla, registro o búsqueda miró. El lanzador de apps de la barra
- * superior usa `last_visit_at` para ofrecer las recientes de cada persona.
+ * para saber a qué apps entra cada persona y cuándo, sin guardar qué pantalla,
+ * registro o búsqueda miró. Hoy alimenta las apps recientes de cada persona en
+ * el lanzador de la barra superior (`last_visit_at`); TI › Apps ya no lo usa
+ * para medir el uso por módulo (decisión 2026-11-22).
  */
 export const appVisits = pgTable("app_visits", {
   userId:      text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
