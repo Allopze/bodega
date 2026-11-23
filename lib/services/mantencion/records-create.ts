@@ -10,7 +10,7 @@ import { isUniqueViolation } from "@/lib/action-error"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import type { SyncRecord, SyncRecordResponse } from "@/lib/mantencion/contracts"
-import { canSeeRecord, recordVisibility, type MantViewer } from "./access"
+import { canActOnRecord, recordVisibility, type MantViewer } from "./access"
 import { nextFolio } from "./folio"
 import { lockAndLoadVehicle } from "./records-create-context"
 import { reject, type Author, type RecordFailure, type RecordPlan } from "./records-create-types"
@@ -151,7 +151,7 @@ async function checkCorrection(tx: Tx, input: SyncRecord, viewer: MantViewer): P
     .from(mantRecords)
     .where(eq(mantRecords.id, input.correctsRecordId))
     .limit(1)
-  if (!target || !canSeeRecord(recordVisibility(viewer), target)) return reject("El registro que quieres corregir no existe.", "correctsRecordId")
+  if (!target || !canActOnRecord(recordVisibility(viewer), target)) return reject("El registro que quieres corregir no existe.", "correctsRecordId")
   if (target.status !== "anulado") return reject("Sólo se puede corregir un registro que jefatura anuló.", "correctsRecordId")
   if (target.vehicleId !== input.vehicleId) return reject("El registro que quieres corregir es de otro equipo.", "correctsRecordId")
   return null

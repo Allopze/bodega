@@ -5,7 +5,7 @@ import { isUniqueViolation } from "@/lib/action-error"
 import { recordAudit } from "@/lib/audit"
 import type { SyncWorkshopResponse, WorkshopUpdatePayload } from "@/lib/mantencion/contracts"
 import { formatDate, todayInChile } from "@/lib/utils"
-import { canSeeRecord, recordVisibility } from "./access"
+import { canActOnRecord, recordVisibility } from "./access"
 import type { SyncContext } from "./sync-auth"
 
 /**
@@ -103,7 +103,7 @@ export async function applyWorkshopUpdate(input: WorkshopUpdatePayload, context:
       // Mismo criterio que la LECTURA de registros: quien no puede ver el registro
       // tampoco cierra su taller. La rama de faena sin `view_worksite` dejaba a un
       // mecánico de la faena sacar de taller correctivas ajenas que no podía leer.
-      if (!canSeeRecord(recordVisibility(viewer), record)) {
+      if (!canActOnRecord(recordVisibility(viewer), record)) {
         return refuse(422, "Ese equipo no es de tu faena: no puedes actualizar su estado en taller.")
       }
 

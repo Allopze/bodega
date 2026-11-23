@@ -7,7 +7,7 @@ import { MAX_REVIEW_BATCH, reviewBatchMessage, type ReviewSkipReason } from "@/l
 import { createMantencionFilePath, resolveMantencionFile } from "@/lib/storage/config"
 import { removeFile } from "@/lib/storage/helpers"
 import { REASON_MAX_LENGTH, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
-import { canObserveRecord, canSeeRecord, hasMantPermission, recordVisibility, type MantViewer } from "./access"
+import { canActOnRecord, canObserveRecord, hasMantPermission, recordVisibility, type MantViewer } from "./access"
 import { pdfRevision, pdfStorageName } from "./record-pdf"
 import type { MantActionResult } from "./result"
 
@@ -23,6 +23,11 @@ import type { MantActionResult } from "./result"
  */
 
 const NOT_FOUND = "No encontramos ese registro."
+
+// Ver es más ancho que actuar: la hoja de vida sigue al equipo trasladado (`canSeeRecord` suma la
+// faena ACTUAL del equipo), pero anular, observar y revisar exigen la faena DEL REGISTRO o lo propio
+// (`canActOnRecord`). Por eso este archivo no usa `canSeeRecord`: un registro visible sólo por el
+// traslado del equipo responde como si no existiera, igual que uno de otra faena.
 
 interface LockedRecord {
   id: string
@@ -96,7 +101,7 @@ export async function voidRecord(input: { recordId: string; reason: string; view
 
   return db.transaction(async (tx): Promise<MantActionResult> => {
     const record = await lockRecord(tx, input.recordId)
-    if (!record || !canSeeRecord(recordVisibility(viewer), record)) return { ok: false, message: NOT_FOUND }
+    if (!record || !canActOnRecord(recordVisibility(viewer), record)) return { ok: false, message: NOT_FOUND }
     if (record.status === "anulado") return { ok: false, message: `El registro ${label(record)} ya estaba anulado.` }
     // Antes de insertar nada: si la OT ya salió de taller, no se anula (ni anulación ni bitácora).
     const blocked = await assertWorkOrderInWorkshop(tx, record)
@@ -146,7 +151,7 @@ export async function observeRecord(input: { recordId: string; text: string; vie
   return db.transaction(async (tx): Promise<MantActionResult> => {
     const record = await lockRecord(tx, input.recordId)
     // Observar exige además poder LEER el registro, como anular o marcar revisado (auditoría 2026-11-11).
-    if (!record || !canObserveRecord(viewer, record) || !canSeeRecord(recordVisibility(viewer), record)) return { ok: false, message: NOT_FOUND }
+    if (!record || !canObserveRecord(viewer, record) || !canActOnRecord(recordVisibility(viewer), record)) return { ok: false, message: NOT_FOUND }
     if (record.status === "anulado") return { ok: false, message: `El registro ${label(record)} está anulado: ya no admite observaciones.` }
 
     await tx.insert(mantRecordObservations).values({ id: nanoid(), recordId: record.id, text, userId: viewer.userId })
@@ -174,7 +179,7 @@ export async function markRecordReviewed(input: { recordId: string; viewer: Mant
 
   return db.transaction(async (tx): Promise<MantActionResult> => {
     const record = await lockRecord(tx, input.recordId)
-    if (!record || !canSeeRecord(recordVisibility(viewer), record)) return { ok: false, message: NOT_FOUND }
+    if (!record || !canActOnRecord(recordVisibility(viewer), record)) return { ok: false, message: NOT_FOUND }
     if (record.status === "anulado") return { ok: false, message: `El registro ${label(record)} está anulado.` }
     if (record.review === "revisado") return { ok: true, message: `El registro ${label(record)} ya estaba revisado.` }
 
@@ -248,7 +253,7 @@ export async function markRecordsReviewed(input: { recordIds: readonly string[];
     const toMark: typeof found = []
     for (const id of recordIds) {
       const record = byId.get(id)
-      if (!record || !canSeeRecord(visibility, record)) skipped.push({ recordId: id, folio: null, reason: "no_encontrado", message: NOT_FOUND })
+      if (!record || !canActOnRecord(visibility, record)) skipped.push({ recordId: id, folio: null, reason: "no_encontrado", message: NOT_FOUND })
       else if (record.status === "anulado") skipped.push({ recordId: id, folio: record.folio, reason: "anulado", message: `El registro ${folioOf(record)} está anulado.` })
       else if (record.review === "revisado") skipped.push({ recordId: id, folio: record.folio, reason: "ya_revisado", message: `El registro ${folioOf(record)} ya estaba revisado.` })
       else toMark.push(record)

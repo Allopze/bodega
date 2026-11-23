@@ -5,7 +5,7 @@ import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { countsFromPlatform, cutoverNotice } from "@/lib/mantencion/forms-cutover"
 import { visibleHistoricalFields } from "@/lib/mantencion/historical-privacy"
-import type { MantViewer } from "./access"
+import { equipmentCurrentlyInWorksites, type MantViewer } from "./access"
 import type { MantActor } from "./equipment-history"
 import { parseHistoricalWorkbook, resolveHistoricalEquipment, resolveHistoricalWorksite, type HistoricalRow } from "./historical-workbook"
 import type { MantActionResult } from "./result"
@@ -186,12 +186,21 @@ export async function commitHistoricalImport(actor: MantActor, buffer: ArrayBuff
   })
 }
 
-/** Las identidades de los autores de Forms no están probadas: permiso «propios» no abre este historial. */
+/**
+ * Las identidades de los autores de Forms no están probadas: permiso «propios» no abre este historial.
+ * La hoja de vida sigue al equipo: una fila se ve si su faena O la faena ACTUAL de su equipo vinculado
+ * (`vehicle_id`) está en el alcance. Una fila sin equipo vinculado sólo cuenta por su faena.
+ */
 function historicalVisibility(viewer: MantViewer): SQL {
   if (viewer.permissions.includes("mant:records:view_all")) return sql`true`
   if (viewer.permissions.includes("mant:records:view_worksite")) {
     if (viewer.isGlobal) return sql`true`
-    if (viewer.worksiteIds.length) return inArray(mantHistoricalRecords.worksiteId, [...viewer.worksiteIds])
+    if (viewer.worksiteIds.length) {
+      return or(
+        inArray(mantHistoricalRecords.worksiteId, [...viewer.worksiteIds]),
+        equipmentCurrentlyInWorksites(mantHistoricalRecords.vehicleId, viewer.worksiteIds),
+      )!
+    }
   }
   return sql`false`
 }
