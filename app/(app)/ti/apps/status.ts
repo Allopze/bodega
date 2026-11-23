@@ -46,10 +46,10 @@ export function appStatusBadge(summary: FieldAppSummary): { label: string; varia
     return {
       label: "Requiere atención",
       variant: summary.byState.error > 0 ? "danger" : "warning",
-      hint: "Hay teléfonos con error o atascados, con versión atrasada, o accesos por vencer o sin uso.",
+      hint: "Hay teléfonos con error o atascados, con versión atrasada, o accesos por vencer.",
     }
   }
-  return { label: "Al día", variant: "success", hint: "Sin teléfonos con problemas ni accesos por revisar." }
+  return { label: "Al día", variant: "success", hint: "Sin teléfonos con problemas ni accesos por vencer." }
 }
 
 export function needsAttention(summary: FieldAppSummary): boolean {

@@ -13,6 +13,7 @@ import {
   getFieldAppLatency,
   getFieldAppSummaries,
   getFieldAppUsage,
+  FIELD_DEVICES_LIMIT,
 } from "@/lib/services/field-apps/overview"
 import type {
   AccessSummary,
@@ -71,7 +72,7 @@ export default async function FieldAppDetailPage({
   const withCapture = app.id === "ppa" || app.id === "tae"
 
   const [summaries, devices, latency, usage, access, quality] = await Promise.all([
-    getFieldAppSummaries(scope, now),
+    getFieldAppSummaries(scope, now, [app.id]),
     getFieldAppDevices(app.id, scope, now),
     getFieldAppLatency(app.id, scope, now),
     getFieldAppUsage(app.id, scope, now),
@@ -163,6 +164,11 @@ export default async function FieldAppDetailPage({
               />
             ) : (
               <DevicesTable app={app.id} rows={rows} filtered={filter !== null} />
+            )}
+            {devices.length >= FIELD_DEVICES_LIMIT && summary.seenDevices > devices.length && (
+              <p className="mt-3 text-xs text-[var(--color-text-subtle)]">
+                Se muestran los {formatQty(FIELD_DEVICES_LIMIT)} teléfonos más relevantes de {formatQty(summary.seenDevices)}.
+              </p>
             )}
           </div>
         </section>

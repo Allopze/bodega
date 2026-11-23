@@ -18,7 +18,12 @@ const inMemoryDb = drizzle(pg, { schema })
 const testGlobal = globalThis as unknown as { __db?: typeof inMemoryDb }
 testGlobal.__db = inMemoryDb
 vi.mock("@/db", () => ({ get db() { return testGlobal.__db } }))
-vi.mock("@/lib/build-info", () => ({ BUILD_ID: "build-nuevo" }))
+// `BUILD_TIME` se cambia dentro de un test (vacío = regla simple de versión distinta).
+const buildInfo = vi.hoisted(() => ({ time: "" }))
+vi.mock("@/lib/build-info", () => ({
+  BUILD_ID: "build-nuevo",
+  get BUILD_TIME() { return buildInfo.time },
+}))
 vi.mock("@/lib/services/module-toggles", () => ({
   isRouteOperational: vi.fn(async (route: string) => route !== "/mantencion/registros"),
 }))
@@ -223,10 +228,11 @@ describe("lecturas de TI de las apps del teléfono", () => {
 
     expect(mant!.enabled).toBe(false)
     expect(mant!.seenDevices).toBe(1)
-    expect(mant!.accessesNeedingAttention).toBe(2) // 1 por vencer + 1 sin uso
+    // Sólo cuenta lo por vencer (1); la credencial sin uso se ve en Accesos pero no enciende la tarjeta.
+    expect(mant!.accessesNeedingAttention).toBe(1)
 
     expect(tae!.seenDevices).toBe(2)
-    expect(tae!.accessesNeedingAttention).toBe(2) // el enlace por vencer, que además está sin uso
+    expect(tae!.accessesNeedingAttention).toBe(1) // el enlace por vencer (que además está sin uso: no suma dos)
   })
 
   it("la lista excluye teléfonos de más de 90 días y ordena por estado y último aviso", async () => {
@@ -235,6 +241,44 @@ describe("lecturas de TI de las apps del teléfono", () => {
     expect(rows.map((row) => row.state)).toEqual(["error", "stuck", "silent", "ok", "ok"])
     expect(rows.find((row) => row.deviceId === "ppa-atascado")?.versionBehind).toBe(true)
     expect(rows.find((row) => row.deviceId === "ppa-ok")).toMatchObject({ versionBehind: false, worksiteName: "Faena B", userName: null, linkLabel: null, linkStatus: null })
+  })
+
+  it("versión atrasada sólo si avisó después de publicado el build actual", async () => {
+    // Build publicado hace 2 días: el atascado (aviso hace 10 min) sigue en el viejo → atrasado;
+    // el de silencio (aviso hace 8 días) no ha tenido oportunidad de actualizarse → no.
+    buildInfo.time = ago(2 * DAY)
+    try {
+      const [ppa] = await getFieldAppSummaries("all", NOW)
+      expect(ppa!.versionBehind).toBe(1)
+      const rows = await getFieldAppDevices("ppa", "all", NOW)
+      expect(rows.filter((row) => row.versionBehind).map((row) => row.deviceId)).toEqual(["ppa-atascado"])
+
+      // Build publicado hace 5 min: nadie avisó desde entonces con otra versión → ninguno.
+      buildInfo.time = ago(5 * MIN)
+      expect((await getFieldAppSummaries("all", NOW))[0]!.versionBehind).toBe(0)
+      expect((await getFieldAppDevices("ppa", "all", NOW)).some((row) => row.versionBehind)).toBe(false)
+
+      // Hora de build ilegible: se cae a la regla simple (versión distinta).
+      buildInfo.time = "no-es-una-fecha"
+      expect((await getFieldAppSummaries("all", NOW))[0]!.versionBehind).toBe(2)
+    } finally {
+      buildInfo.time = ""
+    }
+  })
+
+  it("el resumen puede pedirse de una sola app", async () => {
+    const [tae] = await getFieldAppSummaries("all", NOW, ["tae"])
+    expect(await getFieldAppSummaries("all", NOW, ["tae"])).toHaveLength(1)
+    expect(tae).toMatchObject({ app: "tae", seenDevices: 2, accessesNeedingAttention: 1, enabled: true })
+    const [mant] = await getFieldAppSummaries("all", NOW, ["mantencion"])
+    expect(mant).toMatchObject({ app: "mantencion", seenDevices: 1, enabled: false, accessesNeedingAttention: 1 })
+  })
+
+  it("la lista se corta en SQL por relevancia: error, luego pendientes, luego aviso más reciente", async () => {
+    // Sin tope pesa el orden por estado; con tope, entran primero el de error y el con pendientes.
+    expect((await getFieldAppDevices("ppa", "all", NOW, 2)).map((row) => row.deviceId)).toEqual(["ppa-error", "ppa-atascado"])
+    // Con 3, el siguiente es el de aviso más reciente (no el de silencio, que avisó hace 8 días).
+    expect((await getFieldAppDevices("ppa", "all", NOW, 3)).map((row) => row.deviceId)).toEqual(["ppa-error", "ppa-atascado", "ppa-ok"])
   })
 
   it("la lista identifica a la persona del mecánico y el enlace de TAE con su estado", async () => {
@@ -338,7 +382,7 @@ describe("lecturas de TI de las apps del teléfono", () => {
     expect(mant).toMatchObject({ seenDevices: 0, activeDevices: 0, firstReportAt: null, lastReportAt: null, accessesNeedingAttention: 0 })
     // El último envío de Mantención sí se acota por la faena de sus registros.
     expect(mant!.lastSubmissionAt).not.toBeNull()
-    expect(tae).toMatchObject({ seenDevices: 2, accessesNeedingAttention: 2 })
+    expect(tae).toMatchObject({ seenDevices: 2, accessesNeedingAttention: 1 })
 
     const [, , taeB] = await getFieldAppSummaries(["ws-b"], NOW)
     expect(taeB).toMatchObject({ seenDevices: 0, lastSubmissionAt: null, accessesNeedingAttention: 0 })

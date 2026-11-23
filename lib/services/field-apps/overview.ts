@@ -2,8 +2,8 @@
  * lib/services/field-apps/overview.ts — Lecturas de TI sobre las apps del teléfono.
  *
  * Dos fuentes, a propósito separadas:
- * - `pwa_devices` / `pwa_device_days`: lo que cada teléfono avisa (estado, versión,
- *   pendientes). Sólo existe desde que las apps mandan el aviso.
+ * - `pwa_devices` (una fila por teléfono, con su último aviso): estado, versión y
+ *   pendientes. Sólo existe desde que las apps mandan el aviso.
  * - Las tablas de negocio (`mant_records`, `ppa_submissions`, `fuel_tae_submissions`,
  *   credenciales y enlaces): demora de llegada, uso, accesos y calidad de captura.
  *   Existen desde antes del aviso y no dependen de él.
@@ -17,7 +17,7 @@
  * credencial (que no pertenece a una faena) lo ve sólo `"all"`; Mantención por
  * persona se acota por la faena de sus registros.
  */
-import { and, eq, gte, inArray, isNull, ne, sql, type AnyColumn, type SQL } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, isNull, ne, sql, type AnyColumn, type SQL } from "drizzle-orm"
 import type { PgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
@@ -30,7 +30,7 @@ import {
   users,
   worksites,
 } from "@/db/schema"
-import { BUILD_ID } from "@/lib/build-info"
+import { BUILD_ID, BUILD_TIME } from "@/lib/build-info"
 import {
   ACCESS_EXPIRING_DAYS,
   ACCESS_UNUSED_DAYS,
@@ -64,6 +64,12 @@ const TREND_WEEKS = 12
 /** Ventana de «envíos en 30 días» y de identificación manual. */
 const USAGE_DAYS = 30
 const STATE_ORDER: Record<DeviceState, number> = { error: 0, stuck: 1, silent: 2, ok: 3 }
+/**
+ * Tope de teléfonos que la tabla del detalle recibe. Se ordenan en SQL por lo que
+ * más importa (con error, con pendientes, último aviso) antes de cortar, así que lo
+ * que queda fuera es lo más tranquilo.
+ */
+export const FIELD_DEVICES_LIMIT = 500
 
 function iso(now: Date, offsetMs: number): string {
   return new Date(now.getTime() + offsetMs).toISOString()
@@ -87,6 +93,20 @@ function trendWeekStarts(now: Date): string[] {
 /** Misma expresión de semana chilena que usaba `apps-overview.ts`. */
 function chileWeek(column: AnyColumn): SQL<string> {
   return sql<string>`to_char(date_trunc('week', ${column} AT TIME ZONE 'America/Santiago'), 'YYYY-MM-DD')`
+}
+
+/**
+ * Versión atrasada: corre un build distinto del actual Y avisó después de que ese
+ * build existiera. Un teléfono que no ha vuelto a abrir la app desde el deploy (o
+ * que ya no se usa) no está «atrasado»: simplemente no ha tenido oportunidad de
+ * actualizarse, y contarlo dejaría «Requiere atención» encendido tras cada deploy.
+ * Sin hora de build legible se cae a la regla simple (versión distinta).
+ */
+function isBehind(version: string, lastSeenAt: string): boolean {
+  if (!isVersionBehind(version, BUILD_ID)) return false
+  const builtAt = BUILD_TIME ? Date.parse(BUILD_TIME) : Number.NaN
+  if (!Number.isFinite(builtAt)) return true
+  return new Date(lastSeenAt).getTime() >= builtAt
 }
 
 function round(value: number | null, digits = 1): number | null {
@@ -281,18 +301,29 @@ export async function getFieldAppAccess(
 
 /* ── Resumen ────────────────────────────────────────────────────────────── */
 
-async function readLastSubmissions(scope: Scope): Promise<Record<FieldAppId, string | null>> {
-  const entries = await Promise.all(FIELD_APPS.map(async (app) => {
+async function readLastSubmissions(scope: Scope, apps: readonly FieldAppId[]): Promise<Partial<Record<FieldAppId, string | null>>> {
+  const entries = await Promise.all(FIELD_APPS.filter((app) => apps.includes(app.id)).map(async (app) => {
     const source = submissionSource(app.id)
     const [row] = await db.select({ last: sql<string | null>`max(${source.arrivedAt})` })
       .from(sourceTable(app.id))
       .where(and(source.base, submissionScope(source, scope)))
     return [app.id, row?.last ? new Date(row.last).toISOString() : null] as const
   }))
-  return Object.fromEntries(entries) as Record<FieldAppId, string | null>
+  return Object.fromEntries(entries) as Partial<Record<FieldAppId, string | null>>
 }
 
-export async function getFieldAppSummaries(scope: Scope, now: Date = new Date()): Promise<FieldAppSummary[]> {
+/**
+ * Resumen por app. `apps` limita a cuáles se calcula (el detalle de una app no
+ * necesita las otras dos); sin él, las tres en el orden de `FIELD_APPS`.
+ */
+export async function getFieldAppSummaries(
+  scope: Scope,
+  now: Date = new Date(),
+  apps?: readonly FieldAppId[],
+): Promise<FieldAppSummary[]> {
+  const wanted = FIELD_APPS.filter((app) => !apps || apps.includes(app.id))
+  const wantedIds = wanted.map((app) => app.id)
+  const appFilter = inArray(pwaDevices.app, wantedIds)
   const activeSince = now.getTime() - ACTIVE_WINDOW_MS
   const [devices, bounds, lastSubmissions, credentials, links, enabledFlags] = await Promise.all([
     db.select({
@@ -304,29 +335,31 @@ export async function getFieldAppSummaries(scope: Scope, now: Date = new Date())
       oldestPendingAt: pwaDevices.oldestPendingAt,
     })
       .from(pwaDevices)
-      .where(and(gte(pwaDevices.lastSeenAt, iso(now, -FORGET_AFTER_MS)), orScope(scope))),
+      .where(and(appFilter, gte(pwaDevices.lastSeenAt, iso(now, -FORGET_AFTER_MS)), orScope(scope))),
     db.select({
       app: pwaDevices.app,
       first: sql<string | null>`min(${pwaDevices.firstSeenAt})`,
       last: sql<string | null>`max(${pwaDevices.lastSeenAt})`,
     })
       .from(pwaDevices)
-      .where(orScope(scope))
+      .where(and(appFilter, orScope(scope)))
       .groupBy(pwaDevices.app),
-    readLastSubmissions(scope),
-    getFieldAppAccess("mantencion", scope, now),
-    getFieldAppAccess("tae", scope, now),
-    Promise.all(FIELD_APPS.map((app) => isRouteOperational(app.toggleRoute))),
+    readLastSubmissions(scope, wantedIds),
+    wantedIds.includes("mantencion") ? getFieldAppAccess("mantencion", scope, now) : Promise.resolve(null),
+    wantedIds.includes("tae") ? getFieldAppAccess("tae", scope, now) : Promise.resolve(null),
+    Promise.all(wanted.map((app) => isRouteOperational(app.toggleRoute))),
   ])
 
   const boundsByApp = new Map(bounds.map((row) => [row.app, row]))
+  // Sólo los accesos por vencer: «sin uso» se ve en la sección Accesos, pero un
+  // enlace sin usar no es una falla (spec §5.5) y encendería la tarjeta de continuo.
   const attention: Record<FieldAppId, number> = {
     ppa: 0,
-    mantencion: credentials ? credentials.expiringSoon + credentials.unused : 0,
-    tae: links ? links.expiringSoon + links.unused : 0,
+    mantencion: credentials ? credentials.expiringSoon : 0,
+    tae: links ? links.expiringSoon : 0,
   }
 
-  return FIELD_APPS.map((app, index) => {
+  return wanted.map((app, index) => {
     const mine = devices.filter((row) => row.app === app.id)
     // Mantención no tiene faena: con un alcance acotado no se ve ningún teléfono suyo.
     const visible = app.id === "mantencion" && scope !== "all" ? [] : mine
@@ -335,7 +368,7 @@ export async function getFieldAppSummaries(scope: Scope, now: Date = new Date())
     let activeDevices = 0
     for (const device of visible) {
       byState[deviceState(device, now)] += 1
-      if (isVersionBehind(device.version, BUILD_ID)) versionBehind += 1
+      if (isBehind(device.version, device.lastSeenAt)) versionBehind += 1
       if (new Date(device.lastSeenAt).getTime() >= activeSince) activeDevices += 1
     }
     const range = boundsByApp.get(app.id)
@@ -350,7 +383,7 @@ export async function getFieldAppSummaries(scope: Scope, now: Date = new Date())
       byState,
       versionBehind,
       accessesNeedingAttention: attention[app.id],
-      lastSubmissionAt: lastSubmissions[app.id],
+      lastSubmissionAt: lastSubmissions[app.id] ?? null,
     }
   })
 }
@@ -364,7 +397,17 @@ function orScope(scope: Scope): SQL | undefined {
 
 /* ── Teléfonos ──────────────────────────────────────────────────────────── */
 
-export async function getFieldAppDevices(app: FieldAppId, scope: Scope, now: Date = new Date()): Promise<FieldDeviceRow[]> {
+/**
+ * Teléfonos de una app, los `limit` más relevantes (con error, luego con pendientes,
+ * luego los de aviso más reciente) y ordenados por estado para la tabla. El total
+ * real, con el mismo alcance, es `seenDevices` del resumen.
+ */
+export async function getFieldAppDevices(
+  app: FieldAppId,
+  scope: Scope,
+  now: Date = new Date(),
+  limit: number = FIELD_DEVICES_LIMIT,
+): Promise<FieldDeviceRow[]> {
   const rows = await db.select({
     deviceId: pwaDevices.deviceId,
     platform: pwaDevices.platform,
@@ -394,6 +437,12 @@ export async function getFieldAppDevices(app: FieldAppId, scope: Scope, now: Dat
       gte(pwaDevices.lastSeenAt, iso(now, -FORGET_AFTER_MS)),
       deviceScope(app, scope),
     ))
+    .orderBy(
+      desc(sql`${pwaDevices.failedCount} > 0`),
+      desc(sql`${pwaDevices.pendingCount} > 0`),
+      desc(pwaDevices.lastSeenAt),
+    )
+    .limit(limit)
 
   const result: FieldDeviceRow[] = rows.map((row) => ({
     app,
@@ -402,7 +451,7 @@ export async function getFieldAppDevices(app: FieldAppId, scope: Scope, now: Dat
     installed: row.installed,
     version: row.version,
     builtAt: row.builtAt,
-    versionBehind: isVersionBehind(row.version, BUILD_ID),
+    versionBehind: isBehind(row.version, row.lastSeenAt),
     state: deviceState(row, now),
     pendingCount: row.pendingCount,
     failedCount: row.failedCount,

@@ -20,8 +20,9 @@ export interface FieldAppSummary {
   /** Teléfonos con aviso en `FORGET_AFTER_MS` (los que se muestran). */
   seenDevices:              number
   byState:                  Record<DeviceState, number>
+  /** Teléfonos que avisaron después de publicado el build actual y corren otro. */
   versionBehind:            number
-  /** Accesos por vencer + sin uso (credenciales del mecánico o enlaces TAE). */
+  /** Accesos por vencer (credenciales del mecánico o enlaces TAE); «sin uso» no cuenta. */
   accessesNeedingAttention: number
   /** Último envío que llegó desde la app (registro, PPA o carga). */
   lastSubmissionAt:         string | null
@@ -34,6 +35,7 @@ export interface FieldDeviceRow {
   installed:       boolean
   version:         string
   builtAt:         string | null
+  /** Avisó después de publicado el build actual y corre otro (ver `isBehind`). */
   versionBehind:   boolean
   state:           DeviceState
   pendingCount:    number
