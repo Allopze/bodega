@@ -22,6 +22,18 @@ describe("etiquetas de Monitoreo GPS", () => {
     expect(gpsSignalLabel({ gpsStatus: null, sourceStatus: null })).toBe("Sin estado GPS")
   })
 
+  it("la «A» de OnWay no se muestra: manda el estado de la fuente, traducido", () => {
+    expect(gpsSignalLabel({ gpsStatus: "A", sourceStatus: "ONLINE" })).toBe("En línea")
+    expect(gpsSignalLabel({ gpsStatus: "A", sourceStatus: "OFFOROUTOFCOVERAGE" })).toBe("Apagado o sin cobertura")
+    expect(gpsSignalLabel({ gpsStatus: "A", sourceStatus: "NOGPS" })).toBe("Sin señal GPS")
+    expect(gpsSignalLabel({ gpsStatus: "V", sourceStatus: "ONLINE" })).toBe("En línea")
+    expect(gpsSignalLabel({ gpsStatus: "A", sourceStatus: null })).toBe("Sin estado GPS")
+  })
+
+  it("los satélites de Wialon siguen mandando sobre el estado de la fuente", () => {
+    expect(gpsSignalLabel({ gpsStatus: "sats:0", sourceStatus: "ignition_unknown" })).toBe("0 satélites")
+  })
+
   it("el encendido distingue apagado de sin dato", () => {
     expect(ignitionMeta({ ignitionKnown: false, ignition: false }).label).toBe("Sin dato")
     expect(ignitionMeta({ ignitionKnown: true, ignition: false }).label).toBe("Apagado")

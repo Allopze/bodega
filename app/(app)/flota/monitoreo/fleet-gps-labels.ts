@@ -49,14 +49,31 @@ export function humanizeToken(raw: string): string {
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : text
 }
 
+/** Bandera de una letra de OnWay (`A`, `V`): no es un estado legible. */
+const DEVICE_FLAG = /^[A-Z]$/i
+
+/** Estados de la fuente OnWay (campo `active` del portal), dichos como el usuario los entiende. */
+const SOURCE_STATUS_LABEL: Record<string, string> = {
+  ONLINE: "En línea",
+  OFFOROUTOFCOVERAGE: "Apagado o sin cobertura",
+  NOGPS: "Sin señal GPS",
+}
+
 /**
  * Estado de la señal de un vehículo: lo que dice el dispositivo (`gpsStatus`) o,
  * a falta de eso, el estado de la fuente (`sourceStatus`). Wialon informa los
  * satélites como `sats:7` y la ausencia del encendido como `ignition_unknown`.
  */
 export function gpsSignalLabel(position: Pick<FleetGpsPosition, "gpsStatus" | "sourceStatus">): string {
-  const raw = position.gpsStatus ?? position.sourceStatus
+  // OnWay manda `gps_status` = «A» en todos sus equipos, incluso con la fuente en
+  // `NOGPS` (dev, clon de prod 2026-11-23): es una bandera del dispositivo que no
+  // distingue nada, y mostrada tal cual (o tapando el estado de la fuente) no le
+  // dice nada al usuario. Se descarta y manda el estado de la fuente.
+  const deviceFlag = position.gpsStatus && !DEVICE_FLAG.test(position.gpsStatus) ? position.gpsStatus : null
+  const raw = deviceFlag ?? position.sourceStatus
   if (!raw) return "Sin estado GPS"
+  const sourceLabel = SOURCE_STATUS_LABEL[raw.toUpperCase()]
+  if (sourceLabel) return sourceLabel
   const satellites = /^sats:(\d+)$/i.exec(raw)
   if (satellites) {
     const count = Number(satellites[1])
