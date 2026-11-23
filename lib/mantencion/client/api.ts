@@ -19,8 +19,13 @@ import type { StoredPhoto } from "./types"
  *  - 403 → falta un permiso de la cuenta: `forbidden`. Entrar de nuevo no lo
  *    arregla, así que no se pide login y se muestra el motivo del servidor.
  *  - red caída, 408, 429, 5xx → `retry` (backoff).
- *  - cualquier otro 4xx (409/422 incluidos) → `reject`: rechazo definitivo; el
+ *  - un 4xx con el JSON del servidor (`{ ok: false, code }` con un `code` de
+ *    `SERVER_REJECT_CODES`; 409/422 incluidos) → `reject`: rechazo definitivo; el
  *    registro queda «Rechazado» con su motivo y nunca se descarta.
+ *  - cualquier OTRO 4xx (un 404 HTML al reemplazar el contenedor, un 400/413 de un
+ *    proxy, un cuerpo que no es JSON) → `retry`: no lo dijo nuestro servidor, así
+ *    que no es un veredicto sobre el registro y condenarlo lo dejaría «Rechazado»
+ *    sin que nadie haya mirado su contenido (APPN-5).
  */
 
 export type ApiFailure =
@@ -36,6 +41,21 @@ const DEFAULT_TIMEOUT_MS = 45_000
 const PHOTO_TIMEOUT_MS = 120_000
 
 export const NETWORK_MESSAGE = "Sin señal o la plataforma no responde."
+
+/**
+ * Los `code` con que los handlers de `/api/mantencion/sync/**` rechazan de forma
+ * definitiva (`SyncRecordResponse`, `SyncWorkshopResponse`, `SyncWorkOrderResponse`,
+ * `PhotoOutcome` y el 404 `not_found` de la foto). Los demás (`unauthorized`,
+ * `forbidden`, `rate_limited`, `error`, `retry`) tienen su propio camino por estado.
+ */
+export const SERVER_REJECT_CODES: ReadonlySet<string> = new Set(["rejected", "invalid", "missing_photos", "not_found"])
+
+export const UNEXPECTED_MESSAGE = "La plataforma respondió algo inesperado."
+
+/** ¿El cuerpo es el rechazo que arma nuestro servidor (`{ ok: false, code }` con un código conocido)? */
+function isServerRejection(body: Record<string, unknown> | null): boolean {
+  return body?.ok === false && typeof body.code === "string" && SERVER_REJECT_CODES.has(body.code)
+}
 
 export function classifyStatus(status: number): "auth" | "forbidden" | "retry" | "reject" {
   if (status === 401) return "auth"
@@ -68,9 +88,13 @@ function retryAfter(response: Response): number | null {
 async function failureFrom(response: Response, fallback: string): Promise<ApiFailure> {
   const body = await readJson(response)
   const message = messageFrom(body, fallback)
-  // `code: "retry"` (p. ej. una foto que llegó alterada: 409) pide reenviar, no rendirse. Sólo
-  // levanta un rechazo a reintento; 401/403 conservan su camino.
+  // `code: "retry"` (p. ej. una foto que llegó alterada: 409) pide reenviar, no rendirse. Un 4xx que no
+  // trae el JSON de rechazo del servidor tampoco es un veredicto: se reintenta con el backoff de siempre.
+  // Sólo bajan un rechazo a reintento; 401/403 conservan su camino.
   const byStatus = classifyStatus(response.status)
+  if (byStatus === "reject" && body?.code !== "retry" && !isServerRejection(body)) {
+    return { kind: "retry", message: `${UNEXPECTED_MESSAGE} (${response.status})`, retryAfterMs: retryAfter(response), network: false }
+  }
   const kind = byStatus === "reject" && body?.code === "retry" ? "retry" : byStatus
   if (kind === "auth") return { kind, status: response.status, message }
   if (kind === "forbidden") return { kind, status: 403, message }

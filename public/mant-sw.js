@@ -2,7 +2,10 @@
  *
  * Qué hace:
  *  - Deja abrir la app sin señal: navegación network-first con respaldo al HTML
- *    que quedó guardado la última vez que cargó con sesión.
+ *    que quedó guardado la última vez que cargó con sesión. La app misma espera a
+ *    la red como máximo `SHELL_TIMEOUT_MS`: con un wifi sin salida el `fetch` no
+ *    falla, se cuelga, y sin tope la pantalla quedaba en blanco aunque el HTML
+ *    guardado estuviera ahí (APP-7).
  *  - Guarda los archivos versionados de Next (`/_next/static/*`) para que la app
  *    arranque sin señal (cache-first, con tope).
  *  - Despierta a la app abierta cuando el sistema avisa que volvió la señal
@@ -22,6 +25,13 @@ const SHELL_CACHE = `${CACHE_PREFIX}shell-${VERSION}`
 const STATIC_CACHE = `${CACHE_PREFIX}static-${VERSION}`
 const APP_PATH = "/m/mantencion"
 const MAX_STATIC_ENTRIES = 160
+/**
+ * Cuánto se espera a la red antes de abrir el HTML guardado. 4,5 s: una señal lenta pero viva
+ * (3G) suele traer el HTML en ese tiempo; más allá, el mecánico prefiere su app a un blanco.
+ * El `fetch` sigue su curso: si termina bien, deja el HTML nuevo guardado para la próxima.
+ */
+const SHELL_TIMEOUT_MS = 4500
+const TIMED_OUT = Symbol("timed-out")
 
 /** Sólo una respuesta que de verdad es la app: 200, HTML y sin haber pasado por una redirección. */
 function isCacheableShell(response) {
@@ -74,38 +84,74 @@ function isStaticAsset(url) {
     || /^\/mant-icon-.*\.png$/.test(url.pathname)
 }
 
-async function appNavigation(request) {
+function offlineResponse(isAppShell) {
+  return new Response(
+    isAppShell
+      ? "Sin conexión y la app todavía no se guardó en este teléfono. Ábrela una vez con señal."
+      : "Sin conexión. Para entrar hace falta señal.",
+    { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } },
+  )
+}
+
+async function cachedShell() {
+  return (await caches.open(SHELL_CACHE)).match(APP_PATH, { ignoreSearch: true })
+}
+
+async function appNavigation(request, event) {
   // Sólo la app misma se guarda como «la app»: su login (`/m/mantencion/entrar`)
   // también está en el alcance, y abrir sin señal debe mostrar la app, no el login.
   // Y al revés: el login NUNCA recibe el shell guardado. Servirlo ahí mostraría la
-  // sesión anterior en una tablet ya cerrada, y taparía un error del servidor.
+  // sesión anterior en una tablet ya cerrada, y taparía un error del servidor. Por lo
+  // mismo el login tampoco tiene tiempo máximo: nunca recibe el shell al que caer.
   const isAppShell = new URL(request.url).pathname === APP_PATH
-  try {
-    const response = await fetch(request)
+  const network = fetch(request).then(async (response) => {
     if (isAppShell && isCacheableShell(response)) {
-      const cache = await caches.open(SHELL_CACHE)
-      await cache.put(APP_PATH, response.clone())
-      return response
-    }
-    // El servidor respondió, pero caído (5xx): mejor la app guardada que la página de error.
-    if (isAppShell && response.status >= 500) {
-      const cached = await (await caches.open(SHELL_CACHE)).match(APP_PATH, { ignoreSearch: true })
-      if (cached) return cached
+      try {
+        const cache = await caches.open(SHELL_CACHE)
+        await cache.put(APP_PATH, response.clone())
+      } catch { /* sin espacio: se entrega igual la respuesta de la red */ }
     }
     return response
-  } catch {
-    if (!isAppShell) {
-      return new Response("Sin conexión. Para entrar hace falta señal.", {
-        status: 503,
-        headers: { "content-type": "text/plain; charset=utf-8" },
-      })
+  })
+  if (!isAppShell) {
+    try {
+      return await network
+    } catch {
+      return offlineResponse(false)
     }
-    const cached = await (await caches.open(SHELL_CACHE)).match(APP_PATH, { ignoreSearch: true })
-    return cached || new Response("Sin conexión y la app todavía no se guardó en este teléfono. Ábrela una vez con señal.", {
-      status: 503,
-      headers: { "content-type": "text/plain; charset=utf-8" },
-    })
   }
+
+  let timer
+  const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(TIMED_OUT), SHELL_TIMEOUT_MS) })
+  let response
+  try {
+    response = await Promise.race([network, timeout])
+  } catch {
+    return (await cachedShell()) || offlineResponse(true)
+  } finally {
+    clearTimeout(timer)
+  }
+
+  if (response === TIMED_OUT) {
+    // La red no contestó a tiempo. Con shell guardado se abre ese; sin él no hay nada mejor que seguir esperando.
+    const cached = await cachedShell()
+    if (cached) {
+      // Que el worker no se duerma antes de que el `fetch` pendiente deje el HTML nuevo guardado.
+      if (event) event.waitUntil(network.catch(() => undefined))
+      return cached
+    }
+    try {
+      return await network
+    } catch {
+      return offlineResponse(true)
+    }
+  }
+  // El servidor respondió, pero caído (5xx): mejor la app guardada que la página de error.
+  if (response.status >= 500) {
+    const cached = await cachedShell()
+    if (cached) return cached
+  }
+  return response
 }
 
 async function cacheFirst(request) {
@@ -128,7 +174,7 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/_next/data/") || url.searchParams.has("_rsc")) return
 
   if (isNavigationToApp(request, url)) {
-    event.respondWith(appNavigation(request))
+    event.respondWith(appNavigation(request, event))
     return
   }
   if (isStaticAsset(url)) event.respondWith(cacheFirst(request).catch(() => fetch(request)))

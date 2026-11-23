@@ -105,6 +105,17 @@ describe("cola de envío", () => {
     expect(again).not.toHaveBeenCalled()
   })
 
+  it("APPN-5: un 404 HTML al enviar (contenedor reemplazado) deja el registro pendiente con backoff, no «rejected»", async () => {
+    await seed()
+    const html404 = () => new Response("<html>Not Found</html>", { status: 404, headers: { "content-type": "text/html" } })
+    const report = await sync(routes({ record: html404 }), Date.now())
+    expect(report).toMatchObject({ rejected: 0, retried: 1, sent: 0 })
+    const pending = (await getQueueItem(R1)) as QueueRecordItem
+    expect(pending.status).toBe("pending")
+    expect(pending.rejection ?? null).toBeNull()
+    expect((await sync(routes({}), Date.now() + BACKOFF_CAP_MS + 1_000)).sent).toBe(1)
+  })
+
   it("D3: una foto que llegó alterada (409 retry) deja el registro pendiente y se reenvía sola; no queda rechazado", async () => {
     await seed()
     const message = "La foto llegó alterada o incompleta (la huella no coincide). Se vuelve a enviar sola."
