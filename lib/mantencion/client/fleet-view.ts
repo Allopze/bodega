@@ -4,7 +4,7 @@ import { currentReading, daysBetween } from "../readings"
 import { equipmentStatus, newerPreventive, WORKSHOP_UPDATE_DAYS, type PreventiveRef } from "../status"
 import type { MantEquipmentStatus, MantReading, MantScheduleSnapshot } from "../types"
 import { todayInChile } from "@/lib/utils"
-import { equipmentFromWorkOrder } from "./ot-model"
+import { equipmentFromWorkOrder, recordApplies } from "./ot-model"
 import type { QueueItem, QueueRecordItem, StoredCatalog } from "./types"
 
 /**
@@ -55,9 +55,12 @@ export function workshopWorkOrderId(entry: Pick<WorkshopEntry, "workOrderId" | "
   return entry.workOrderId ?? entry.recordId
 }
 
-/** Registros del propio teléfono que cuentan como vigentes: todo menos lo rechazado. */
-export function localRecords(queue: readonly QueueItem[]): QueueRecordItem[] {
-  return queue.filter((item): item is QueueRecordItem => item.type === "record" && item.status !== "rejected")
+/**
+ * Registros del propio teléfono que todavía cuentan: ni rechazados, ni enviados
+ * que el catálogo ya refleja, ni anulados por jefatura (`recordApplies`).
+ */
+export function localRecords(queue: readonly QueueItem[], catalog: MantCatalog | null | undefined): QueueRecordItem[] {
+  return queue.filter((item): item is QueueRecordItem => item.type === "record" && recordApplies(item, catalog))
 }
 
 export function allEquipment(stored: StoredCatalog | null): CatalogEquipment[] {
@@ -112,7 +115,7 @@ export function buildRows(stored: StoredCatalog | null, queue: readonly QueueIte
   if (!stored) return []
   const schedules = schedulesById(stored.catalog)
   const worksiteIds = new Set(stored.catalog.user.worksiteIds)
-  const local = localRecords(queue)
+  const local = localRecords(queue, stored.catalog)
   return allEquipment(stored).map((eq) => buildRow(eq, eq.scheduleId ? schedules.get(eq.scheduleId) ?? null : null, local, worksiteIds))
 }
 
@@ -163,9 +166,11 @@ export function dueRows(rows: FleetRow[], limit = 5): FleetRow[] {
  * Equipos en taller de las faenas del usuario, con lo que el propio teléfono ya
  * hizo encima: una actualización «salió» lo saca de la lista, una «sigue» le
  * quita el aviso de «Toca actualizar», y una correctiva recién firmada con el
- * equipo en taller aparece aunque todavía no llegue al servidor.
+ * equipo en taller aparece aunque todavía no llegue al servidor. Una correctiva
+ * ya enviada sólo cuenta mientras el catálogo no la refleje: si la web ya
+ * registró la salida, el equipo no reaparece en taller (APPN-2).
  */
-export function workshopEntries(rows: FleetRow[], queue: readonly QueueItem[], today: string = todayInChile()): WorkshopEntry[] {
+export function workshopEntries(rows: FleetRow[], queue: readonly QueueItem[], catalog: MantCatalog | null | undefined, today: string = todayInChile()): WorkshopEntry[] {
   const entries = new Map<string, WorkshopEntry>()
   for (const row of rows) {
     const w = row.eq.workshop
@@ -178,7 +183,7 @@ export function workshopEntries(rows: FleetRow[], queue: readonly QueueItem[], t
     })
   }
   const rowByVehicle = new Map(rows.map((row) => [row.eq.id, row]))
-  for (const item of localRecords(queue)) {
+  for (const item of localRecords(queue, catalog)) {
     const { summary } = item
     if (!summary.inWorkshop || entries.has(item.id)) continue
     const row = rowByVehicle.get(summary.vehicleId)

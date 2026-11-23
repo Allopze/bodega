@@ -75,28 +75,28 @@ describe("equipos en taller", () => {
   }, createdAt)
 
   it("aparece con los días detenido y el aviso de actualizar", () => {
-    const [entry] = workshopEntries(rows, [], "2026-10-28")
+    const [entry] = workshopEntries(rows, [], null, "2026-10-28")
     expect(entry).toMatchObject({ equipmentCode: "KA-140", daysStopped: 4, stale: true })
   })
 
   it("una actualización «sigue» hecha en el teléfono quita el aviso, sin esperar al servidor", () => {
-    const [entry] = workshopEntries(rows, [update("sigue", "2026-10-28T15:00:00.000Z")], "2026-10-28")
+    const [entry] = workshopEntries(rows, [update("sigue", "2026-10-28T15:00:00.000Z")], null, "2026-10-28")
     expect(entry?.stale).toBe(false)
   })
 
   it("una actualización «salió» lo saca de la lista", () => {
-    expect(workshopEntries(rows, [update("salio", "2026-10-28T15:00:00.000Z")], "2026-10-28")).toEqual([])
+    expect(workshopEntries(rows, [update("salio", "2026-10-28T15:00:00.000Z")], null, "2026-10-28")).toEqual([])
   })
 
   it("una correctiva firmada sin señal con el equipo en taller aparece antes de llegar al servidor", () => {
     const corrective = { ...recordItem(UUID(70), "u-1", [UUID(71), UUID(72)]), summary: { ...recordItem(UUID(70), "u-1", [UUID(71), UUID(72)]).summary, kind: "C" as const, intervalValue: null, inWorkshop: true, workshopEntryDate: "2026-10-28" } }
     const plain = buildRows(storedCatalog("u-1", [equipment()]), [corrective])
-    expect(workshopEntries(plain, [corrective], "2026-10-28").map((entry) => entry.recordId)).toEqual([UUID(70)])
+    expect(workshopEntries(plain, [corrective], null, "2026-10-28").map((entry) => entry.recordId)).toEqual([UUID(70)])
   })
 
   it("un equipo detenido por una OT trae el id con el que se abre la OT; una caché vieja se reconoce por el folio", () => {
     const withOt = equipment({ workshop: { recordId: "ot-1", workOrderId: "ot-1", folio: "OT-BIO-0001", entryDate: "2026-10-24", lastActivityDate: "2026-10-28", stale: false, daysStopped: 4 } })
-    const [entry] = workshopEntries(buildRows(storedCatalog("u-1", [withOt]), []), [], "2026-10-28")
+    const [entry] = workshopEntries(buildRows(storedCatalog("u-1", [withOt]), []), [], null, "2026-10-28")
     expect(entry).toMatchObject({ recordId: "ot-1", workOrderId: "ot-1", folio: "OT-BIO-0001" })
     expect(isWorkOrderEntry(entry!)).toBe(true)
     expect(workshopWorkOrderId(entry!)).toBe("ot-1")

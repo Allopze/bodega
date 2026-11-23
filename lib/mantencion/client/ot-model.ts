@@ -75,12 +75,31 @@ export interface OtViews {
   mine: OtView[]
 }
 
-/** Operaciones que cuentan sobre el catálogo guardado (ver arriba). */
-function appliesOver(item: QueueWorkOrderItem, catalogGeneratedAt: string | undefined): boolean {
+/**
+ * Un elemento de la cola cuenta sobre el catálogo guardado (ver arriba): lo
+ * rechazado nunca; lo pendiente siempre; lo enviado sólo mientras el catálogo
+ * sea más viejo que el envío. Es la regla de TODA vista que mezcla cola y
+ * catálogo (OT, lecturas, preventivas, taller): después, el catálogo ya lo trae.
+ */
+export function appliesOver(item: Pick<QueueItem, "status" | "sentAt">, catalogGeneratedAt: string | undefined): boolean {
   if (item.status === "rejected") return false
   if (item.status !== "sent") return true
   if (!item.sentAt || !catalogGeneratedAt) return false
   return item.sentAt > catalogGeneratedAt
+}
+
+/**
+ * Un registro del propio teléfono cuenta para lecturas, preventivas y taller
+ * mientras (1) no esté rechazado, (2) el catálogo no lo refleje ya si fue
+ * enviado y (3) jefatura no lo haya anulado: un registro anulado en la web no
+ * puede seguir bloqueando la lectura corregida ni dar el equipo por «al día».
+ */
+export function recordApplies(item: QueueRecordItem, catalog: Pick<MantCatalog, "generatedAt" | "myRecords"> | null | undefined, catalogGeneratedAt?: string): boolean {
+  // Un registro enviado trae la hora del SERVIDOR (`receivedAt`): compararla con `generatedAt` (también del
+  // servidor) evita que un teléfono con la hora corrida lo dé por reflejado antes de tiempo, o demasiado tarde.
+  const sentAt = item.status === "sent" && item.receivedAt ? item.receivedAt : item.sentAt
+  if (!appliesOver({ status: item.status, sentAt }, catalogGeneratedAt ?? catalog?.generatedAt)) return false
+  return !(catalog?.myRecords ?? []).some((record) => record.id === item.id && record.status === "anulado")
 }
 
 function describeUnmarked(count: number): string {
@@ -200,7 +219,9 @@ export function buildOtViews(catalog: MantCatalog | null | undefined, queue: rea
     .filter((item): item is QueueWorkOrderItem => item.type === "ot" && item.authorUserId === user.id && appliesOver(item, generatedAt))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 
-  const mine = (catalog?.workOrders ?? []).map((ot) => viewOf(ot, "mine", queue, ops, context))
+  // Un registro enviado que el catálogo ya refleja (o que jefatura anuló) no cuenta para `canFinish`.
+  const live = queue.filter((item) => item.type !== "record" || recordApplies(item, catalog, generatedAt))
+  const mine = (catalog?.workOrders ?? []).map((ot) => viewOf(ot, "mine", live, ops, context))
   mine.sort((a, b) => {
     const rank = STATUS_RANK[a.ot.status] - STATUS_RANK[b.ot.status]
     if (rank !== 0) return rank

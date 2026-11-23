@@ -6,9 +6,9 @@ import { plural } from "@/lib/mantencion/format"
 import { discardDraft } from "@/lib/mantencion/client/drafts"
 import { dueRows, equipmentLabel, workshopEntries, type WorkshopEntry } from "@/lib/mantencion/client/fleet-view"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
-import { buildRecent, openObservations, refreshOutcomeMessage, rejectedRecords, worksiteSummary } from "@/lib/mantencion/client/home-model"
+import { buildRecent, openObservations, refreshOutcomeMessage, rejectedNotes, rejectedRecords, worksiteSummary } from "@/lib/mantencion/client/home-model"
 import { buildOtViews, type OtView } from "@/lib/mantencion/client/ot-model"
-import { queueStats, STALE_PENDING_MS } from "@/lib/mantencion/client/queue"
+import { discardRejectedNote, queueStats, STALE_PENDING_MS } from "@/lib/mantencion/client/queue"
 import type { DeviceAccount, QueueRecordItem } from "@/lib/mantencion/client/types"
 import { formatDateTime } from "@/lib/utils"
 import { AccountSheet } from "./account-sheet"
@@ -16,7 +16,7 @@ import { useAppActions, useAppData } from "./app-context"
 import { ConfirmDialog } from "./dialog"
 import { EquipmentHistorySheet } from "./equipment-history-sheet"
 import { HistorySearchSheet } from "./history-search-sheet"
-import { DraftBanners, DueSection, ObservationBanner, RecentSection, RejectedSection, WorkshopSection } from "./home-lists"
+import { DraftBanners, DueSection, ObservationBanner, RecentSection, RejectedNotesSection, RejectedSection, WorkshopSection } from "./home-lists"
 import { IconChevronDown, IconChevronRight, IconChevronUp, IconWifi, IconWifiOff } from "./icons"
 import { ObservationSheet } from "./observation-sheet"
 import { OtSection } from "./ot-lists"
@@ -86,9 +86,10 @@ export function HomeScreen({ onStart, onResume, onFix, onDiscardRejected, onNeed
   const sending = queue.some((item) => item.authorUserId === account.userId && item.status === "sending")
   const old = stats.oldestPendingMs !== null && stats.oldestPendingMs > STALE_PENDING_MS
   const due = useMemo(() => dueRows(rows), [rows])
-  const inWorkshop = useMemo(() => workshopEntries(rows, queue).filter((entry) => stored?.catalog.user.worksiteIds.includes(entry.worksiteId)), [rows, queue, stored])
+  const inWorkshop = useMemo(() => workshopEntries(rows, queue, stored?.catalog).filter((entry) => stored?.catalog.user.worksiteIds.includes(entry.worksiteId)), [rows, queue, stored])
   const recent = useMemo(() => buildRecent(stored?.catalog, queue, account.userId), [stored, queue, account.userId])
   const rejected = useMemo(() => rejectedRecords(queue, account.userId), [queue, account.userId])
+  const notes = useMemo(() => rejectedNotes(queue, account.userId), [queue, account.userId])
   const observations = useMemo(() => openObservations(stored?.catalog, queue), [stored, queue])
   const worksites = (stored?.catalog.worksites ?? []).filter((site) => stored?.catalog.user.worksiteIds.includes(site.id)).map((site) => site.name)
   const sites = worksiteSummary(worksites)
@@ -153,6 +154,7 @@ export function HomeScreen({ onStart, onResume, onFix, onDiscardRejected, onNeed
           </Banner>
         ) : null}
         <RejectedSection items={rejected} onFix={onFix} onDiscard={setDiscardingRejected} />
+        <RejectedNotesSection notes={notes} onDismiss={(note) => { void discardRejectedNote(note.id) }} />
         <ObservationBanner observations={observations} onOpen={() => setObservationsOpen(true)} />
         <DraftBanners drafts={drafts} equipmentOf={equipmentOf} onResume={onResume} onDiscard={setDiscarding} />
         {!stored ? (

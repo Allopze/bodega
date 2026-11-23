@@ -108,10 +108,10 @@ describe("ot-model: catálogo + cola", () => {
       lastRejection: { count: 1, reason: "Falta apretar la manguera", at: "2026-10-28T17:00:00.000Z" },
     })
     // Teléfono atrasado: firmó «a las 16:00» pero el servidor la recibió a las 17:30, después de la devolución.
-    const behind = { ...linkedRecord(1, "2026-10-28T16:00:00.000Z"), status: "sent" as const, receivedAt: "2026-10-28T17:30:00.000Z" }
+    const behind = { ...linkedRecord(1, "2026-10-28T16:00:00.000Z"), status: "sent" as const, sentAt: "2026-10-28T17:30:00.000Z", receivedAt: "2026-10-28T17:30:00.000Z" }
     expect(buildOtViews(WITH({ workOrders: [returned] }), [behind], USER).mine[0]?.linked).toHaveLength(1)
     // Teléfono adelantado: firmó «a las 18:00» pero el servidor la recibió a las 16:59, antes de la devolución.
-    const ahead = { ...linkedRecord(2, "2026-10-28T18:00:00.000Z"), status: "sent" as const, receivedAt: "2026-10-28T16:59:00.000Z" }
+    const ahead = { ...linkedRecord(2, "2026-10-28T18:00:00.000Z"), status: "sent" as const, sentAt: "2026-10-28T16:59:00.000Z", receivedAt: "2026-10-28T16:59:00.000Z" }
     expect(buildOtViews(WITH({ workOrders: [returned] }), [ahead], USER).mine[0]?.linked).toHaveLength(0)
     // Aún en cola: lo recibirá el servidor después de una devolución que el teléfono ya conoce, así que cuenta.
     expect(buildOtViews(WITH({ workOrders: [returned] }), [linkedRecord(3, "2026-10-28T16:00:00.000Z")], USER).mine[0]?.linked).toHaveLength(1)
