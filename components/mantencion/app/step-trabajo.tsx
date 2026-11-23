@@ -4,12 +4,13 @@ import type { Dispatch } from "react"
 import type { FleetRow } from "@/lib/mantencion/client/fleet-view"
 import type { FlowAction } from "@/lib/mantencion/client/flow"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
+import { staleChoices, staleIds, staleMessage } from "@/lib/mantencion/client/flow-validate"
 import { findWorkOrder } from "@/lib/mantencion/client/ot-model"
 import { todayInChile } from "@/lib/utils"
 import { useAppData } from "./app-context"
 import { EquipmentSummary } from "./step-lectura"
 import { JobsField } from "./trabajo-jobs"
-import { DriversField } from "./trabajo-parts"
+import { DriversField, StaleChip } from "./trabajo-parts"
 import { CheckBox, FieldError } from "./ui"
 
 /** Paso 3 (correctiva): qué se hizo, quién, con qué, cuánto tardó y en qué quedó el equipo. Las fotos van en el paso siguiente. */
@@ -20,12 +21,23 @@ export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispat
   const mechanics = (catalog?.mechanics ?? []).filter((mechanic) => mechanic.id !== account.userId)
   const today = todayInChile()
   // Con una OT, ella lleva el taller (ingreso y salida): no se pregunta «¿queda en taller?» ni se pide el Nº del papel.
+  const ready = Boolean(catalog)
+  const lists = catalog ?? null
+  // Lo elegido que jefatura desactivó: el aviso del ejecutor se ve de entrada, no sólo al tocar «Continuar».
+  const goneExecutor = staleChoices(draft, lists).find((choice) => choice.kind === "mechanic" || choice.kind === "workshop")
+  const goneOils = staleIds(draft.oilIds, lists ? lists.oils : null)
   const linked = draft.workOrderId ? (findWorkOrder(catalog, draft.workOrderId)?.folio ?? "Orden de trabajo") : null
+
+  /** El nombre del recién elegido, para poder decir «Quita “X”» si deja de estar disponible. */
+  const named = (list: ReadonlyArray<{ id: string; name: string }>, id: string): Pick<Partial<FlowDraft>, "idNames"> => {
+    const name = list.find((item) => item.id === id)?.name
+    return name ? { idNames: { ...draft.idNames, [id]: name } } : {}
+  }
 
   return (
     <>
       <EquipmentSummary row={row} />
-      <JobsField draft={draft} dispatch={dispatch} workTypes={catalog?.workTypes ?? []} />
+      <JobsField draft={draft} dispatch={dispatch} workTypes={catalog?.workTypes ?? []} ready={ready} />
 
       <div>
         <div className="lbl">¿Quién hizo el trabajo?</div>
@@ -37,7 +49,7 @@ export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispat
         {draft.executorKind === "otro_mecanico" ? (
           <div style={{ marginTop: 12 }}>
             <label className="lbl" htmlFor="otroMec">Mecánico</label>
-            <select id="otroMec" className="inp" value={draft.executorUserId} onChange={(event) => dispatch({ type: "patch", patch: { executorUserId: event.target.value } })}>
+            <select id="otroMec" className="inp" value={mechanics.some((mechanic) => mechanic.id === draft.executorUserId) ? draft.executorUserId : ""} onChange={(event) => dispatch({ type: "patch", patch: { executorUserId: event.target.value, ...named(mechanics, event.target.value) } })}>
               <option value="">Elige…</option>
               {mechanics.map((mechanic) => <option key={mechanic.id} value={mechanic.id}>{mechanic.name}</option>)}
             </select>
@@ -46,21 +58,23 @@ export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispat
         {draft.executorKind === "externo" ? (
           <div style={{ marginTop: 12 }}>
             <label className="lbl" htmlFor="taller">Taller externo</label>
-            <select id="taller" className="inp" value={draft.executorWorkshopId} onChange={(event) => dispatch({ type: "patch", patch: { executorWorkshopId: event.target.value } })}>
+            <select id="taller" className="inp" value={(catalog?.workshops ?? []).some((workshop) => workshop.id === draft.executorWorkshopId) ? draft.executorWorkshopId : ""} onChange={(event) => dispatch({ type: "patch", patch: { executorWorkshopId: event.target.value, ...named(catalog?.workshops ?? [], event.target.value) } })}>
               <option value="">Elige…</option>
               {(catalog?.workshops ?? []).map((workshop) => <option key={workshop.id} value={workshop.id}>{workshop.name}</option>)}
             </select>
           </div>
         ) : null}
+        {goneExecutor ? <p className="hint" role="status">{staleMessage(goneExecutor)}</p> : null}
         <FieldError message={errors.executor} />
       </div>
 
       <div>
         <div className="lbl">Cambio de aceite <small>· puedes marcar varios</small></div>
         <div className="chips" role="group" aria-label="Aceites cambiados">
+          {goneOils.map((id) => <StaleChip key={id} name={draft.idNames?.[id] ?? null} noun="un aceite" onRemove={() => dispatch({ type: "toggleId", field: "oilIds", id })} />)}
           {(catalog?.oils ?? []).map((oil) => {
             const on = draft.oilIds.includes(oil.id)
-            return <button key={oil.id} type="button" className="chip" aria-pressed={on} onClick={() => dispatch({ type: "toggleId", field: "oilIds", id: oil.id })}><CheckBox on={on} />{oil.name}</button>
+            return <button key={oil.id} type="button" className="chip" aria-pressed={on} onClick={() => dispatch({ type: "toggleId", field: "oilIds", id: oil.id, name: oil.name })}><CheckBox on={on} />{oil.name}</button>
           })}
         </div>
         <div className="orl"><span>o</span></div>
@@ -88,7 +102,7 @@ export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispat
         </div>
       )}
 
-      <DriversField draft={draft} dispatch={dispatch} drivers={catalog?.drivers ?? []} />
+      <DriversField draft={draft} dispatch={dispatch} drivers={catalog?.drivers ?? []} ready={ready} />
 
       {linked ? null : <div className="card">
         <div className="lbl" id="taller-lbl">¿El equipo sigue en taller?</div>

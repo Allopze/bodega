@@ -11,10 +11,65 @@ import { totalHours, type FlowDraft, type FlowErrors, type FlowPart, type FlowSt
  * decide si «Continuar» se habilita, qué avisos se muestran y qué se firma.
  */
 
+/** Las listas del catálogo del teléfono contra las que se contrastan las elecciones del borrador. */
+export interface FlowCatalogLists {
+  drivers: ReadonlyArray<{ id: string; name: string }>
+  oils: ReadonlyArray<{ id: string; name: string }>
+  mechanics: ReadonlyArray<{ id: string; name: string }>
+  workshops: ReadonlyArray<{ id: string; name: string }>
+  workTypes: ReadonlyArray<{ id: string; name: string }>
+}
+
 export interface FlowCtx {
   row: FleetRow | null
   /** `todayInChile()` del llamador, para que esto siga siendo puro. */
   today: string
+  /**
+   * El catálogo del teléfono. Con él se detecta lo elegido que jefatura desactivó después (el servidor lo rechaza con
+   * «vuelve a elegirlo»). Sin catálogo (aún no bajó) no se juzga nada.
+   */
+  catalog?: FlowCatalogLists | null
+}
+
+export type StaleKind = "driver" | "oil" | "mechanic" | "workshop" | "workType"
+
+/** Una elección del borrador que ya no está en el catálogo: hay que quitarla o volver a elegir. */
+export interface StaleChoice {
+  kind: StaleKind
+  id: string
+  /** El nombre con el que se eligió, si quedó guardado. */
+  name: string | null
+}
+
+const STALE_NOUN: Record<StaleKind, string> = { driver: "un conductor", oil: "un aceite", mechanic: "un mecánico", workshop: "un taller", workType: "un tipo de trabajo" }
+
+/** Los ids de `ids` que no están en `list`, con el nombre guardado. Sin catálogo (`list` nula) no hay nada «viejo». */
+export function staleIds(ids: readonly string[], list: ReadonlyArray<{ id: string }> | null | undefined): string[] {
+  if (!list) return []
+  return ids.filter((id) => !list.some((item) => item.id === id))
+}
+
+/** Todo lo elegido en el paso «Trabajo» que el catálogo ya no tiene. */
+export function staleChoices(draft: FlowDraft, lists: FlowCatalogLists | null | undefined): StaleChoice[] {
+  if (!lists) return []
+  const named = (kind: StaleKind, id: string): StaleChoice => ({ kind, id, name: draft.idNames?.[id] ?? null })
+  const out: StaleChoice[] = []
+  for (const job of draft.jobs) if (staleIds([job.workTypeId], lists.workTypes).length > 0) out.push(named("workType", job.workTypeId))
+  if (draft.executorKind === "otro_mecanico" && draft.executorUserId && staleIds([draft.executorUserId], lists.mechanics).length > 0) out.push(named("mechanic", draft.executorUserId))
+  if (draft.executorKind === "externo" && draft.executorWorkshopId && staleIds([draft.executorWorkshopId], lists.workshops).length > 0) out.push(named("workshop", draft.executorWorkshopId))
+  if (!draft.noOilChange) for (const id of staleIds(draft.oilIds, lists.oils)) out.push(named("oil", id))
+  for (const id of staleIds(draft.driverIds, lists.drivers)) out.push(named("driver", id))
+  return out
+}
+
+/** Lo que se le dice al mecánico: qué quitar (o qué volver a elegir) y por qué. */
+export function staleMessage(choice: StaleChoice): string {
+  const label = choice.name ? `“${choice.name}”` : null
+  if (choice.kind === "mechanic" || choice.kind === "workshop") {
+    const other = choice.kind === "mechanic" ? "mecánico" : "taller"
+    return `Elige otro ${other}: ${label ?? "el que habías elegido"} ya no está disponible.`
+  }
+  return label ? `Quita ${label}: ya no está disponible.` : `Quita ${STALE_NOUN[choice.kind]} que ya no está disponible.`
 }
 
 export const MIN_NOTE = 3
@@ -124,9 +179,13 @@ function validateLectura(draft: FlowDraft, ctx: FlowCtx, errors: FlowErrors): vo
 }
 
 function validateTrabajo(draft: FlowDraft, ctx: FlowCtx, errors: FlowErrors): void {
+  const stale = staleChoices(draft, ctx.catalog)
+  const staleOf = (kind: StaleKind, id?: string) => stale.find((choice) => choice.kind === kind && (id === undefined || choice.id === id))
   if (draft.jobs.length === 0) errors.workTypes = "Agrega al menos un trabajo."
   for (const job of draft.jobs) {
-    if (job.hours < HOURS_MIN || job.hours > HOURS_MAX) errors[`job:${job.workTypeId}`] = `Las horas van entre ${HOURS_MIN} y ${HOURS_MAX}.`
+    const gone = staleOf("workType", job.workTypeId)
+    if (gone) errors[`job:${job.workTypeId}`] = staleMessage(gone)
+    else if (job.hours < HOURS_MIN || job.hours > HOURS_MAX) errors[`job:${job.workTypeId}`] = `Las horas van entre ${HOURS_MIN} y ${HOURS_MAX}.`
     else if (!job.noParts) {
       // Cada línea con descripción necesita su cantidad: si no, el esquema del servidor
       // responde «Too small» en inglés, sin decir cuál repuesto.
@@ -138,9 +197,15 @@ function validateTrabajo(draft: FlowDraft, ctx: FlowCtx, errors: FlowErrors): vo
   if (totalHours(draft.jobs) > HOURS_MAX) errors.hours = `El total de horas no puede pasar de ${HOURS_MAX}.`
   if (draft.executorKind === "otro_mecanico" && !draft.executorUserId) errors.executor = "Elige qué mecánico hizo el trabajo."
   if (draft.executorKind === "externo" && !draft.executorWorkshopId) errors.executor = "Elige el taller externo."
+  const goneExecutor = staleOf("mechanic") ?? staleOf("workshop")
+  if (goneExecutor) errors.executor = staleMessage(goneExecutor)
   if (!draft.noOilChange && draft.oilIds.length === 0) errors.oil = "Marca qué aceite se cambió, o «No se cambió aceite»."
+  const goneOil = staleOf("oil")
+  if (goneOil) errors.oil = staleMessage(goneOil)
   if (draft.description.trim().length < MIN_DESCRIPTION) errors.description = "Describe el trabajo realizado."
   if (draft.driverIds.length === 0) errors.drivers = "Agrega al menos un conductor."
+  const goneDriver = staleOf("driver")
+  if (goneDriver) errors.drivers = staleMessage(goneDriver)
   // Con una OT, el taller lo lleva la OT (ingreso y salida): no se pregunta de nuevo.
   if (draft.workOrderId) return
   if (draft.inWorkshop === null) errors.workshop = "Indica si el equipo sigue en taller."

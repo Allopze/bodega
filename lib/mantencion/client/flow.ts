@@ -1,7 +1,7 @@
 import type { MantItemValue, MantScheduleSnapshot } from "../types"
 import { groupChecklist } from "../schedule"
 import { groupDone, HOURS_MAX, HOURS_MIN } from "./flow-validate"
-import { firstStepIndex, newJob, stepsFor, type FlowDraft, type FlowErrors, type FlowJob, type FlowStep } from "./flow-types"
+import { draftPhotoIds, firstStepIndex, newJob, stepsFor, type FlowDraft, type FlowErrors, type FlowJob, type FlowStep } from "./flow-types"
 
 /**
  * Reductor puro del flujo de registro. No toca red, ni IndexedDB, ni el reloj:
@@ -11,7 +11,8 @@ import { firstStepIndex, newJob, stepsFor, type FlowDraft, type FlowErrors, type
  * Reglas que sostiene:
  *  - «Cambiar» en Revisar lleva al paso y VUELVE directo a Revisar…
  *  - …salvo que el cambio invalide un paso intermedio: ahí se detiene.
- *  - Cambiar el equipo borra lo que dependía de él (lectura, pauta, marcas).
+ *  - Cambiar el equipo borra lo que dependía de él (lectura, pauta, marcas y fotos: el sello va quemado en los píxeles).
+ *    Soltar los blobs de esas fotos y pedir confirmación es de la pantalla (`photosLostOnPick`): el reductor es puro.
  */
 
 export interface FlowEnv {
@@ -23,7 +24,7 @@ export interface FlowEnv {
 export type FlowAction =
   | { type: "patch"; patch: Partial<FlowDraft> }
   | { type: "pickEquipment"; vehicleId: string; schedule: MantScheduleSnapshot | null }
-  | { type: "toggleId"; field: "oilIds" | "driverIds"; id: string }
+  | { type: "toggleId"; field: "oilIds" | "driverIds"; id: string; name?: string }
   | { type: "noOilChange" }
   | { type: "mark"; key: string; value: MantItemValue }
   | { type: "markGroup"; group: number }
@@ -33,7 +34,7 @@ export type FlowAction =
   | { type: "photo"; slot: "filtros" | "sticker"; id: string | null }
   | { type: "photoAdd"; id: string }
   | { type: "photoRemove"; id: string }
-  | { type: "jobAdd"; workTypeId: string }
+  | { type: "jobAdd"; workTypeId: string; name?: string }
   | { type: "jobRemove"; workTypeId: string }
   /** Deshace un «Quitar trabajo»: lo vuelve a su lugar (sin repetir el tipo). */
   | { type: "jobRestore"; job: FlowJob; index: number }
@@ -93,6 +94,20 @@ function withJob(draft: FlowDraft, workTypeId: string, change: (job: FlowJob) =>
   return draft.jobs.map((job) => (job.workTypeId === workTypeId ? change(job) : job))
 }
 
+/**
+ * Las fotos que se pierden al pasar a otro equipo (ids a soltar), o `[]` si el cambio no las toca. Con una OT el
+ * equipo está fijo. Quien lo llama pide confirmar antes de despachar `pickEquipment` y suelta los blobs después.
+ */
+export function photosLostOnPick(draft: Pick<FlowDraft, "vehicleId" | "workOrderId" | "photos">, vehicleId: string): string[] {
+  if (draft.workOrderId || draft.vehicleId === vehicleId) return []
+  return draftPhotoIds(draft)
+}
+
+/** Recuerda el nombre con el que se eligió un id (para avisar «Quita “X”» si deja de estar disponible). */
+function withName(draft: FlowDraft, id: string, name: string): Record<string, string> {
+  return { ...draft.idNames, [id]: name }
+}
+
 function toggled(list: readonly string[], id: string): string[] {
   return list.includes(id) ? list.filter((value) => value !== id) : [...list, id]
 }
@@ -136,11 +151,16 @@ export function flowReducer(draft: FlowDraft, action: FlowAction): FlowDraft {
         vehicleId: action.vehicleId, schedule: action.schedule,
         readingText: "", intervalIndex: null, intervalOpen: false, intervalReason: "", ackJump: null, ackDuplicate: null,
         checklist: [], intervalValue: null, suggestedIntervalValue: null, marks: {}, reasons: {}, openGroup: 0,
+        // Las fotos llevan quemado el sello del equipo anterior: no se conservan.
+        photos: { filtros: null, sticker: null, correctiva: [] },
       })
     }
 
-    case "toggleId":
-      return patched(draft, { [action.field]: toggled(draft[action.field], action.id) } as Partial<FlowDraft>)
+    case "toggleId": {
+      const adding = !draft[action.field].includes(action.id)
+      const patch = { [action.field]: toggled(draft[action.field], action.id), ...(adding && action.name ? { idNames: withName(draft, action.id, action.name) } : {}) }
+      return patched(draft, patch as Partial<FlowDraft>)
+    }
 
     case "noOilChange":
       // «No se cambió aceite» y los aceites se excluyen entre sí.
@@ -197,7 +217,7 @@ export function flowReducer(draft: FlowDraft, action: FlowAction): FlowDraft {
 
     case "jobAdd":
       if (draft.jobs.some((job) => job.workTypeId === action.workTypeId)) return draft
-      return patched(draft, { jobs: [...draft.jobs, newJob(action.workTypeId)] })
+      return patched(draft, { jobs: [...draft.jobs, newJob(action.workTypeId)], ...(action.name ? { idNames: withName(draft, action.workTypeId, action.name) } : {}) })
 
     case "jobRemove":
       return patched(draft, { jobs: draft.jobs.filter((job) => job.workTypeId !== action.workTypeId) })

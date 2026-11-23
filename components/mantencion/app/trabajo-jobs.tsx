@@ -16,9 +16,17 @@ type WorkType = { id: string; name: string }
  * no se repite: el que ya está agregado sale de la lista de «Agregar». Quitar un
  * trabajo se puede deshacer, porque borra horas y repuestos ya escritos.
  */
-export function JobsField({ draft, dispatch, workTypes }: { draft: FlowDraft; dispatch: Dispatch<FlowAction>; workTypes: readonly WorkType[] }) {
+export function JobsField({ draft, dispatch, workTypes, ready = true }: { draft: FlowDraft; dispatch: Dispatch<FlowAction>; workTypes: readonly WorkType[]; ready?: boolean }) {
   const [removed, setRemoved] = useState<{ job: FlowJob; index: number } | null>(null)
-  const nameOf = (id: string) => workTypes.find((type) => type.id === id)?.name ?? "Trabajo"
+  // Un tipo que jefatura desactivó sigue en el borrador: se rotula como tal y se quita con la «×» de la tarjeta.
+  const isGone = (id: string) => ready && !workTypes.some((type) => type.id === id)
+  const nameOf = (id: string) => {
+    const known = workTypes.find((type) => type.id === id)?.name
+    if (known) return known
+    const saved = draft.idNames?.[id]
+    if (!isGone(id)) return saved ?? "Trabajo"
+    return saved ? `${saved} (ya no disponible)` : "Tipo de trabajo que ya no está disponible"
+  }
   const available = workTypes.filter((type) => !draft.jobs.some((job) => job.workTypeId === type.id))
   const total = totalHours(draft.jobs)
 
@@ -51,7 +59,7 @@ export function JobsField({ draft, dispatch, workTypes }: { draft: FlowDraft; di
           <div className="lbl" style={{ marginTop: 12 }}>{draft.jobs.length === 0 ? "Elige el tipo de trabajo" : "Agregar otro trabajo"}</div>
           <div className="chips" role="group" aria-label="Agregar trabajo">
             {available.map((type) => (
-              <button key={type.id} type="button" className="chip" onClick={() => { setRemoved(null); dispatch({ type: "jobAdd", workTypeId: type.id }) }}>+ {type.name}</button>
+              <button key={type.id} type="button" className="chip" onClick={() => { setRemoved(null); dispatch({ type: "jobAdd", workTypeId: type.id, name: type.name }) }}>+ {type.name}</button>
             ))}
           </div>
         </>

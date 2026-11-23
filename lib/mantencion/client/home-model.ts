@@ -1,4 +1,4 @@
-import type { CatalogObservation, MantCatalog } from "../contracts"
+import type { CatalogObservation, MantCatalog, WorkOrderOpRequest } from "../contracts"
 import { recordKindText } from "../format"
 import type { MantUnit } from "../types"
 import { formatDate, formatDateTime, todayInChile } from "@/lib/utils"
@@ -69,6 +69,46 @@ export function buildRecent(catalog: MantCatalog | null | undefined, queue: read
 
 export function rejectedRecords(queue: readonly QueueItem[], userId: string): QueueRecordItem[] {
   return queue.filter((item): item is QueueRecordItem => item.type === "record" && item.authorUserId === userId && item.status === "rejected")
+}
+
+/** Un envío rechazado que no es un registro (taller, respuesta a una observación, operación de OT). */
+export interface RejectedNote {
+  /** Id del elemento en la cola. */
+  id: string
+  type: "workshop" | "reply" | "ot"
+  /** «KA-140 · Salida de taller». */
+  title: string
+  /** El motivo del servidor, en lenguaje de usuario. */
+  message: string
+}
+
+const OT_ACTION_LABEL: Record<WorkOrderOpRequest["action"], string> = {
+  take: "Tomar la OT",
+  start: "Ingreso a taller",
+  estimate: "Fecha estimada de entrega",
+  items: "Marcas de ítems",
+  finish: "Terminar la OT",
+}
+
+/**
+ * Rechazos que no son registros: hoy sólo se veían los registros, así que una
+ * salida de taller, una respuesta a una observación o una operación de OT
+ * rechazadas no se enteraba nadie. Cada uno se descarta con «Entendido».
+ */
+export function rejectedNotes(queue: readonly QueueItem[], userId: string): RejectedNote[] {
+  const notes: RejectedNote[] = []
+  for (const item of queue) {
+    if (item.authorUserId !== userId || item.status !== "rejected" || item.type === "record") continue
+    const message = item.lastError ?? "La plataforma no aceptó el envío."
+    if (item.type === "workshop") {
+      notes.push({ id: item.id, type: "workshop", title: `${item.summary.equipmentCode} · ${item.payload.kind === "salio" ? "Salida de taller" : "Novedad de taller"}`, message })
+    } else if (item.type === "reply") {
+      notes.push({ id: item.id, type: "reply", title: `${item.summary.equipmentCode} · Respuesta a la observación${item.summary.folio ? ` de ${item.summary.folio}` : ""}`, message })
+    } else {
+      notes.push({ id: item.id, type: "ot", title: `${item.summary.equipmentCode} · ${item.summary.folio} · ${OT_ACTION_LABEL[item.payload.action]}`, message })
+    }
+  }
+  return notes
 }
 
 /** Lo que dice el aviso de «Actualizar»: cada resultado del refresco tiene su frase. */

@@ -120,7 +120,7 @@ describe("foto del historial", () => {
     expect(result.kind).toBe("ok")
     expect(request(ok).url).toBe(historyPhotoUrl(UUID(50)))
     expect((request(ok).init.headers as Record<string, string>).Authorization).toBe("Bearer tok")
-    expect(await getPhoto("tok", UUID(50), asFetch(vi.fn(async () => json(404, { message: "no" }))))).toMatchObject({ kind: "reject", status: 404 })
+    expect(await getPhoto("tok", UUID(50), asFetch(vi.fn(async () => json(404, { ok: false, code: "not_found", message: "no" }))))).toMatchObject({ kind: "reject", status: 404 })
     expect(await getPhoto("tok", UUID(50), asFetch(vi.fn(async () => { throw new TypeError("x") })))).toMatchObject({ kind: "retry", network: true })
   })
 
@@ -148,7 +148,7 @@ describe("foto del historial", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     expect(isOnline()).toBe(true)
 
-    expect(await getPhotoBlob(account("u-1"), UUID(52), asFetch(vi.fn(async () => json(404, {}))))).toBeNull()
+    expect(await getPhotoBlob(account("u-1"), UUID(52), asFetch(vi.fn(async () => json(404, { ok: false, code: "not_found", message: "no" }))))).toBeNull()
     expect(await getPhotoBlob(account("u-1"), UUID(53), asFetch(vi.fn(async () => { throw new TypeError("x") })))).toBeNull()
     expect(await idbGetAll(STORE.photoCache)).toHaveLength(1)
   })

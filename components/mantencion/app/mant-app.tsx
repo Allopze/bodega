@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { bootstrapDevice, type BootstrapResult } from "@/lib/mantencion/client/bootstrap"
+import { openApp, type BootstrapResult } from "@/lib/mantencion/client/bootstrap"
 import { refreshCatalog } from "@/lib/mantencion/client/catalog-sync"
 import { discardDraft, listDrafts } from "@/lib/mantencion/client/drafts"
 import { equipmentLabel } from "@/lib/mantencion/client/fleet-view"
@@ -26,9 +26,6 @@ import { useMantRuntime } from "./use-mant-runtime"
 
 type Screen = { name: "home" } | { name: "flow"; draft: FlowDraft } | { name: "done"; itemId: string }
 type Boot = { status: "loading" } | { status: "ready"; result: BootstrapResult } | { status: "error"; message: string }
-
-/** Un HTML con menos de esto salió del servidor ahora; con más, salió del caché y su sesión no decide nada. */
-const FRESH_MS = 2 * 60_000
 
 /** Un solo arranque por carga de la página (el modo estricto de React monta dos veces). */
 let bootOnce: Promise<BootstrapResult> | null = null
@@ -61,7 +58,8 @@ export function MantApp({ sessionUser, appVersion, renderedAt }: MantAppProps) {
 
   useEffect(() => {
     let cancelled = false
-    bootOnce ??= bootstrapDevice({ sessionUser, fresh: Date.now() - Date.parse(renderedAt) < FRESH_MS })
+    // Frescura del HTML con el reloj del servidor, no el del teléfono (ver `lib/mantencion/client/freshness.ts`).
+    bootOnce ??= openApp({ sessionUser, renderedAt })
     bootOnce.then((result) => {
       if (cancelled) return
       setBoot({ status: "ready", result })

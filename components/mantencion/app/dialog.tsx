@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react"
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
 import { createPortal } from "react-dom"
 import { FieldError } from "./ui"
 
@@ -17,6 +17,8 @@ export const MODALS_ID = "mant-modals"
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 let openModals = 0
+/** Diálogos abiertos, el último arriba: sólo el de arriba atiende el teclado (Esc y Tab). */
+const modalStack: symbol[] = []
 
 function focusables(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.offsetParent !== null || el === document.activeElement)
@@ -28,12 +30,15 @@ function useModalBehavior(panel: RefObject<HTMLElement | null>, onClose: () => v
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const content = document.getElementById(CONTENT_ID)
+    const self = Symbol("modal")
+    modalStack.push(self)
     openModals++
     content?.setAttribute("inert", "")
     const node = panel.current
     if (node) (initialFocus?.current ?? focusables(node)[0] ?? node).focus()
 
     const onKey = (event: KeyboardEvent) => {
+      if (modalStack[modalStack.length - 1] !== self) return
       if (event.key === "Escape") {
         event.stopPropagation()
         closeRef.current()
@@ -50,6 +55,8 @@ function useModalBehavior(panel: RefObject<HTMLElement | null>, onClose: () => v
     document.addEventListener("keydown", onKey, true)
     return () => {
       document.removeEventListener("keydown", onKey, true)
+      const at = modalStack.indexOf(self)
+      if (at >= 0) modalStack.splice(at, 1)
       openModals = Math.max(0, openModals - 1)
       if (openModals === 0) content?.removeAttribute("inert")
       if (previous?.isConnected) previous.focus({ preventScroll: true })
@@ -155,21 +162,105 @@ export interface SheetProps {
    * Sin esto la hoja mide su contenido y salta al cambiar la opción.
    */
   stable?: boolean
+  /**
+   * La hoja tiene algo escrito que se perdería al cerrarla. Con `true`, tocar el
+   * fondo, Esc y los botones de cerrar (`useSheetGuard`) preguntan antes de
+   * descartar; sin él (o con `false`) cierran directo. Una hoja con formularios
+   * adentro puede declararlo desde ellos con `useSheetDirty`.
+   */
+  dirty?: boolean
+}
+
+interface SheetGuard {
+  /** Declara si quien llama (identificado por `key`) tiene cambios sin guardar. */
+  setDirty: (key: string, dirty: boolean) => void
+  /** Corre `action` ya; si hay cambios sin guardar, antes pregunta si se descartan. */
+  confirmThen: (action: () => void) => void
+}
+
+const SheetGuardContext = createContext<SheetGuard>({ setDirty: () => {}, confirmThen: (action) => action() })
+
+/** Para los botones de cerrar/volver de una hoja: piden confirmar si hay cambios sin guardar. */
+export function useSheetGuard(): Pick<SheetGuard, "confirmThen"> {
+  const { confirmThen } = useContext(SheetGuardContext)
+  return { confirmThen }
+}
+
+/** Avisa a la hoja que lo escrito en este formulario todavía no se guarda. Fuera de una hoja no hace nada. */
+export function useSheetDirty(dirty: boolean) {
+  const key = useId()
+  const { setDirty } = useContext(SheetGuardContext)
+  useEffect(() => {
+    setDirty(key, dirty)
+    return () => setDirty(key, false)
+  }, [key, dirty, setDirty])
 }
 
 /** Hoja inferior: para tareas cortas que no justifican cambiar de pantalla. */
-export function Sheet({ title, children, onClose, initialFocus, stable = false }: SheetProps) {
+export function Sheet({ title, children, onClose, initialFocus, stable = false, dirty = false }: SheetProps) {
   const titleId = useId()
   const panel = useRef<HTMLDivElement>(null)
-  useModalBehavior(panel, onClose, initialFocus)
+  const [registered, setRegistered] = useState<ReadonlySet<string>>(() => new Set())
+  const [asking, setAsking] = useState(false)
+  const pending = useRef<(() => void) | null>(null)
+  const trigger = useRef<HTMLElement | null>(null)
+  const isDirty = dirty || registered.size > 0
+
+  const setDirty = useCallback((key: string, value: boolean) => {
+    setRegistered((current) => {
+      if (current.has(key) === value) return current
+      const next = new Set(current)
+      if (value) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }, [])
+  const dirtyRef = useRef(isDirty)
+  useEffect(() => { dirtyRef.current = isDirty })
+  const confirmThen = useCallback((action: () => void) => {
+    // Con la pregunta ya abierta no se encadena otra: la responde el diálogo.
+    if (pending.current) return
+    if (!dirtyRef.current) { action(); return }
+    pending.current = action
+    trigger.current = document.activeElement instanceof HTMLElement && panel.current?.contains(document.activeElement) ? document.activeElement : null
+    setAsking(true)
+  }, [])
+  const keepEditing = useCallback(() => {
+    pending.current = null
+    setAsking(false)
+    // La hoja queda inerte mientras se pregunta y el navegador suelta su foco: se devuelve a donde estaba.
+    setTimeout(() => { (trigger.current?.isConnected ? trigger.current : panel.current)?.focus({ preventScroll: true }) }, 0)
+  }, [])
+  const discard = useCallback(() => {
+    const action = pending.current
+    pending.current = null
+    setAsking(false)
+    action?.()
+  }, [])
+  const guard = useMemo(() => ({ setDirty, confirmThen }), [setDirty, confirmThen])
+  const requestClose = useCallback(() => confirmThen(onClose), [confirmThen, onClose])
+
+  useModalBehavior(panel, requestClose, initialFocus)
   return (
     <Portal>
-      <div className="sheetbg" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <div className="sheetbg" inert={asking ? true : undefined} onClick={(event) => { if (event.target === event.currentTarget) requestClose() }}>
         <div ref={panel} className={stable ? "sheet sheet-stable" : "sheet"} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
           <h2 className="h2" id={titleId} style={{ fontSize: 22 }}>{title}</h2>
-          {children}
+          <SheetGuardContext.Provider value={guard}>{children}</SheetGuardContext.Provider>
         </div>
       </div>
+      {asking ? (
+        <ConfirmDialog
+          title="¿Descartar lo que escribiste?"
+          cancelLabel="Seguir editando"
+          confirmLabel="Descartar"
+          danger
+          onCancel={keepEditing}
+          onConfirm={discard}
+        >
+          <p>Si sales ahora, lo que cambiaste en esta hoja no se guarda.</p>
+        </ConfirmDialog>
+      ) : null}
     </Portal>
   )
 }

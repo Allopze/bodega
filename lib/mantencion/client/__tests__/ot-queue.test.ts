@@ -143,7 +143,7 @@ describe("cola de OT: envío", () => {
 
   it("discardRejectedOtOp quita sólo operaciones de OT rechazadas", async () => {
     await seed(TAKE())
-    await sync(server({ ot: () => json(409, { message: "no" }) }))
+    await sync(server({ ot: () => json(409, { ok: false, code: "rejected", message: "no" }) }))
     await discardRejectedOtOp(TAKE().id)
     expect(await getQueueItem(TAKE().id)).toBeNull()
     await enqueueSimple(TAKE())
@@ -153,7 +153,7 @@ describe("cola de OT: envío", () => {
 
   it("postWorkOrderOp clasifica el 409 como rechazo y la red caída como reintento", async () => {
     const payload = TAKE().payload
-    expect((await postWorkOrderOp("t", payload, (async () => json(409, { message: "x" })) as unknown as typeof fetch)).kind).toBe("reject")
+    expect((await postWorkOrderOp("t", payload, (async () => json(409, { ok: false, code: "rejected", message: "x" })) as unknown as typeof fetch)).kind).toBe("reject")
     expect(await postWorkOrderOp("t", payload, (async () => { throw new TypeError("net") }) as unknown as typeof fetch)).toMatchObject({ kind: "retry", network: true })
   })
 })

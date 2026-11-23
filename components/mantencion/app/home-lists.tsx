@@ -1,7 +1,7 @@
 "use client"
 
 import { dueText, plural } from "@/lib/mantencion/format"
-import { daysInWorkshopText, observedRecordCount, RECENT_STATE_LABEL, shortWhen, type RecentRow } from "@/lib/mantencion/client/home-model"
+import { daysInWorkshopText, observedRecordCount, RECENT_STATE_LABEL, shortWhen, type RecentRow, type RejectedNote } from "@/lib/mantencion/client/home-model"
 import { equipmentLabel, isWorkOrderEntry, workshopWorkOrderId, type FleetRow, type WorkshopEntry } from "@/lib/mantencion/client/fleet-view"
 import type { AppHistoryRecord, CatalogObservation } from "@/lib/mantencion/contracts"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
@@ -130,6 +130,22 @@ export function RejectedSection({ items, onFix, onDiscard }: {
             <button type="button" className="btns" onClick={() => onDiscard(item)} aria-label={`Descartar ${item.summary.equipmentCode}`}>Descartar</button>
           </div>
         </div>
+      ))}
+    </section>
+  )
+}
+
+/** Rechazos que no son registros (taller, respuesta, OT): se leen y se quitan con «Entendido». */
+export function RejectedNotesSection({ notes, onDismiss }: { notes: RejectedNote[]; onDismiss: (note: RejectedNote) => void }) {
+  if (notes.length === 0) return null
+  return (
+    <section className="sect" aria-labelledby="h-rej-notes">
+      <div className="cap" id="h-rej-notes">No se pudo enviar</div>
+      {notes.map((note) => (
+        <Banner key={note.id} action={<button type="button" className="lnk" onClick={() => onDismiss(note)} aria-label={`Entendido: ${note.title}`}>Entendido</button>}>
+          <strong>{note.title}</strong>
+          <div>{note.message}</div>
+        </Banner>
       ))}
     </section>
   )

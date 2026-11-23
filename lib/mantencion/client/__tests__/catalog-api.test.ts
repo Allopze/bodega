@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { getAccount, saveAccount } from "../accounts"
-import { classifyStatus, fetchCatalog, postRecord, requestCredential, uploadPhoto } from "../api"
+import { classifyStatus, fetchCatalog, getPhoto, postRecord, requestCredential, uploadPhoto } from "../api"
 import { loadStoredCatalog, refreshCatalog } from "../catalog-sync"
 import { getOfflineSince, isOnline } from "../signal"
 import { account, catalog, freshDb, json, photo, preventivePayload, UUID } from "./fixtures"
@@ -20,6 +20,30 @@ describe("clasificación de respuestas (contrato de SyncRecordResponse)", () => 
   it("un 422 con campo y motivo llega tal cual a la pantalla", async () => {
     const result = await postRecord("t", preventivePayload(UUID(1), [UUID(2), UUID(3)]), vi.fn(async () => json(422, { ok: false, code: "invalid", message: "La lectura es menor que la anterior.", field: "reading" })) as unknown as typeof fetch)
     expect(result).toMatchObject({ kind: "reject", status: 422, field: "reading", message: "La lectura es menor que la anterior." })
+  })
+
+  it("APPN-5: un 404 HTML (el contenedor se reemplazó) o un 400/413 de un proxy se REINTENTA, no se rechaza", async () => {
+    const payload = preventivePayload(UUID(1), [UUID(2), UUID(3)])
+    const html = (status: number) => vi.fn(async () => new Response("<html>Not Found</html>", { status, headers: { "content-type": "text/html" } })) as unknown as typeof fetch
+    for (const status of [404, 400, 413]) {
+      expect(await postRecord("t", payload, html(status))).toMatchObject({ kind: "retry", network: false, message: expect.stringContaining(String(status)) })
+    }
+    // También un JSON ajeno (sin `ok:false` ni código conocido) y una foto.
+    expect(await postRecord("t", payload, vi.fn(async () => json(404, { message: "no" })) as unknown as typeof fetch)).toMatchObject({ kind: "retry" })
+    expect(await postRecord("t", payload, vi.fn(async () => json(409, { ok: false, code: "otra_cosa", message: "x" })) as unknown as typeof fetch)).toMatchObject({ kind: "retry" })
+    expect(await uploadPhoto("t", photo(UUID(11)), html(404))).toMatchObject({ kind: "retry", network: false })
+  })
+
+  it("APPN-5: el rechazo con el JSON del servidor sigue definitivo (422 invalid, 409 rejected/missing_photos, 404 not_found)", async () => {
+    const payload = preventivePayload(UUID(1), [UUID(2), UUID(3)])
+    expect(await postRecord("t", payload, vi.fn(async () => json(422, { ok: false, code: "invalid", message: "Falta algo.", field: "reading" })) as unknown as typeof fetch))
+      .toMatchObject({ kind: "reject", status: 422, code: "invalid", field: "reading", message: "Falta algo." })
+    expect(await postRecord("t", payload, vi.fn(async () => json(409, { ok: false, code: "rejected", message: "Ya es de otra persona." })) as unknown as typeof fetch))
+      .toMatchObject({ kind: "reject", status: 409, code: "rejected" })
+    expect(await postRecord("t", payload, vi.fn(async () => json(409, { ok: false, code: "missing_photos", message: "Faltan fotos." })) as unknown as typeof fetch))
+      .toMatchObject({ kind: "reject", status: 409, code: "missing_photos" })
+    expect(await getPhoto("t", UUID(50), vi.fn(async () => json(404, { ok: false, code: "not_found", message: "La foto no existe." })) as unknown as typeof fetch))
+      .toMatchObject({ kind: "reject", status: 404, code: "not_found" })
   })
 
   it("un 409 con code «retry» (foto que llegó alterada) es un reintento, no un rechazo", async () => {

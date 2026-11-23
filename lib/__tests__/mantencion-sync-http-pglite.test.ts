@@ -84,6 +84,13 @@ beforeEach(async () => {
 })
 
 describe("credencial de dispositivo", () => {
+  it("HEAD /dispositivo (consulta de hora del arranque) responde 204 sin cuerpo y sin caché", async () => {
+    const response = dispositivo.HEAD()
+    expect(response.status).toBe(204)
+    expect(response.headers.get("cache-control")).toBe("no-store")
+    expect(await response.text()).toBe("")
+  })
+
   it("POST /dispositivo exige permiso, entrega el token una vez y guarda sólo su huella", async () => {
     const deviceId = crypto.randomUUID()
     const body = { deviceId, label: "Samsung A14 de Javier" }

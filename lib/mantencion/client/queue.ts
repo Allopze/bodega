@@ -175,6 +175,21 @@ export async function discardRejectedOtOp(id: string): Promise<void> {
   emit("queue")
 }
 
+/**
+ * Quita de la cola un rechazo de taller, de respuesta a observación o de OT que
+ * el mecánico ya leyó («Entendido»). No se podan solos: no llevan fotos y un
+ * rechazo que el mecánico no vio no debe desaparecer en silencio, así que sólo
+ * sale al descartarlo. Un registro rechazado no pasa por aquí (se corrige o se
+ * descarta con `discardRejectedRecord`).
+ */
+export async function discardRejectedNote(id: string): Promise<void> {
+  await runTx([STORE.queue], "readwrite", async (s) => {
+    const current = (await req(s.queue.get(id))) as QueueItem | undefined
+    if (current && current.type !== "record" && current.status === "rejected") await req(s.queue.delete(id))
+  })
+  emit("queue")
+}
+
 /** Falla pasajera (red, 408, 429, 5xx): vuelve a `pending` con su espera. */
 export async function markRetry(id: string, message: string, nextAttemptAt: number): Promise<void> {
   await updateItem(id, (item) => ({ ...item, status: "pending", lastError: message, nextAttemptAt }))

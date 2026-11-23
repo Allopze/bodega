@@ -74,6 +74,16 @@ describe("arranque de la app: qué cuenta queda activa", () => {
     expect(result.blocker).toBe("needs-signal")
   })
 
+  it("APP-1: primera vez con la plataforma contestando mal (5xx): lo dice, no «sin señal»", async () => {
+    const serverError: ApiFailure = { kind: "retry", message: "No pudimos preparar este teléfono.", retryAfterMs: null, network: false }
+    const result = await open({ sessionUser: user("u-1"), register: fails(serverError) })
+    expect(result.activeUserId).toBeNull()
+    expect(result.blocker).toBe("server-down")
+    // Con la bandera del arranque (el 5xx salió de la consulta de frescura) pasa lo mismo, sin pedir credencial.
+    const flagged = await open({ sessionUser: user("u-2"), fresh: false, serverDown: true, register: registers("u-2") })
+    expect(flagged.blocker).toBe("server-down")
+  })
+
   it("credencial revocada por jefatura (403 «revoked»): pide entrar de nuevo, no «sin permiso»", async () => {
     const result = await open({ sessionUser: user("u-1"), register: fails({ kind: "auth", status: 403, code: "revoked", message: "revocado" }) })
     expect(result.blocker).toBe("revoked")

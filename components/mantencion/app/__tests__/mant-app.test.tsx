@@ -37,6 +37,11 @@ function installServer(options: { online: boolean; catalog?: typeof CATALOG }) {
   vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url)
     const method = init?.method ?? "GET"
+    // La consulta de frescura del arranque (HEAD, sin cuenta ni cuerpo): sólo necesita la cabecera Date del servidor.
+    if (method === "HEAD") {
+      if (!navigator.onLine) throw new TypeError("Failed to fetch")
+      return new Response(null, { status: 204, headers: { date: new Date().toUTCString() } })
+    }
     calls.push({ method, url: path, auth: (init?.headers as Record<string, string> | undefined)?.Authorization ?? null, body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined })
     if (!navigator.onLine) throw new TypeError("Failed to fetch")
     const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
