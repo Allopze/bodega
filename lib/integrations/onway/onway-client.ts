@@ -32,6 +32,22 @@ const DEVICE_DETAIL_PATH = "/OnlineTracking/GetOnlineDeviceInfoByIdFromMap"
 const ALERTS_PATH = "/OnlineTracking/GetDevicesAlertsHistory/"
 const NAVIGATION_TIMEOUT_MS = 45_000
 /**
+ * Una lectura de sólo posiciones no puede retener el navegador los 45 s del
+ * scraper completo: si Auth0 pide un desafío, la persona que quiere resolverlo
+ * queda detrás de esa lectura. El cron conserva los topes largos.
+ */
+const LIVE_SCRAPE_TIMEOUTS: OnwayScrapeTimeouts = {
+  navigationTimeoutMs: 15_000,
+  authTimeoutMs: 10_000,
+  responseTimeoutMs: 15_000,
+}
+
+interface OnwayScrapeTimeouts {
+  navigationTimeoutMs?: number
+  authTimeoutMs?: number
+  responseTimeoutMs?: number
+}
+/**
  * Un `fetch` dentro de la página no tiene timeout propio y `page.evaluate`
  * tampoco: una sola respuesta que el portal deja sin contestar colgaba la
  * corrida para siempre con el lock del cron tomado (2026-10-29 → 2026-11-01,
@@ -167,23 +183,23 @@ function isSnapshotResponse(response: Response): boolean {
   }
 }
 
-async function openAuthentication(page: Page, usernameTimeoutMs: number = NAVIGATION_TIMEOUT_MS): Promise<void> {
+async function openAuthentication(page: Page, timeoutMs: number = NAVIGATION_TIMEOUT_MS): Promise<void> {
   const signIn = page.locator("#smalAuth0ActionLogin")
   if (new URL(page.url()).origin === ONWAY_PORTAL_ORIGIN) {
     try {
-      await signIn.waitFor({ state: "visible", timeout: NAVIGATION_TIMEOUT_MS })
+      await signIn.waitFor({ state: "visible", timeout: timeoutMs })
       await signIn.click()
     } catch {
       throw new OnwayClientError("ONWAY_PORTAL_TIMEOUT")
     }
   }
   try {
-    await page.waitForURL((url) => isAllowedOnwayAuthUrl(url.href), { timeout: NAVIGATION_TIMEOUT_MS })
+    await page.waitForURL((url) => isAllowedOnwayAuthUrl(url.href), { timeout: timeoutMs })
   } catch {
     throw new OnwayClientError("ONWAY_AUTH_REJECTED")
   }
   try {
-    await page.locator('input[name="username"]').waitFor({ state: "visible", timeout: usernameTimeoutMs })
+    await page.locator('input[name="username"]').waitFor({ state: "visible", timeout: timeoutMs })
   } catch {
     throw new OnwayClientError(
       await hasInteractiveChallenge(page) ? "ONWAY_INTERACTIVE_AUTH_REQUIRED" : "ONWAY_PORTAL_TIMEOUT",
@@ -520,20 +536,27 @@ async function fetchTrips(page: Page, ref: OnwayPortalDeviceRef, wallClockOffset
   return parseOnwayTrips(unwrapArray(payload), { wallClockOffsetHours })
 }
 
-async function scrapeWithSession(credentials: OnwayCredentials): Promise<OnwayPortalSnapshot> {
+async function scrapeWithSession(
+  credentials: OnwayCredentials,
+  timeouts: OnwayScrapeTimeouts = {},
+): Promise<OnwayPortalSnapshot> {
   const { page } = await getBrowserSession(accountKey(credentials))
-  const responsePromise = page.waitForResponse(isSnapshotResponse, { timeout: NAVIGATION_TIMEOUT_MS })
+  const responseTimeoutMs = timeouts.responseTimeoutMs ?? NAVIGATION_TIMEOUT_MS
+  const responsePromise = page.waitForResponse(isSnapshotResponse, { timeout: responseTimeoutMs })
   void responsePromise.catch(() => undefined)
 
   try {
-    await page.goto(TRACKING_URL, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS })
+    await page.goto(TRACKING_URL, {
+      waitUntil: "domcontentloaded",
+      timeout: timeouts.navigationTimeoutMs ?? NAVIGATION_TIMEOUT_MS,
+    })
     const currentPageUrl = new URL(page.url())
     const needsAuthentication = currentPageUrl.origin !== ONWAY_PORTAL_ORIGIN
       || currentPageUrl.pathname.toLocaleLowerCase("en-US").startsWith("/home/login")
       || await page.locator("#smalAuth0ActionLogin").isVisible()
 
     if (needsAuthentication) {
-      await openAuthentication(page)
+      await openAuthentication(page, timeouts.authTimeoutMs ?? NAVIGATION_TIMEOUT_MS)
       await page.locator('input[name="username"]').fill(credentials.username)
       await page.locator('input[name="password"]').fill(credentials.password)
       await page.locator('button[type="submit"]').click()
@@ -559,17 +582,23 @@ async function scrapeWithSession(credentials: OnwayCredentials): Promise<OnwayPo
   }
 }
 
-/** Hay una vista asistida abierta: el portal no se navega desde otra corrida. */
+/**
+ * Hay una verificación en curso: una vista abierta o una apertura que todavía
+ * no terminó de crear el desafío. El portal no se navega desde otra corrida.
+ */
 export function isOnwayInteractiveAuthPending(): boolean {
-  return state.challenge?.status === "awaiting"
+  return state.challengeStarting || state.challenge?.status === "awaiting"
 }
 
-async function scrapePortal(credentials: OnwayCredentials): Promise<OnwayPortalSnapshot> {
+async function scrapePortal(
+  credentials: OnwayCredentials,
+  timeouts: OnwayScrapeTimeouts = {},
+): Promise<OnwayPortalSnapshot> {
   // Una verificación abierta es dueña de la página: navegarla desde el cron o
   // el refresco en vivo borraría el desafío que la persona está resolviendo.
   if (isOnwayInteractiveAuthPending()) throw new OnwayClientError("ONWAY_INTERACTIVE_AUTH_REQUIRED")
   if (state.inFlight) return state.inFlight
-  const current = scrapeWithSession(credentials).finally(() => {
+  const current = scrapeWithSession(credentials, timeouts).finally(() => {
     if (state.inFlight === current) state.inFlight = null
   })
   state.inFlight = current
@@ -775,6 +804,20 @@ async function requireAwaitingChallenge(id: string, userId: string): Promise<Onw
   return challenge
 }
 
+/**
+ * La lectura que ya estaba en vuelo termina antes de abrir la vista; no se
+ * cancela a la mitad porque comparte el navegador y dejaría la página cerrada
+ * bajo los pies de la persona. Pasado el tope, la apertura se rinde con BUSY.
+ */
+async function waitForInFlightOnwayRead(maxMs: number): Promise<boolean> {
+  const pending = state.inFlight
+  if (!pending) return true
+  return Promise.race([
+    pending.then(() => true, () => true),
+    delay(maxMs).then(() => false),
+  ])
+}
+
 async function waitForChallengeOrPortal(page: Page, timeoutMs: number): Promise<"authenticated" | "challenge"> {
   // El badge invisible de reCAPTCHA existe desde que carga Auth0. Se concede un
   // instante a la redirección para no abrir la vista en un login que ya pasó.
@@ -801,7 +844,6 @@ async function startOnwayInteractiveAuthenticationUnlocked(
   actorUserId: string,
 ): Promise<OnwayInteractiveAuthStart> {
   const credentials = validateOnwayCredentials(input)
-  if (state.inFlight) throw new OnwayChallengeError("ONWAY_CHALLENGE_BUSY")
 
   const existing = state.challenge
   if (existing) {
@@ -813,6 +855,11 @@ async function startOnwayInteractiveAuthenticationUnlocked(
     else state.challenge = null
     if (existing.cleanupTimer) { clearTimeout(existing.cleanupTimer); existing.cleanupTimer = null }
   }
+
+  // El refresco en vivo suele durar segundos: se le da esa ventana antes de
+  // responderle a la persona que hay otra actualización en curso. Desde que
+  // `challengeStarting` está activo, ninguna lectura nueva entra al portal.
+  if (!await waitForInFlightOnwayRead(8_000)) throw new OnwayChallengeError("ONWAY_CHALLENGE_BUSY")
 
   const { page } = await getBrowserSession(accountKey(credentials))
   try {
@@ -987,7 +1034,10 @@ interface OnwayTelemetryOptions {
 
 async function collectTelemetry(input: OnwayCredentials, options: OnwayTelemetryOptions, deadlineAt: number): Promise<OnwayTelemetryBundle> {
   const credentials = validateOnwayCredentials(input)
-  const portal = await scrapePortal(credentials)
+  const portal = await scrapePortal(
+    credentials,
+    options.includeDetails === false ? LIVE_SCRAPE_TIMEOUTS : undefined,
+  )
   if (options.includeDetails === false) {
     return { snapshot: portal.snapshot, details: [], alerts: [], historyByDeviceId: new Map(), tripsByDeviceId: new Map(), warnings: [] }
   }

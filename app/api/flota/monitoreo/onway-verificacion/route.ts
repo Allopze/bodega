@@ -20,7 +20,7 @@ export const maxDuration = 120
 const NO_STORE = { "cache-control": "no-store" }
 
 const CHALLENGE_MESSAGE: Partial<Record<OnwayChallengeErrorCode, { status: number; message: string }>> = {
-  ONWAY_CHALLENGE_BUSY: { status: 409, message: "Hay una actualización de OnWay en curso. Espera unos segundos e inténtalo de nuevo." },
+  ONWAY_CHALLENGE_BUSY: { status: 409, message: "Hay una sincronización de OnWay en curso. Espera a que termine y vuelve a intentarlo." },
   ONWAY_CHALLENGE_ACTIVE: { status: 409, message: "Otra persona está resolviendo la verificación de OnWay. Pídele que termine o espera unos minutos." },
   ONWAY_CHALLENGE_NOT_FOUND: { status: 404, message: "La verificación ya no está disponible. Vuelve a abrirla." },
   ONWAY_CHALLENGE_FORBIDDEN: { status: 403, message: "No tienes acceso a esta verificación." },
