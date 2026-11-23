@@ -28,5 +28,8 @@ export const BUILD_ID: string = BUILD_SHA || BUILD_TIME || "dev"
 export function buildLabel(builtAt: string | null, version: string): string {
   if (!builtAt) return "Desconocida"
   const when = formatDateTime(builtAt)
-  return version && version !== builtAt ? `${when} · ${version}` : when
+  // Sin sha, la versión ES la hora del build; la base la devuelve en otro formato
+  // («2026-11-23 01:04:56.101+00»), así que se compara el instante y no el texto.
+  const sameInstant = Date.parse(version) === Date.parse(builtAt)
+  return version && version !== builtAt && !sameInstant ? `${when} · ${version}` : when
 }

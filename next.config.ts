@@ -16,10 +16,12 @@ const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
 ];
 
-// Identificador del build (ver `lib/build-info.ts`). La hora se fija una sola vez
-// y queda en el entorno, así los procesos hijos del build (workers) ven la misma
-// y el bundle del cliente y el del servidor llevan el mismo valor. El sha lo pasa
-// `scripts/deploy-prod.sh` como build-arg; en un build a mano o en dev va vacío.
+// Identificador del build (ver `lib/build-info.ts`). El Dockerfile fija la hora
+// una sola vez en el `RUN … npm run build`, así todos los procesos que evalúan esta
+// configuración durante el build ven la misma. Fuera de Docker se fija aquí y la
+// heredan los procesos hijos; en `next dev` cambia en cada reinicio del servidor,
+// y una página cargada antes del reinicio queda, con razón, «atrasada». El sha lo
+// pasa `scripts/deploy-prod.sh` como build-arg; en un build a mano o en dev va vacío.
 process.env.BODEGA_BUILD_TIME ||= new Date().toISOString();
 
 const nextConfig: NextConfig = {

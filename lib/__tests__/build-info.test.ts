@@ -41,6 +41,8 @@ describe("identificador del build", () => {
     expect(label).toContain("3f9c2a1b7d0e")
     // La versión que es la misma hora del build no se repite.
     expect(buildLabel("2026-11-22T17:05:00.000Z", "2026-11-22T17:05:00.000Z")).not.toContain("·")
+    // La base devuelve la misma hora en otro formato: sigue siendo la misma versión.
+    expect(buildLabel("2026-11-22 17:05:00+00", "2026-11-22T17:05:00.000Z")).not.toContain("·")
     expect(buildLabel(null, "x")).toBe("Desconocida")
   })
 })

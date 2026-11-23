@@ -57,6 +57,7 @@ RUN --mount=type=cache,id=chome-next,target=/app/.next/cache,sharing=locked \
     NODE_OPTIONS=--max-old-space-size=8192 \
     BODEGA_BUILD_SKIP_TYPECHECK="$BODEGA_BUILD_SKIP_TYPECHECK" \
     BODEGA_BUILD_SHA="$BODEGA_BUILD_SHA" \
+    BODEGA_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     NEXT_PUBLIC_SENTRY_DSN="$NEXT_PUBLIC_SENTRY_DSN" \
     NEXT_PUBLIC_MAP_STYLE_URL="$NEXT_PUBLIC_MAP_STYLE_URL" \
     DATABASE_URL=postgres://build:build@localhost:5432/build npm run build
