@@ -409,6 +409,22 @@ export function OtObservationsSection({ detail }: { detail: WorkOrderDetail }) {
   )
 }
 
+/**
+ * La OT sigue al equipo (decisión 2026-11-22): tras un traslado, la faena actual del equipo da la recepción
+ * y la conformidad, y las horas quedan imputadas a la faena de la OT. Una línea, sin tile.
+ */
+export function OtTransferredNotice({ detail }: { detail: Pick<WorkOrderDetail, "worksiteId" | "worksiteName" | "equipmentWorksiteId" | "equipmentWorksiteName"> }) {
+  if (detail.equipmentWorksiteId === detail.worksiteId) return null
+  return (
+    <Callout tone="info" className="mb-4">
+      <p>
+        El equipo está ahora en {detail.equipmentWorksiteName}; la recepción y la conformidad las da esa faena.
+        Las horas quedan imputadas a {detail.worksiteName}.
+      </p>
+    </Callout>
+  )
+}
+
 /** Una OT anulada sigue visible y marcada. */
 export function OtVoidedNotice({ detail }: { detail: WorkOrderDetail }) {
   if (!detail.voided) return null

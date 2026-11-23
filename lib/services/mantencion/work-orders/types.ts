@@ -41,8 +41,15 @@ export interface WorkOrderListRow {
   equipmentCode: string
   equipmentPlate: string
   equipmentType: string
+  /** Faena de IMPUTACIÓN de la OT: no cambia con un traslado (horas, Panel y métricas la usan). */
   worksiteId: string
   worksiteName: string
+  /**
+   * Faena ACTUAL del equipo (`fuel_vehicles.worksite_id`). Tras un traslado difiere de `worksiteId`: la OT
+   * sigue al equipo, y la recepción y la conformidad las da esta faena.
+   */
+  equipmentWorksiteId: string
+  equipmentWorksiteName: string
   repair: boolean
   maintenance: boolean
   requestDate: string

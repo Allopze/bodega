@@ -1,6 +1,6 @@
 import { and, eq, inArray, ne } from "drizzle-orm"
 import { db } from "@/db"
-import { mantWorkOrders, permissions, rolePermissions, roles, userPermissions, userRoles } from "@/db/schema"
+import { fuelVehicles, mantWorkOrders, permissions, rolePermissions, roles, userPermissions, userRoles } from "@/db/schema"
 import type { NotificationType } from "@/db/schema/audit"
 import { OT_PERMISSIONS } from "@/lib/mantencion/work-order-states"
 import { notifyAfterCommit, notifyManyUser } from "@/lib/services/notification-create"
@@ -109,8 +109,25 @@ async function holdersForPermission(permission: string, worksiteId: string, acto
   return responsible.size > 0 ? candidates.filter((id) => responsible.has(id)) : candidates
 }
 
+/**
+ * Faena ACTUAL del equipo de la OT (`fuel_vehicles.worksite_id`): tras un traslado, la recepción y la
+ * conformidad las da esa faena y no la de imputación (`plan.worksiteId`). Se resuelve al enviar, como
+ * los destinatarios; si la OT o el equipo ya no se encuentran, vale la de imputación.
+ */
+async function currentWorksiteOfOrder(plan: Pick<NotificationPlan, "workOrderId" | "worksiteId">): Promise<string> {
+  const [row] = await db
+    .select({ worksiteId: fuelVehicles.worksiteId })
+    .from(mantWorkOrders)
+    .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantWorkOrders.vehicleId))
+    .where(eq(mantWorkOrders.id, plan.workOrderId))
+    .limit(1)
+  return row?.worksiteId ?? plan.worksiteId
+}
+
 async function recipients(plan: NotificationPlan): Promise<string[]> {
   const forPermission = (permission: string) => holdersForPermission(permission, plan.worksiteId, plan.actorUserId)
+  // `finished → receive` y `received → conform`: quienes tienen el permiso en la faena donde está el equipo hoy.
+  const forPermissionAtEquipment = async (permission: string) => holdersForPermission(permission, await currentWorksiteOfOrder(plan), plan.actorUserId)
   const ids: string[] = []
   switch (plan.event) {
     case "created":
@@ -126,10 +143,10 @@ async function recipients(plan: NotificationPlan): Promise<string[]> {
       ids.push(plan.requestedByUserId)
       break
     case "finished":
-      ids.push(plan.requestedByUserId, ...await forPermission(OT_PERMISSIONS.receive))
+      ids.push(plan.requestedByUserId, ...await forPermissionAtEquipment(OT_PERMISSIONS.receive))
       break
     case "received":
-      ids.push(...await forPermission(OT_PERMISSIONS.conform))
+      ids.push(...await forPermissionAtEquipment(OT_PERMISSIONS.conform))
       break
     case "rejected":
     case "reopened":

@@ -34,6 +34,15 @@ function WaitingPartsNote() {
   return <span className="text-xs font-medium text-[var(--color-signal-ink)]">Esperando repuesto</span>
 }
 
+/**
+ * Marca de la OT cuyo equipo se trasladó: la OT sigue al equipo, así que la faena de la fila (imputación)
+ * ya no es donde está. En texto, sin color de alarma: no es un problema, es un dato.
+ */
+function EquipmentElsewhereNote({ row }: { row: Pick<WorkOrderListRow, "worksiteId" | "equipmentWorksiteId" | "equipmentWorksiteName"> }) {
+  if (row.equipmentWorksiteId === row.worksiteId) return null
+  return <span className="block text-xs text-[var(--color-text-muted)]">Equipo ahora en {row.equipmentWorksiteName}</span>
+}
+
 function StatusCell({ row }: { row: WorkOrderListRow }) {
   return (
     <div className="flex flex-col items-start gap-1">
@@ -63,7 +72,7 @@ export function OtTable({ rows }: { rows: WorkOrderListRow[] }) {
               // La lista es el contenido de la página: sus tarjetas cuelgan del h1 (paso 6).
               headingLevel={2}
               title={<span className="font-mono text-sm font-semibold">{row.folio}</span>}
-              description={<>{equipmentText(row)} · {row.worksiteName}</>}
+              description={<>{equipmentText(row)} · {row.worksiteName}<EquipmentElsewhereNote row={row} /></>}
               status={<MetaBadge meta={OT_STATE_META[row.status]} size="sm" />}
               actions={(
                 <Button asChild variant="secondary" size="sm" className="w-full">
@@ -121,7 +130,7 @@ export function OtTable({ rows }: { rows: WorkOrderListRow[] }) {
                   </Link>
                 </TableCell>
                 <TableCell><VehicleIdentity code={row.equipmentCode} plate={row.equipmentPlate} type={row.equipmentType} /></TableCell>
-                <TableCell>{row.worksiteName}</TableCell>
+                <TableCell>{row.worksiteName}<EquipmentElsewhereNote row={row} /></TableCell>
                 <TableCell className="whitespace-nowrap">{workOrderTypeText(row)}</TableCell>
                 <TableCell><StatusCell row={row} /></TableCell>
                 <TableCell>{row.assignedToName ?? <span className={QUIET}>Sin asignar</span>}</TableCell>

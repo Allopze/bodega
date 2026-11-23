@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, lte, or, sql, type SQL } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
@@ -15,7 +15,8 @@ import { canSeeRecord, recordVisibility, type MantViewer } from "../access"
 import { listMantCatalogs } from "../catalogs"
 import { unitFromMeter } from "../fleet"
 import {
-  allowedTransitions, canEditExecution, canEditRequest, canReclassifyWorkOrder, canRegisterWorkOrderRecord, canSeeWorkOrder, workOrderVisibility, workOrderVisibilitySql,
+  allowedTransitions, canEditExecution, canEditRequest, canReclassifyWorkOrder, canRegisterWorkOrderRecord, canSeeWorkOrder,
+  vehicleNowInWorksitesSql, workOrderVisibility, workOrderVisibilitySql,
 } from "./access"
 import { linkedRecordState } from "./core"
 import { loadWorkOrderLinkedWork } from "./linked-work"
@@ -73,12 +74,22 @@ const chileDay = (column: typeof mantWorkOrders.closedAt) => sql`(${column} AT T
 /** OT abierta: todo lo que no está cerrado ni anulado. */
 const isOpenSql = () => inArray(mantWorkOrders.status, [...OT_OPEN_STATUSES])
 
-/** Filtros comunes a la lista y a los conteos (todo menos la pestaña). */
-function baseWhere(viewer: MantViewer, filters: Omit<WorkOrderListFilters, "tab" | "page" | "pageSize">): SQL {
+/**
+ * Filtros comunes a la lista y a los conteos (todo menos la pestaña).
+ *
+ * El filtro `faena` de la LISTA incluye también las OT cuyo equipo está hoy en esa faena (la OT sigue al
+ * equipo tras un traslado). Los conteos del Panel (`equipmentToo: false`) siguen midiendo la faena de
+ * imputación: las métricas por faena no cambian con un traslado.
+ */
+function baseWhere(viewer: MantViewer, filters: Omit<WorkOrderListFilters, "tab" | "page" | "pageSize">, equipmentToo = true): SQL {
   const q = filters.q?.trim()
   return and(
     workOrderVisibilitySql(workOrderVisibility(viewer)),
-    filters.worksiteId ? eq(mantWorkOrders.worksiteId, filters.worksiteId) : undefined,
+    filters.worksiteId
+      ? equipmentToo
+        ? or(eq(mantWorkOrders.worksiteId, filters.worksiteId), vehicleNowInWorksitesSql([filters.worksiteId]))
+        : eq(mantWorkOrders.worksiteId, filters.worksiteId)
+      : undefined,
     filters.vehicleId ? eq(mantWorkOrders.vehicleId, filters.vehicleId) : undefined,
     filters.assignedToUserId ? eq(mantWorkOrders.assignedToUserId, filters.assignedToUserId) : undefined,
     filters.from ? gte(mantWorkOrders.requestDate, filters.from) : undefined,
@@ -123,7 +134,7 @@ export function specialtiesOf(value: readonly string[] | null | undefined): Spec
 
 type ListSource = {
   id: string; folio: string; status: string; vehicleId: string; equipmentSnapshot: typeof mantWorkOrders.$inferSelect["equipmentSnapshot"]
-  worksiteId: string; worksiteName: string; repair: boolean; maintenance: boolean; requestDate: string; requesterName: string
+  worksiteId: string; worksiteName: string; equipmentWorksiteId: string; equipmentWorksiteName: string; repair: boolean; maintenance: boolean; requestDate: string; requesterName: string
   assignedToUserId: string | null; assignedToName: string | null; workshopEntryAt: string | null; estimatedDeliveryDate: string | null
   workshopExitAt: string | null; rejectionCount: number; waitingParts: boolean; createdAt: string
 }
@@ -139,6 +150,8 @@ function toListRow(row: ListSource, today: string): WorkOrderListRow {
     equipmentType: row.equipmentSnapshot.type,
     worksiteId: row.worksiteId,
     worksiteName: row.worksiteName,
+    equipmentWorksiteId: row.equipmentWorksiteId,
+    equipmentWorksiteName: row.equipmentWorksiteName,
     repair: row.repair,
     maintenance: row.maintenance,
     requestDate: row.requestDate,
@@ -158,6 +171,8 @@ function toListRow(row: ListSource, today: string): WorkOrderListRow {
 
 const assignee = alias(users, "assignee")
 const executionWorksite = alias(worksites, "execution_worksite")
+/** Faena actual del equipo (`fuel_vehicles.worksite_id`), para la marca «Equipo ahora en X» y la regla de la OT que sigue al equipo. */
+const equipmentWorksite = alias(worksites, "equipment_worksite")
 
 const listColumns = {
   id: mantWorkOrders.id,
@@ -167,6 +182,8 @@ const listColumns = {
   equipmentSnapshot: mantWorkOrders.equipmentSnapshot,
   worksiteId: mantWorkOrders.worksiteId,
   worksiteName: worksites.name,
+  equipmentWorksiteId: fuelVehicles.worksiteId,
+  equipmentWorksiteName: equipmentWorksite.name,
   repair: mantWorkOrders.repair,
   maintenance: mantWorkOrders.maintenance,
   requestDate: mantWorkOrders.requestDate,
@@ -196,6 +213,8 @@ export async function listWorkOrders(viewer: MantViewer, filters: WorkOrderListF
   const pageRows = (pageNumber: number) => db.select(listColumns)
     .from(mantWorkOrders)
     .innerJoin(worksites, eq(worksites.id, mantWorkOrders.worksiteId))
+    .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantWorkOrders.vehicleId))
+    .innerJoin(equipmentWorksite, eq(equipmentWorksite.id, fuelVehicles.worksiteId))
     .leftJoin(assignee, eq(assignee.id, mantWorkOrders.assignedToUserId))
     .where(and(base, tabWhere(filters.tab)))
     .orderBy(desc(mantWorkOrders.createdAt), asc(mantWorkOrders.id))
@@ -231,7 +250,7 @@ export async function listWorkOrders(viewer: MantViewer, filters: WorkOrderListF
 export async function countUnassignedWorkOrders(viewer: MantViewer, worksiteId?: string): Promise<number> {
   const [row] = await db.select({ count: sql<number>`count(*)::int` })
     .from(mantWorkOrders)
-    .where(and(baseWhere(viewer, { worksiteId }), tabWhere("solicitada")))
+    .where(and(baseWhere(viewer, { worksiteId }, false), tabWhere("solicitada")))
   return row?.count ?? 0
 }
 
@@ -326,16 +345,26 @@ export async function loadWorkOrderEntryCatalogs(): Promise<{ workshops: Array<{
 /** `null` si no existe o está fuera del alcance (la página responde notFound). */
 export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promise<WorkOrderDetail | null> {
   const [head] = await db
-    .select({ ot: mantWorkOrders, worksiteName: worksites.name, executionWorksiteName: executionWorksite.name })
+    .select({
+      ot: mantWorkOrders, worksiteName: worksites.name, executionWorksiteName: executionWorksite.name,
+      equipmentWorksiteId: fuelVehicles.worksiteId, equipmentWorksiteName: equipmentWorksite.name,
+    })
     .from(mantWorkOrders)
     .innerJoin(worksites, eq(worksites.id, mantWorkOrders.worksiteId))
+    .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantWorkOrders.vehicleId))
+    .innerJoin(equipmentWorksite, eq(equipmentWorksite.id, fuelVehicles.worksiteId))
     .leftJoin(executionWorksite, eq(executionWorksite.id, mantWorkOrders.executionWorksiteId))
     .where(eq(mantWorkOrders.id, id))
     .limit(1)
   if (!head) return null
   const ot = head.ot
   const status = ot.status as OtStatus
-  const facts = { status, worksiteId: ot.worksiteId, requestedByUserId: ot.requestedByUserId, assignedToUserId: ot.assignedToUserId }
+  // La OT sigue al equipo: la faena actual del equipo (`vehicleWorksiteId`) decide la visibilidad junto con la de imputación,
+  // y es la que da la recepción y la conformidad.
+  const facts = {
+    status, worksiteId: ot.worksiteId, requestedByUserId: ot.requestedByUserId, assignedToUserId: ot.assignedToUserId,
+    vehicleWorksiteId: head.equipmentWorksiteId,
+  }
   if (!canSeeWorkOrder(workOrderVisibility(viewer), facts)) return null
 
   const [itemRows, eventRows, recordRows, findingRows, recordState, partsRequests, linkedWork] = await Promise.all([
@@ -367,7 +396,7 @@ export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promi
 
   const today = todayInChile()
   const list = toListRow({
-    ...ot, worksiteName: head.worksiteName, assignedToName: nameOf(ot.assignedToUserId), waitingParts: isWaitingParts(status, partsRequests),
+    ...ot, worksiteName: head.worksiteName, equipmentWorksiteId: head.equipmentWorksiteId, equipmentWorksiteName: head.equipmentWorksiteName, assignedToName: nameOf(ot.assignedToUserId), waitingParts: isWaitingParts(status, partsRequests),
   }, today)
   // Un registro anulado quedó sin efecto: lo que declaró usar no cuenta.
   const partsUsed: WorkOrderPartUsed[] = linkedWork
@@ -447,7 +476,7 @@ export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promi
       workDate: record.workDate,
       signedAt: iso(record.signedAt),
       status: record.status as "vigente" | "anulado",
-      canOpen: canSeeRecord(visibility, record),
+      canOpen: canSeeRecord(visibility, { ...record, vehicleWorksiteId: head.equipmentWorksiteId }),
     })),
     inspectionFinding: finding ? { id: finding.id, runId: finding.runId, capaActionId: finding.capaActionId } : null,
     partsRequests,

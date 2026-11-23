@@ -6,6 +6,7 @@ import { nanoid } from "@/lib/id"
 import type { WorkOrderOpRequest } from "@/lib/mantencion/contracts"
 import type { OtEventType, OtStatus } from "@/lib/mantencion/work-order-states"
 import { lockAndLoadVehicle, type VehicleContext } from "../records-create-context"
+import type { WorkOrderAccessFacts } from "./access"
 import { dispatchWorkOrderNotifications, type NotificationPlan, type OtNotifyEvent } from "./notifications"
 import type { WorkOrderActor, WorkOrderResult } from "./types"
 
@@ -78,8 +79,16 @@ export interface LockedContext {
   ot: OtRow
   /** `null` si el equipo ya no está en el módulo (la OT sigue existiendo). */
   vehicle: VehicleContext | null
+  /**
+   * Faena ACTUAL del equipo (`fuel_vehicles.worksite_id`), leída con el equipo bloqueado. La OT
+   * sigue al equipo: la recepción y la conformidad se juzgan con esta faena, no con la de imputación.
+   */
+  vehicleWorksiteId: string | null
   actor: WorkOrderActor
 }
+
+/** Lo que las reglas de acceso (`access.ts`) leen de la OT bloqueada: la fila más la faena actual del equipo. */
+export const accessFactsOf = (ctx: Pick<LockedContext, "ot" | "vehicleWorksiteId">): WorkOrderAccessFacts => ({ ...ctx.ot, vehicleWorksiteId: ctx.vehicleWorksiteId })
 
 export interface StepOutcome {
   row: OtRow
@@ -125,6 +134,9 @@ export async function runLocked(
   try {
     outcome = await db.transaction(async (tx) => {
       const vehicle = await lockVehicle(tx, head.vehicleId)
+      const vehicleWorksiteId = vehicle?.worksiteId
+        ?? (await tx.select({ worksiteId: fuelVehicles.worksiteId }).from(fuelVehicles).where(eq(fuelVehicles.id, head.vehicleId)).limit(1))[0]?.worksiteId
+        ?? null
       const [ot] = await tx.select().from(mantWorkOrders).where(eq(mantWorkOrders.id, input.workOrderId)).for("update").limit(1)
       if (!ot) refuse("Esa orden de trabajo no existe.", "not_found")
       if (input.clientOpId) {
@@ -151,7 +163,7 @@ export async function runLocked(
         }
       }
       if (input.expectedVersion !== undefined && ot.version !== input.expectedVersion) refuse(STALE_MESSAGE, "conflict")
-      return step({ tx, ot, vehicle, actor })
+      return step({ tx, ot, vehicle, vehicleWorksiteId, actor })
     })
   } catch (error) {
     const failure = failureOf(error)
