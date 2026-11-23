@@ -28,6 +28,14 @@ describe("buildSourceStatusRow", () => {
     expect(row.actions).toEqual([{ label: "Revisar credenciales", kind: "settings" }])
   })
 
+  it("una verificación interactiva de OnWay se resuelve desde la plataforma, no rotando credenciales", () => {
+    const row = buildSourceStatusRow({ ...base, run: run({ status: "failed", errorCode: "ONWAY_INTERACTIVE_AUTH_REQUIRED" }) }, NOW)!
+    expect(row.badge).toBe("Falló")
+    expect(row.actions).toEqual([{ label: "Resolver verificación", kind: "verify" }])
+    expect(row.messages[0]).toContain("Resolver verificación")
+    expect(row.technicalDetail).toBe("ONWAY_INTERACTIVE_AUTH_REQUIRED")
+  })
+
   it("una fuente atrasada dice hace cuánto, en días pasado el día, y lleva a la configuración", () => {
     const row = buildSourceStatusRow({ ...base, latestAt: "2026-10-31T12:00:00.000Z", stale: true }, NOW)!
     expect(row).toMatchObject({ badge: "Atrasada", tone: "warning" })

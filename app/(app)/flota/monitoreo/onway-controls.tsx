@@ -41,7 +41,12 @@ function secretHelper(
 }
 
 /** `namedActions`: en el encabezado los botones dicen el proveedor (convive con Wialon). */
-export function OnwayControls({ status, namedActions = false }: { status: OnwayAdminStatus; namedActions?: boolean }) {
+export function OnwayControls({ status, namedActions = false, onVerifyOnway }: {
+  status: OnwayAdminStatus
+  namedActions?: boolean
+  /** Abre la vista asistida para resolver un CAPTCHA/OTP del portal. */
+  onVerifyOnway?: () => void
+}) {
   const router = useRouter()
   const sync = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
   const clear = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
@@ -167,6 +172,19 @@ export function OnwayControls({ status, namedActions = false }: { status: OnwayA
           </form>
         </DialogContent>
       </Dialog>
+
+      {onVerifyOnway ? (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={!status.hasCredentials}
+          onClick={onVerifyOnway}
+        >
+          <LockKey size={14} aria-hidden />
+          Resolver verificación
+        </Button>
+      ) : null}
 
       <Button
         type="button"

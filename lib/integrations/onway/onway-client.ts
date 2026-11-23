@@ -1,7 +1,19 @@
 import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
-import type { Browser, BrowserServer, Page, Response } from "playwright"
+import type { Browser, BrowserServer, Page, Response, Route } from "playwright"
+import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
+import {
+  ONWAY_AUTH_ORIGIN,
+  ONWAY_CHALLENGE_TTL_MS,
+  ONWAY_PORTAL_ORIGIN,
+  isAllowedOnwayChallengeNavigation,
+  isOnwayChallengeSolvedUrl,
+  onwayChallengeRemainingMs,
+  parseOnwayChallengeInput,
+  type OnwayChallengeStatus,
+  type OnwayChallengeViewport,
+} from "./onway-interactive-auth-contract"
 import { parseOnwaySnapshot, type OnwaySnapshotResult } from "./onway-contract"
 import {
   parseOnwayAlertRows,
@@ -14,9 +26,7 @@ import {
   type OnwayTripSnapshot,
 } from "./onway-telemetry-contract"
 
-const PORTAL_ORIGIN = "https://onway.enteldigital.cl"
-const AUTH_ORIGIN = "https://lw-fleet-entel-cl.us.auth0.com"
-const TRACKING_URL = `${PORTAL_ORIGIN}/OnlineTracking/Index/es`
+const TRACKING_URL = `${ONWAY_PORTAL_ORIGIN}/OnlineTracking/Index/es`
 const SNAPSHOT_PATH = "/OnlineTracking/GetOnlineDevicesInfoByUserForMap/"
 const DEVICE_DETAIL_PATH = "/OnlineTracking/GetOnlineDeviceInfoByIdFromMap"
 const ALERTS_PATH = "/OnlineTracking/GetDevicesAlertsHistory/"
@@ -72,6 +82,44 @@ export interface OnwayCredentials {
   password: string
 }
 
+export type OnwayChallengeErrorCode =
+  | "ONWAY_CHALLENGE_BUSY"
+  | "ONWAY_CHALLENGE_ACTIVE"
+  | "ONWAY_CHALLENGE_NOT_FOUND"
+  | "ONWAY_CHALLENGE_FORBIDDEN"
+  | "ONWAY_CHALLENGE_EXPIRED"
+  | "ONWAY_CHALLENGE_CLOSED"
+  | "ONWAY_CHALLENGE_SOLVED"
+  | "ONWAY_CHALLENGE_FRAME_UNAVAILABLE"
+  | "ONWAY_CHALLENGE_INPUT_INVALID"
+
+/** Errores propios de la vista asistida; no se mezclan con los del scraper. */
+export class OnwayChallengeError extends Error {
+  constructor(readonly code: OnwayChallengeErrorCode) {
+    super(code)
+    this.name = "OnwayChallengeError"
+  }
+}
+
+export interface OnwayChallengePublic {
+  id: string
+  status: "awaiting"
+  expiresAt: number
+  viewport: OnwayChallengeViewport
+}
+
+export type OnwayInteractiveAuthStart =
+  | { status: "authenticated" }
+  | { status: "awaiting"; challenge: OnwayChallengePublic }
+
+export interface OnwayChallengeStatusView {
+  id: string
+  status: OnwayChallengeStatus
+  expiresAt: number
+  viewport: OnwayChallengeViewport
+  remainingMs: number
+}
+
 export type OnwayClientErrorCode =
   | "ONWAY_CREDENTIALS_REQUIRED"
   | "ONWAY_CREDENTIALS_INVALID"
@@ -104,14 +152,14 @@ export function resolveOnwayLaunchOptions(executablePath: string | undefined): {
 }
 
 export function isAllowedOnwayAuthUrl(input: string): boolean {
-  try { return new URL(input).origin === AUTH_ORIGIN }
+  try { return new URL(input).origin === ONWAY_AUTH_ORIGIN }
   catch { return false }
 }
 
 function isSnapshotResponse(response: Response): boolean {
   try {
     const url = new URL(response.url())
-    return url.origin === PORTAL_ORIGIN
+    return url.origin === ONWAY_PORTAL_ORIGIN
       && url.pathname === SNAPSHOT_PATH
       && response.request().method() === "POST"
   } catch {
@@ -119,9 +167,9 @@ function isSnapshotResponse(response: Response): boolean {
   }
 }
 
-async function openAuthentication(page: Page): Promise<void> {
+async function openAuthentication(page: Page, usernameTimeoutMs: number = NAVIGATION_TIMEOUT_MS): Promise<void> {
   const signIn = page.locator("#smalAuth0ActionLogin")
-  if (new URL(page.url()).origin === PORTAL_ORIGIN) {
+  if (new URL(page.url()).origin === ONWAY_PORTAL_ORIGIN) {
     try {
       await signIn.waitFor({ state: "visible", timeout: NAVIGATION_TIMEOUT_MS })
       await signIn.click()
@@ -135,7 +183,7 @@ async function openAuthentication(page: Page): Promise<void> {
     throw new OnwayClientError("ONWAY_AUTH_REJECTED")
   }
   try {
-    await page.locator('input[name="username"]').waitFor({ state: "visible", timeout: NAVIGATION_TIMEOUT_MS })
+    await page.locator('input[name="username"]').waitFor({ state: "visible", timeout: usernameTimeoutMs })
   } catch {
     throw new OnwayClientError(
       await hasInteractiveChallenge(page) ? "ONWAY_INTERACTIVE_AUTH_REQUIRED" : "ONWAY_PORTAL_TIMEOUT",
@@ -148,7 +196,9 @@ async function hasInteractiveChallenge(page: Page): Promise<boolean> {
   // (cuenta de servicio sin segundo factor vs. IP marcada): el log los separa.
   const [otp, captcha] = await Promise.all([
     page.locator('input[name="otp"], input[autocomplete="one-time-code"]').count(),
-    page.locator('iframe[src*="captcha" i], iframe[title*="captcha" i], [data-captcha]').count(),
+    // Auth0 delega en hCaptcha/reCAPTCHA/Arkose: el iframe no siempre lleva
+    // "captcha" en src ni en title, y el widget nuevo se pinta en un div.
+    page.locator('iframe[src*="captcha" i], iframe[title*="captcha" i], [data-captcha], [id*="captcha" i], [class*="captcha" i]').count(),
   ])
   if (otp === 0 && captcha === 0) return false
   let path = ""
@@ -218,16 +268,46 @@ async function readSnapshotResponse(response: Response): Promise<OnwayPortalSnap
  * `inFlight`, y el del cron quedó trabado sin que la sincronización manual lo
  * viera (2026-11-01 → 11-02). `globalThis` es uno por proceso.
  */
+interface OnwayChallenge {
+  id: string
+  userId: string
+  page: Page
+  viewport: OnwayChallengeViewport
+  createdAt: number
+  expiresAt: number
+  status: OnwayChallengeStatus
+  /** Vence el desafío aunque la persona se olvide de la pestaña abierta. */
+  timer: ReturnType<typeof setTimeout> | null
+  /** Rellena credenciales si Auth0 vuelve a pintar el formulario vacío. */
+  fillTimer: ReturnType<typeof setInterval> | null
+  /** Conserva el estado terminal unos segundos para que la vista lo lea. */
+  cleanupTimer: ReturnType<typeof setTimeout> | null
+  lastFrame: { data: Buffer; at: number } | null
+  frameInFlight: Promise<Buffer> | null
+  navigationGuard: ((route: Route) => Promise<void>) | null
+}
+
 interface OnwayClientState {
   browserSession: OnwayBrowserSession | null
   inFlight: Promise<OnwayPortalSnapshot> | null
+  challenge: OnwayChallenge | null
+  /** Una apertura en curso todavía no dejó `challenge`: no se puede solapar. */
+  challengeStarting: boolean
 }
 
 declare global {
   var __onwayClient: OnwayClientState | undefined
 }
 
-const state: OnwayClientState = globalThis.__onwayClient ??= { browserSession: null, inFlight: null }
+const state: OnwayClientState = globalThis.__onwayClient ??= {
+  browserSession: null,
+  inFlight: null,
+  challenge: null,
+  challengeStarting: false,
+}
+// Un proceso que ya tenía el global de una versión anterior no trae los campos nuevos.
+state.challenge ??= null
+state.challengeStarting ??= false
 
 async function closeBrowserSession(): Promise<void> {
   const current = state.browserSession
@@ -448,7 +528,7 @@ async function scrapeWithSession(credentials: OnwayCredentials): Promise<OnwayPo
   try {
     await page.goto(TRACKING_URL, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS })
     const currentPageUrl = new URL(page.url())
-    const needsAuthentication = currentPageUrl.origin !== PORTAL_ORIGIN
+    const needsAuthentication = currentPageUrl.origin !== ONWAY_PORTAL_ORIGIN
       || currentPageUrl.pathname.toLocaleLowerCase("en-US").startsWith("/home/login")
       || await page.locator("#smalAuth0ActionLogin").isVisible()
 
@@ -479,7 +559,15 @@ async function scrapeWithSession(credentials: OnwayCredentials): Promise<OnwayPo
   }
 }
 
+/** Hay una vista asistida abierta: el portal no se navega desde otra corrida. */
+export function isOnwayInteractiveAuthPending(): boolean {
+  return state.challenge?.status === "awaiting"
+}
+
 async function scrapePortal(credentials: OnwayCredentials): Promise<OnwayPortalSnapshot> {
+  // Una verificación abierta es dueña de la página: navegarla desde el cron o
+  // el refresco en vivo borraría el desafío que la persona está resolviendo.
+  if (isOnwayInteractiveAuthPending()) throw new OnwayClientError("ONWAY_INTERACTIVE_AUTH_REQUIRED")
   if (state.inFlight) return state.inFlight
   const current = scrapeWithSession(credentials).finally(() => {
     if (state.inFlight === current) state.inFlight = null
@@ -498,6 +586,367 @@ function abandonBrowserSession(): void {
   state.inFlight = null
   // Acotado por BROWSER_CLOSE_TIMEOUT_MS; no hace falta que el llamador lo espere.
   void closeBrowserSession()
+}
+
+/* ── Verificación interactiva (CAPTCHA/OTP) ───────────────────────────────── */
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, ms) })
+}
+
+function challengeViewport(page: Page): OnwayChallengeViewport {
+  const size = page.viewportSize()
+  return size ? { width: size.width, height: size.height } : { width: 1280, height: 720 }
+}
+
+/**
+ * Auth0 puede repintar el formulario vacío después del CAPTCHA. La plataforma
+ * deja usuario y contraseña sólo si están vacíos: la persona nunca necesita
+ * conocer la credencial de la cuenta de servicio y el desafío sigue siendo suyo.
+ */
+async function fillEmptyCredentials(page: Page, credentials: OnwayCredentials): Promise<void> {
+  try {
+    if (isOnwayChallengeSolvedUrl(page.url())) return
+    const username = page.locator('input[name="username"]')
+    if (await username.isVisible() && (await username.inputValue({ timeout: 2_000 })) === "") {
+      await username.fill(credentials.username, { timeout: 5_000 })
+    }
+    const password = page.locator('input[name="password"]')
+    if (await password.isVisible() && (await password.inputValue({ timeout: 2_000 })) === "") {
+      await password.fill(credentials.password, { timeout: 5_000 })
+    }
+  } catch {
+    // La página puede estar navegando entre Auth0 y el portal: el próximo
+    // intento del rellenador la alcanza.
+  }
+}
+
+/**
+ * El navegador del servidor no es un proxy libre: mientras el desafío está
+ * abierto, el marco principal sólo puede ir al portal o al tenant de Auth0.
+ * El iframe del CAPTCHA y sus CDN cargan sin restricción o el widget no pinta.
+ */
+function challengeNavigationGuard(page: Page): (route: Route) => Promise<void> {
+  return async (route) => {
+    try {
+      const request = route.request()
+      if (!request.isNavigationRequest() || request.frame() !== page.mainFrame()) {
+        await route.continue()
+        return
+      }
+      if (isAllowedOnwayChallengeNavigation(request.url())) {
+        await route.continue()
+        return
+      }
+      let host = "unknown"
+      try { host = new URL(request.url()).host } catch { /* se deja unknown */ }
+      logger.warn("[flota/onway] verificación: navegación fuera del portal bloqueada", { host })
+      await route.abort()
+    } catch {
+      // La página pudo cerrarse entre la petición y el manejador: abortar es
+      // inocuo y evita una promesa rechazada dentro de Playwright.
+      await route.abort().catch(() => undefined)
+    }
+  }
+}
+
+async function openChallenge(page: Page, userId: string, credentials: OnwayCredentials): Promise<OnwayChallenge> {
+  const createdAt = Date.now()
+  const challenge: OnwayChallenge = {
+    id: `onwayauth-${nanoid(24)}`,
+    userId,
+    page,
+    viewport: challengeViewport(page),
+    createdAt,
+    expiresAt: createdAt + ONWAY_CHALLENGE_TTL_MS,
+    status: "awaiting",
+    timer: null,
+    fillTimer: null,
+    cleanupTimer: null,
+    lastFrame: null,
+    frameInFlight: null,
+    navigationGuard: null,
+  }
+  const guard = challengeNavigationGuard(page)
+  challenge.navigationGuard = guard
+  // Un guard de una vista anterior que no alcanzó a soltarse haría fallar cada
+  // `continue()` de esta. La página no tiene otros handlers propios.
+  await page.unroute("**/*").catch(() => undefined)
+  await page.route("**/*", guard).catch(() => { /* la página puede estar cerrándose */ })
+  challenge.fillTimer = setInterval(() => { void fillEmptyCredentials(page, credentials) }, 2_000)
+  challenge.timer = setTimeout(() => { void expireChallenge(challenge) }, ONWAY_CHALLENGE_TTL_MS)
+  state.challenge = challenge
+  logger.warn("[flota/onway] verificación interactiva abierta", { challengeId: challenge.id })
+  return challenge
+}
+
+function publicChallenge(challenge: OnwayChallenge): OnwayChallengePublic {
+  return { id: challenge.id, status: "awaiting", expiresAt: challenge.expiresAt, viewport: challenge.viewport }
+}
+
+function challengeStatusView(challenge: OnwayChallenge): OnwayChallengeStatusView {
+  return {
+    id: challenge.id,
+    status: challenge.status,
+    expiresAt: challenge.expiresAt,
+    viewport: challenge.viewport,
+    remainingMs: onwayChallengeRemainingMs(challenge.expiresAt, challenge.status),
+  }
+}
+
+async function unrouteChallenge(challenge: OnwayChallenge): Promise<void> {
+  const guard = challenge.navigationGuard
+  challenge.navigationGuard = null
+  if (!guard) return
+  try { await challenge.page.unroute("**/*", guard) } catch { /* página cerrada */ }
+}
+
+function clearChallengeTimers(challenge: OnwayChallenge): void {
+  if (challenge.timer) { clearTimeout(challenge.timer); challenge.timer = null }
+  if (challenge.fillTimer) { clearInterval(challenge.fillTimer); challenge.fillTimer = null }
+}
+
+/** La vista necesita leer el desenlace aunque el objeto deje de estar activo. */
+function scheduleChallengeCleanup(challenge: OnwayChallenge): void {
+  if (challenge.cleanupTimer) clearTimeout(challenge.cleanupTimer)
+  challenge.cleanupTimer = setTimeout(() => {
+    if (state.challenge === challenge) state.challenge = null
+  }, 60_000)
+}
+
+async function markChallengeSolved(challenge: OnwayChallenge): Promise<void> {
+  if (challenge.status !== "awaiting") return
+  challenge.status = "solved"
+  clearChallengeTimers(challenge)
+  await unrouteChallenge(challenge)
+  scheduleChallengeCleanup(challenge)
+  // La sesión autenticada se conserva: la sincronización que sigue reutiliza
+  // este mismo navegador en vez de volver a pedir credenciales.
+  logger.info("[flota/onway] verificación interactiva completada", { challengeId: challenge.id })
+}
+
+async function endChallenge(
+  challenge: OnwayChallenge,
+  status: Exclude<OnwayChallengeStatus, "awaiting" | "solved">,
+): Promise<void> {
+  if (challenge.status !== "awaiting") return
+  challenge.status = status
+  clearChallengeTimers(challenge)
+  await unrouteChallenge(challenge)
+  // Cancelado o vencido no deja sesión válida: el próximo intento necesita una
+  // transacción Auth0 limpia. No se espera el cierre (acotado a 10 s) para que
+  // la vista responda de inmediato.
+  void closeBrowserSession()
+  scheduleChallengeCleanup(challenge)
+}
+
+async function expireChallenge(challenge: OnwayChallenge): Promise<void> {
+  if (state.challenge !== challenge || challenge.status !== "awaiting" || Date.now() < challenge.expiresAt) return
+  logger.warn("[flota/onway] verificación interactiva expirada", { challengeId: challenge.id })
+  await endChallenge(challenge, "expired")
+}
+
+function findChallenge(id: string, userId: string): OnwayChallenge {
+  const challenge = state.challenge
+  if (!challenge || challenge.id !== id) throw new OnwayChallengeError("ONWAY_CHALLENGE_NOT_FOUND")
+  if (challenge.userId !== userId) throw new OnwayChallengeError("ONWAY_CHALLENGE_FORBIDDEN")
+  return challenge
+}
+
+async function refreshChallengeStatus(challenge: OnwayChallenge): Promise<void> {
+  if (challenge.status !== "awaiting") return
+  if (challenge.page.isClosed()) {
+    await endChallenge(challenge, "failed")
+    return
+  }
+  if (isOnwayChallengeSolvedUrl(challenge.page.url())) {
+    await markChallengeSolved(challenge)
+    return
+  }
+  if (Date.now() >= challenge.expiresAt) await endChallenge(challenge, "expired")
+}
+
+async function requireAwaitingChallenge(id: string, userId: string): Promise<OnwayChallenge> {
+  const challenge = findChallenge(id, userId)
+  await refreshChallengeStatus(challenge)
+  if (challenge.status === "solved") throw new OnwayChallengeError("ONWAY_CHALLENGE_SOLVED")
+  if (challenge.status === "expired") throw new OnwayChallengeError("ONWAY_CHALLENGE_EXPIRED")
+  if (challenge.status !== "awaiting") throw new OnwayChallengeError("ONWAY_CHALLENGE_CLOSED")
+  return challenge
+}
+
+async function waitForChallengeOrPortal(page: Page, timeoutMs: number): Promise<"authenticated" | "challenge"> {
+  // El badge invisible de reCAPTCHA existe desde que carga Auth0. Se concede un
+  // instante a la redirección para no abrir la vista en un login que ya pasó.
+  await delay(750)
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (isOnwayChallengeSolvedUrl(page.url())) return "authenticated"
+    if (await hasInteractiveChallenge(page)) return "challenge"
+    // Sin formulario y sin mapa, Auth0 está mostrando otra pantalla (OTP,
+    // captcha o error). Se entrega a la persona en vez de seguir esperando.
+    if (!await page.locator('input[name="username"]').isVisible().catch(() => false)) return "challenge"
+    await delay(500)
+  }
+  return isOnwayChallengeSolvedUrl(page.url()) ? "authenticated" : "challenge"
+}
+
+/**
+ * Abre el portal y entrega el navegador a una persona cuando Auth0 pide
+ * CAPTCHA u OTP. Devuelve `authenticated` si la sesión ya era válida o si el
+ * inicio de sesión normal pasó sin desafío.
+ */
+async function startOnwayInteractiveAuthenticationUnlocked(
+  input: OnwayCredentials,
+  actorUserId: string,
+): Promise<OnwayInteractiveAuthStart> {
+  const credentials = validateOnwayCredentials(input)
+  if (state.inFlight) throw new OnwayChallengeError("ONWAY_CHALLENGE_BUSY")
+
+  const existing = state.challenge
+  if (existing) {
+    if (existing.status === "awaiting" && existing.expiresAt > Date.now()) {
+      if (existing.userId === actorUserId) return { status: "awaiting", challenge: publicChallenge(existing) }
+      throw new OnwayChallengeError("ONWAY_CHALLENGE_ACTIVE")
+    }
+    if (existing.status === "awaiting") await endChallenge(existing, "expired")
+    else state.challenge = null
+    if (existing.cleanupTimer) { clearTimeout(existing.cleanupTimer); existing.cleanupTimer = null }
+  }
+
+  const { page } = await getBrowserSession(accountKey(credentials))
+  try {
+    await page.goto(TRACKING_URL, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS })
+    const needsAuthentication = !isOnwayChallengeSolvedUrl(page.url())
+      || await page.locator("#smalAuth0ActionLogin").isVisible()
+    if (!needsAuthentication) return { status: "authenticated" }
+
+    let formReady = true
+    try {
+      // En el flujo asistido no se esperan los 45 s del scraper: si el
+      // formulario no aparece, la persona puede ver el desafío antes.
+      await openAuthentication(page, 15_000)
+    } catch (error) {
+      // El CAPTCHA puede aparecer antes que el formulario, y hay widgets que
+      // nuestra detección no reconoce. Si ya estamos en el tenant exacto, se
+      // entrega la vista: el rellenador deja las credenciales en cuanto Auth0
+      // pinte el formulario.
+      const delayed = error instanceof OnwayClientError
+        && (error.code === "ONWAY_INTERACTIVE_AUTH_REQUIRED" || error.code === "ONWAY_PORTAL_TIMEOUT")
+      if (delayed && isAllowedOnwayAuthUrl(page.url())) formReady = false
+      else throw error
+    }
+
+    if (formReady) {
+      await fillEmptyCredentials(page, credentials)
+      await page.locator('button[type="submit"]').click({ timeout: 10_000 }).catch(() => undefined)
+    }
+    const outcome = formReady ? await waitForChallengeOrPortal(page, 20_000) : "challenge"
+    if (outcome === "authenticated") return { status: "authenticated" }
+
+    // Si el formulario sigue visible y no hay ningún desafío, Auth0 rechazó la
+    // credencial: abrir una vista viva sólo mostraría el mismo error sin salida.
+    const formStillVisible = await page.locator('input[name="username"]').isVisible().catch(() => false)
+    if (formStillVisible && !await hasInteractiveChallenge(page)) {
+      throw new OnwayClientError("ONWAY_AUTH_REJECTED")
+    }
+    // La redirección puede haber ganado entre la última comprobación y ahora.
+    if (isOnwayChallengeSolvedUrl(page.url())) return { status: "authenticated" }
+    return { status: "awaiting", challenge: publicChallenge(await openChallenge(page, actorUserId, credentials)) }
+  } catch (error) {
+    if (!state.challenge) await closeBrowserSession()
+    if (error instanceof OnwayClientError || error instanceof OnwayChallengeError) throw error
+    throw new OnwayClientError("ONWAY_SYNC_FAILED")
+  }
+}
+
+/**
+ * Dos aperturas simultáneas compartirían la misma página: la segunda navegaría
+ * mientras la primera espera el desafío y una de las dos vistas quedaría
+ * huérfana. La puerta es de proceso, igual que el navegador que protege.
+ */
+export async function startOnwayInteractiveAuthentication(
+  input: OnwayCredentials,
+  actorUserId: string,
+): Promise<OnwayInteractiveAuthStart> {
+  if (state.challengeStarting) throw new OnwayChallengeError("ONWAY_CHALLENGE_ACTIVE")
+  state.challengeStarting = true
+  try {
+    return await startOnwayInteractiveAuthenticationUnlocked(input, actorUserId)
+  } finally {
+    state.challengeStarting = false
+  }
+}
+
+export async function getOnwayChallengeStatus(id: string, userId: string): Promise<OnwayChallengeStatusView> {
+  const challenge = findChallenge(id, userId)
+  await refreshChallengeStatus(challenge)
+  return challengeStatusView(challenge)
+}
+
+/**
+ * Captura JPEG del viewport real. Se sirve como blob al navegador y nunca se
+ * persiste ni se registra: es la pantalla del portal, no evidencia.
+ */
+export async function readOnwayChallengeFrame(id: string, userId: string): Promise<Buffer> {
+  const challenge = await requireAwaitingChallenge(id, userId)
+  if (challenge.lastFrame && Date.now() - challenge.lastFrame.at < 250) return challenge.lastFrame.data
+  if (!challenge.frameInFlight) {
+    challenge.frameInFlight = challenge.page.screenshot({ type: "jpeg", quality: 65, timeout: 10_000 })
+      .then(async (data) => {
+        // El mapa puede haber ganado la carrera contra la captura: ese frame ya
+        // no pertenece al desafío y no se muestra.
+        if (isOnwayChallengeSolvedUrl(challenge.page.url())) {
+          await markChallengeSolved(challenge)
+          throw new OnwayChallengeError("ONWAY_CHALLENGE_SOLVED")
+        }
+        challenge.lastFrame = { data, at: Date.now() }
+        return data
+      })
+      .catch((error: unknown) => {
+        if (error instanceof OnwayChallengeError) throw error
+        if (challenge.lastFrame) return challenge.lastFrame.data
+        throw new OnwayChallengeError("ONWAY_CHALLENGE_FRAME_UNAVAILABLE")
+      })
+      .finally(() => { challenge.frameInFlight = null })
+  }
+  return challenge.frameInFlight
+}
+
+export async function sendOnwayChallengeInput(id: string, userId: string, payload: unknown): Promise<void> {
+  const challenge = await requireAwaitingChallenge(id, userId)
+  const input = parseOnwayChallengeInput(payload, challenge.viewport)
+  if (!input) throw new OnwayChallengeError("ONWAY_CHALLENGE_INPUT_INVALID")
+  try {
+    switch (input.kind) {
+      case "move":
+        await challenge.page.mouse.move(input.x, input.y)
+        break
+      case "down":
+        await challenge.page.mouse.move(input.x, input.y)
+        await challenge.page.mouse.down()
+        break
+      case "up":
+        await challenge.page.mouse.move(input.x, input.y)
+        await challenge.page.mouse.up()
+        break
+      case "text":
+        await challenge.page.keyboard.type(input.text)
+        break
+      case "key":
+        await challenge.page.keyboard.press(input.key)
+        break
+    }
+  } catch {
+    throw new OnwayChallengeError("ONWAY_CHALLENGE_CLOSED")
+  }
+  await refreshChallengeStatus(challenge)
+}
+
+export async function cancelOnwayChallenge(id: string, userId: string): Promise<OnwayChallengeStatusView> {
+  const challenge = findChallenge(id, userId)
+  if (challenge.status === "awaiting") await endChallenge(challenge, "cancelled")
+  return challengeStatusView(challenge)
 }
 
 /** One in-memory Auth0 session per process; concurrent callers share the same scrape. */

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -8,6 +9,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { EmptyState } from "@/components/ui/empty-state"
 import type { ExcludedGpsDevice, FleetGpsPosition, GpsLinkableDevice, LinkableVehicle } from "@/lib/services/fleet-gps"
 import type { WialonAdminStatus } from "@/lib/integrations/wialon/wialon-settings"
+import { useOperation } from "@/lib/hooks/use-operation"
 import { formatDateTime } from "@/lib/utils"
 import { alertStatusMeta, linkedEntityLabel } from "./fleet-gps-labels"
 import { FleetGpsLiveStatus } from "./fleet-gps-live-status"
@@ -17,6 +19,8 @@ import { FleetGpsSourcesPanel } from "./fleet-gps-sources-panel"
 import { FleetGpsSideList } from "./fleet-gps-side-list"
 import { FleetGpsTable } from "./fleet-gps-table"
 import { OnwayControls } from "./onway-controls"
+import { OnwayVerificationDialog } from "./onway-verification-dialog"
+import { runOnwaySyncAction } from "./actions"
 import { WialonControls } from "./wialon-controls"
 import { GpsDeviceLinks } from "./gps-device-links"
 import { useGpsLiveRefresh } from "./use-gps-live-refresh"
@@ -50,6 +54,9 @@ export function FleetGpsWorkspace({ positions, alerts, adminStatus, wialonStatus
   const hasAlerts = alerts.length > 0
   const hasBlocked = blockedAlertsCount > 0
   const canConfigure = Boolean(adminStatus || wialonStatus)
+  const router = useRouter()
+  const sync = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
+  const [verifyOpen, setVerifyOpen] = React.useState(false)
   const [tab, setTab] = React.useState<TabKey>(hasBlocked && !positions.length ? "alerts" : "live")
   // Fuera de las pestañas: el refresco sigue aunque se mire «Alertas», y se
   // detiene sólo al salir de Monitoreo GPS (este componente no vive en otra página).
@@ -58,7 +65,11 @@ export function FleetGpsWorkspace({ positions, alerts, adminStatus, wialonStatus
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   return (
     <div className="space-y-3">
-      <FleetGpsSourcesPanel rows={sourceRows} onOpenSettings={canConfigure ? () => setTab("settings") : undefined} />
+      <FleetGpsSourcesPanel
+        rows={sourceRows}
+        onOpenSettings={canConfigure ? () => setTab("settings") : undefined}
+        onVerifyOnway={adminStatus ? () => setVerifyOpen(true) : undefined}
+      />
       <Tabs value={tab} onValueChange={(next) => setTab(next as TabKey)}>
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <TabsList aria-label="Secciones de monitoreo GPS">
@@ -137,9 +148,11 @@ export function FleetGpsWorkspace({ positions, alerts, adminStatus, wialonStatus
               <Card>
                 <CardHeader>
                   <CardTitle as="h2" className="text-base">Configuración de OnWay</CardTitle>
-                  <CardDescription>Credenciales cifradas, sincronización, catálogo de alertas y mapeos de conductores se administran aquí. Las reglas quedan desactivadas hasta asignar un propietario con permiso para la faena.</CardDescription>
+                  <CardDescription>Credenciales cifradas, sincronización, catálogo de alertas y mapeos de conductores se administran aquí. Si Auth0 pide una verificación, «Resolver verificación» abre el navegador del servidor para completarla sin salir de la plataforma. Las reglas quedan desactivadas hasta asignar un propietario con permiso para la faena.</CardDescription>
                 </CardHeader>
-                <div className="px-6 pb-6"><OnwayControls status={adminStatus} /></div>
+                <div className="px-6 pb-6">
+                  <OnwayControls status={adminStatus} onVerifyOnway={() => setVerifyOpen(true)} />
+                </div>
               </Card>
             ) : null}
             {wialonStatus ? (
@@ -163,6 +176,14 @@ export function FleetGpsWorkspace({ positions, alerts, adminStatus, wialonStatus
           </TabsContent>
         ) : null}
       </Tabs>
+
+      {adminStatus ? (
+        <OnwayVerificationDialog
+          open={verifyOpen}
+          onOpenChange={setVerifyOpen}
+          onVerified={() => sync.run(runOnwaySyncAction)}
+        />
+      ) : null}
     </div>
   )
 }
