@@ -6,15 +6,10 @@ import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { FileDropzone } from "@/components/ui/file-dropzone"
 import { useOperation } from "@/lib/hooks/use-operation"
-import { FORMS_CUTOVER_DATE } from "@/lib/mantencion/forms-cutover"
+import { cutoverNotice } from "@/lib/mantencion/forms-cutover"
 import type { HistoricalPreview, HistoricalSummary } from "@/lib/services/mantencion/historical-import"
-import { formatDate } from "@/lib/utils"
 import { commitHistoricalAction, previewHistoricalAction } from "@/app/(app)/mantencion/registros/historicos/actions"
 import { SectionCard } from "../shared/section-card"
-
-/** Mismo aviso del servidor (`cutoverNotice`), repetido aquí porque ese módulo trae la base de datos y no puede entrar al cliente. */
-const cutoverNotice = (count: number) =>
-  `${count === 1 ? "1 respuesta es" : `${count} respuestas son`} del ${formatDate(FORMS_CUTOVER_DATE)} o posteriores: quedan en el historial, pero no cuentan en el Panel; desde esa fecha cuentan los registros firmados en la plataforma.`
 
 type Stage = { name: "choose" } | { name: "preview"; file: File; preview: HistoricalPreview } | { name: "done"; summary: HistoricalSummary }
 

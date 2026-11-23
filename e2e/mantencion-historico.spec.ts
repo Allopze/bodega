@@ -47,6 +47,9 @@ test("importa y consulta historia, conserva pendientes y permite conciliarlos", 
     await page.screenshot({ path: testInfo.outputPath("vista-previa-desktop.png"), fullPage: true })
     await page.getByRole("button", { name: "Importar historial anterior", exact: true }).click()
     await expect(page.getByText(/2 trabajos guardados/)).toBeVisible()
+    // El resultado llega antes que el refresco que la acción trae en el mismo stream: navegar en ese instante
+    // corta el resto (ERR_ABORTED con la carga ya hecha). Igual que más abajo, se espera a que la red quede quieta.
+    await page.waitForLoadState("networkidle")
     await page.getByRole("link", { name: "Ver historial anterior", exact: true }).click()
     // La búsqueda se aplica sola al escribir (sin botón «Buscar»): espera a que viaje en la URL.
     await page.getByRole("searchbox", { name: "Buscar en el historial" }).fill(marker)

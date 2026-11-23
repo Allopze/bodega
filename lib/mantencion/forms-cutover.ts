@@ -1,4 +1,4 @@
-import { addDaysToPlainDate } from "@/lib/utils"
+import { addDaysToPlainDate, formatDate } from "@/lib/utils"
 
 /**
  * Corte de los formularios de Google (decisión del usuario, 2026-11-22): la plataforma reemplaza a los
@@ -29,4 +29,12 @@ export function countsFromForms(date: string): boolean {
 /** El trabajo de esa fecha (`YYYY-MM-DD`) se cuenta desde los registros de la plataforma. */
 export function countsFromPlatform(date: string): boolean {
   return date >= FORMS_CUTOVER_DATE
+}
+
+/**
+ * Aviso de las respuestas de Forms del corte en adelante: se guardan en el historial, pero no cuentan.
+ * Lo comparten la vista previa del importador (cliente) y el mensaje de la carga (servidor).
+ */
+export function cutoverNotice(count: number): string {
+  return `${count === 1 ? "1 respuesta es" : `${count} respuestas son`} del ${formatDate(FORMS_CUTOVER_DATE)} o posteriores: quedan en el historial, pero no cuentan en el Panel; desde esa fecha cuentan los registros firmados en la plataforma.`
 }

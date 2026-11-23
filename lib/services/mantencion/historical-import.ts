@@ -3,13 +3,12 @@ import { db, type DB, type Tx } from "@/db"
 import { fuelVehicles, mantHistoricalRecords, worksiteAliases, worksites } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
-import { FORMS_CUTOVER_DATE, countsFromPlatform } from "@/lib/mantencion/forms-cutover"
+import { countsFromPlatform, cutoverNotice } from "@/lib/mantencion/forms-cutover"
 import { visibleHistoricalFields } from "@/lib/mantencion/historical-privacy"
 import type { MantViewer } from "./access"
 import type { MantActor } from "./equipment-history"
 import { parseHistoricalWorkbook, resolveHistoricalEquipment, resolveHistoricalWorksite, type HistoricalRow } from "./historical-workbook"
 import type { MantActionResult } from "./result"
-import { formatDate } from "@/lib/utils"
 
 const PAGE_SIZE = 25
 const BATCH_SIZE = 200
@@ -150,10 +149,8 @@ export async function previewHistoricalImport(buffer: ArrayBuffer, fileName = ""
   return result.ok ? { ok: true, data: result.data.preview } : result
 }
 
-/** Frase del aviso del corte de los formularios; la usan la vista previa, el resumen y el mensaje de la carga. */
-export function cutoverNotice(count: number): string {
-  return `${count === 1 ? "1 respuesta es" : `${count} respuestas son`} del ${formatDate(FORMS_CUTOVER_DATE)} o posteriores: quedan en el historial, pero no cuentan en el Panel; desde esa fecha cuentan los registros firmados en la plataforma.`
-}
+/** Frase del aviso del corte de los formularios (vista previa, resumen y mensaje de la carga). */
+export { cutoverNotice }
 
 /** Vuelve a validar bajo un lock común; lo ya guardado no se sobrescribe y los dudosos entran con aviso. */
 export async function commitHistoricalImport(actor: MantActor, buffer: ArrayBuffer, fileName: string): Promise<MantActionResult<HistoricalSummary>> {
