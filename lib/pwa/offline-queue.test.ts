@@ -11,6 +11,8 @@ import {
   getAllPpas,
   recoverStalePpas,
   purgeExpiredPpas,
+  requeueNetworkFailedPpas,
+  countUnsentPpas,
   MAX_PPA_AGE_DAYS,
 } from "./offline-queue"
 
@@ -193,7 +195,8 @@ describe("offline-queue", () => {
 /**
  * Una evaluación de terreno que no salió es la prueba de que se hizo: el borrado
  * por edad tocaba también los `pending` y `failed` de más de 30 días, y un
- * teléfono un mes sin señal perdía todo sin dejar rastro.
+ * teléfono un mes sin señal perdía todo sin dejar rastro. Caducan sólo lo enviado
+ * y lo que el servidor rechazó (no hay nada que reintentar y lleva nombre y RUT).
  */
 describe("purgeExpiredPpas", () => {
   /** `enqueuePpa` estampa «ahora»; para envejecer un ítem se reescribe su `createdAt` directo en IndexedDB. */
@@ -216,16 +219,36 @@ describe("purgeExpiredPpas", () => {
     })
   }
 
-  it("un PPA sin enviar de 40 días no se borra", async () => {
+  it("un PPA sin enviar de 40 días no se borra: pendiente, en vuelo ni rendido por red", async () => {
     const pending = await enqueuePpa({ a: 1 })
-    const failed = await enqueuePpa({ a: 2 })
-    await updatePpaStatus(failed.id, { status: "failed", failureKind: "rejected", lastError: "motivo" })
-    await backdate(pending.id, 40)
-    await backdate(failed.id, 40)
+    const syncing = await enqueuePpa({ a: 2 })
+    const network = await enqueuePpa({ a: 3 })
+    const legacyNetwork = await enqueuePpa({ a: 4 })
+    await updatePpaStatus(syncing.id, { status: "syncing" })
+    await updatePpaStatus(network.id, { status: "failed", failureKind: "network", lastError: "Sin conexión" })
+    // Guardado antes de `failureKind`: «Sin conexión» lo delata como falta de red.
+    await updatePpaStatus(legacyNetwork.id, { status: "failed", lastError: "Sin conexión" })
+    for (const item of [pending, syncing, network, legacyNetwork]) await backdate(item.id, 40)
 
     expect(await purgeExpiredPpas()).toBe(0)
-    expect(await getPpaById(pending.id)).toBeDefined()
-    expect(await getPpaById(failed.id)).toBeDefined()
+    for (const item of [pending, syncing, network, legacyNetwork]) expect(await getPpaById(item.id)).toBeDefined()
+  })
+
+  it("un rechazado por el servidor de 40 días sí se borra (lleva nombre y RUT); uno reciente no", async () => {
+    const old = await enqueuePpa({ a: 1 })
+    const oldLegacy = await enqueuePpa({ a: 2 })
+    const recent = await enqueuePpa({ a: 3 })
+    await updatePpaStatus(old.id, { status: "failed", failureKind: "rejected", lastError: "motivo" })
+    // Sin `failureKind` y con un error que no es de red: se infiere rechazo.
+    await updatePpaStatus(oldLegacy.id, { status: "failed", lastError: "RUT inválido" })
+    await updatePpaStatus(recent.id, { status: "failed", failureKind: "rejected", lastError: "motivo" })
+    await backdate(old.id, MAX_PPA_AGE_DAYS + 10)
+    await backdate(oldLegacy.id, MAX_PPA_AGE_DAYS + 10)
+
+    expect(await purgeExpiredPpas()).toBe(2)
+    expect(await getPpaById(old.id)).toBeUndefined()
+    expect(await getPpaById(oldLegacy.id)).toBeUndefined()
+    expect(await getPpaById(recent.id)).toBeDefined()
   })
 
   it("uno enviado de 40 días sí", async () => {
@@ -242,6 +265,45 @@ describe("purgeExpiredPpas", () => {
     await updatePpaStatus(synced.id, { status: "synced" })
     expect(await purgeExpiredPpas()).toBe(0)
     expect(await getPpaById(synced.id)).toBeDefined()
+  })
+})
+
+describe("requeueNetworkFailedPpas / countUnsentPpas", () => {
+  it("devuelve a la fila lo rendido por red, con intentos en cero y conservando el error", async () => {
+    const network = await enqueuePpa({ a: 1 })
+    const legacy = await enqueuePpa({ a: 2 })
+    const rejected = await enqueuePpa({ a: 3 })
+    const synced = await enqueuePpa({ a: 4 })
+    await updatePpaStatus(network.id, { status: "failed", failureKind: "network", attempts: 3, lastError: "Sin conexión" })
+    await updatePpaStatus(legacy.id, { status: "failed", attempts: 3, lastError: "Sin conexión" })
+    await updatePpaStatus(rejected.id, { status: "failed", failureKind: "rejected", attempts: 3, lastError: "Faena no permitida" })
+    await updatePpaStatus(synced.id, { status: "synced" })
+
+    expect(await requeueNetworkFailedPpas()).toBe(2)
+    for (const id of [network.id, legacy.id]) {
+      const saved = await getPpaById(id)
+      expect(saved).toMatchObject({ status: "pending", attempts: 0, lastError: "Sin conexión" })
+      expect(saved?.failureKind).toBeUndefined()
+    }
+    expect(await getPpaById(rejected.id)).toMatchObject({ status: "failed", failureKind: "rejected", attempts: 3 })
+    expect(await getPpaById(synced.id)).toMatchObject({ status: "synced" })
+    expect(await countPendingPpas()).toBe(2)
+    // Idempotente.
+    expect(await requeueNetworkFailedPpas()).toBe(0)
+  })
+
+  it("countUnsentPpas = pendientes + en vuelo + rendidos por red; no cuenta rechazados ni enviados", async () => {
+    const [a, b, c, d, e] = [
+      await enqueuePpa({ a: 1 }), await enqueuePpa({ a: 2 }), await enqueuePpa({ a: 3 }),
+      await enqueuePpa({ a: 4 }), await enqueuePpa({ a: 5 }),
+    ]
+    void a
+    await updatePpaStatus(b.id, { status: "syncing" })
+    await updatePpaStatus(c.id, { status: "failed", failureKind: "network" })
+    await updatePpaStatus(d.id, { status: "failed", failureKind: "rejected" })
+    await updatePpaStatus(e.id, { status: "synced" })
+    expect(await countUnsentPpas()).toBe(3)
+    expect(await countPendingPpas()).toBe(1)
   })
 })
 

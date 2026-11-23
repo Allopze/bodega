@@ -175,7 +175,11 @@ export async function enqueuePpa(
  * peor que negarse a aceptar uno nuevo.
  */
 export const MAX_QUEUED_PPAS = 100
-/** Un PPA ya sincronizado se conserva este tiempo y luego se borra. Los que no salieron NO caducan. */
+/**
+ * Un PPA ya sincronizado, o rechazado por el servidor, se conserva este tiempo y
+ * luego se borra. Los que no salieron (pending, syncing y los que se rindieron por
+ * falta de red) NO caducan.
+ */
 export const MAX_PPA_AGE_DAYS = 30
 
 async function assertPpaQueueHasRoom(incomingId: string) {
@@ -190,17 +194,23 @@ async function assertPpaQueueHasRoom(incomingId: string) {
 }
 
 /**
- * Borra por EDAD sólo lo ya sincronizado. Antes también borraba los `pending` y
- * los `failed` de más de 30 días: una evaluación de terreno que nunca salió (el
- * teléfono pasó un mes sin señal, o el servidor la rechazó y nadie la miró)
- * desaparecía sin dejar rastro, y con ella la prueba de que se hizo. Lo que no se
- * envió se conserva hasta que salga o una persona lo descarte; el techo de
- * `MAX_QUEUED_PPAS` evita que la cola crezca sin límite.
+ * Borra por EDAD sólo lo que ya no tiene nada que enviar: lo sincronizado y lo que
+ * el servidor rechazó (`failed` con `failureKind` "rejected"; reintentar no lo
+ * arregla y su payload lleva nombre y RUT del trabajador, así que no puede quedar
+ * para siempre en el teléfono). Antes también borraba los `pending` y los `failed`
+ * por red de más de 30 días: una evaluación de terreno que nunca salió (el teléfono
+ * pasó un mes sin señal) desaparecía sin dejar rastro, y con ella la prueba de que
+ * se hizo. Lo que sigue por enviar (pending, syncing, failed por red) se conserva
+ * hasta que salga o una persona lo descarte; el techo de `MAX_QUEUED_PPAS` evita que
+ * la cola crezca sin límite.
  */
 export async function purgeExpiredPpas(): Promise<number> {
   const cutoff = Date.now() - MAX_PPA_AGE_DAYS * 86_400_000
   const all = await getAllPpas()
-  const expired = all.filter((item) => item.status === "synced" && Date.parse(item.createdAt) < cutoff)
+  const expired = all.filter((item) =>
+    (item.status === "synced" || (item.status === "failed" && failureKindOf(item) === "rejected"))
+    && Date.parse(item.createdAt) < cutoff,
+  )
   for (const item of expired) await deletePpa(item.id)
   return expired.length
 }
@@ -250,6 +260,32 @@ export async function getPendingPpas(): Promise<QueuedPpa[]> {
       req.onerror = () => reject(req.error)
     })
   })
+}
+
+/**
+ * Devuelve a la fila (`pending`, sin intentos ni `failureKind`, conservando
+ * `lastError`) lo que se rindió por falta de red: el envío está bien y sólo faltaba
+ * señal. Un rechazo del servidor NO vuelve: necesita una persona. Es persistente
+ * a propósito, para que la cola y los contadores lo vean como pendiente; se llama
+ * sólo al abrir la app y al volver la señal (ver `usePpaOfflineQueue`), nunca en
+ * cada pasada, o un servidor caído con el teléfono «en línea» haría un bucle
+ * cerrado de reintentos. Devuelve cuántos reencoló.
+ */
+export async function requeueNetworkFailedPpas(): Promise<number> {
+  return withTx("readwrite", (store) =>
+    new Promise<number>((resolve, reject) => {
+      const req = store.index("status").getAll("failed")
+      req.onerror = () => reject(req.error)
+      req.onsuccess = () => {
+        const network = (req.result as QueuedPpa[]).filter((item) => failureKindOf(item) === "network")
+        const updatedAt = new Date().toISOString()
+        for (const item of network) {
+          store.put({ ...item, status: "pending", attempts: 0, failureKind: undefined, updatedAt })
+        }
+        resolve(network.length)
+      }
+    }),
+  )
 }
 
 /** Get a single submission by ID. */
@@ -341,6 +377,26 @@ export async function countPendingPpas(): Promise<number> {
       req.onerror = () => reject(req.error)
     })
   })
+}
+
+/**
+ * Lo que el trabajador todavía no logra enviar: `pending` + `syncing` + `failed`
+ * por falta de red. Es lo que muestran el aviso y «Enviar ahora»; `getPendingPpas`
+ * (sólo `pending`) no alcanza, porque un ítem que se rindió por red desaparecía de
+ * la pantalla sin haber llegado nunca. Los rechazos del servidor no cuentan: no
+ * se arreglan reintentando.
+ */
+export async function getUnsentPpas(): Promise<QueuedPpa[]> {
+  const all = await getAllPpas()
+  return all.filter((item) =>
+    item.status === "pending"
+    || item.status === "syncing"
+    || (item.status === "failed" && failureKindOf(item) === "network"),
+  )
+}
+
+export async function countUnsentPpas(): Promise<number> {
+  return (await getUnsentPpas()).length
 }
 
 /** Get all submissions (for UI display). */

@@ -9,6 +9,9 @@
  *   próximo lo repone.
  * - **No viaja nada del trabajador** (nombre, RUT, empresa) ni el token de TAE en
  *   claro: del token sale sólo su SHA-256, que es lo que guarda el servidor.
+ * - **Texto limpio.** Toda cadena que viaja pasa por `cleanText` (sin caracteres de
+ *   control) y toda fecha anterior a 2020 se descarta: el servidor rechaza el aviso
+ *   entero por cualquiera de las dos. `sentAt` es el reloj del teléfono al enviar.
  * - **Freno.** Al abrir la app se manda siempre (`force`). Después, sólo si
  *   pasaron 5 minutos desde el último o si cambió `pending` o `failed`: el motor
  *   del mecánico intenta cada 60 s y no puede producir un aviso por intento.
@@ -50,6 +53,10 @@ const MAX_ERROR_CHARS = 200
 const MAX_VERSION_CHARS = 40
 const MAX_PLATFORM_CHARS = 60
 const MAX_WORKSITE_CHARS = 64
+/** Mismo piso que el contrato: una fecha anterior es un reloj sin configurar, no un dato. */
+const MIN_PLAUSIBLE_MS = Date.UTC(2020, 0, 1)
+// Caracteres de control (C0 y DEL): el servidor los rechaza en cualquier cadena.
+const CONTROL_CHARS = /[\u0000-\u001F\u007F]/g
 
 interface LastSend { at: number; pending: number; failed: number }
 const lastSends = new Map<FieldAppId, LastSend>()
@@ -99,11 +106,21 @@ function clampCount(value: number): number {
   return Math.min(MAX_COUNT, Math.max(0, Math.trunc(value)))
 }
 
-/** Fecha ISO normalizada, o null si no es una fecha. */
+/** Fecha ISO normalizada, o null si no es una fecha o es anterior a 2020 (el servidor la rechaza). */
 function isoOrNull(value: string | null | undefined): string | null {
   if (!value) return null
   const ms = Date.parse(value)
-  return Number.isFinite(ms) ? new Date(ms).toISOString() : null
+  return Number.isFinite(ms) && ms >= MIN_PLAUSIBLE_MS ? new Date(ms).toISOString() : null
+}
+
+/**
+ * Cadena apta para el aviso: los caracteres de control (saltos de línea de un
+ * mensaje de error, `\u0000` de un UA raro) pasan a espacio, se recorta al tope y
+ * se limpian los bordes. Vacía si no queda nada.
+ */
+function cleanText(value: string | null | undefined, max: number): string {
+  if (!value) return ""
+  return value.replace(CONTROL_CHARS, " ").slice(0, max).trim()
 }
 
 async function sha256Hex(text: string): Promise<string | null> {
@@ -130,6 +147,10 @@ export async function sendHeartbeat(
   try {
     if (typeof navigator !== "undefined" && navigator.onLine === false) return false
     const now = opts.now ?? Date.now()
+    // Reloj del teléfono sin configurar (antes de 2020): el servidor rechazaría el
+    // aviso entero por su `sentAt`, y un reloj así no sirve para medir nada.
+    if (!Number.isFinite(now) || now < MIN_PLAUSIBLE_MS) return false
+    const sentAtIso = new Date(now).toISOString()
     const pending = clampCount(snapshot.pending)
     const failed = clampCount(snapshot.failed)
 
@@ -143,20 +164,22 @@ export async function sendHeartbeat(
     // Se anota ANTES de esperar el hash: dos llamadas seguidas no pueden salir ambas.
     lastSends.set(app, { at: now, pending, failed })
 
-    const body: PwaHeartbeat = {
+    const body: PwaHeartbeat & { sentAt: string } = {
       app,
       deviceId,
-      version: (BUILD_ID || "dev").slice(0, MAX_VERSION_CHARS),
+      version: cleanText(BUILD_ID, MAX_VERSION_CHARS) || "dev",
       builtAt: isoOrNull(BUILD_TIME),
       installed: isStandalone(),
-      platform: deviceLabel().slice(0, MAX_PLATFORM_CHARS),
+      platform: cleanText(deviceLabel(), MAX_PLATFORM_CHARS) || "Desconocido",
+      sentAt: sentAtIso,
       pending,
       failed,
       oldestPendingAt: isoOrNull(snapshot.oldestPendingAt),
       lastAttemptAt: isoOrNull(snapshot.lastAttemptAt),
-      lastError: snapshot.lastError ? snapshot.lastError.slice(0, MAX_ERROR_CHARS) : null,
+      lastError: cleanText(snapshot.lastError, MAX_ERROR_CHARS) || null,
     }
-    if (ctx.worksiteId) body.worksiteId = ctx.worksiteId.slice(0, MAX_WORKSITE_CHARS)
+    const worksiteId = cleanText(ctx.worksiteId, MAX_WORKSITE_CHARS)
+    if (worksiteId) body.worksiteId = worksiteId
     if (ctx.linkToken) {
       const linkHash = await sha256Hex(ctx.linkToken)
       if (linkHash) body.linkHash = linkHash

@@ -15,10 +15,13 @@ import {
   updatePpaStatus,
   deletePpa,
   countPendingPpas,
+  countUnsentPpas,
+  getUnsentPpas,
   getAllPpas,
   recoverStalePpas,
+  requeueNetworkFailedPpas,
+  purgeExpiredPpas,
   summarizePpaQueue,
-  failureKindOf,
   type QueuedPpa,
 } from "./offline-queue"
 import { getOrCreateDeviceId, sendHeartbeat } from "./heartbeat"
@@ -123,16 +126,16 @@ async function syncOne(item: QueuedPpa): Promise<{ ok: boolean; token?: string; 
   }
 }
 
-/** Sincroniza lo pendiente y avisa a TI una sola vez al terminar. Exportada para sus pruebas. */
+/**
+ * Sincroniza lo pendiente y avisa a TI una sola vez al terminar. Devuelve lo que
+ * sigue sin enviar (ver `getUnsentPpas`). Exportada para sus pruebas.
+ */
 export async function syncAllPending(): Promise<QueuedPpa[]> {
-  // Lo que se rindió por falta de red (`failureKind: "network"`) vuelve a la fila
-  // con sus intentos en cero: el envío está bien y sólo faltaba señal. Antes quedaba
-  // `failed` para siempre y la evaluación no llegaba nunca si nadie apretaba
-  // «Enviar ahora». Un rechazo del servidor no se reintenta: necesita una persona.
-  const retryable = (await getAllPpas())
-    .filter((item) => item.status === "failed" && failureKindOf(item) === "network")
-    .map((item): QueuedPpa => ({ ...item, attempts: 0, failureKind: undefined }))
-  const pending = [...await getPendingPpas(), ...retryable]
+  // Sólo lo `pending`. Lo que se rindió por falta de red lo devuelve a la fila
+  // `requeueNetworkFailedPpas`, que corre al abrir la app y al volver la señal (no
+  // acá: en cada pasada haría un bucle cerrado cuando hay red pero el servidor no
+  // responde). Un rechazo del servidor no se reintenta: necesita una persona.
+  const pending = (await getPendingPpas())
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
   let syncedCount = 0
   let lastToken: string | undefined
@@ -170,49 +173,77 @@ export async function syncAllPending(): Promise<QueuedPpa[]> {
   // Un solo aviso por pasada (no uno por ítem), con el estado ya asentado.
   void reportPpaHeartbeat(false)
 
-  return getPendingPpas()
+  return getUnsentPpas()
 }
 
 export function usePpaOfflineQueue() {
   const online = useOnlineStatus()
   const [pendingCount, setPendingCount] = React.useState(0)
   const [syncing, setSyncing] = React.useState(false)
+  // Sube cuando vuelve la señal: reinicia el temporizador del envío automático.
+  const [reconnects, setReconnects] = React.useState(0)
+  // Termina cuando lo rendido por red ya volvió a la fila; el envío automático lo espera.
+  const requeued = React.useRef<Promise<unknown>>(Promise.resolve())
 
+  // Lo que se cuenta (y se ofrece reintentar) es todo lo que no ha salido: pendientes,
+  // en vuelo y lo que se rindió por falta de red. Contar sólo `pending` escondía el
+  // aviso justo cuando la evaluación llevaba tres intentos sin llegar.
   const refreshCount = React.useCallback(async () => {
-    const count = await countPendingPpas()
+    const count = await countUnsentPpas()
     setPendingCount(count)
   }, [])
 
-  // Refresh count on mount + cleanup old synced/failed items
+  // Al abrir: recuperar lo interrumpido, devolver a la fila lo que se rindió por red,
+  // y contar.
   React.useEffect(() => {
     // Antes de contar: un ítem que quedó en "syncing" porque la app se cerró a
     // mitad de envío no aparece en ningún listado y nunca se reintenta.
-    recoverStalePpas().then(refreshCount).catch(() => { refreshCount() })
-    // Cleanup items synced or failed more than 7 days ago
+    const ready = recoverStalePpas()
+      .then(() => requeueNetworkFailedPpas())
+      .catch(() => 0)
+    requeued.current = ready
+    ready.then(refreshCount).catch(() => {})
+    // Un `synced` de más de 7 días se borra; un `failed` conserva su motivo para que
+    // el usuario pueda verlo y rehacerlo: borrarlo automáticamente era perder en
+    // silencio una evaluación de terreno. Pasados 30 días (`purgeExpiredPpas`) caen
+    // también los sincronizados y los rechazados por el servidor, que ya no tienen
+    // nada que enviar; lo que sigue sin salir (pendiente, en vuelo, sin red) NO caduca.
     getAllPpas().then((items) => {
       const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
       for (const item of items) {
-        // Sólo se borra lo ya sincronizado. Un `failed` conserva su motivo para
-        // que el usuario pueda verlo y rehacerlo: borrarlo automáticamente era
-        // perder en silencio una evaluación de terreno. La expiración por edad
-        // de los no sincronizados vive en `purgeExpiredPpas` (30 días).
-        if (item.status === "synced") {
-          if (new Date(item.createdAt).getTime() < cutoff) {
-            deletePpa(item.id).catch(() => {})
-          }
+        if (item.status === "synced" && new Date(item.createdAt).getTime() < cutoff) {
+          deletePpa(item.id).catch(() => {})
         }
       }
     }).catch(() => {})
+    purgeExpiredPpas().catch(() => {})
+  }, [refreshCount])
+
+  // Al volver la señal: lo que se rindió por red vuelve a la fila y el envío
+  // automático parte de cero. `useOnlineStatus` sólo informa el estado.
+  const retryCountRef = React.useRef(0)
+  React.useEffect(() => {
+    const onOnline = () => {
+      const ready = requeueNetworkFailedPpas().catch(() => 0)
+      requeued.current = ready
+      ready.then(() => {
+        retryCountRef.current = 0
+        setReconnects((n) => n + 1)
+        return refreshCount()
+      }).catch(() => {})
+    }
+    window.addEventListener("online", onOnline)
+    return () => window.removeEventListener("online", onOnline)
   }, [refreshCount])
 
   // P1-2: auto-sync with backoff on failure
-  const retryCountRef = React.useRef(0)
   const MAX_AUTO_RETRIES = 5
 
   React.useEffect(() => {
     if (!online || syncing) return
 
     const trySync = async () => {
+      await requeued.current
       const count = await countPendingPpas()
       if (count === 0) { retryCountRef.current = 0; return }
 
@@ -234,7 +265,7 @@ export function usePpaOfflineQueue() {
     const backoffMs = retryCountRef.current === 0 ? 1000 : Math.min(1000 * 2 ** retryCountRef.current, 16000)
     const timer = setTimeout(trySync, backoffMs)
     return () => clearTimeout(timer)
-  }, [online, syncing])
+  }, [online, syncing, reconnects])
 
   /** Enqueue a PPA submission for offline storage. */
   const enqueue = React.useCallback(
@@ -246,11 +277,12 @@ export function usePpaOfflineQueue() {
     [],
   )
 
-  /** Manually trigger sync of all pending items. */
+  /** Manually trigger sync of all unsent items (incl. the ones that gave up for lack of network). */
   const triggerSync = React.useCallback(async () => {
     if (!online || syncing) return []
     setSyncing(true)
     try {
+      await requeueNetworkFailedPpas()
       const remaining = await syncAllPending()
       setPendingCount(remaining.length)
       return remaining
