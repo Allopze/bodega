@@ -15,7 +15,7 @@ import { INTEGRATION_STATUS_META, RUN_OUTCOME_LABEL, parseEstadoFilter } from ".
 
 export const metadata: Metadata = { title: "Integraciones" }
 
-const CARD = "rounded-2xl border border-slate-200/70 bg-white p-6 shadow-xs"
+const CARD = "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xs"
 
 function formatDuration(ms: number | null): string {
   if (ms === null) return "—"

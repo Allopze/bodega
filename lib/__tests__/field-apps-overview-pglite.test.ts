@@ -50,7 +50,7 @@ const minusMin = (iso: string, minutes: number) => new Date(Date.parse(iso) - mi
 // Las filas de prueba sólo necesitan las columnas que se miden: las FK no se verifican.
 await pg.exec("SET session_replication_role = replica")
 
-for (const [id, name] of [["ws-a", "Faena A"], ["ws-b", "Faena B"], ["ws-c", "Faena C"]]) {
+for (const [id, name] of [["ws-a", "Faena A"], ["ws-b", "Faena B"], ["ws-c", "Faena C"]] as const) {
   await pg.query("INSERT INTO worksites (id, name, code, is_active) VALUES ($1, $2, $3, true)", [id, name, id.toUpperCase()])
 }
 for (const [id, name] of [["u-1", "Mecánico Uno"], ["u-2", "Mecánico Dos"]]) {

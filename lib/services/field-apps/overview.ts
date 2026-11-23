@@ -18,6 +18,7 @@
  * persona se acota por la faena de sus registros.
  */
 import { and, eq, gte, inArray, isNull, ne, sql, type AnyColumn, type SQL } from "drizzle-orm"
+import type { PgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
   fuelTaePublicLinks,
@@ -113,12 +114,12 @@ function deviceScope(app: FieldAppId, scope: Scope): SQL | undefined {
 
 /** Dónde vive cada envío y cómo se mide su demora (spec §5.6). */
 interface SubmissionSource {
-  arrivedAt:  AnyColumn
+  arrivedAt:  PgColumn
   /** Cuándo se llenó o firmó en el teléfono. */
   originAt:   SQL
   /** El envío se hizo sin señal. */
   offline:    SQL
-  worksiteId: AnyColumn
+  worksiteId: PgColumn
   /** Cláusula de la app (TAE sólo cuenta lo que llegó por la PWA pública). */
   base:       SQL | undefined
 }
@@ -482,7 +483,7 @@ export async function getFieldAppUsage(app: FieldAppId, scope: Scope, now: Date 
 
   // Una persona (Mantención) o una faena (PPA, TAE), según la app.
   const byPerson = app === "mantencion"
-  const keyColumn: AnyColumn = byPerson ? mantRecords.registeredBy : source.worksiteId
+  const keyColumn: PgColumn = byPerson ? mantRecords.registeredBy : source.worksiteId
   const aggregates = {
     last: sql<string | null>`max(${source.arrivedAt})`,
     in30: sql<number>`(count(*) filter (where ${source.arrivedAt} >= ${since30}::timestamptz))::int`,
@@ -495,7 +496,7 @@ export async function getFieldAppUsage(app: FieldAppId, scope: Scope, now: Date 
       .innerJoin(users, eq(users.id, mantRecords.registeredBy))
       .where(window)
       .groupBy(mantRecords.registeredBy, users.name)
-    : await db.select({ key: keyColumn, label: worksites.name, ...aggregates })
+    : await db.select({ key: sql<string>`${keyColumn}`, label: worksites.name, ...aggregates })
       .from(sourceTable(app))
       .innerJoin(worksites, eq(worksites.id, source.worksiteId))
       .where(window)
@@ -568,7 +569,7 @@ export async function getFieldAppCaptureQuality(
   const since30 = iso(now, -USAGE_DAYS * DAY_MS)
 
   const identityRows = await db.select({
-    worksiteId: source.worksiteId,
+    worksiteId: sql<string>`${source.worksiteId}`,
     worksiteName: worksites.name,
     total: sql<number>`count(*)::int`,
     manual: sql<number>`(count(*) filter (where ${manualColumn}))::int`,
@@ -584,7 +585,7 @@ export async function getFieldAppCaptureQuality(
     .groupBy(source.worksiteId, worksites.name)
 
   const manualIdentity = identityRows
-    .map((row) => ({ worksiteId: row.worksiteId as string, worksiteName: row.worksiteName, total: row.total, manual: row.manual }))
+    .map((row) => ({ worksiteId: row.worksiteId, worksiteName: row.worksiteName, total: row.total, manual: row.manual }))
     .sort((a, b) => b.manual / b.total - a.manual / a.total || b.total - a.total || a.worksiteName.localeCompare(b.worksiteName, "es"))
 
   if (app === "ppa") return { manualIdentity, ocrWeeks: null }

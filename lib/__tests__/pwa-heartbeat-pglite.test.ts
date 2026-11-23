@@ -52,7 +52,7 @@ await inMemoryDb.insert(schema.mantDeviceCredentials).values([
 let counter = 0
 const newDeviceId = () => `00000000-0000-4000-8000-${String(++counter).padStart(12, "0")}`
 
-function payload(overrides: Record<string, unknown> = {}) {
+function payload(overrides: Record<string, unknown> = {}): Record<string, unknown> & { deviceId: string } {
   return {
     app: "ppa",
     deviceId: newDeviceId(),
@@ -72,9 +72,15 @@ function payload(overrides: Record<string, unknown> = {}) {
 type Payload = ReturnType<typeof payload>
 const asHeartbeat = (value: Payload) => value as unknown as Parameters<typeof recordPwaHeartbeat>[0]
 
-async function deviceRow(app: string, deviceId: string) {
+async function maybeDeviceRow(app: string, deviceId: string) {
   const [row] = await inMemoryDb.select().from(schema.pwaDevices)
     .where(and(eq(schema.pwaDevices.app, app), eq(schema.pwaDevices.deviceId, deviceId)))
+  return row
+}
+
+async function deviceRow(app: string, deviceId: string) {
+  const row = await maybeDeviceRow(app, deviceId)
+  if (!row) throw new Error(`sin fila para ${app}/${deviceId}`)
   return row
 }
 
@@ -104,7 +110,7 @@ describe("servicio del aviso", () => {
     await recordPwaHeartbeat(asHeartbeat({ ...body, pending: 0 }), { bearer: null, now: new Date("2026-11-22T16:00:00.000Z") })
     const after = await inMemoryDb.select().from(schema.pwaDeviceDays).where(eq(schema.pwaDeviceDays.deviceId, body.deviceId))
     expect(after).toHaveLength(1)
-    expect(after[0].reports).toBe(2)
+    expect(after[0]?.reports).toBe(2)
     const second = await deviceRow("ppa", body.deviceId)
     expect(second.pendingCount).toBe(0)
     expect(new Date(second.firstSeenAt).getTime()).toBe(new Date(row.firstSeenAt).getTime())
@@ -189,7 +195,7 @@ describe("servicio del aviso", () => {
     moduleOn.value = false
     const body = payload()
     expect(await recordPwaHeartbeat(asHeartbeat(body), { bearer: null, now: NOW })).toBe("module_off")
-    expect(await deviceRow("ppa", body.deviceId)).toBeUndefined()
+    expect(await maybeDeviceRow("ppa", body.deviceId)).toBeUndefined()
     const days = await inMemoryDb.select().from(schema.pwaDeviceDays).where(eq(schema.pwaDeviceDays.deviceId, body.deviceId))
     expect(days).toHaveLength(0)
   })
@@ -214,14 +220,14 @@ describe("POST /api/pwa/aviso", () => {
     const res = await POST(request(body))
     expect(res.status).toBe(400)
     expect(await res.text()).toBe("")
-    expect(await deviceRow("ppa", body.deviceId)).toBeUndefined()
+    expect(await maybeDeviceRow("ppa", body.deviceId)).toBeUndefined()
   })
 
   it("conteo negativo, enorme, cadena larga y JSON roto: 400 sin escribir", async () => {
     for (const bad of [payload({ pending: -1 }), payload({ failed: 10_001 }), payload({ lastError: "x".repeat(201) })]) {
       const res = await POST(request(bad))
       expect(res.status).toBe(400)
-      expect(await deviceRow("ppa", bad.deviceId)).toBeUndefined()
+      expect(await maybeDeviceRow("ppa", bad.deviceId)).toBeUndefined()
     }
     expect((await POST(request("{no es json"))).status).toBe(400)
   })
@@ -252,7 +258,7 @@ describe("POST /api/pwa/aviso", () => {
     moduleOn.value = false
     const body = payload()
     expect((await POST(request(body))).status).toBe(204)
-    expect(await deviceRow("ppa", body.deviceId)).toBeUndefined()
+    expect(await maybeDeviceRow("ppa", body.deviceId)).toBeUndefined()
   })
 
   it("el Bearer de Mantención asocia la persona", async () => {
