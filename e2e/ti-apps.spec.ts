@@ -38,6 +38,8 @@ async function sembrarAviso(page: Page, deviceId: string, overrides: Record<stri
       oldestPendingAt: null,
       lastAttemptAt: null,
       lastError: null,
+      // Reloj del teléfono al mandar: el servidor corrige con él el desfase de las demás fechas.
+      sentAt: new Date().toISOString(),
       ...overrides,
     },
   })
