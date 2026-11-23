@@ -413,7 +413,7 @@ describe("module-toggles service", () => {
       // el módulo dentro del handler, con `isRouteOperational` de la ruta de la app.
       // `/apps/*` son las rutas del lanzador, transversales a los módulos, que
       // habían quedado sin inventariar.
-      const apiAllowPrefixes = ["/auth", "/health", "/attachments", "/notifications", "/pwa", "/apps"]
+      const apiAllowPrefixes = ["/auth", "/health", "/attachments", "/notifications", "/pwa/aviso", "/apps"]
       const missingApis = routeFiles(apiRoot)
         .filter((file) => file.endsWith("route.ts"))
         .map((file) => routeSample(file, apiRoot))

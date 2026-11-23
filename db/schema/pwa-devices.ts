@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm"
-import { boolean, check, date, index, integer, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core"
+import { boolean, check, index, integer, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites } from "./worksites"
 import { fuelTaePublicLinks } from "./fuel-tae"
@@ -11,8 +11,9 @@ import { fuelTaePublicLinks } from "./fuel-tae"
  * (`POST /api/pwa/aviso`) al abrirse y tras cada intento de envío, y la vista
  * TI › Apps lo lee (diseño 2026-11-22, `docs/superpowers/specs/`).
  *
- * `pwa_devices` guarda el último estado conocido de cada teléfono por app;
- * `pwa_device_days`, la presencia por día (teléfonos activos por semana).
+ * `pwa_devices` guarda el último estado conocido de cada teléfono por app (una
+ * fila por teléfono; los que no avisan hace más de 180 días se purgan al
+ * registrarse uno nuevo).
  * Nada del trabajador: el teléfono es un UUID al azar. `user_id` sólo se llena
  * con una credencial válida del mecánico; `tae_link_id`, cuando el hash del
  * token calza con un enlace (aunque esté revocado: eso es lo que TI debe ver).
@@ -41,15 +42,4 @@ export const pwaDevices = pgTable("pwa_devices", {
   index("pwa_devices_app_last_seen_idx").on(table.app, table.lastSeenAt),
   check("pwa_devices_app_valid", sql`${table.app} IN ('ppa', 'mantencion', 'tae')`),
   check("pwa_devices_counts_valid", sql`${table.pendingCount} >= 0 AND ${table.failedCount} >= 0`),
-])
-
-export const pwaDeviceDays = pgTable("pwa_device_days", {
-  app:      text("app").notNull(),
-  deviceId: text("device_id").notNull(),
-  /** Día civil en Chile (`todayInChile`). */
-  day:      date("day", { mode: "string" }).notNull(),
-  reports:  integer("reports").notNull().default(1),
-}, (table) => [
-  primaryKey({ columns: [table.app, table.deviceId, table.day] }),
-  index("pwa_device_days_app_day_idx").on(table.app, table.day),
 ])
