@@ -120,6 +120,26 @@ describe("«Nueva orden»", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith("/mantencion/ot/ot-3"))
   })
 
+  it("OT-5: los ítems de un tipo desmarcado no se envían, y el error de un campo oculto se ve como mensaje general", async () => {
+    createWorkOrderAction.mockResolvedValue({ ok: false, message: "Revisa los campos marcados.", fieldErrors: { maintenanceItems: ["Cada ítem necesita al menos 3 caracteres."] } })
+    render(<NewWorkOrderCta {...BASE} />)
+    const sheet = await openSheet()
+    fireEvent.focus(sheet.getByRole("combobox", { name: /Equipo/ }))
+    fireEvent.mouseDown(await screen.findByRole("option", { name: /EX-04/ }))
+    fireEvent.change(sheet.getByRole("textbox", { name: /^Reparación/ }), { target: { value: "Pierde aceite por el cárter" } })
+    fireEvent.click(sheet.getByRole("checkbox", { name: "Mantención" }))
+    fireEvent.click(sheet.getAllByRole("button", { name: "Agregar línea" })[1]!)
+    fireEvent.change(sheet.getByRole("textbox", { name: "Mantenciones solicitadas o asignadas en taller, línea 1" }), { target: { value: "ab" } })
+    fireEvent.click(sheet.getByRole("checkbox", { name: "Mantención" }))
+    expect(sheet.queryByText("Mantenciones solicitadas o asignadas en taller")).toBeNull()
+    fireEvent.click(sheet.getByRole("button", { name: "Crear orden" }))
+    await waitFor(() => expect(createWorkOrderAction).toHaveBeenCalled())
+    const payload = JSON.parse(String((createWorkOrderAction.mock.calls[0]![1] as FormData).get("payload")))
+    expect(payload).toMatchObject({ maintenance: false, maintenanceItems: [] })
+    const alert = await sheet.findByRole("alert")
+    expect(alert.textContent).toContain("Cada ítem necesita al menos 3 caracteres.")
+  })
+
   it("un error del servidor queda en el formulario, bajo su campo", async () => {
     createWorkOrderAction.mockResolvedValue({ ok: false, message: "Revisa los campos marcados.", fieldErrors: { repairDescription: ["Describe la reparación que se pide."] } })
     render(<NewWorkOrderCta {...BASE} />)
@@ -138,11 +158,17 @@ describe("buildCreatePayload", () => {
     annexItems: ["x"], maintenanceItems: [" Cambio de aceite ", "", "  "], assignedToUserId: "",
     actionType: "" as const, specialties: [] as never[], executionWorksiteId: "",
   }
-  it("descarta la reparación si no se marcó, recorta textos y quita líneas vacías", () => {
+  it("descarta la reparación y sus ítems si no se marcó (OT-5), recorta textos y quita líneas vacías", () => {
     expect(buildCreatePayload(values, "cid")).toEqual({
       clientRequestId: "cid", vehicleId: "veh-1", repair: false, maintenance: true, requestDate: "2026-11-02", requesterName: "Ana", repairDescription: null,
-      observations: null, annexItems: ["x"], maintenanceItems: ["Cambio de aceite"], assignedToUserId: null,
+      observations: null, annexItems: [], maintenanceItems: ["Cambio de aceite"], assignedToUserId: null,
       actionType: null, specialties: [], executionWorksiteId: null,
+    })
+  })
+
+  it("los ítems de «Mantención» tampoco viajan si esa casilla está desmarcada", () => {
+    expect(buildCreatePayload({ ...values, repair: true, maintenance: false, annexItems: [" a revisar "], maintenanceItems: ["oculto"] }, "cid")).toMatchObject({
+      annexItems: ["a revisar"], maintenanceItems: [],
     })
   })
 

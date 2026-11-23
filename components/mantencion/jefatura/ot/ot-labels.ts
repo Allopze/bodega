@@ -29,6 +29,16 @@ export const OT_EVENT_LABELS: Record<OtEventType, string> = {
   record_linked: "Registro firmado enlazado",
 }
 
+/**
+ * Rótulo del evento en el historial. Una corrección de clasificación se guarda como `edited` con
+ * `changeSet.scope === "clasificacion"` (el CHECK de la tabla no admite tipos nuevos) y se lee distinto de
+ * «Solicitud editada».
+ */
+export function otEventLabel(event: { type: OtEventType; changeSet?: Record<string, unknown> | null }): string {
+  if (event.type === "edited" && event.changeSet?.scope === "clasificacion") return "Clasificación corregida"
+  return OT_EVENT_LABELS[event.type] ?? event.type
+}
+
 /** REPARACIÓN / MANTENCIÓN / ambas, como se marca en el talonario. */
 export function workOrderTypeText(order: { repair: boolean; maintenance: boolean }): string {
   if (order.repair && order.maintenance) return "Reparación y mantención"

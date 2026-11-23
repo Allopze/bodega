@@ -74,8 +74,10 @@ function readEquipmentForm(formData: FormData): EquipmentInput {
 
 function toState<T>(result: EquipmentResult<T>): ActionState {
   if (result.ok) return { ok: true, message: result.message }
-  const fieldErrors = Object.fromEntries(Object.entries(result.fieldErrors).map(([key, message]) => [key, [message]]))
-  return { ok: false, message: result.message, fieldErrors }
+  const entries = Object.entries(result.fieldErrors).map(([key, message]) => [key, [message]] as [string, string[]])
+  // Sin errores por campo (la ficha cambió, faena fuera de alcance, equipo inexistente…) `fieldErrors` queda
+  // `undefined`: los formularios muestran el mensaje general sólo en ese caso, y un `{}` lo escondía (EQ-1).
+  return { ok: false, message: result.message, fieldErrors: entries.length ? Object.fromEntries(entries) : undefined }
 }
 
 export async function createEquipmentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {

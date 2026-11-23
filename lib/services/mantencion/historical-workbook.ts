@@ -72,7 +72,7 @@ const REQUIRED: ReadonlyArray<[number, string]> = [
   [16, "FECHAINGRESOEQUIPOTALLER"], [17, "FECHASALIDATALLER"], [18, "HORASTRABAJADAS"],
 ]
 
-/** El contrato es el consolidado exportado de Forms, no cualquier planilla de mantención. */
+/** El contrato es la exportación de respuestas de Google Forms, no cualquier planilla de mantención. */
 export async function parseHistoricalWorkbook(buffer: ArrayBuffer): Promise<HistoricalParse> {
   if (buffer.byteLength > HISTORICAL_MAX_BYTES) return { ok: false, message: "El archivo supera 5 MB." }
   // Tolera planillas con el espacio de nombres prefijado (OpenXML SDK).
@@ -80,6 +80,10 @@ export async function parseHistoricalWorkbook(buffer: ArrayBuffer): Promise<Hist
   if (!workbook) return { ok: false, message: "No se pudo leer el archivo Excel." }
   if (!workbook.worksheets.length) return { ok: false, message: "La planilla no contiene hojas." }
   if (workbook.worksheets.length > 50) return { ok: false, message: "El archivo contiene demasiadas hojas." }
+  // El consolidado de Chome (hoja MANTENCIONES) tiene otras columnas y se carga con su propio script.
+  if (workbook.worksheets.some((sheet) => compact(sheet.name) === "MANTENCIONES")) {
+    return { ok: false, message: "Este archivo es el consolidado de Chome (trae la hoja MANTENCIONES). Se carga con el script del consolidado, no desde esta pantalla; aquí se sube la exportación de respuestas de Google Forms." }
+  }
   const rows: HistoricalRow[] = []
   const keys = new Set<string>()
   for (const sheet of workbook.worksheets) {
@@ -87,7 +91,7 @@ export async function parseHistoricalWorkbook(buffer: ArrayBuffer): Promise<Hist
     if (sheet.columnCount > MAX_COLUMNS) return { ok: false, message: `La hoja ${sheet.name} tiene demasiadas columnas.` }
     const first = sheet.getRow(1)
     if (REQUIRED.some(([n, prefix]) => !compact(cellField(first.getCell(n), "").value).startsWith(prefix))) {
-      return { ok: false, message: `La hoja ${sheet.name} no tiene las columnas del consolidado de mantención.` }
+      return { ok: false, message: `La hoja ${sheet.name} no tiene las columnas de la exportación de Google Forms (marca temporal, correo, faena, orden de trabajo, equipo, trabajo realizado…).` }
     }
     const headers = Array.from({ length: sheet.columnCount }, (_, index) => cellField(first.getCell(index + 1), "").value.trim() || `Columna ${index + 1}`)
     for (let number = 2; number <= sheet.rowCount; number++) {

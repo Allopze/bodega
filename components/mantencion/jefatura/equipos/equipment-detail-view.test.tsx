@@ -149,7 +149,7 @@ describe("ficha del equipo: crear una orden de trabajo y el enlace a Flota", () 
     expect(within(form).getByRole("combobox", { name: /^Pauta de mantención/ })).toBeDefined()
     expect(within(form).queryByLabelText(/^Código interno/)).toBeNull()
     // Con registros la lectura inicial queda fija.
-    expect((within(form).getByLabelText(/^Lectura actual/) as HTMLInputElement).readOnly).toBe(true)
+    expect((within(form).getByLabelText(/^Lectura inicial/) as HTMLInputElement).readOnly).toBe(true)
     fireEvent.click(within(form).getByRole("button", { name: "Cancelar" }))
     expect(screen.queryByRole("form", { name: "Editar mantención" })).toBeNull()
   })

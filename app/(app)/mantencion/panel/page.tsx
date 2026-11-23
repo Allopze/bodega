@@ -150,12 +150,16 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
     track(loadFindingsWithoutWork(viewer, periodQuery), "hallazgos en mal estado sin trabajo"),
   ])
 
-  // Sin equipos, sin registros y sin órdenes en el alcance: el Panel entero estaría vacío por una sola causa.
+  // Sin equipos, sin registros, sin órdenes ni trabajos, hallazgos o reportes en el alcance: el Panel entero estaría vacío por una sola causa.
   const noEquipment = byFleet && hasNoEquipmentInScope({
     equipment: pautas?.total ?? null,
     inWorkshop: pautas?.inWorkshop ?? null,
     records: records ? records.points.reduce((sum, point) => sum + point.preventive + point.corrective, 0) : null,
     workOrders: series ? series.reduce((sum, point) => sum + point.created + point.closed + point.backlog, 0) : null,
+    // Aunque no haya equipos activos, el alcance puede tener trabajos del historial, hallazgos o reportes de turno.
+    work: work ? work.summary.total + work.summary.series.reduce((sum, point) => sum + point.preventiva + point.correctiva + point.predictiva + point.sin_clasificar, 0) : null,
+    findings: findings ? findings.total + findings.unlinked : null,
+    reports: reporteEquipos ? (reporteEquipos.hasRuns ? 1 : 0) : null,
   })
 
   // El alcance de los equipos de Mantención no es el de la sesión: `mant:records:view_all` abre todas.
@@ -170,6 +174,7 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
     chart: period.chart,
     chartNote: `${chartWindowCaption(period.chart, datesOf)} · ${scopeName}`,
     worksiteId,
+    equipmentId: equipment?.id ?? null,
     scopeNote,
     canExport,
   }

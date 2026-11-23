@@ -16,7 +16,7 @@ async function authorize() {
 }
 async function upload(form: FormData): Promise<{ ok: true; buffer: ArrayBuffer; name: string } | { ok: false; message: string }> {
   const file = form.get("file")
-  if (!(file instanceof File) || !file.size || !/\.xlsx$/i.test(file.name)) return { ok: false, message: "Elige el consolidado en formato Excel (.xlsx)." }
+  if (!(file instanceof File) || !file.size || !/\.xlsx$/i.test(file.name)) return { ok: false, message: "Elige la exportación de Google Forms en formato Excel (.xlsx)." }
   if (file.size > HISTORICAL_MAX_BYTES) return { ok: false, message: "El archivo supera 5 MB." }
   return { ok: true, buffer: await file.arrayBuffer(), name: file.name }
 }

@@ -310,7 +310,7 @@ describe("EquipmentPlanForm («Editar mantención», crítica 2026-11-15, paso 4
   it("sólo pauta, lectura y estado: la identidad no está y dice dónde se edita", () => {
     renderPlan()
     expect(screen.getByRole("combobox", { name: /^Pauta de mantención/ })).toBeDefined()
-    expect(screen.getByLabelText(/^Lectura actual/)).toBeDefined()
+    expect(screen.getByLabelText(/^Lectura inicial/)).toBeDefined()
     expect(screen.getByRole("radio", { name: "Activo" })).toBeDefined()
     for (const label of ["Código interno", "Patente", "Modelo", "Año"]) expect(screen.queryByLabelText(new RegExp(`^${label}`))).toBeNull()
     for (const label of ["Tipo de equipo", "Marca", "Faena"]) expect(screen.queryByRole("combobox", { name: new RegExp(`^${label}`) })).toBeNull()
@@ -322,7 +322,7 @@ describe("EquipmentPlanForm («Editar mantención», crítica 2026-11-15, paso 4
     renderPlan({ retired: true, initialReading: "12.345" }, true)
     expect((screen.getByRole("radio", { name: "Dado de baja" }) as HTMLInputElement).checked).toBe(true)
     expect(screen.getByLabelText(/^Motivo de la baja/)).toBeDefined()
-    const reading = screen.getByLabelText(/^Lectura actual/) as HTMLInputElement
+    const reading = screen.getByLabelText(/^Lectura inicial/) as HTMLInputElement
     expect(reading.readOnly).toBe(true)
     expect(reading.value).toBe("12.345")
     expect(screen.getByText(/ya tiene registros/)).toBeDefined()

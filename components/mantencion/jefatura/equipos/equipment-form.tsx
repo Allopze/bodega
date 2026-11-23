@@ -18,6 +18,9 @@ import type { EquipmentFormCatalogs, EquipmentFormValues } from "./equipment-for
 
 const SELECT = "h-11 w-full sm:h-9"
 
+/** ¿Hay al menos un error por campo? Un `{}` no cuenta: el mensaje general tiene que verse. */
+const hasFieldErrors = (state: ActionState) => Object.keys(state.fieldErrors ?? {}).length > 0
+
 type FormAction = (prev: ActionState, formData: FormData) => Promise<ActionState>
 
 /**
@@ -64,7 +67,7 @@ export function EquipmentForm({
 
   return (
     <form action={formAction} noValidate className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:p-6">
-      {!state.ok && state.message && !state.fieldErrors && <Callout tone="danger" role="alert" className="mb-4">{state.message}</Callout>}
+      {!state.ok && state.message && !hasFieldErrors(state) && <Callout tone="danger" role="alert" className="mb-4">{state.message}</Callout>}
       <p className="mb-4 text-sub">Los campos con * son obligatorios. El equipo aparece en la app del mecánico en su próxima sincronización.</p>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Código interno" required htmlFor="eq-code" error={error("code")}>

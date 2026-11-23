@@ -1,27 +1,37 @@
 import { ACTION_TYPE_LABELS } from "@/lib/mantencion/action-type"
-import { formatDate } from "@/lib/utils"
+import { EXCEL_DATE_FORMAT, excelPlainDate } from "@/lib/reports/excel-dates"
 import type { MaintenanceWorkRow } from "./maintenance-work"
 
 /** Hoja «Trabajos» del Excel del Panel. Aparte de la acción: un archivo `"use server"` sólo exporta funciones async. */
 
-const SOURCE_LABEL: Record<MaintenanceWorkRow["source"], string> = { historial: "Historial de formularios", ot: "Orden de trabajo" }
+const SOURCE_LABEL: Record<MaintenanceWorkRow["source"], string> = {
+  historial: "Historial de formularios",
+  ot: "Orden de trabajo",
+  registro: "Registro de la plataforma",
+}
 
 export const WORK_SHEET_HEADERS = [
-  "Fecha", "Equipo", "Faena", "Tipo", "Horas hombre", "Días en taller", "Taller externo", "Fuente", "Referencia",
+  "Fecha", "Equipo", "Faena", "Tipo", "Horas hombre", "Días en taller", "En taller", "Taller externo", "Fuente", "Referencia",
 ] as const
 
-/** Una fila de la hoja «Trabajos». Los vacíos van vacíos, nunca en cero: «sin dato» no es 0 horas. */
-export function workSheetRow(row: MaintenanceWorkRow): Array<string | number | null> {
+/** Formato de Excel por columna (índice desde 0): la fecha es una celda de fecha real, ordenable y filtrable. */
+export const WORK_SHEET_COLUMN_FORMATS: Record<number, string> = { 0: EXCEL_DATE_FORMAT }
+
+/**
+ * Una fila de la hoja «Trabajos». Los vacíos van vacíos, nunca en cero: «sin dato» no es 0 horas. La fecha es un
+ * `Date` de Excel, y las horas y los días, números; «En taller» (Sí/No) va en su propia columna.
+ */
+export function workSheetRow(row: MaintenanceWorkRow): Array<string | number | Date | null> {
   return [
-    formatDate(row.date),
+    excelPlainDate(row.date),
     row.equipmentLabel,
     row.worksiteName ?? "Sin faena",
     ACTION_TYPE_LABELS[row.actionType],
     row.laborHours,
-    row.workshopDays === null ? null : row.inWorkshop ? `${row.workshopDays} (en taller)` : row.workshopDays,
+    row.workshopDays,
+    row.inWorkshop ? "Sí" : "No",
     row.external === null ? "No informado" : row.external ? "Sí" : "No",
     SOURCE_LABEL[row.source],
     row.reference || null,
   ]
 }
-

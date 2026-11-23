@@ -20,6 +20,8 @@ const actions = {
   rejectWorkOrderAction: vi.fn(),
   voidWorkOrderAction: vi.fn(),
   reopenWorkOrderAction: vi.fn(),
+  reclassifyWorkOrderAction: vi.fn(),
+  editWorkOrderAction: vi.fn(),
   registerWorkOrderRecordAction: vi.fn(),
 }
 const toastSuccess = vi.fn()
@@ -41,12 +43,20 @@ function props(overrides: Partial<Props> = {}): Props {
     mechanics: [{ id: "u-mec", name: "Javier Roa", worksiteNames: ["Biodiversa"] }, { id: "u-2", name: "Marta Lillo", worksiteNames: ["Santa Fe", "Mininco"] }],
     entryCatalogs: { workshops: [{ id: "w-1", name: "Taller Los Aromos" }], drivers: [] }, actorName: "Ana Pérez", pdfHref: "/api/mantencion/ot/ot-1/pdf",
     canDownloadPdf: true,
-    repair: true, maintenance: false, needsLinkedRecord: false, recordForm: null, actorUserId: "u-mec", partsRequestHref: null, ...overrides,
+    repair: true, maintenance: false, needsLinkedRecord: false, recordForm: null, actorUserId: "u-mec", partsRequestHref: null,
+    canEditRequest: false, canReclassify: false, executionWorksites: [{ id: "ws-1", name: "Biodiversa" }, { id: "ws-2", name: "Santa Fe" }], actionTypeRequired: false,
+    request: {
+      equipmentLabel: "KA-135 · RBYD-98", worksiteId: "ws-1", worksiteName: "Biodiversa", repair: true, maintenance: false, requestDate: "2026-10-30",
+      requesterName: "Ana Pérez", repairDescription: "Pierde aceite por el cárter", observations: "Equipo crítico", actionType: "correctiva",
+      specialties: ["mecanica"], executionWorksiteId: null, annexItems: ["Cambiar pastillas de freno"], maintenanceItems: [],
+      laborHours: null, workPerformed: null, hasExit: false,
+    },
+    ...overrides,
   }
 }
 
 const BUTTONS = ["Registrar ingreso", "Registrar trabajo", "Registrar salida", "Recibir equipo", "Dar conformidad", "Asignar", "Marcar ítems", "Rechazar", "Reabrir"]
-const MENU = ["Reasignar", "Desasignar", "Cambiar entrega estimada", "Corregir ingreso", "Registrar otra correctiva", "Registrar otra preventiva", "Pedir repuestos", "Descargar PDF", "Anular"]
+const MENU = ["Reasignar", "Desasignar", "Editar solicitud", "Corregir clasificación", "Cambiar entrega estimada", "Corregir ingreso", "Registrar otra correctiva", "Registrar otra preventiva", "Pedir repuestos", "Descargar PDF", "Anular"]
 
 function visibleButtons() {
   return BUTTONS.filter((name) => screen.queryByRole("button", { name: new RegExp(`^${name}$`) }))
@@ -100,6 +110,141 @@ describe("OtActions: sólo se dibuja lo que allowedTransitions permite", () => {
     cleanup()
     render(<OtActions {...props({ status: "solicitada", assignedToUserId: null, allowedTransitions: ["assign", "void"], canDownloadPdf: true })} />)
     expect(openMenu()).toEqual(["Descargar PDF", "Anular"])
+  })
+})
+
+describe("OtActions: «Editar solicitud» y «Corregir clasificación» (una sola puerta)", () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(cleanup)
+
+  it("«Editar solicitud» sólo con canEditRequest; «Corregir clasificación» sólo con canReclassify y nunca las dos", () => {
+    render(<OtActions {...props({ status: "asignada", allowedTransitions: ["assign", "unassign", "start", "void"], canEditRequest: true })} />)
+    expect(openMenu()).toEqual(["Reasignar", "Desasignar", "Editar solicitud", "Descargar PDF", "Anular"])
+    cleanup()
+    render(<OtActions {...props({ allowedTransitions: ["finish"], canReclassify: true })} />)
+    expect(openMenu()).toEqual(["Corregir clasificación", "Descargar PDF"])
+    cleanup()
+    // Aunque ambas banderas llegaran en true, el menú ofrece una sola puerta.
+    render(<OtActions {...props({ status: "solicitada", allowedTransitions: [], canEditRequest: true, canReclassify: true })} />)
+    expect(openMenu()).toEqual(["Editar solicitud", "Descargar PDF"])
+    cleanup()
+    // Sin permiso (ninguna bandera): ninguna de las dos.
+    render(<OtActions {...props({ status: "cerrada", allowedTransitions: ["reopen"] })} />)
+    expect(openMenu()).toEqual(["Descargar PDF"])
+  })
+
+  it("«Editar solicitud» abre el formulario precargado con lo guardado y envía expectedVersion", async () => {
+    actions.editWorkOrderAction.mockResolvedValue({ ok: true, data: { version: 5, status: "asignada" } })
+    render(<OtActions {...props({ status: "asignada", allowedTransitions: ["assign"], canEditRequest: true })} />)
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Editar solicitud" }))
+    const sheet = within(await screen.findByRole("dialog"))
+    expect((sheet.getByRole("textbox", { name: /Solicitante/ }) as HTMLInputElement).value).toBe("Ana Pérez")
+    expect((sheet.getByRole("textbox", { name: /^Reparación/ }) as HTMLTextAreaElement).value).toBe("Pierde aceite por el cárter")
+    expect((sheet.getByRole("textbox", { name: "Observaciones" }) as HTMLTextAreaElement).value).toBe("Equipo crítico")
+    expect((sheet.getByRole("checkbox", { name: "Reparación" }) as HTMLInputElement).checked).toBe(true)
+    expect((sheet.getByRole("checkbox", { name: "Mecánica" }) as HTMLInputElement).checked).toBe(true)
+    expect((sheet.getByRole("textbox", { name: "Trabajos anexos (reparación), línea 1" }) as HTMLInputElement).value).toBe("Cambiar pastillas de freno")
+    expect(sheet.getByRole("button", { name: /Fecha de la orden/ }).textContent).toContain("30-10-2026")
+    fireEvent.change(sheet.getByRole("textbox", { name: "Observaciones" }), { target: { value: "Urgente" } })
+    fireEvent.click(sheet.getByRole("button", { name: "Guardar cambios" }))
+    await waitFor(() => expect(actions.editWorkOrderAction).toHaveBeenCalled())
+    expect(actions.editWorkOrderAction.mock.calls[0]![0]).toEqual({
+      workOrderId: "ot-1", expectedVersion: 4, repair: true, maintenance: false, requestDate: "2026-10-30", requesterName: "Ana Pérez",
+      repairDescription: "Pierde aceite por el cárter", observations: "Urgente", annexItems: ["Cambiar pastillas de freno"], maintenanceItems: [],
+      actionType: "correctiva", specialties: ["mecanica"], executionWorksiteId: null,
+    })
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
+    expect(toastSuccess).toHaveBeenCalledWith("Solicitud actualizada")
+  })
+
+  it("editar: el conflicto «cambió en otra sesión» y los errores se ven en el formulario, que sigue abierto", async () => {
+    actions.editWorkOrderAction.mockResolvedValue({ ok: false, message: "La OT cambió en otra sesión. Recarga antes de continuar." })
+    render(<OtActions {...props({ status: "asignada", allowedTransitions: ["assign"], canEditRequest: true })} />)
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Editar solicitud" }))
+    const sheet = within(await screen.findByRole("dialog"))
+    fireEvent.click(sheet.getByRole("button", { name: "Guardar cambios" }))
+    expect((await sheet.findByRole("alert")).textContent).toContain("La OT cambió en otra sesión")
+    expect(screen.getByRole("dialog")).toBeTruthy()
+    expect(refresh).toHaveBeenCalled()
+  })
+
+  it("editar: un error de un campo oculto (ítems de un tipo desmarcado) se muestra como mensaje general y los ítems ocultos no viajan", async () => {
+    actions.editWorkOrderAction.mockResolvedValue({ ok: false, message: "Revisa los campos marcados.", fieldErrors: { maintenanceItems: ["Cada ítem necesita al menos 3 caracteres."] } })
+    render(<OtActions {...props({ status: "asignada", allowedTransitions: ["assign"], canEditRequest: true })} />)
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Editar solicitud" }))
+    const sheet = within(await screen.findByRole("dialog"))
+    // Marca Mantención, escribe un ítem, la desmarca: la lista queda oculta.
+    fireEvent.click(sheet.getByRole("checkbox", { name: "Mantención" }))
+    fireEvent.click(sheet.getAllByRole("button", { name: "Agregar línea" })[1]!)
+    fireEvent.change(sheet.getByRole("textbox", { name: "Mantenciones solicitadas o asignadas en taller, línea 1" }), { target: { value: "Cambio de aceite" } })
+    fireEvent.click(sheet.getByRole("checkbox", { name: "Mantención" }))
+    expect(sheet.queryByText("Mantenciones solicitadas o asignadas en taller")).toBeNull()
+    fireEvent.click(sheet.getByRole("button", { name: "Guardar cambios" }))
+    await waitFor(() => expect(actions.editWorkOrderAction).toHaveBeenCalled())
+    expect(actions.editWorkOrderAction.mock.calls[0]![0]).toMatchObject({ maintenance: false, maintenanceItems: [] })
+    const alert = await sheet.findByRole("alert")
+    expect(alert.textContent).toContain("Cada ítem necesita al menos 3 caracteres.")
+  })
+
+  it("«Corregir clasificación» muestra lo guardado, exige motivo y sólo habilita cuando algo cambió", async () => {
+    actions.reclassifyWorkOrderAction.mockResolvedValue({ ok: true, data: { version: 5, status: "en_ejecucion" } })
+    render(<OtActions {...props({ allowedTransitions: ["finish"], canReclassify: true })} />)
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Corregir clasificación" }))
+    const dialog = within(await screen.findByRole("dialog"))
+    expect(dialog.getByRole("combobox", { name: /Tipo de acción/ }).textContent).toContain("Correctiva")
+    expect((dialog.getByRole("checkbox", { name: "Mecánica" }) as HTMLInputElement).checked).toBe(true)
+    // La OT todavía no sale de taller: no hay horas hombre que corregir.
+    expect(dialog.queryByRole("spinbutton", { name: /Horas hombre/ })).toBeNull()
+    const submit = dialog.getByRole("button", { name: "Guardar corrección" }) as HTMLButtonElement
+    expect(submit.disabled).toBe(true)
+    fireEvent.click(dialog.getByRole("checkbox", { name: "Soldadura" }))
+    // Cambió algo pero falta el motivo.
+    expect(submit.disabled).toBe(true)
+    fireEvent.change(dialog.getByRole("textbox", { name: /Motivo de la corrección/ }), { target: { value: "corto" } })
+    expect(submit.disabled).toBe(true)
+    fireEvent.change(dialog.getByRole("textbox", { name: /Motivo de la corrección/ }), { target: { value: "Faltaba la soldadura del soporte" } })
+    expect(submit.disabled).toBe(false)
+    fireEvent.click(submit)
+    await waitFor(() => expect(actions.reclassifyWorkOrderAction).toHaveBeenCalledWith({
+      workOrderId: "ot-1", expectedVersion: 4, actionType: "correctiva", specialties: ["mecanica", "soldadura"], executionWorksiteId: null,
+      reason: "Faltaba la soldadura del soporte",
+    }))
+    expect(toastSuccess).toHaveBeenCalledWith("Clasificación corregida")
+  })
+
+  it("«Corregir clasificación» ofrece las horas hombre sólo tras la salida, precargadas, y las envía", async () => {
+    actions.reclassifyWorkOrderAction.mockResolvedValue({ ok: true, data: { version: 5, status: "cerrada" } })
+    render(<OtActions {...props({
+      status: "cerrada", allowedTransitions: ["reopen"], canReclassify: true,
+      request: { ...props().request, hasExit: true, laborHours: 8 },
+    })} />)
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Corregir clasificación" }))
+    const dialog = within(await screen.findByRole("dialog"))
+    const hours = dialog.getByRole("spinbutton", { name: /Horas hombre/ }) as HTMLInputElement
+    expect(hours.value).toBe("8")
+    fireEvent.change(hours, { target: { value: "2.5" } })
+    fireEvent.change(dialog.getByRole("textbox", { name: /Motivo de la corrección/ }), { target: { value: "Se digitó 8 en vez de 2,5" } })
+    fireEvent.click(dialog.getByRole("button", { name: "Guardar corrección" }))
+    await waitFor(() => expect(actions.reclassifyWorkOrderAction).toHaveBeenCalledWith(expect.objectContaining({ laborHours: 2.5, reason: "Se digitó 8 en vez de 2,5" })))
+  })
+
+  it("«Corregir clasificación»: un conflicto de versión queda en el diálogo y se reenvía con la versión original", async () => {
+    actions.reclassifyWorkOrderAction.mockResolvedValue({ ok: false, message: "La OT cambió en otra sesión. Recarga antes de continuar." })
+    render(<OtActions {...props({ allowedTransitions: ["finish"], canReclassify: true })} />)
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Corregir clasificación" }))
+    const dialog = within(await screen.findByRole("dialog"))
+    fireEvent.click(dialog.getByRole("checkbox", { name: "Eléctrica" }))
+    fireEvent.change(dialog.getByRole("textbox", { name: /Motivo de la corrección/ }), { target: { value: "Faltaba la parte eléctrica" } })
+    fireEvent.click(dialog.getByRole("button", { name: "Guardar corrección" }))
+    expect((await dialog.findByRole("alert")).textContent).toContain("La OT cambió en otra sesión")
+    expect(screen.getByRole("dialog")).toBeTruthy()
+    expect(refresh).toHaveBeenCalled()
   })
 })
 
@@ -248,6 +393,21 @@ describe("OtActions: terminar con trabajo realizado y horas hombre", () => {
     await waitFor(() => expect(actions.finishWorkOrderAction).toHaveBeenCalledWith(expect.objectContaining({
       workOrderId: "ot-1", expectedVersion: 4, workPerformed: "Cambio de manguera", laborHours: 6.5,
     })))
+  })
+
+  it("precarga el trabajo realizado y las horas ya guardados (tras un rechazo o una reapertura) en vez de pisarlos en silencio", async () => {
+    actions.finishWorkOrderAction.mockResolvedValue({ ok: true, data: { version: 6, status: "trabajo_terminado" } })
+    render(<OtActions {...props({
+      allowedTransitions: ["finish"], canEditExecution: true,
+      request: { ...props().request, workPerformed: "Se cambió la manguera", laborHours: 8 },
+    })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Registrar salida" }))
+    const dialog = within(await screen.findByRole("dialog"))
+    expect((dialog.getByRole("textbox", { name: /Trabajo realizado/ }) as HTMLTextAreaElement).value).toBe("Se cambió la manguera")
+    expect((dialog.getByRole("spinbutton", { name: /Horas hombre/ }) as HTMLInputElement).value).toBe("8")
+    // Sin tocarlos, reenvía lo guardado.
+    fireEvent.click(dialog.getByRole("button", { name: "Registrar salida" }))
+    await waitFor(() => expect(actions.finishWorkOrderAction).toHaveBeenCalledWith(expect.objectContaining({ workPerformed: "Se cambió la manguera", laborHours: 8 })))
   })
 
   it("los dos campos son opcionales: vacíos viajan como null", async () => {

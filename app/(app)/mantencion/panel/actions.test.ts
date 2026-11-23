@@ -13,7 +13,7 @@ vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
 vi.mock("@/lib/services/mantencion/access", () => ({ viewerFromSession: () => ({ userId: "u1" }) }))
 vi.mock("@/lib/services/mantencion/maintenance-work", () => ({ loadMaintenanceWork: loadWork, resolvePanelEquipment: resolveEquipment }))
 
-import { workSheetRow } from "@/lib/services/mantencion/maintenance-work-sheet"
+import { WORK_SHEET_COLUMN_FORMATS, WORK_SHEET_HEADERS, workSheetRow } from "@/lib/services/mantencion/maintenance-work-sheet"
 import { exportPanelBoardAction } from "./actions"
 
 const session = { user: { id: "u1", email: "jefe@chome.cl", isGlobal: true, worksiteIds: [], permissions: ["mant:export"] } }
@@ -31,10 +31,19 @@ const board = {
 
 describe("hoja «Trabajos» del Excel del Panel", () => {
   it("una fila por trabajo; lo que el trabajo no trae queda vacío, nunca en cero", () => {
-    expect(workSheetRow(row())).toEqual(["05-10-2026", "KA-1 · AAAA-01", "Biodiversa", "Correctiva", 6, 4, "Sí", "Historial de formularios", "MT-00001"])
+    expect(workSheetRow(row())).toEqual([new Date(Date.UTC(2026, 9, 5)), "KA-1 · AAAA-01", "Biodiversa", "Correctiva", 6, 4, "No", "Sí", "Historial de formularios", "MT-00001"])
     expect(workSheetRow(row({ laborHours: null, workshopDays: null, external: null, worksiteName: null, reference: "", actionType: "sin_clasificar", source: "ot" })))
-      .toEqual(["05-10-2026", "KA-1 · AAAA-01", "Sin faena", "Sin clasificar", null, null, "No informado", "Orden de trabajo", null])
-    expect(workSheetRow(row({ workshopDays: 9, inWorkshop: true }))[5]).toBe("9 (en taller)")
+      .toEqual([new Date(Date.UTC(2026, 9, 5)), "KA-1 · AAAA-01", "Sin faena", "Sin clasificar", null, null, "No", "No informado", "Orden de trabajo", null])
+  })
+
+  it("la fecha es una fecha de Excel, los días y las horas son números, «En taller» tiene su columna y el registro su rótulo", () => {
+    expect(WORK_SHEET_HEADERS).toEqual(["Fecha", "Equipo", "Faena", "Tipo", "Horas hombre", "Días en taller", "En taller", "Taller externo", "Fuente", "Referencia"])
+    const open = workSheetRow(row({ workshopDays: 9, inWorkshop: true, source: "registro" }))
+    expect(open[0]).toBeInstanceOf(Date)
+    expect(open[5]).toBe(9)
+    expect(open[6]).toBe("Sí")
+    expect(open[8]).toBe("Registro de la plataforma")
+    expect(WORK_SHEET_COLUMN_FORMATS).toEqual({ 0: "dd-mm-yyyy" })
   })
 })
 
@@ -62,6 +71,9 @@ describe("exportPanelBoardAction", () => {
     expect(workbook.worksheets.map((sheet) => sheet.name).slice(0, 2)).toEqual(["Estado de las pautas hoy", "Trabajos"])
     const sheet = workbook.getWorksheet("Trabajos")!
     expect(sheet.getRow(1).getCell(1).value).toBe("Fecha")
+    // La fecha es una fecha de Excel con formato de día, no texto ni fecha con hora.
+    expect(sheet.getRow(2).getCell(1).value).toBeInstanceOf(Date)
+    expect(sheet.getRow(2).getCell(1).numFmt).toBe("dd-mm-yyyy")
     expect(sheet.getRow(2).getCell(2).value).toBe("KA-1 · AAAA-01")
     expect(sheet.getRow(2).getCell(5).value).toBe(6)
     // La hora hombre que el trabajo no trae queda vacía.

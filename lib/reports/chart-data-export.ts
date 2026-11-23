@@ -145,22 +145,44 @@ export function boardExportPermissions(input: Pick<z.output<typeof boardDataExpo
   return [...new Set(input.tables.map((table) => table.permission))]
 }
 
+/**
+ * Hoja que arma el SERVIDOR (no viene del navegador): puede traer fechas reales (`Date`) y formato por
+ * columna. La usa un tablero que agrega su propia hoja de detalle, como «Trabajos» del Panel de mantención.
+ */
+export interface ServerBoardSheet {
+  title: string
+  headers: string[]
+  rows: ReportCell[][]
+  /** Formato de Excel por índice de columna (base 0), p. ej. `{ 0: "dd-mm-yyyy" }`. */
+  columnFormats?: Record<number, string>
+  notes?: string[]
+}
+
 /** Arma el libro del tablero: una hoja por tabla, en el orden de la pantalla, y «Metadatos». Devuelve base64. */
 export async function buildBoardDataWorkbookBase64(
   session: Session,
   input: z.output<typeof boardDataExportSchema>,
+  serverSheets: readonly ServerBoardSheet[] = [],
 ): Promise<string> {
   const [first, ...rest] = input.tables
   if (!first) throw new Error("Un libro de tablero necesita al menos una tabla")
   // Las salvedades de cada gráfico (avisos de cobertura) llevan su título: en «Metadatos» van todas juntas.
-  const tableNotes = input.tables.flatMap((table) => (table.notes ?? []).map((note) => `«${table.title}»: ${note}`))
+  const tableNotes = [...input.tables, ...serverSheets].flatMap((table) => (table.notes ?? []).map((note) => `«${table.title}»: ${note}`))
   const buffer = await buildXlsxBuffer(
     {
       filenameBase: input.title,
       worksheetName: first.title,
       headers: first.headers,
       rows: squareRows(first.headers, first.rows),
-      sheets: rest.map((table) => ({ worksheetName: table.title, headers: table.headers, rows: squareRows(table.headers, table.rows) })),
+      sheets: [
+        ...rest.map((table) => ({ worksheetName: table.title, headers: table.headers, rows: squareRows(table.headers, table.rows) })),
+        ...serverSheets.map((sheet) => ({
+          worksheetName: sheet.title,
+          headers: sheet.headers,
+          rows: squareRows(sheet.headers, sheet.rows),
+          ...(sheet.columnFormats ? { columnFormats: sheet.columnFormats } : {}),
+        })),
+      ],
     },
     {
       session,

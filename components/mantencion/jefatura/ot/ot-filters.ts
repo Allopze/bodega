@@ -10,10 +10,11 @@ export const OT_PAGE_SIZE = 25
 
 /**
  * Parámetros de la URL que son filtros (los que limpia «Limpiar filtros»; la pestaña `estado` no).
- * `repuestos` (`?repuestos=pendientes`) no tiene control en la barra (A2: ya hay seis primarios): se
- * llega por un enlace y vive como chip removible.
+ * `repuestos` (`?repuestos=pendientes`) y `cerradaDesde`/`cerradaHasta` (el día de cierre, que enlaza el
+ * Panel) no tienen control en la barra (A2: ya hay seis primarios): se llega por un enlace y viven como
+ * chip removible. `desde`/`hasta` son la fecha de la orden («pedida»), no la de cierre (OTN-16).
  */
-export const OT_FILTER_PARAMS = ["faena", "equipo", "mecanico", "desde", "hasta", "q", "repuestos"] as const
+export const OT_FILTER_PARAMS = ["faena", "equipo", "mecanico", "desde", "hasta", "cerradaDesde", "cerradaHasta", "q", "repuestos"] as const
 
 
 function first(raw: RawSearchParams, key: string): string | undefined {
@@ -28,7 +29,7 @@ export function isWorkOrderTab(value: string | undefined): value is WorkOrderTab
 }
 
 /**
- * La URL de la lista (`?estado=&faena=&equipo=&mecanico=&desde=&hasta=&q=&repuestos=&pagina=`)
+ * La URL de la lista (`?estado=&faena=&equipo=&mecanico=&desde=&hasta=&cerradaDesde=&cerradaHasta=&q=&repuestos=&pagina=`)
  * como filtros del servicio. Sin `estado` rige «Por asignar» (la página redirige a
  * la primera pestaña con trabajo: `defaultOtTab`). Un valor de fecha mal formado se
  * ignora en vez de llegar a la consulta.
@@ -37,6 +38,8 @@ export function parseWorkOrderQuery(raw: RawSearchParams): WorkOrderListFilters 
   const estado = first(raw, "estado")
   const desde = first(raw, "desde")
   const hasta = first(raw, "hasta")
+  const cerradaDesde = first(raw, "cerradaDesde")
+  const cerradaHasta = first(raw, "cerradaHasta")
   const page = Number.parseInt(first(raw, "pagina") ?? "1", 10)
   return {
     tab: isWorkOrderTab(estado) ? estado : "solicitada",
@@ -45,6 +48,8 @@ export function parseWorkOrderQuery(raw: RawSearchParams): WorkOrderListFilters 
     assignedToUserId: first(raw, "mecanico"),
     from: isCivilDate(desde) ? desde : undefined,
     to: isCivilDate(hasta) ? hasta : undefined,
+    closedFrom: isCivilDate(cerradaDesde) ? cerradaDesde : undefined,
+    closedTo: isCivilDate(cerradaHasta) ? cerradaHasta : undefined,
     q: first(raw, "q"),
     partsPending: first(raw, "repuestos") === "pendientes",
     page: Number.isFinite(page) && page > 0 ? page : 1,
@@ -76,12 +81,12 @@ export function defaultOtTab(counts: Record<WorkOrderTab, number>, hide: readonl
 
 /** Hay algún filtro activo distinto de la pestaña. */
 export function hasWorkOrderFilters(filters: WorkOrderListFilters): boolean {
-  return !!(filters.worksiteId || filters.vehicleId || filters.assignedToUserId || filters.from || filters.to || filters.q || filters.partsPending)
+  return !!(filters.worksiteId || filters.vehicleId || filters.assignedToUserId || filters.from || filters.to || filters.closedFrom || filters.closedTo || filters.q || filters.partsPending)
 }
 
 /** Número de filtros activos sin contar la búsqueda ni la pestaña. */
 export function workOrderFilterCount(filters: WorkOrderListFilters): number {
-  return [filters.worksiteId, filters.vehicleId, filters.assignedToUserId, filters.from, filters.to, filters.partsPending].filter(Boolean).length
+  return [filters.worksiteId, filters.vehicleId, filters.assignedToUserId, filters.from, filters.to, filters.closedFrom || filters.closedTo, filters.partsPending].filter(Boolean).length
 }
 
 /** Rótulos de las pestañas, en el orden del flujo. «Abiertas» sólo se ve como aviso (`?estado=abiertas`), no como pestaña. */

@@ -55,7 +55,7 @@ vi.mock("@/lib/services/mantencion/maintenance-work", () => ({
   loadFindingsWithoutWork: work.findings,
   loadPanelEquipment: async () => [{ id: "v-1", label: "KA-1 · AAAA-01" }],
   resolvePanelEquipment: async (_viewer: unknown, _worksite: unknown, id: string | undefined) => (id === equipmentInScope.id ? equipmentInScope : null),
-  summarizeMaintenanceWork: (rows: unknown[]) => ({ total: rows.length }),
+  summarizeMaintenanceWork: (rows: unknown[]) => ({ total: rows.length, series: [] as Array<Record<string, number>> }),
 }))
 vi.mock("@/lib/services/mantencion/reporte-equipos", () => ({ loadReporteEquipos: reporteEquipos }))
 vi.mock("@/components/ui/page-header", () => ({ PageHeader: () => null, Breadcrumbs: () => null }))
@@ -194,9 +194,24 @@ describe("/mantencion/panel · rótulo de «todas las faenas»", () => {
 describe("/mantencion/panel · sin equipos en el alcance", () => {
   it("sin equipos ni registros muestra un solo estado vacío y no la franja ni los gráficos", async () => {
     Object.assign(scope, { equipment: 0, records: 0, inWorkshop: 0 })
+    reporteEquipos.mockResolvedValueOnce({ hasRuns: false })
     const tree = await page()
     expect(findElement(tree, PanelEmptyState)).not.toBeNull()
     expect(findElement(tree, PanelToday)).toBeNull()
+  })
+
+  it("PANN-1: sin equipos pero con trabajos del historial, hallazgos o reportes de turno el Panel se dibuja", async () => {
+    Object.assign(scope, { equipment: 0, records: 0, inWorkshop: 0 })
+    // Trabajos del historial / OT.
+    reporteEquipos.mockResolvedValueOnce({ hasRuns: false })
+    work.load.mockResolvedValueOnce({ rows: [{}] as never[], includesOrders: true })
+    expect(findElement(await page(), PanelEmptyState)).toBeNull()
+    // Hallazgos de inspecciones (aunque su equipo no esté vinculado).
+    reporteEquipos.mockResolvedValueOnce({ hasRuns: false })
+    work.findings.mockResolvedValueOnce({ days: 7, total: 0, withWork: 0, withoutWork: 0, inWindow: 0, unlinked: 2, byEquipment: [] })
+    expect(findElement(await page(), PanelEmptyState)).toBeNull()
+    // Reportes de turno de equipos.
+    expect(findElement(await page(), PanelEmptyState)).toBeNull()
   })
 
   it("con registros el panel se dibuja aunque la flota activa sea cero", async () => {
@@ -225,6 +240,13 @@ describe("/mantencion/panel · trabajos de mantención y equipo elegido", () => 
     expect(findElement(tree, PautasSection)).toBeNull()
     expect(findElement(tree, ReporteEquiposSection)).toBeNull()
     expect(findElement(tree, WorkOrdersSection)).not.toBeNull()
+  })
+
+  it("PANN-5: las secciones reciben el equipo elegido para llevarlo a sus enlaces; sin equipo, null", async () => {
+    session.permissions = ["mant:records:view_all", "mant:ot:view_all"]
+    expect(findElement(await page({ equipo: "v-1" }), WorkOrdersSection)!.props).toMatchObject({ equipmentId: "v-1" })
+    expect(findElement(await page(), WorkOrdersSection)!.props).toMatchObject({ equipmentId: null })
+    expect(findElement(await page({ equipo: "otro-equipo" }), WorkOrdersSection)!.props).toMatchObject({ equipmentId: null })
   })
 
   it("un equipo fuera del alcance o inventado se ignora, como una faena ajena", async () => {

@@ -583,3 +583,94 @@ describe("las asignaciones de proveedor siguen al equipo cuando cambia de faena"
     expect(assignment?.validTo).toBe(addDaysToPlainDate(todayInChile(), -1))
   })
 })
+
+// EQN-1 (auditoría de Mantención 2026-11-22): con registros y sin lectura inicial la lectura queda fija
+// en nulo, y la preventiva declarada pedía una lectura inicial imposible de cargar. Sólo los registros
+// vigentes fijan la lectura; la declarada se valida contra el primer registro vigente.
+describe("EQN-1: preventiva declarada en un equipo con registros y sin lectura inicial", () => {
+  const active = { active: true, retiredReason: "" }
+  const prior = { date: "2026-08-20", reading: 4_000, intervalValue: 10_000, evidence: "OT 35513", declaredBy: actor.userId, source: "Editar mantención" }
+  const plan = (priorPreventive?: typeof prior | null) => ({ scheduleId: scheduleKm, initialReading: null, initialReadingDate: null, priorPreventive })
+
+  async function addRecord(vehicleId: string, id: string, workDate: string, reading: number, status: "vigente" | "anulado", receivedAt?: string) {
+    await testDb.insert(schema.mantRecords).values({
+      id, kind: "C", vehicleId, equipmentSnapshot: { code: "KA-7xx", plate: "AAAA-00", noPlate: false, type: "Camión", brand: "Scania", model: null, year: null, worksite: "Arauco", unit: "km" },
+      worksiteId: WS.arauco, reading, unit: "km", workDate, registeredBy: actor.userId, executorKind: "yo", executorUserId: actor.userId,
+      executorName: "Jefatura Equipos", signedAt: `${workDate}T12:00:00.000Z`, status, ...(receivedAt ? { receivedAt } : {}),
+    })
+  }
+  async function equipmentWithRecords(code: string, plate: string, records: Array<[string, string, number, "vigente" | "anulado", string?]>) {
+    const vehicleId = await createdId(await createEquipment(actor, input({ code, plate, scheduleId: scheduleKm })))
+    for (const [id, workDate, reading, status, receivedAt] of records) await addRecord(vehicleId, id, workDate, reading, status, receivedAt)
+    return vehicleId
+  }
+
+  it("se carga: la declarada se valida contra el primer registro vigente, sin lectura inicial", async () => {
+    const vehicleId = await equipmentWithRecords("KA-701", "BCDF-81", [["rec-eqn-1", "2026-10-10", 5_000, "vigente"]])
+    const saved = await updateEquipmentPlan(actor, vehicleId, plan(prior), active)
+    expect(saved).toMatchObject({ ok: true, data: { changed: true } })
+    expect(await profileOf(vehicleId)).toMatchObject({ initialReading: null, priorPreventiveDate: "2026-08-20", priorPreventiveReading: 4_000, priorPreventiveInterval: 10_000 })
+    // Editar otra cosa después no lo trata como «quitar la lectura inicial».
+    expect(await updateEquipmentPlan(actor, vehicleId, { ...plan(prior), scheduleId: null, priorPreventive: undefined }, active)).toMatchObject({ ok: true })
+  })
+
+  it("rechaza fecha o lectura posteriores al primer registro, con fechas y lecturas legibles", async () => {
+    const vehicleId = await equipmentWithRecords("KA-702", "BCDF-82", [["rec-eqn-2", "2026-10-10", 5_000, "vigente"]])
+    const result = await updateEquipmentPlan(actor, vehicleId, plan({ ...prior, date: "2026-10-11", reading: 5_001 }), active)
+    expect(!result.ok && result.fieldErrors.priorPreventiveDate).toBe("La fecha de la preventiva no puede ser posterior a la del primer registro del equipo (10-10-2026).")
+    expect(!result.ok && result.fieldErrors.priorPreventiveReading).toBe("La lectura de la preventiva no puede ser mayor que la del primer registro del equipo (5.000 km).")
+    expect((await profileOf(vehicleId))?.priorPreventiveDate).toBeNull()
+  })
+
+  it("el primer registro vigente es el de menor fecha de trabajo; los anulados no cuentan", async () => {
+    const vehicleId = await equipmentWithRecords("KA-703", "BCDF-83", [
+      ["rec-eqn-3a", "2026-09-01", 3_000, "anulado"],
+      ["rec-eqn-3b", "2026-10-10", 5_000, "vigente"],
+      ["rec-eqn-3c", "2026-10-05", 4_500, "vigente"],
+    ])
+    const late = await updateEquipmentPlan(actor, vehicleId, plan({ ...prior, date: "2026-10-06", reading: 4_400 }), active)
+    expect(!late.ok && late.fieldErrors.priorPreventiveDate).toContain("05-10-2026")
+    const fine = await updateEquipmentPlan(actor, vehicleId, plan({ ...prior, date: "2026-10-05", reading: 4_500 }), active)
+    expect(fine.ok).toBe(true)
+  })
+
+  it("con el mismo día de trabajo manda la recepción más antigua", async () => {
+    const vehicleId = await equipmentWithRecords("KA-704", "BCDF-84", [
+      ["rec-eqn-4a", "2026-10-10", 5_000, "vigente", "2026-10-12T10:00:00.000Z"],
+      ["rec-eqn-4b", "2026-10-10", 4_800, "vigente", "2026-10-10T10:00:00.000Z"],
+    ])
+    const result = await updateEquipmentPlan(actor, vehicleId, plan({ ...prior, reading: 4_900 }), active)
+    expect(!result.ok && result.fieldErrors.priorPreventiveReading).toContain("4.800 km")
+  })
+
+  it("sin lectura inicial y sin registros vigentes se sigue pidiendo la lectura inicial", async () => {
+    const vehicleId = await equipmentWithRecords("KA-705", "BCDF-85", [["rec-eqn-5", "2026-10-10", 5_000, "anulado"]])
+    const result = await updateEquipmentPlan(actor, vehicleId, plan(prior), active)
+    expect(!result.ok && result.fieldErrors.priorPreventiveDate).toMatch(/Primero indica la lectura inicial/)
+  })
+
+  it("con sólo registros anulados la lectura inicial se puede fijar, pero la unidad sigue fija", async () => {
+    const vehicleId = await equipmentWithRecords("KA-706", "BCDF-86", [["rec-eqn-6", "2026-10-10", 5_000, "anulado"]])
+    const set = await updateEquipmentPlan(actor, vehicleId, { scheduleId: scheduleKm, initialReading: 6_000, initialReadingDate: "2026-10-20" }, active)
+    expect(set.ok).toBe(true)
+    expect(await profileOf(vehicleId)).toMatchObject({ initialReading: 6_000 })
+    const blocked = await editIdentity(vehicleId, { equipmentTypeId: T.h })
+    expect(blocked && !blocked.ok && blocked.fieldErrors.equipmentTypeId).toBe("No se puede cambiar a otra unidad: el equipo ya tiene registros.")
+  })
+
+  it("con un registro vigente la lectura inicial sigue fija, y la ficha lo sabe", async () => {
+    const { countEquipmentRecords } = await import("@/lib/services/mantencion/equipment")
+    const vehicleId = await equipmentWithRecords("KA-707", "BCDF-87", [["rec-eqn-7a", "2026-10-10", 5_000, "vigente"], ["rec-eqn-7b", "2026-10-11", 5_100, "anulado"]])
+    expect(await countEquipmentRecords(vehicleId)).toBe(1)
+    const locked = await updateEquipmentPlan(actor, vehicleId, { scheduleId: scheduleKm, initialReading: 100, initialReadingDate: "2026-10-01" }, active)
+    expect(!locked.ok && locked.fieldErrors.initialReading).toMatch(/ya tiene registros/)
+  })
+
+  it("la carga de toda la flota trae lo de cada equipo en una pasada", async () => {
+    const { loadEquipmentCurrents } = await import("@/lib/services/mantencion/equipment-resolve")
+    const currents = new Map((await loadEquipmentCurrents(testDb)).map((item) => [item.fields.code, item]))
+    expect(currents.get("KA-703")).toMatchObject({ recordCount: 3, activeRecordCount: 2, firstActiveRecord: { date: "2026-10-05", reading: 4_500 } })
+    expect(currents.get("KA-705")).toMatchObject({ recordCount: 1, activeRecordCount: 0, firstActiveRecord: null })
+    expect(currents.get("KA-610")).toMatchObject({ recordCount: 1, activeRecordCount: 1 })
+  })
+})

@@ -47,18 +47,104 @@ describe("validación de la declaración contra la lectura inicial y la pauta", 
   })
 })
 
-describe("ninguna puerta deja la lectura inicial bajo la declarada guardada", () => {
-  const fields: EquipmentFields = {
-    code: "KCH-133", plate: "SRCJ-47", noPlate: false, type: "Tracto", brand: "MAN", model: null, year: 2023, worksite: "Biodiversa",
-    schedule: "Camiones y tractos", initialReading: 435_410, initialReadingDate: "2026-11-20",
-    priorPreventiveDate: "2026-08-20", priorPreventiveReading: 414_394, priorPreventiveInterval: 40_000, priorPreventiveEvidence: "OT 35513",
-  }
-  const current = {
-    vehicleId: "v1", worksiteId: "w1", equipmentTypeId: "t1", active: true, retiredReason: null, unit: "km", recordCount: 0,
-    brandId: "b1", scheduleId: "s1", fields, priorPreventiveDeclaredBy: "u-jefe", priorPreventiveSource: "Planilla", profileUpdatedAt: "2026-11-21",
-  } satisfies EquipmentCurrent
-  const schedules = [{ id: "s1", name: "Camiones y tractos", unit: "km" as const }]
+const fields: EquipmentFields = {
+  code: "KCH-133", plate: "SRCJ-47", noPlate: false, type: "Tracto", brand: "MAN", model: null, year: 2023, worksite: "Biodiversa",
+  schedule: "Camiones y tractos", initialReading: 435_410, initialReadingDate: "2026-11-20",
+  priorPreventiveDate: "2026-08-20", priorPreventiveReading: 414_394, priorPreventiveInterval: 40_000, priorPreventiveEvidence: "OT 35513",
+}
+const current = {
+  vehicleId: "v1", worksiteId: "w1", equipmentTypeId: "t1", active: true, retiredReason: null, unit: "km", recordCount: 0, activeRecordCount: 0, firstActiveRecord: null,
+  brandId: "b1", scheduleId: "s1", fields, priorPreventiveDeclaredBy: "u-jefe", priorPreventiveSource: "Planilla", profileUpdatedAt: "2026-11-21",
+} satisfies EquipmentCurrent
+const schedules = [{ id: "s1", name: "Camiones y tractos", unit: "km" as const }]
 
+
+describe("EQN-1: sin lectura inicial y con registros vigentes, la declarada se valida contra el primer registro", () => {
+  const noInitial = { ...plan, initialReading: null, initialReadingDate: null, unit: "km" as const }
+  const first = { date: "2026-10-05", reading: 420_000 }
+
+  it("acepta una declarada de fecha y lectura iguales o menores a las del primer registro vigente", () => {
+    expect(resolvePriorPreventive(ok, { ...noInitial, firstActiveRecord: first }, "2026-11-22")).toEqual({ value: ok, errors: {} })
+    const same = { ...ok, date: first.date, reading: first.reading }
+    expect(resolvePriorPreventive(same, { ...noInitial, firstActiveRecord: first }, "2026-11-22").errors).toEqual({})
+  })
+
+  it("rechaza una fecha posterior al primer registro, con la fecha en dd-mm-aaaa", () => {
+    const result = resolvePriorPreventive({ ...ok, date: "2026-10-06" }, { ...noInitial, firstActiveRecord: first }, "2026-11-22")
+    expect(result.value).toBeNull()
+    expect(result.errors.priorPreventiveDate).toContain("05-10-2026")
+    expect(result.errors.priorPreventiveDate).not.toContain("2026-10-05")
+    expect(result.errors.priorPreventiveReading).toBeUndefined()
+  })
+
+  it("rechaza una lectura mayor que la del primer registro, con miles chilenos y unidad", () => {
+    const result = resolvePriorPreventive({ ...ok, reading: 420_001 }, { ...noInitial, firstActiveRecord: first }, "2026-11-22")
+    expect(result.errors.priorPreventiveReading).toContain("420.000 km")
+    expect(result.errors.priorPreventiveDate).toBeUndefined()
+  })
+
+  it("sin lectura inicial ni registros vigentes se exige la lectura inicial, como antes", () => {
+    for (const firstActiveRecord of [null, undefined]) {
+      const result = resolvePriorPreventive(ok, { ...noInitial, firstActiveRecord }, "2026-11-22")
+      expect(result.errors.priorPreventiveDate).toMatch(/Primero indica la lectura inicial/)
+    }
+  })
+
+  it("con lectura inicial manda la lectura inicial, aunque haya primer registro", () => {
+    const result = resolvePriorPreventive({ ...ok, date: "2026-11-21" }, { ...plan, unit: "km", firstActiveRecord: { date: "2026-12-01", reading: 500_000 } }, "2026-11-22")
+    expect(result.errors.priorPreventiveDate).toContain("20-11-2026")
+  })
+})
+
+describe("EQN-6: los mensajes escriben las fechas y las lecturas como las lee una persona", () => {
+  it("la declarada contra la lectura inicial: dd-mm-aaaa y miles con unidad", () => {
+    const result = resolvePriorPreventive({ ...ok, date: "2026-11-21", reading: 435_411 }, { ...plan, unit: "km" }, "2026-11-22")
+    expect(result.errors.priorPreventiveDate).toBe("La fecha de la preventiva no puede ser posterior a la de la lectura inicial (20-11-2026).")
+    expect(result.errors.priorPreventiveReading).toBe("La lectura de la preventiva no puede ser mayor que la lectura inicial (435.410 km).")
+  })
+
+  it("sin unidad conocida igual lleva separador de miles", () => {
+    expect(resolvePriorPreventive({ ...ok, reading: 435_411 }, plan, "2026-11-22").errors.priorPreventiveReading).toContain("435.410")
+  })
+
+  it("la lectura inicial contra la declarada guardada", () => {
+    const result = resolveEquipmentPlan(schedules, { scheduleId: "s1", initialReading: 300_000, initialReadingDate: "2026-01-01" }, "km", current, { today: "2026-11-22" })
+    expect(result.errors.initialReading).toBe("La lectura inicial no puede ser menor que la de la preventiva declarada (414.394 km).")
+    expect(result.errors.initialReadingDate).toBe("La fecha de la lectura inicial no puede ser anterior a la de la preventiva declarada (20-08-2026).")
+  })
+})
+
+describe("EQN-1: sólo los registros vigentes fijan la lectura inicial", () => {
+  const withRecords = (patch: Partial<EquipmentCurrent>): EquipmentCurrent => ({
+    ...current, recordCount: 2, activeRecordCount: 0, firstActiveRecord: null,
+    fields: { ...fields, initialReading: null, initialReadingDate: null, priorPreventiveDate: null, priorPreventiveReading: null, priorPreventiveInterval: null, priorPreventiveEvidence: null },
+    ...patch,
+  })
+  const input = { scheduleId: "s1", initialReading: 150_000, initialReadingDate: "2026-11-01" }
+
+  it("con registros sólo anulados se puede fijar la lectura inicial", () => {
+    const result = resolveEquipmentPlan(schedules, input, "km", withRecords({}), { today: "2026-11-22" })
+    expect(result.errors).toEqual({})
+    expect(result.value).toMatchObject({ initialReading: 150_000, initialReadingDate: "2026-11-01" })
+  })
+
+  it("con un registro vigente la lectura inicial sigue fija (nula)", () => {
+    const result = resolveEquipmentPlan(schedules, input, "km", withRecords({ activeRecordCount: 1, firstActiveRecord: { date: "2026-10-05", reading: 420_000 } }), { today: "2026-11-22" })
+    expect(result.errors.initialReading).toMatch(/ya tiene registros/)
+    expect(result.value.initialReading).toBeNull()
+  })
+
+  it("un equipo sin lectura inicial y con declarada guardada puede editar su pauta sin que le «quiten» una lectura que nunca tuvo", () => {
+    const stored = withRecords({
+      activeRecordCount: 1, firstActiveRecord: { date: "2026-10-05", reading: 420_000 },
+      fields: { ...fields, initialReading: null, initialReadingDate: null },
+    })
+    const result = resolveEquipmentPlan(schedules, { scheduleId: "s1", initialReading: null, initialReadingDate: null }, "km", stored, { today: "2026-11-22" })
+    expect(result.errors).toEqual({})
+  })
+})
+
+describe("ninguna puerta deja la lectura inicial bajo la declarada guardada", () => {
   it("rechaza una lectura inicial menor o anterior a la declarada", () => {
     const result = resolveEquipmentPlan(schedules, { scheduleId: "s1", initialReading: 300_000, initialReadingDate: "2026-01-01" }, "km", current, { today: "2026-11-22" })
     expect(result.errors.initialReading).toMatch(/preventiva declarada/)

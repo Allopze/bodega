@@ -12,7 +12,8 @@ import {
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
 import { loadWorkOrderRecordForm } from "@/lib/services/mantencion/web-record"
-import { listAssignableMechanics, loadWorkOrderDetail, loadWorkOrderEntryCatalogs } from "@/lib/services/mantencion/work-orders/query"
+import { listAssignableMechanics, listExecutionWorksiteOptions, loadWorkOrderDetail, loadWorkOrderEntryCatalogs } from "@/lib/services/mantencion/work-orders/query"
+import { getOperationalSettings } from "@/lib/services/system-settings"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Orden de trabajo" }
@@ -46,11 +47,16 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
   // El nombre del repuesto enlaza a su ficha del catálogo sólo con `repuestos:catalog` (la ficha lo exige en el servidor).
   const canOpenSpareParts = can(session, "repuestos:catalog")
   // Los catálogos sólo se consultan cuando el usuario puede usarlos.
-  const [mechanics, entryCatalogs, recordForm] = await Promise.all([
+  const needsClassificationForm = detail.canEditRequest || detail.canReclassify
+  const [mechanics, entryCatalogs, recordForm, executionWorksites, settings] = await Promise.all([
     allowed.has("assign") ? listAssignableMechanics() : Promise.resolve(null),
     needsEntryCatalogs ? loadWorkOrderEntryCatalogs() : Promise.resolve(null),
     detail.canRegisterRecord ? loadWorkOrderRecordForm(viewer, detail) : Promise.resolve(null),
+    // «Editar solicitud» y «Corregir clasificación» eligen la faena de ejecución y marcan el tipo de acción como obligatorio.
+    needsClassificationForm ? listExecutionWorksiteOptions() : Promise.resolve(null),
+    needsClassificationForm ? getOperationalSettings() : Promise.resolve(null),
   ])
+  const requestItems = (kind: "anexo" | "mantencion") => detail.items.filter((item) => item.origin === "solicitud" && item.kind === kind).map((item) => item.description)
 
   return (
     <PageContainer width="workbench">
@@ -87,6 +93,29 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
             needsLinkedRecord={detail.needsLinkedRecord}
             recordForm={recordForm}
             partsRequestHref={partsRequestHref}
+            canEditRequest={detail.canEditRequest}
+            canReclassify={detail.canReclassify}
+            executionWorksites={executionWorksites}
+            actionTypeRequired={settings?.mantencionActionTypeRequired === 1}
+            request={{
+              equipmentLabel: equipmentText(detail),
+              worksiteId: detail.worksiteId,
+              worksiteName: detail.worksiteName,
+              repair: detail.repair,
+              maintenance: detail.maintenance,
+              requestDate: detail.requestDate,
+              requesterName: detail.requesterName,
+              repairDescription: detail.repairDescription,
+              observations: detail.observations,
+              actionType: detail.actionType,
+              specialties: detail.specialties,
+              executionWorksiteId: detail.executionWorksiteId,
+              annexItems: requestItems("anexo"),
+              maintenanceItems: requestItems("mantencion"),
+              laborHours: detail.laborHours,
+              workPerformed: detail.workPerformed,
+              hasExit: detail.exit !== null,
+            }}
           />
         )}
       />

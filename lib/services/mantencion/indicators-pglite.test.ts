@@ -30,7 +30,7 @@ const {
   loadOpenWorkOrdersByStatus, loadOutOfService, loadPautaState, loadRecordIndicators,
   loadTopRepairEquipment, loadWorkOrderPeriodStats, loadWorkOrderSeries,
 } = await import("@/lib/services/mantencion/indicators")
-const { countPendingReview, loadRecordSeries } = await import("@/lib/services/mantencion/panel")
+const { countPendingReview, loadPanelWorksites, loadRecordSeries } = await import("@/lib/services/mantencion/panel")
 
 const TODAY = "2026-11-13"
 const NOW = new Date("2026-11-13T15:00:00Z")
@@ -369,6 +369,30 @@ describe("días fuera de servicio por la faena del día (traslado entre faenas)"
     } finally {
       await testDb.delete(schema.fuelVehicleOperationalIntervals).where(eq(schema.fuelVehicleOperationalIntervals.id, "i-transfer"))
       await testDb.delete(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, TRANSFERRED))
+    }
+  })
+})
+
+describe("faenas del selector del Panel (PAN-8)", () => {
+  const EXTRA = { sinConfig: "ws-ind-sin-config", inactiva: "ws-ind-inactiva" } as const
+
+  it("ofrece las faenas activas con o sin configuración de mantención y no las desactivadas, dentro del alcance", async () => {
+    const now = new Date().toISOString()
+    const worksite = (id: string, name: string, isActive: boolean) => ({ id, name, code: id.toUpperCase(), isActive, createdAt: now, updatedAt: now })
+    await testDb.insert(schema.worksites).values([worksite(EXTRA.sinConfig, "Oficina Central", true), worksite(EXTRA.inactiva, "Cholguan", false)])
+    // La desactivada SÍ tiene configuración (el `innerJoin` anterior la ofrecía); la activa «Oficina Central», no.
+    await testDb.insert(schema.mantWorksiteSettings).values([{ worksiteId: EXTRA.inactiva, folioCode: "ZQB" }, { worksiteId: WS.a, folioCode: "ZQA" }])
+    try {
+      expect((await loadPanelWorksites(GLOBAL)).map((item) => item.name)).toEqual(["Faena A", "Faena B", "Oficina Central"])
+      // Con alcance limitado, sólo sus faenas activas; una faena ajena o desactivada no se ofrece (la página la ignora en la URL).
+      expect((await loadPanelWorksites(SCOPED_A)).map((item) => item.id)).toEqual([WS.a])
+      expect(await loadPanelWorksites({ ...SCOPED_A, worksiteIds: [] })).toEqual([])
+      expect((await loadPanelWorksites({ ...SCOPED_A, worksiteIds: [EXTRA.inactiva] })).map((item) => item.id)).toEqual([])
+    } finally {
+      await testDb.delete(schema.mantWorksiteSettings).where(eq(schema.mantWorksiteSettings.worksiteId, EXTRA.inactiva))
+      await testDb.delete(schema.mantWorksiteSettings).where(eq(schema.mantWorksiteSettings.worksiteId, WS.a))
+      await testDb.delete(schema.worksites).where(eq(schema.worksites.id, EXTRA.sinConfig))
+      await testDb.delete(schema.worksites).where(eq(schema.worksites.id, EXTRA.inactiva))
     }
   })
 })

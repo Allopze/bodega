@@ -19,7 +19,7 @@ export default async function ImportHistoricalPage() {
     <PageContainer width="form">
       <PageHeader
         title="Importar historial anterior"
-        description="Incorpora los trabajos de los formularios anteriores conservando sus datos de origen."
+        description="Sube la exportación de Google Forms para incorporar las últimas respuestas hasta el corte de los formularios, conservando sus datos de origen."
         breadcrumb={[
           { label: "Control operacional", href: "/control-operacional" },
           { label: "Mantención" },

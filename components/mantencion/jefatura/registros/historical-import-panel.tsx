@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { FileDropzone } from "@/components/ui/file-dropzone"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { cutoverNotice } from "@/lib/mantencion/forms-cutover"
 import type { HistoricalPreview, HistoricalSummary } from "@/lib/services/mantencion/historical-import"
 import { commitHistoricalAction, previewHistoricalAction } from "@/app/(app)/mantencion/registros/historicos/actions"
 import { SectionCard } from "../shared/section-card"
@@ -42,6 +43,13 @@ export function HistoricalImportPanel() {
       <p className="mt-2 text-sm text-[var(--color-text-muted)]">
         {stage.summary.unmatched + stage.summary.conflicts} trabajos tienen el equipo sin identificar y {stage.summary.unresolvedWorksites} tienen la faena sin identificar.
       </p>
+      {stage.summary.differing > 0 && (
+        <p className="mt-2 text-sm text-[var(--color-text-muted)]">{stage.summary.differing} ya estaban cargadas con contenido distinto (se conservó lo cargado).</p>
+      )}
+      {stage.summary.possibleDuplicates > 0 && (
+        <p className="mt-2 text-sm text-[var(--color-text-muted)]">{stage.summary.possibleDuplicates} se guardaron como posibles duplicados: revísalas en el historial.</p>
+      )}
+      {stage.summary.afterCutover > 0 && <p className="mt-2 text-sm text-[var(--color-warning-ink)]">{cutoverNotice(stage.summary.afterCutover)}</p>}
       <div className="mt-4 flex flex-wrap gap-2">
         <Button asChild><Link href="/mantencion/registros/historicos">Ver historial anterior</Link></Button>
         <Button variant="secondary" onClick={() => setStage({ name: "choose" })}>Revisar otra planilla</Button>
@@ -50,7 +58,7 @@ export function HistoricalImportPanel() {
   )
   return (
     <div className="flex flex-col gap-5">
-      <SectionCard title="1. Elige el archivo de historial" description="Usa el Excel de respuestas por faena. Se conservarán los datos de los trabajos.">
+      <SectionCard title="1. Elige la exportación de Google Forms" description="Usa el Excel que se descarga de las respuestas del formulario de mantención. Sirve para subir las últimas respuestas hasta el corte de los formularios; se conservarán los datos de los trabajos y lo ya cargado no se sobrescribe.">
         <FileDropzone
           id="historical-import-file"
           accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -72,6 +80,26 @@ export function HistoricalImportPanel() {
           <p className="mt-2 text-sm">
             {stage.preview.summary.linked} con equipo identificado · {stage.preview.summary.unmatched} sin coincidencia · {stage.preview.summary.conflicts} con datos de equipo dudosos · {stage.preview.summary.unresolvedWorksites} con faena sin identificar.
           </p>
+          {stage.preview.summary.differing > 0 && (
+            <Callout tone="info" className="mt-3" title="Respuestas ya cargadas con contenido distinto">
+              {stage.preview.summary.differing} ya estaban cargadas con contenido distinto (se conservó lo cargado). No se sobrescriben; sólo se completan el equipo o la faena si faltaban.
+            </Callout>
+          )}
+          {stage.preview.summary.possibleDuplicates > 0 && (
+            <Callout tone="warning" className="mt-3" title="Posibles duplicados">
+              {stage.preview.summary.possibleDuplicates} respuestas entrarán como nuevas, pero pueden estar repetidas.
+              <ul className="mt-2 max-h-40 space-y-1 overflow-auto text-xs">
+                {stage.preview.duplicates.map((row) => (
+                  <li key={`${row.sheet}-${row.rowNumber}`}>Fila {row.rowNumber} de «{row.sheet}»: {row.message}</li>
+                ))}
+              </ul>
+            </Callout>
+          )}
+          {stage.preview.summary.afterCutover > 0 && (
+            <Callout tone="warning" className="mt-3" title="Respuestas posteriores al corte de los formularios">
+              {cutoverNotice(stage.preview.summary.afterCutover)}
+            </Callout>
+          )}
           {stage.preview.pending.length > 0 && (
             <Callout tone="warning" className="mt-3" title="Hay trabajos con equipo o faena sin identificar">
               Se guardarán con sus datos originales y podrás identificarlos después, desde cada trabajo.

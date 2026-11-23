@@ -1,12 +1,12 @@
-import { and, count, eq, isNull } from "drizzle-orm"
+import { and, count, eq, isNull, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
   fuelEquipmentTypes, fuelVehicles, mantBrands, mantEquipmentProfiles, mantRecords, mantSchedules, worksites,
 } from "@/db/schema"
-import { unitName } from "@/lib/mantencion/format"
+import { formatNumber, formatReading, unitName } from "@/lib/mantencion/format"
 import { cleanName, findByNameKey, nameKey, normalizeCode, normalizePlate, resolvePlate } from "@/lib/mantencion/normalize"
 import type { MantUnit } from "@/lib/mantencion/types"
-import { codeYear, todayInChile } from "@/lib/utils"
+import { codeYear, formatDate, todayInChile } from "@/lib/utils"
 import { unitFromMeter } from "./fleet"
 import type { EquipmentFields } from "./equipment-history"
 
@@ -88,7 +88,15 @@ export interface EquipmentCurrent {
   active: boolean
   retiredReason: string | null
   unit: MantUnit
+  /** Registros en cualquier estado: fijan la unidad del equipo (un anulado también cuenta). */
   recordCount: number
+  /** Registros vigentes: sólo ellos fijan la lectura inicial (uno anulado no bloquea nada). */
+  activeRecordCount: number
+  /**
+   * El primer registro vigente (por `work_date` y luego `received_at`): contra él se valida la
+   * preventiva declarada de un equipo SIN lectura inicial. `null` sin registros vigentes.
+   */
+  firstActiveRecord: { date: string; reading: number } | null
   /** Marca del perfil (lista cerrada): la conserva el padrón cuando quien edita no administra Mantención. */
   brandId: string
   /** Pauta vigente; `null` sin pauta o si la que tenía se eliminó. */
@@ -163,9 +171,13 @@ export function findIdentityByCode(identities: readonly VehicleIdentity[], code:
   return key ? identities.find((item) => item.code !== null && normalizeCode(item.code) === key) ?? null : null
 }
 
-/** Cuenta los registros del equipo (cualquier estado): fijan su unidad y su lectura inicial. */
+/**
+ * Cuenta los registros VIGENTES del equipo: son los que dejan fija su lectura inicial (uno anulado no
+ * bloquea nada; EQN-1). El cambio de unidad sigue contando todos los estados (`EquipmentCurrent.recordCount`).
+ */
 export async function countEquipmentRecords(vehicleId: string, client: Reader = db): Promise<number> {
-  const [row] = await client.select({ n: count() }).from(mantRecords).where(eq(mantRecords.vehicleId, vehicleId))
+  const [row] = await client.select({ n: count() }).from(mantRecords)
+    .where(and(eq(mantRecords.vehicleId, vehicleId), eq(mantRecords.status, "vigente")))
   return row?.n ?? 0
 }
 
@@ -215,18 +227,28 @@ export async function loadEquipmentCurrents(client: Reader, vehicleId?: string):
     .innerJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId))
     .leftJoin(mantSchedules, and(eq(mantSchedules.id, mantEquipmentProfiles.scheduleId), isNull(mantSchedules.deletedAt)))
     .where(vehicleId ? eq(mantEquipmentProfiles.vehicleId, vehicleId) : undefined)
-  const withRecords = new Map<string, number>()
+  // Una sola consulta agrupada para todos los equipos (la importación carga la flota entera): el total,
+  // los vigentes y el primer vigente, sin una consulta por fila.
+  const firstActiveBy = (column: typeof mantRecords.workDate | typeof mantRecords.reading) =>
+    sql<string | null>`(array_agg(${column} order by ${mantRecords.workDate}, ${mantRecords.receivedAt}) filter (where ${mantRecords.status} = 'vigente'))[1]`
   const recordRows = await client
-    .select({ vehicleId: mantRecords.vehicleId, n: count() })
+    .select({
+      vehicleId: mantRecords.vehicleId,
+      n: count(),
+      active: sql<number>`count(*) filter (where ${mantRecords.status} = 'vigente')::int`,
+      firstDate: firstActiveBy(mantRecords.workDate),
+      firstReading: firstActiveBy(mantRecords.reading),
+    })
     .from(mantRecords)
     .where(vehicleId ? eq(mantRecords.vehicleId, vehicleId) : undefined)
     .groupBy(mantRecords.vehicleId)
-  for (const row of recordRows) withRecords.set(row.vehicleId, row.n)
+  const withRecords = new Map(recordRows.map((row) => [row.vehicleId, row]))
 
   const currents: EquipmentCurrent[] = []
   for (const row of rows) {
     const unit = unitFromMeter(row.meterType)
     if (!unit) continue
+    const records = withRecords.get(row.vehicleId)
     currents.push({
       vehicleId: row.vehicleId,
       worksiteId: row.worksiteId,
@@ -234,7 +256,9 @@ export async function loadEquipmentCurrents(client: Reader, vehicleId?: string):
       active: row.isActive,
       retiredReason: row.retiredReason,
       unit,
-      recordCount: withRecords.get(row.vehicleId) ?? 0,
+      recordCount: records?.n ?? 0,
+      activeRecordCount: Number(records?.active ?? 0),
+      firstActiveRecord: records?.firstDate && records.firstReading != null ? { date: records.firstDate, reading: Number(records.firstReading) } : null,
       brandId: row.brandId,
       scheduleId: row.scheduleId,
       fields: {
@@ -355,7 +379,9 @@ export const EVIDENCE_REFERENCE_MESSAGE = "El respaldo tiene que ser un número 
  * decisión del usuario del 2026-11-21, opción A). Reglas del servidor, no sólo del formulario:
  * - van las cuatro: fecha, lectura, servicio de la pauta y respaldo (orden de trabajo o factura);
  * - necesita la lectura inicial: la fecha no puede ser posterior a la de esa lectura ni futura, y la
- *   lectura no puede pasar de la inicial;
+ *   lectura no puede pasar de la inicial. Un equipo SIN lectura inicial pero con registros vigentes (ya
+ *   no se puede fijar una, EQN-1) se valida contra su primer registro vigente: ni la fecha ni la lectura
+ *   pueden ser posteriores a las de ese registro. Sin lectura inicial ni registros, se exige la lectura;
  * - el servicio tiene que existir en la pauta vigente del equipo.
  * Todo vacío = borrarla.
  */
@@ -366,6 +392,10 @@ export function resolvePriorPreventive(
     initialReadingDate: string | null
     hasSchedule: boolean
     intervals: readonly number[]
+    /** Primer registro vigente del equipo: sólo se mira si NO hay lectura inicial. */
+    firstActiveRecord?: { date: string; reading: number } | null
+    /** Unidad del equipo, para escribir las lecturas con su unidad en los mensajes. */
+    unit?: MantUnit | null
     /** El servicio de la declaración guardada: sigue valiendo aunque la pauta se haya republicado sin él. */
     storedInterval?: number | null
   },
@@ -387,15 +417,26 @@ export function resolvePriorPreventive(
   else if (evidence.length > 120) errors.priorPreventiveEvidence = "El respaldo es demasiado largo (máximo 120 caracteres)."
   else if (!isEvidenceReference(evidence)) errors.priorPreventiveEvidence = EVIDENCE_REFERENCE_MESSAGE
 
-  if (plan.initialReading === null || !plan.initialReadingDate) {
-    errors.priorPreventiveDate ??= "Primero indica la lectura inicial: la preventiva declarada no puede ser posterior a ella."
+  const readingText = (value: number) => (plan.unit ? formatReading(value, plan.unit) : formatNumber(value))
+  const hasInitial = plan.initialReading !== null && !!plan.initialReadingDate
+  if (hasInitial) {
+    if (!errors.priorPreventiveDate && input.date && input.date > (plan.initialReadingDate as string)) {
+      errors.priorPreventiveDate = `La fecha de la preventiva no puede ser posterior a la de la lectura inicial (${formatDate(plan.initialReadingDate as string)}).`
+    }
+    if (!errors.priorPreventiveReading && input.reading !== null && input.reading > (plan.initialReading as number)) {
+      errors.priorPreventiveReading = `La lectura de la preventiva no puede ser mayor que la lectura inicial (${readingText(plan.initialReading as number)}).`
+    }
+  } else if (plan.firstActiveRecord) {
+    // Sin lectura inicial pero con registros: la declarada tiene que ser anterior a lo que la plataforma ya registró.
+    const first = plan.firstActiveRecord
+    if (!errors.priorPreventiveDate && input.date && input.date > first.date) {
+      errors.priorPreventiveDate = `La fecha de la preventiva no puede ser posterior a la del primer registro del equipo (${formatDate(first.date)}).`
+    }
+    if (!errors.priorPreventiveReading && input.reading !== null && input.reading > first.reading) {
+      errors.priorPreventiveReading = `La lectura de la preventiva no puede ser mayor que la del primer registro del equipo (${readingText(first.reading)}).`
+    }
   } else {
-    if (!errors.priorPreventiveDate && input.date && input.date > plan.initialReadingDate) {
-      errors.priorPreventiveDate = `La fecha de la preventiva no puede ser posterior a la de la lectura inicial (${plan.initialReadingDate}).`
-    }
-    if (!errors.priorPreventiveReading && input.reading !== null && input.reading > plan.initialReading) {
-      errors.priorPreventiveReading = `La lectura de la preventiva no puede ser mayor que la lectura inicial (${plan.initialReading}).`
-    }
+    errors.priorPreventiveDate ??= "Primero indica la lectura inicial: la preventiva declarada no puede ser posterior a ella."
   }
   if (!plan.hasSchedule) errors.priorPreventiveInterval ??= "Asigna una pauta: el servicio tiene que existir en ella."
   else if (input.intervalValue !== null && !plan.intervals.includes(input.intervalValue) && input.intervalValue !== plan.storedInterval) {
@@ -451,7 +492,8 @@ export function resolveEquipmentPlan(
   if (initialReading !== null && (!Number.isFinite(initialReading) || initialReading < 0 || initialReading > 99_999_999)) {
     errors.initialReading = "Escribe una lectura válida: un número que no sea negativo."
   }
-  if (current && current.recordCount > 0) {
+  // Sólo los registros VIGENTES fijan la lectura inicial: uno anulado no deja al equipo trabado (EQN-1).
+  if (current && current.activeRecordCount > 0) {
     if ((initialReading ?? null) !== current.fields.initialReading) {
       if (options.ignoreLockedInitialReading) notices.push("La lectura inicial no se cambia: el equipo ya tiene registros. Se conserva la actual.")
       else errors.initialReading = "La lectura inicial no se puede cambiar: el equipo ya tiene registros."
@@ -476,10 +518,11 @@ export function resolveEquipmentPlan(
   const priorReading = current?.fields.priorPreventiveReading ?? null
   if ((options.checkStoredPrior ?? true) && priorDate && priorReading !== null && !errors.initialReading && !errors.initialReadingDate) {
     if (initialReading === null) {
-      errors.initialReading = "No se puede quitar la lectura inicial: el equipo tiene una preventiva declarada. Bórrala primero."
+      // Un equipo que nunca tuvo lectura inicial (su declarada se validó contra el primer registro) no la «quita».
+      if (current?.fields.initialReading != null) errors.initialReading = "No se puede quitar la lectura inicial: el equipo tiene una preventiva declarada. Bórrala primero."
     } else {
-      if (initialReading < priorReading) errors.initialReading = `La lectura inicial no puede ser menor que la de la preventiva declarada (${priorReading}).`
-      if (initialReadingDate && initialReadingDate < priorDate) errors.initialReadingDate = `La fecha de la lectura inicial no puede ser anterior a la de la preventiva declarada (${priorDate}).`
+      if (initialReading < priorReading) errors.initialReading = `La lectura inicial no puede ser menor que la de la preventiva declarada (${unit ? formatReading(priorReading, unit) : formatNumber(priorReading)}).`
+      if (initialReadingDate && initialReadingDate < priorDate) errors.initialReadingDate = `La fecha de la lectura inicial no puede ser anterior a la de la preventiva declarada (${formatDate(priorDate)}).`
     }
   }
 

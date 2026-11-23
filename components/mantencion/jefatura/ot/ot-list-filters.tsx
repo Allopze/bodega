@@ -19,7 +19,7 @@ export interface OtFilterEquipment {
 
 /**
  * Filtros de la lista de OT (A2): cinco primarios —búsqueda, faena, mecánico,
- * desde y hasta— con una pastilla removible por cada filtro activo (también
+ * pedida desde y pedida hasta (la fecha de la orden)— con una pastilla removible por cada filtro activo (también
  * «Equipo» y «Repuestos: pendientes», que no tienen control propio). El estado NO
  * está aquí: son las pestañas sobre la tabla (A5). Todo vive en la URL
  * (`router.replace`, sin mover el scroll) y la búsqueda es del servidor, por eso
@@ -42,6 +42,8 @@ export function OtListFilters({ options, equipment, allWorksitesLabel = ALL_WORK
   const mechanicId = getFilter("mecanico")
   const from = getFilter("desde")
   const to = getFilter("hasta")
+  const closedFrom = getFilter("cerradaDesde")
+  const closedTo = getFilter("cerradaHasta")
   const q = searchParams.get("q") ?? ""
   const partsPending = getFilter("repuestos") === "pendientes"
 
@@ -52,8 +54,14 @@ export function OtListFilters({ options, equipment, allWorksitesLabel = ALL_WORK
   add("faena", "Faena", worksiteId, options.worksites.find((item) => item.id === worksiteId)?.name)
   add("equipo", "Equipo", vehicleId, equipment.find((item) => item.id === vehicleId)?.label)
   add("mecanico", "Mecánico", mechanicId, options.mechanics.find((item) => item.id === mechanicId)?.name)
-  add("desde", "Desde", from, from ? formatDate(from) : undefined)
-  add("hasta", "Hasta", to, to ? formatDate(to) : undefined)
+  // `desde`/`hasta` filtran por la fecha de la orden, no por el ingreso ni el cierre: el rótulo lo dice (OTN-16).
+  add("desde", "Pedida desde", from, from ? formatDate(from) : undefined)
+  add("hasta", "Pedida hasta", to, to ? formatDate(to) : undefined)
+  // El día de cierre llega por el enlace del Panel y no tiene control (A2): un solo chip para el rango, que quita los dos.
+  if (closedFrom || closedTo) {
+    const range = closedFrom && closedTo ? `entre ${formatDate(closedFrom)} y ${formatDate(closedTo)}` : closedFrom ? `desde ${formatDate(closedFrom)}` : `hasta ${formatDate(closedTo)}`
+    chips.push({ key: "cerrada", label: "Cerradas", value: `${closedFrom}|${closedTo}`, displayValue: range })
+  }
   add("q", "Búsqueda", q, q)
   // Sin control propio (A2): llega por el enlace del tile de OT o de la ficha y se quita desde el chip.
   add("repuestos", "Repuestos", partsPending ? "pendientes" : "", "pendientes")
@@ -61,7 +69,7 @@ export function OtListFilters({ options, equipment, allWorksitesLabel = ALL_WORK
   return (
     <FilterToolbar
       activeChips={chips}
-      onRemoveChip={(key) => setFilter(key, null)}
+      onRemoveChip={(key) => (key === "cerrada" ? setFilters({ cerradaDesde: null, cerradaHasta: null }) : setFilter(key, null))}
       onClearAll={() => setFilters(Object.fromEntries(OT_FILTER_PARAMS.map((key) => [key, null])))}
     >
       <FilterSearchInput
@@ -76,11 +84,11 @@ export function OtListFilters({ options, equipment, allWorksitesLabel = ALL_WORK
       )}
       <OptionSelect aria-label="Filtrar por mecánico" className={BAR_SELECT_CLASS} emptyLabel="Todos los mecánicos" options={mechanicOptions} value={mechanicId} onValueChange={(v) => setFilter("mecanico", v)} />
       <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
-        <div className="min-w-0 sm:w-32">
-          <DatePicker ariaLabel="Desde" placeholder="Desde" value={from} max={to || undefined} onChange={(iso) => setFilter("desde", iso)} />
+        <div className="min-w-0 sm:w-36">
+          <DatePicker ariaLabel="Pedida desde" placeholder="Pedida desde" value={from} max={to || undefined} onChange={(iso) => setFilter("desde", iso)} />
         </div>
-        <div className="min-w-0 sm:w-32">
-          <DatePicker ariaLabel="Hasta" placeholder="Hasta" value={to} min={from || undefined} onChange={(iso) => setFilter("hasta", iso)} />
+        <div className="min-w-0 sm:w-36">
+          <DatePicker ariaLabel="Pedida hasta" placeholder="Pedida hasta" value={to} min={from || undefined} onChange={(iso) => setFilter("hasta", iso)} />
         </div>
       </div>
     </FilterToolbar>

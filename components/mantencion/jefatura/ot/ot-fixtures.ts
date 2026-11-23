@@ -58,6 +58,7 @@ export function otDetail(overrides: Partial<WorkOrderDetail> = {}): WorkOrderDet
     partsUsed: [],
     allowedTransitions: [],
     canEditRequest: false,
+    canReclassify: false,
     canEditExecution: false,
     canRegisterRecord: false,
     needsLinkedRecord: false,

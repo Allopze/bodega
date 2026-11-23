@@ -185,6 +185,22 @@ describe("alcance de la lista de registros", () => {
     const all = await loadRecordFilterOptions(await viewerOf(IDS.jefe))
     expect(all.worksites.length).toBeGreaterThanOrEqual(2)
   })
+
+  it("PAN-8: una faena desactivada sólo se ofrece si tiene registros visibles, rotulada «(inactiva)» y al final", async () => {
+    const emptyInactive = "ws-qa-inactiva-sin-registros"
+    await testDb.insert(schema.worksites).values({ id: emptyInactive, name: "AAA Inactiva sin registros", code: "QA-INA-0", isActive: false })
+    await testDb.update(schema.worksites).set({ isActive: false }).where(eq(schema.worksites.id, IDS.wsCho))
+    try {
+      const options = (await loadRecordFilterOptions(await viewerOf(IDS.jefe))).worksites
+      expect(options.map((item) => item.id)).not.toContain(emptyInactive)
+      const cho = options.find((item) => item.id === IDS.wsCho)
+      expect(cho?.name).toMatch(/ \(inactiva\)$/)
+      expect(options.at(-1)?.id).toBe(IDS.wsCho)
+    } finally {
+      await testDb.update(schema.worksites).set({ isActive: true }).where(eq(schema.worksites.id, IDS.wsCho))
+      await testDb.delete(schema.worksites).where(eq(schema.worksites.id, emptyInactive))
+    }
+  })
 })
 
 describe("filtros", () => {

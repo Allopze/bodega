@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
-import { mantRecords, mantWorksiteSettings, worksites } from "@/db/schema"
+import { mantRecords, worksites } from "@/db/schema"
 import { equipmentScope, recordVisibility, recordVisibilitySql, type MantViewer } from "./access"
 import type { MantWorksiteScope } from "./fleet"
 
@@ -89,14 +89,17 @@ export async function countPendingReview(viewer: MantViewer, worksiteId: string 
   return row?.n ?? 0
 }
 
-/** Faenas del selector del panel: las de su alcance de equipos (nunca las de otros). */
+/**
+ * Faenas del selector del panel: las ACTIVAS de su alcance de equipos (nunca las de otros). Es la misma
+ * fuente que el filtro de la lista de OT (`loadWorkOrderFilterOptions`): sin `mant_worksite_settings`,
+ * que ofrecía faenas desactivadas (duplicadas por la unificación) y omitía activas sin configuración.
+ */
 export async function loadPanelWorksites(viewer: MantViewer): Promise<Array<{ id: string; name: string }>> {
   const scope = equipmentScope(viewer)
   if (scope !== "all" && scope.length === 0) return []
   return db
     .select({ id: worksites.id, name: worksites.name })
     .from(worksites)
-    .innerJoin(mantWorksiteSettings, eq(mantWorksiteSettings.worksiteId, worksites.id))
-    .where(scope === "all" ? undefined : inArray(worksites.id, scope))
+    .where(and(eq(worksites.isActive, true), scope === "all" ? undefined : inArray(worksites.id, scope)))
     .orderBy(asc(worksites.name))
 }

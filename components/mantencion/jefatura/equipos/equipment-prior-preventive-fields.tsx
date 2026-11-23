@@ -69,7 +69,7 @@ export function EquipmentPriorPreventiveFields({
         <Field label="Fecha de la preventiva" htmlFor="eq-prior-date" error={error("priorPreventiveDate")}>
           <DatePicker id="eq-prior-date" name="priorPreventiveDate" max={today} value={values.date} onChange={(iso) => patch({ date: iso })} error={!!error("priorPreventiveDate")} />
         </Field>
-        <Field label={`Lectura de la preventiva (${unit})`} htmlFor="eq-prior-reading" error={error("priorPreventiveReading")} helper="No puede ser mayor que la lectura inicial.">
+        <Field label={`Lectura de la preventiva (${unit})`} htmlFor="eq-prior-reading" error={error("priorPreventiveReading")} helper="No puede ser mayor que la lectura inicial ni que la del primer registro del equipo.">
           <Input id="eq-prior-reading" name="priorPreventiveReading" inputMode="numeric" className="font-mono" value={values.reading} onChange={(e) => patch({ reading: e.target.value })} error={!!error("priorPreventiveReading")} />
         </Field>
         <Field label="Servicio de la pauta" htmlFor="eq-prior-interval" error={error("priorPreventiveInterval")}>

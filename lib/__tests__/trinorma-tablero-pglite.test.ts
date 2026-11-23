@@ -189,11 +189,12 @@ describe("trabajos de mantención: unión sin doble conteo", () => {
     const { rows, includesOrders } = await loadMaintenanceWork(GLOBAL, QUERY)
     expect(includesOrders).toBe(true)
     const ids = rows.map((row) => row.id).sort()
-    expect(ids).toEqual(["h:h-1", "h:h-2", "h:h-3", "h:h-5", "h:h-6", "h:h-8", "h:h-9", "ot:o1", "ot:o3", "ot:o4", "ot:o5"])
-    // Ni la fila de prueba (4), ni la de julio (7), ni la OT anulada (o2).
+    expect(ids).toEqual(["h:h-1", "h:h-2", "h:h-3", "h:h-5", "h:h-6", "h:h-8", "h:h-9", "ot:o1", "ot:o3", "ot:o5"])
+    // Ni la fila de prueba (4), ni la de julio (7), ni la OT anulada (o2), ni la OT que no entró a taller (o4).
     expect(ids).not.toContain("h:h-4")
     expect(ids).not.toContain("h:h-7")
     expect(ids).not.toContain("ot:o2")
+    expect(ids).not.toContain("ot:o4")
   })
 
   it("no suma los registros firmados (`mant_records`) a los trabajos", async () => {
@@ -203,17 +204,17 @@ describe("trabajos de mantención: unión sin doble conteo", () => {
       executorName: "Mecánico", signedAt: "2026-10-15T15:00:00Z", receivedAt: "2026-10-15T15:00:00Z", status: "vigente",
     })
     const { rows } = await loadMaintenanceWork(GLOBAL, QUERY)
-    expect(rows).toHaveLength(11)
+    expect(rows).toHaveLength(10)
     await testDb.delete(schema.mantRecords).where(eq(schema.mantRecords.id, "rec-1"))
   })
 
-  it("la fecha es el ingreso a taller y, si falta, el envío del formulario o la solicitud de la OT", async () => {
+  it("la fecha es el ingreso a taller y, si falta, el envío del formulario (la OT sin ingreso no es trabajo)", async () => {
     const { rows } = await loadMaintenanceWork(GLOBAL, QUERY)
     const dateOf = (id: string) => rows.find((row) => row.id === id)?.date
     expect(dateOf("h:h-8")).toBe("2026-09-20") // sin ingreso: el día del envío
     expect(dateOf("ot:o1")).toBe("2026-10-20") // ingreso (hora de Chile)
     expect(dateOf("ot:o3")).toBe("2026-11-04") // ingreso, no la solicitud del 03-11
-    expect(dateOf("ot:o4")).toBe("2026-11-05") // sin ingreso: la solicitud
+    expect(dateOf("ot:o4")).toBeUndefined() // sin ingreso: aún no se trabajó, no es una fila
     // Borde de hora: 02:30 UTC del 21-10 son las 23:30 del 20-10 en Chile; no es el 21 ni la solicitud (22).
     expect(dateOf("ot:o5")).toBe("2026-10-20")
   })
@@ -226,7 +227,6 @@ describe("trabajos de mantención: unión sin doble conteo", () => {
     expect(typeOf("h:h-3")).toBe("sin_clasificar")
     expect(typeOf("ot:o1")).toBe("correctiva") // sólo «Reparación»
     expect(typeOf("ot:o3")).toBe("predictiva") // el declarado manda
-    expect(typeOf("ot:o4")).toBe("preventiva") // sólo «Mantención»
   })
 
   it("el taller externo se lee del formulario y no se inventa donde no se informa", async () => {
@@ -236,7 +236,7 @@ describe("trabajos de mantención: unión sin doble conteo", () => {
     expect(externalOf("h:h-2")).toBe(false)
     expect(externalOf("h:h-3")).toBeNull()
     expect(externalOf("ot:o1")).toBe(false) // taller interno
-    expect(externalOf("ot:o4")).toBeNull() // sin ingreso aún
+    expect(externalOf("ot:o3")).toBe(false) // taller interno
   })
 })
 
@@ -249,7 +249,6 @@ describe("trabajos de mantención: días en taller", () => {
     expect(row("h:h-9").workshopDays).toBeNull() // salida anterior al ingreso: dato malo
     expect(row("ot:o1").workshopDays).toBe(2)
     expect(row("ot:o3")).toMatchObject({ workshopDays: 9, inWorkshop: true })
-    expect(row("ot:o4").workshopDays).toBeNull()
     expect(row("ot:o5")).toMatchObject({ workshopDays: 24, inWorkshop: true })
     expect(row("h:h-1").inWorkshop).toBe(false)
   })
@@ -257,8 +256,8 @@ describe("trabajos de mantención: días en taller", () => {
   it("el agregado suma sólo los trabajos con fechas y dice cuántos quedan sin ellas", async () => {
     const { rows } = await loadMaintenanceWork(GLOBAL, QUERY)
     const summary = summarizeMaintenanceWork(rows, SUMMARY_QUERY)
-    expect(summary.workshopDays).toEqual({ total: 39, withData: 4, withoutData: 7, inWorkshop: 2 })
-    expect(summary.laborHours).toEqual({ total: 20, withData: 3, withoutData: 8 })
+    expect(summary.workshopDays).toEqual({ total: 39, withData: 4, withoutData: 6, inWorkshop: 2 })
+    expect(summary.laborHours).toEqual({ total: 20, withData: 3, withoutData: 7 })
     expect(summary.external).toBe(1)
   })
 })
@@ -267,11 +266,11 @@ describe("trabajos de mantención: % de correctivas", () => {
   it("los «sin clasificar» van aparte y no entran en la base del porcentaje", async () => {
     const { rows } = await loadMaintenanceWork(GLOBAL, QUERY)
     const summary = summarizeMaintenanceWork(rows, SUMMARY_QUERY)
-    expect(summary.total).toBe(11)
-    expect(summary.byType).toEqual({ preventiva: 4, correctiva: 5, predictiva: 1, sin_clasificar: 1 })
-    expect(summary.classified).toBe(10)
-    expect(summary.correctivePercent).toBeCloseTo(50, 5)
-    expect(summary.bySource).toEqual({ historial: 7, ot: 4 })
+    expect(summary.total).toBe(10)
+    expect(summary.byType).toEqual({ preventiva: 3, correctiva: 5, predictiva: 1, sin_clasificar: 1 })
+    expect(summary.classified).toBe(9)
+    expect(summary.correctivePercent).toBeCloseTo((5 / 9) * 100, 5)
+    expect(summary.bySource).toEqual({ historial: 7, ot: 3, registro: 0 })
   })
 
   it("sin trabajos clasificados no hay porcentaje que inventar", () => {
@@ -287,7 +286,7 @@ describe("trabajos de mantención: % de correctivas", () => {
     const { rows } = await loadMaintenanceWork(GLOBAL, QUERY)
     const summary = summarizeMaintenanceWork(rows, SUMMARY_QUERY)
     expect(summary.series.map((point) => [point.key, point.preventiva + point.correctiva + point.predictiva + point.sin_clasificar])).toEqual([
-      ["2026-09", 3], ["2026-10", 6], ["2026-11", 2],
+      ["2026-09", 3], ["2026-10", 6], ["2026-11", 1],
     ])
     expect(summary.series.at(-1)?.partial).toBe(true)
     // KA-A1 tiene 2 correctivas (historial 1 y la OT o1); los demás, una.
@@ -299,7 +298,7 @@ describe("trabajos de mantención: % de correctivas", () => {
     const byWorksite = summarizeMaintenanceWork(rows, SUMMARY_QUERY).byWorksite
     const find = (name: string) => byWorksite.find((site) => site.name === name)
     expect(find("Faena A")).toMatchObject({ count: 7, correctives: 2, workshopDays: 15, laborHours: 10 })
-    expect(find("Faena B")).toMatchObject({ count: 3, correctives: 2, workshopDays: 24, laborHours: 10 })
+    expect(find("Faena B")).toMatchObject({ count: 2, correctives: 2, workshopDays: 24, laborHours: 10 })
     expect(find("Sin faena")).toMatchObject({ count: 1, correctives: 1 })
   })
 })
@@ -315,7 +314,7 @@ describe("alcance por faena", () => {
 
   it("pedir una faena ajena no la abre; el filtro de faena sólo achica", async () => {
     expect((await loadMaintenanceWork(SCOPED_A, { ...QUERY, worksiteId: WS.b })).rows).toEqual([])
-    expect((await loadMaintenanceWork(GLOBAL, { ...QUERY, worksiteId: WS.b })).rows.map((row) => row.id).sort()).toEqual(["h:h-5", "ot:o4", "ot:o5"])
+    expect((await loadMaintenanceWork(GLOBAL, { ...QUERY, worksiteId: WS.b })).rows.map((row) => row.id).sort()).toEqual(["h:h-5", "ot:o5"])
   })
 
   it("sin permiso de OT las órdenes no entran y el resultado lo dice", async () => {
