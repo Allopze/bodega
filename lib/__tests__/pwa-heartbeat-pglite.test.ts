@@ -479,11 +479,12 @@ describe("POST /api/pwa/aviso", () => {
   })
 
   it("petición de otro sitio: 403 sin escribir", async () => {
-    for (const headers of [
+    const casos: Array<Record<string, string>> = [
       { "sec-fetch-site": "cross-site" },
       { origin: "https://sitio-ajeno.example", host: "plataforma.example" },
       { origin: "null" },
-    ]) {
+    ]
+    for (const headers of casos) {
       const body = payload()
       const res = await POST(request(body, headers))
       expect(res.status).toBe(403)
