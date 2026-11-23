@@ -26,7 +26,7 @@ describe("frescura del HTML con el reloj del servidor (APP-1)", () => {
   it("un teléfono ADELANTADO una hora ve fresco un HTML recién servido (antes caía en «Necesitas señal»)", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(SERVER_NOW + 60 * 60_000) // el reloj del teléfono, una hora adelante
-    const probe = vi.fn(async () => withDate(405, SERVER_NOW))
+    const probe = vi.fn(async () => withDate(204, SERVER_NOW))
     expect(await checkFreshness(iso(SERVER_NOW - 20_000), { fetchImpl: asFetch(probe) })).toEqual({ fresh: true, reachability: "ok" })
   })
 
@@ -39,12 +39,12 @@ describe("frescura del HTML con el reloj del servidor (APP-1)", () => {
   })
 
   it("una primera carga lenta (3 minutos entre el HTML y el arranque) sigue siendo fresca", async () => {
-    const probe = vi.fn(async () => withDate(405, SERVER_NOW))
+    const probe = vi.fn(async () => withDate(204, SERVER_NOW))
     expect((await checkFreshness(iso(SERVER_NOW - 3 * 60_000), { fetchImpl: asFetch(probe) })).fresh).toBe(true)
   })
 
   it("consulta sin caché, por HEAD y a la API (que el service worker no intercepta)", async () => {
-    const probe = vi.fn(async (..._args: unknown[]) => withDate(405, SERVER_NOW))
+    const probe = vi.fn(async (..._args: unknown[]) => withDate(204, SERVER_NOW))
     await checkFreshness(iso(SERVER_NOW), { fetchImpl: asFetch(probe) })
     expect(probe).toHaveBeenCalledTimes(1)
     const [url, init] = probe.mock.calls[0] as unknown as [string, RequestInit]
@@ -60,7 +60,7 @@ describe("frescura del HTML con el reloj del servidor (APP-1)", () => {
 
     const flaky = vi.fn()
       .mockRejectedValueOnce(new TypeError("net"))
-      .mockResolvedValueOnce(withDate(405, SERVER_NOW))
+      .mockResolvedValueOnce(withDate(204, SERVER_NOW))
     expect(await checkFreshness(iso(SERVER_NOW), { fetchImpl: asFetch(flaky) })).toEqual({ fresh: true, reachability: "ok" })
   })
 
@@ -80,7 +80,7 @@ describe("frescura del HTML con el reloj del servidor (APP-1)", () => {
   })
 
   it("una respuesta sin cabecera Date no se puede comparar: no fresco", async () => {
-    const noDate = vi.fn(async () => withDate(405, null))
+    const noDate = vi.fn(async () => withDate(204, null))
     expect((await checkFreshness(iso(SERVER_NOW), { fetchImpl: asFetch(noDate), attempts: 1 })).fresh).toBe(false)
   })
 })

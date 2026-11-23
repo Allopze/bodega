@@ -9,6 +9,17 @@ import { issueResponse, NO_STORE, readJsonBody } from "@/lib/services/mantencion
 import { logger } from "@/lib/logger"
 
 /**
+ * HEAD /api/mantencion/dispositivo — la consulta de hora del arranque de la app
+ * (`lib/mantencion/client/freshness.ts`): sólo importa la cabecera `Date` del
+ * servidor, para medir la edad del HTML sin el reloj del teléfono. Responde 204
+ * sin cuerpo ni datos. Sin este método respondía 405, y el navegador lo anotaba
+ * como error de consola en cada arranque. El proxy ya exige sesión en `/api`.
+ */
+export function HEAD() {
+  return new Response(null, { status: 204, headers: NO_STORE })
+}
+
+/**
  * POST /api/mantencion/dispositivo — emite la credencial de dispositivo de la
  * app del mecánico. NO es pública: el proxy ya exige sesión y mismo origen, y
  * aquí se vuelve a exigir el permiso. La credencial se entrega UNA vez; en la

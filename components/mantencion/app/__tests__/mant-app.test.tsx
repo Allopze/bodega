@@ -40,7 +40,7 @@ function installServer(options: { online: boolean; catalog?: typeof CATALOG }) {
     // La consulta de frescura del arranque (HEAD, sin cuenta ni cuerpo): sólo necesita la cabecera Date del servidor.
     if (method === "HEAD") {
       if (!navigator.onLine) throw new TypeError("Failed to fetch")
-      return new Response(null, { status: 405, headers: { date: new Date().toUTCString() } })
+      return new Response(null, { status: 204, headers: { date: new Date().toUTCString() } })
     }
     calls.push({ method, url: path, auth: (init?.headers as Record<string, string> | undefined)?.Authorization ?? null, body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined })
     if (!navigator.onLine) throw new TypeError("Failed to fetch")

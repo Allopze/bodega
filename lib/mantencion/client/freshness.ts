@@ -32,7 +32,7 @@ export const FUTURE_TOLERANCE_MS = 60_000
 /**
  * Ruta de la consulta. Es de la API, así que el service worker nunca la intercepta ni la
  * guarda; es dinámica, así que ningún caché intermedio le inventa un `Date`; y responde
- * rápido a un HEAD (405 con sesión, el login sin ella: lo que importa es la cabecera).
+ * rápido a un HEAD (204 sin cuerpo; sin sesión, lo que conteste el proxy: lo que importa es la cabecera).
  */
 export const CLOCK_PROBE_URL = "/api/mantencion/dispositivo"
 
