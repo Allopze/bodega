@@ -409,7 +409,11 @@ describe("module-toggles service", () => {
       expect(missingPages).toEqual([])
 
       const apiRoot = path.resolve(process.cwd(), "app/api")
-      const apiAllowPrefixes = ["/auth", "/health", "/attachments", "/notifications"]
+      // `/pwa/aviso` sirve a tres módulos (PPA, Mantención y Control TAE) y decide
+      // el módulo dentro del handler, con `isRouteOperational` de la ruta de la app.
+      // `/apps/*` son las rutas del lanzador, transversales a los módulos, que
+      // habían quedado sin inventariar.
+      const apiAllowPrefixes = ["/auth", "/health", "/attachments", "/notifications", "/pwa", "/apps"]
       const missingApis = routeFiles(apiRoot)
         .filter((file) => file.endsWith("route.ts"))
         .map((file) => routeSample(file, apiRoot))
