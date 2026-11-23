@@ -13,10 +13,12 @@ import type { SourceStatusRow } from "./fleet-gps-source-status"
  * falla, parcial, sin vincular) de Monitoreo; el código técnico de una falla,
  * si hay, queda en un `<details>` para quien administra.
  */
-export function FleetGpsSourcesPanel({ rows, onOpenSettings }: {
+export function FleetGpsSourcesPanel({ rows, onOpenSettings, onVerifyOnway }: {
   rows: SourceStatusRow[]
   /** Abre la pestaña «Configuración»; sin ella (quien no administra) no hay acciones de ese tipo. */
   onOpenSettings?: () => void
+  /** Abre la vista asistida para resolver un CAPTCHA/OTP de OnWay. */
+  onVerifyOnway?: () => void
 }) {
   if (rows.length === 0) return null
   return (
@@ -52,6 +54,10 @@ export function FleetGpsSourcesPanel({ rows, onOpenSettings }: {
                 {row.actions.map((action) => action.kind === "link" && action.href ? (
                   <Button key={action.label} asChild variant="secondary" size="sm">
                     <Link href={action.href}>{action.label}</Link>
+                  </Button>
+                ) : action.kind === "verify" && onVerifyOnway ? (
+                  <Button key={action.label} type="button" variant="secondary" size="sm" onClick={onVerifyOnway}>
+                    {action.label}
                   </Button>
                 ) : onOpenSettings ? (
                   <Button key={action.label} type="button" variant="secondary" size="sm" onClick={onOpenSettings}>

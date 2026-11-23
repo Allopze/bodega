@@ -46,7 +46,7 @@ const ERROR_MESSAGE: Record<OnwayClientErrorCode, string> = {
   ONWAY_CREDENTIALS_REQUIRED: "Configura las credenciales de OnWay antes de sincronizar.",
   ONWAY_CREDENTIALS_INVALID: "Las credenciales configuradas no son válidas.",
   ONWAY_AUTH_REJECTED: "OnWay rechazó el usuario o la contraseña.",
-  ONWAY_INTERACTIVE_AUTH_REQUIRED: "OnWay exige una verificación interactiva. Ingresa al portal una vez y vuelve a intentar más tarde.",
+  ONWAY_INTERACTIVE_AUTH_REQUIRED: "OnWay exige una verificación interactiva. Usa «Resolver verificación» en Configuración para completarla desde la plataforma.",
   ONWAY_PORTAL_TIMEOUT: "OnWay no respondió dentro del tiempo esperado.",
   ONWAY_RESPONSE_INVALID: "OnWay respondió con un formato no reconocido.",
   ONWAY_SNAPSHOT_EMPTY: "OnWay aceptó la cuenta, pero no devolvió ningún equipo. Revisa que la cuenta configurada tenga la flota asignada en el portal.",

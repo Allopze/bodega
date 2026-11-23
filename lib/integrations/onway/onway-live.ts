@@ -4,7 +4,7 @@ import { fleetGpsSyncRuns } from "@/db/schema"
 import { logger } from "@/lib/logger"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { latestProviderObservedAt } from "@/lib/services/fleet-gps-latest"
-import { OnwayClientError } from "./onway-client"
+import { isOnwayInteractiveAuthPending, OnwayClientError } from "./onway-client"
 import type { OnwayLiveResult } from "./onway-live-contract"
 import { readOnwayConfig } from "./onway-settings"
 import { syncOnway } from "./onway-sync"
@@ -47,6 +47,9 @@ export function isNearOnwayCronSlot(now: Date): boolean {
 
 export async function refreshOnwayLive(options: { actorUserId?: string; now?: Date } = {}): Promise<OnwayLiveResult> {
   const now = options.now ?? new Date()
+  // Mientras una persona resuelve el CAPTCHA, cada refresco programado sólo
+  // dejaría una corrida fallida en la bitácora y competiría por la página.
+  if (isOnwayInteractiveAuthPending()) return { outcome: "skipped", reason: "busy" }
   const config = await readOnwayConfig()
   if (!config.hasCredentials) return { outcome: "disabled", reason: "credentials" }
   if (!config.syncEnabled) return { outcome: "disabled", reason: "sync_disabled" }

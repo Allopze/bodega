@@ -17,8 +17,8 @@ export type SourceVerdict = "ok" | "stale" | "failed" | "partial" | "unlinked" |
 
 export interface SourceAction {
   label: string
-  /** `settings` abre la pestaña «Configuración»; `link` navega. */
-  kind: "settings" | "link"
+  /** `settings` abre «Configuración»; `verify` abre la vista asistida; `link` navega. */
+  kind: "settings" | "verify" | "link"
   href?: string
 }
 
@@ -43,7 +43,7 @@ const FAILURE_MESSAGE: Record<string, string> = {
   ONWAY_CREDENTIALS_REQUIRED: "Faltan las credenciales de OnWay.",
   ONWAY_CREDENTIALS_INVALID: "Las credenciales configuradas no son válidas.",
   ONWAY_AUTH_REJECTED: "OnWay rechazó el usuario o la contraseña.",
-  ONWAY_INTERACTIVE_AUTH_REQUIRED: "OnWay pide una verificación en su portal: ingresa una vez y vuelve a intentar más tarde.",
+  ONWAY_INTERACTIVE_AUTH_REQUIRED: "OnWay pide una verificación en su portal. Puedes resolverla desde esta plataforma con «Resolver verificación».",
   ONWAY_PORTAL_TIMEOUT: "OnWay no respondió a tiempo.",
   ONWAY_RESPONSE_INVALID: "OnWay respondió con un formato que la plataforma no reconoce.",
   ONWAY_SNAPSHOT_EMPTY: "OnWay aceptó la cuenta, pero no devolvió ningún equipo. Revisa que la cuenta configurada tenga la flota asignada en su portal.",
@@ -107,7 +107,11 @@ export function buildSourceStatusRow(input: SourceStatusInput, now: number = Dat
 
   if (failed) {
     messages.push(`La última actualización falló. ${failureMessage(run?.errorCode ?? null)}`)
-    actions.push({ label: provider === "onway" ? "Revisar credenciales" : "Revisar token", kind: "settings" })
+    // El CAPTCHA/OTP no se arregla rotando credenciales: se resuelve una vez,
+    // con una persona, desde la vista asistida de Monitoreo.
+    actions.push(provider === "onway" && run?.errorCode === "ONWAY_INTERACTIVE_AUTH_REQUIRED"
+      ? { label: "Resolver verificación", kind: "verify" }
+      : { label: provider === "onway" ? "Revisar credenciales" : "Revisar token", kind: "settings" })
   }
   if (stale && latestAt) {
     messages.push(`Sin posiciones nuevas desde hace ${staleSinceLabel(latestAt, now)}: lo que se ve es el último reporte recibido, no una lectura en tiempo real.`)
