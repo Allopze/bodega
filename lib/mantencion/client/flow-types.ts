@@ -96,6 +96,11 @@ export interface FlowDraft {
   workshopReason: string
   driverIds: string[]
   driverQuery: string
+  /**
+   * Nombre con el que se eligió cada conductor, aceite, mecánico, taller o tipo de trabajo (por id). Sólo sirve para
+   * decir «Quita “X”» si jefatura lo desactiva después de elegirlo; un borrador viejo o un registro devuelto no lo trae.
+   */
+  idNames?: Record<string, string>
 
   correctsRecordId: string | null
   /**

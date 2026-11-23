@@ -30,7 +30,7 @@ import { FieldError } from "./ui"
  * registro a la cola de envío en una sola transacción.
  */
 export function FlowScreen({ initial, onExit, onSigned }: { initial: FlowDraft; onExit: () => void; onSigned: (id: string) => void }) {
-  const { rows, account, deviceId, appVersion, online } = useAppData()
+  const { rows, stored, account, deviceId, appVersion, online } = useAppData()
   const { syncNow, toast } = useAppActions()
   const [draft, dispatch] = useReducer(flowReducer, initial)
   const [confirmExit, setConfirmExit] = useState(false)
@@ -47,7 +47,8 @@ export function FlowScreen({ initial, onExit, onSigned }: { initial: FlowDraft; 
   const steps = stepsFor(draft.kind)
   const name = steps[draft.step] ?? "equipo"
   const row = useMemo(() => rows.find((entry) => entry.eq.id === draft.vehicleId) ?? null, [rows, draft.vehicleId])
-  const ctx = useMemo(() => ({ row, today: todayInChile() }), [row])
+  const catalog = stored?.catalog ?? null
+  const ctx = useMemo(() => ({ row, today: todayInChile(), catalog }), [row, catalog])
   const env = useMemo(() => buildFlowEnv(ctx), [ctx])
 
   useEffect(() => {
