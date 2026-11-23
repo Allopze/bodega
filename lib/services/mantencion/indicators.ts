@@ -10,7 +10,7 @@ import type { MantViewer } from "./access"
 import { loadFleet } from "./fleet"
 import { fleetScopeFor, loadRecordSeries } from "./panel"
 import { meanTimeToRepairHours } from "./work-orders/metrics"
-import { workOrderVisibility, workOrderVisibilitySql } from "./work-orders/access"
+import { workOrderImputationVisibilitySql, workOrderVisibility } from "./work-orders/access"
 
 /**
  * Datos de los gráficos del Panel de mantención (`/mantencion/panel`): «cómo nos fue y hacia
@@ -21,7 +21,7 @@ import { workOrderVisibility, workOrderVisibilitySql } from "./work-orders/acces
  *   y la lista a la que enlaza cuentan lo mismo. Una OT anulada no es trabajo hecho ni pedido,
  *   así que no entra en «creadas», «cerradas» ni en el ranking; sí entra en el backlog histórico
  *   hasta el día en que se anuló (si no, una OT anulada mañana desaparecería de la cola de ayer).
- * - Los registros respetan `recordVisibilitySql` (vía `loadRecordSeries`, la consulta del panel).
+ * - Los registros respetan `recordWorksiteVisibilitySql` (la faena del registro, no la actual del equipo) (vía `loadRecordSeries`, la consulta del panel).
  * - Los equipos, `equipmentScope`; el filtro de faena sólo achica, nunca agranda.
  * - Cada loader es independiente: la página envuelve cada uno y un fallo degrada sólo su bloque.
  *
@@ -251,7 +251,8 @@ export function percentChange(current: number, previous: number): number | null 
 
 function workOrderScope(viewer: MantViewer, worksiteId: string | undefined, vehicleId?: string): SQL {
   return and(
-    workOrderVisibilitySql(workOrderVisibility(viewer)),
+    // Por la faena de IMPUTACIÓN: la OT de un equipo trasladado se lista en la faena actual, pero cuenta donde se imputó.
+    workOrderImputationVisibilitySql(workOrderVisibility(viewer)),
     worksiteId ? eq(mantWorkOrders.worksiteId, worksiteId) : undefined,
     vehicleId ? eq(mantWorkOrders.vehicleId, vehicleId) : undefined,
   )!

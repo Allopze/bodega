@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import { mantRecords, worksites } from "@/db/schema"
-import { equipmentScope, recordVisibility, recordVisibilitySql, type MantViewer } from "./access"
+import { equipmentScope, recordVisibility, recordWorksiteVisibilitySql, type MantViewer } from "./access"
 import type { MantWorksiteScope } from "./fleet"
 
 /**
@@ -9,7 +9,7 @@ import type { MantWorksiteScope } from "./fleet"
  * no se negocian:
  *
  * - Todo lo que cuenta REGISTROS excluye los anulados y respeta el alcance del
- *   usuario (`recordVisibilitySql`): el panel de un supervisor es el de su faena.
+ *   usuario por la faena DEL REGISTRO (`recordWorksiteVisibilitySql`): el panel de un supervisor es el de su faena, también tras un traslado.
  * - Todo lo que cuenta EQUIPOS (vencidas, próximas, en taller, estado de la
  *   flota) sale de `loadFleet`, la única fuente del estado de un equipo.
  *
@@ -32,7 +32,8 @@ export function fleetScopeFor(viewer: MantViewer, worksiteId: string | undefined
  */
 function recordsBase(viewer: MantViewer, worksiteId: string | undefined): SQL {
   return and(
-    recordVisibilitySql(recordVisibility(viewer)),
+    // Por la faena DEL REGISTRO: un equipo trasladado lleva su historia a la ficha, no sus cifras al Panel.
+    recordWorksiteVisibilitySql(recordVisibility(viewer)),
     eq(mantRecords.status, "vigente"),
     worksiteId ? eq(mantRecords.worksiteId, worksiteId) : undefined,
   )!

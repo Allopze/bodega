@@ -672,6 +672,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/trinorma-ot-pglite.test.ts",
   "lib/__tests__/trinorma-tablero-pglite.test.ts",
   "lib/__tests__/mantencion-trabajos-corte-pglite.test.ts",
+  "lib/__tests__/mantencion-work-orders-traslado-pglite.test.ts",
+  "lib/__tests__/mantencion-hoja-vida-sigue-equipo-pglite.test.ts",
   "scripts/__tests__/apply-trinorma-equipos-faltantes-pglite.test.ts",
   "scripts/__tests__/apply-trinorma-lecturas-preventivas-pglite.test.ts",
 ]

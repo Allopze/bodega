@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { and, eq } from "drizzle-orm"
 import sharp from "sharp"
 import { db } from "@/db"
-import { mantRecordPhotos, mantRecords } from "@/db/schema"
+import { fuelVehicles, mantRecordPhotos, mantRecords } from "@/db/schema"
 import { MimeType, validateFileBuffer } from "@/lib/file-validation"
 import { MANT_PHOTO_MAX_BYTES, photoMetaSchema } from "@/lib/mantencion/contracts"
 import { createMantencionFilePath, resolveMantencionDir, resolveMantencionFile } from "@/lib/storage/config"
@@ -167,16 +167,19 @@ export async function loadPhotoFile(photoId: string, viewer: MantViewer): Promis
       worksiteId: mantRecords.worksiteId,
       registeredBy: mantRecords.registeredBy,
       executorUserId: mantRecords.executorUserId,
+      // Faena ACTUAL del equipo: la hoja de vida sigue al equipo, y sus fotos con ella.
+      vehicleWorksiteId: fuelVehicles.worksiteId,
     })
     .from(mantRecordPhotos)
     .leftJoin(mantRecords, eq(mantRecords.id, mantRecordPhotos.recordId))
+    .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantRecords.vehicleId))
     .where(eq(mantRecordPhotos.id, photoId))
     .limit(1)
   if (!row) return null
 
   const allowed = row.recordId === null || row.worksiteId === null || row.registeredBy === null
     ? row.uploadedBy === viewer.userId
-    : canSeeRecord(recordVisibility(viewer), { worksiteId: row.worksiteId, registeredBy: row.registeredBy, executorUserId: row.executorUserId })
+    : canSeeRecord(recordVisibility(viewer), { worksiteId: row.worksiteId, registeredBy: row.registeredBy, executorUserId: row.executorUserId, vehicleWorksiteId: row.vehicleWorksiteId })
   if (!allowed) return null
 
   const absolutePath = resolveMantencionFile(row.storageKey)

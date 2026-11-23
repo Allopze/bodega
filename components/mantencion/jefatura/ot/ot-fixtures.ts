@@ -5,7 +5,7 @@ import type { WorkOrderDetail, WorkOrderListRow } from "@/lib/services/mantencio
 export function otRow(overrides: Partial<WorkOrderListRow> = {}): WorkOrderListRow {
   return {
     id: "ot-1", folio: "OT-BIO-0001", status: "en_ejecucion", vehicleId: "veh-1", equipmentCode: "KA-135", equipmentPlate: "RBYD-98", equipmentType: "Camión",
-    worksiteId: "ws-1", worksiteName: "Biodiversa", repair: true, maintenance: false, requestDate: "2026-10-30", requesterName: "Ana Pérez",
+    worksiteId: "ws-1", worksiteName: "Biodiversa", equipmentWorksiteId: "ws-1", equipmentWorksiteName: "Biodiversa", repair: true, maintenance: false, requestDate: "2026-10-30", requesterName: "Ana Pérez",
     assignedToUserId: "u-mec", assignedToName: "Javier Roa", workshopEntryAt: "2026-10-31T13:00:00.000Z", estimatedDeliveryDate: "2026-11-05",
     workshopExitAt: null, estimateOverdue: false, daysInWorkshop: 2, rejectionCount: 0, waitingParts: false, createdAt: "2026-10-30T12:00:00.000Z", ...overrides,
   }

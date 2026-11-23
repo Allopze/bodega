@@ -117,7 +117,7 @@ describe("TransferDialog", () => {
     renderDialog()
     expect(screen.queryByText(/Tiene la OT-55 abierta/)).toBeNull()
     fireEvent.click(checkbox(/KA-71/))
-    expect(screen.getByText("Tiene la OT-55 abierta en Santa Fe: la OT se queda en Santa Fe")).toBeDefined()
+    expect(screen.getByText("Tiene la OT-55 abierta: sigue con el equipo; la recepción y la conformidad las da la faena de destino, y las horas quedan imputadas a Santa Fe")).toBeDefined()
   })
 
   it("un equipo marcado desde su ficha llega marcado", () => {

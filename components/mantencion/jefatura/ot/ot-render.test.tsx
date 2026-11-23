@@ -7,7 +7,7 @@ import { otDetail, otRow } from "./ot-fixtures"
 import { OT_FILTER_PARAMS, buildOtTabs, defaultOtTab, hasExplicitTab, hasWorkOrderFilters, parseWorkOrderQuery } from "./ot-filters"
 import { OtAside } from "./ot-aside"
 import {
-  OtHeaderSection, OtItemsSection, OtPartsRequestsSection, OtProgressSection, OtRejectionNotice, OtRepairSection, OtVoidedNotice, nextStepText,
+  OtHeaderSection, OtItemsSection, OtPartsRequestsSection, OtProgressSection, OtRejectionNotice, OtRepairSection, OtTransferredNotice, OtVoidedNotice, nextStepText,
 } from "./ot-sections"
 import { OtTable } from "./ot-table"
 import { OT_STATUSES, OT_STATUS_LABELS } from "@/lib/mantencion/work-order-states"
@@ -201,6 +201,25 @@ describe("tabla de la lista", () => {
   it("también hay tarjetas para móvil con una acción de 44 px", () => {
     render(<OtTable rows={[otRow()]} />)
     expect(cards().getByRole("link", { name: "Ver la OT OT-BIO-0001" }).getAttribute("href")).toBe("/mantencion/ot/ot-1")
+  })
+})
+
+describe("OT de un equipo trasladado", () => {
+  it("sin traslado la ficha no dice nada", () => {
+    const { container } = render(<OtTransferredNotice detail={otDetail()} />)
+    expect(container.textContent).toBe("")
+  })
+
+  it("con el equipo en otra faena, una línea: quién da la recepción y la conformidad y adónde van las horas", () => {
+    render(<OtTransferredNotice detail={otDetail({ equipmentWorksiteId: "ws-2", equipmentWorksiteName: "Mininco" })} />)
+    expect(screen.getByRole("status").textContent).toContain(
+      "El equipo está ahora en Mininco; la recepción y la conformidad las da esa faena. Las horas quedan imputadas a Biodiversa.",
+    )
+  })
+
+  it("la lista marca «Equipo ahora en X» sólo en la OT trasladada, en la tabla y en la tarjeta", () => {
+    render(<OtTable rows={[otRow({ id: "ot-1" }), otRow({ id: "ot-2", folio: "OT-BIO-0002", equipmentWorksiteId: "ws-2", equipmentWorksiteName: "Mininco" })]} />)
+    expect(screen.getAllByText("Equipo ahora en Mininco")).toHaveLength(2)
   })
 })
 

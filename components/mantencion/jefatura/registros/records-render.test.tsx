@@ -20,7 +20,7 @@ function row(overrides: Partial<RecordListRow> = {}): RecordListRow {
 
 function detail(overrides: Partial<RecordDetail> = {}): RecordDetail {
   return {
-    id: "rec-1", folio: "MP-BIO-0001", kind: "P", status: "vigente", review: "pendiente", equipment, vehicleId: "veh-1", worksiteId: "ws-1", worksiteName: "Biodiversa",
+    id: "rec-1", folio: "MP-BIO-0001", kind: "P", status: "vigente", review: "pendiente", equipment, vehicleId: "veh-1", worksiteId: "ws-1", worksiteName: "Biodiversa", canAct: true,
     outOfWorksite: false, reading: 40_312, unit: "km", workDate: "2026-10-27", previousReading: { value: 20_100, date: "2026-09-12", source: "MP-BIO-0000" },
     signedAt: "2026-10-27T15:00:00.000Z", receivedAt: "2026-10-27T15:01:00.000Z", offlineSince: null, registeredById: "u-1", registeredByName: "Javier Roa",
     executorKind: "yo", executorName: "Javier Roa", readingJumpAlert: false, readingJumpConfirmed: false, duplicateConfirmed: false, duplicateOf: null,

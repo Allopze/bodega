@@ -14,7 +14,7 @@ import {
   canActOnWorkOrder, canEditExecution, canEditRequest, canReclassifyWorkOrder, type AccessCheck,
 } from "./access"
 import { activateWorkOrderCapaEvidence, supersedeWorkOrderCapaEvidence } from "./capa-link"
-import { applyChange, assertNotFuture, CLIENT_OP_EVENTS, linkedRecordState, planFor, refuse, runLocked, type LockedResult, type OtRow } from "./core"
+import { accessFactsOf, applyChange, assertNotFuture, CLIENT_OP_EVENTS, linkedRecordState, planFor, refuse, runLocked, type LockedResult, type OtRow } from "./core"
 import { checkClassification, checkRequestFields, itemRows, normalizeItems } from "./create"
 import { findAssignableMechanic } from "./mechanics"
 import { markVehicleInWorkshop, markVehicleOutOfWorkshop } from "./vehicle-status"
@@ -59,7 +59,7 @@ function assertReason(transition: OtTransition, reason: string | null | undefine
 /** Asigna, reasigna (también en taller) o desasigna a un mecánico: sólo `mant:ot:manage`. */
 export async function assignWorkOrder(actor: WorkOrderActor, input: Base & { assignedToUserId: string }): Promise<LockedResult> {
   return runLocked(actor, input, async (ctx) => {
-    assertAct(canActOnWorkOrder(actor, ctx.ot, "assign"))
+    assertAct(canActOnWorkOrder(actor, accessFactsOf(ctx), "assign"))
     if (!(await findAssignableMechanic(ctx.tx, input.assignedToUserId))) {
       refuse("Ese mecánico no existe, está inactivo o no puede ejecutar órdenes de trabajo.", "invalid", "assignedToUserId")
     }
@@ -88,7 +88,7 @@ export async function assignWorkOrder(actor: WorkOrderActor, input: Base & { ass
 /** Devuelve la OT a «por asignar» (sólo desde «asignada», antes del ingreso a taller). */
 export async function unassignWorkOrder(actor: WorkOrderActor, input: Base): Promise<LockedResult> {
   return runLocked(actor, input, async (ctx) => {
-    assertAct(canActOnWorkOrder(actor, ctx.ot, "unassign"))
+    assertAct(canActOnWorkOrder(actor, accessFactsOf(ctx), "unassign"))
     const row = await applyChange(ctx, {
       status: "solicitada",
       assignedToUserId: null,
@@ -170,7 +170,7 @@ async function resolveEntry(tx: Tx, ot: OtRow, entry: WorkOrderEntryPayload): Pr
 /** «Ingreso a taller»: asignada → en_ejecucion. El equipo pasa a `mantencion` sólo si hoy está `operativo`. */
 export async function startWorkOrder(actor: WorkOrderActor, input: Base & { entry: WorkOrderEntryPayload }): Promise<LockedResult> {
   return runLocked(actor, { ...input, clientOpTypes: CLIENT_OP_EVENTS.start }, async (ctx) => {
-    assertAct(canActOnWorkOrder(actor, ctx.ot, "start"))
+    assertAct(canActOnWorkOrder(actor, accessFactsOf(ctx), "start"))
     const fields = await resolveEntry(ctx.tx, ctx.ot, input.entry)
     const row = await applyChange(ctx, {
       status: "en_ejecucion",
@@ -191,7 +191,7 @@ const ENTRY_KEYS = [
 /** Corrige el ingreso ya registrado. La fecha estimada tiene su propia acción (lleva motivo e historial). */
 export async function updateWorkOrderEntry(actor: WorkOrderActor, input: Base & { entry: WorkOrderEntryPayload }): Promise<LockedResult> {
   return runLocked(actor, input, async (ctx) => {
-    assertAct(canEditExecution(actor, ctx.ot))
+    assertAct(canEditExecution(actor, accessFactsOf(ctx)))
     if (input.entry.estimatedDeliveryDate !== ctx.ot.estimatedDeliveryDate) {
       refuse("Para cambiar la fecha estimada de entrega usa «Cambiar fecha estimada»: lleva un motivo y queda en el historial.", "invalid", "estimatedDeliveryDate")
     }
@@ -217,7 +217,7 @@ export async function changeWorkOrderEstimate(
   input: Base & { estimatedDeliveryDate: string; reason: string | null },
 ): Promise<LockedResult> {
   return runLocked(actor, { ...input, clientOpTypes: CLIENT_OP_EVENTS.estimate }, async (ctx) => {
-    assertAct(canEditExecution(actor, ctx.ot))
+    assertAct(canEditExecution(actor, accessFactsOf(ctx)))
     const current = ctx.ot.estimatedDeliveryDate
     if (current === input.estimatedDeliveryDate) return { row: ctx.ot }
     const entryDay = ctx.ot.workshopEntryAt ? todayInChile(ctx.ot.workshopEntryAt) : null
@@ -243,7 +243,7 @@ export interface MarkItemsInput extends Base {
 /** Marca SÍ/NO los ítems pedidos y agrega los que el taller encontró (máx. 12 por lista). */
 export async function markWorkOrderItems(actor: WorkOrderActor, input: MarkItemsInput): Promise<LockedResult> {
   return runLocked(actor, { ...input, clientOpTypes: CLIENT_OP_EVENTS.items }, async (ctx) => {
-    assertAct(canEditExecution(actor, ctx.ot))
+    assertAct(canEditExecution(actor, accessFactsOf(ctx)))
     if (input.marks.length === 0 && input.added.length === 0) refuse("No hay nada que guardar en los ítems.", "invalid", "marks")
     const items = await ctx.tx.select().from(mantWorkOrderItems).where(eq(mantWorkOrderItems.workOrderId, ctx.ot.id))
     const byId = new Map(items.map((item) => [item.id, item]))
@@ -316,7 +316,7 @@ export async function finishWorkOrder(
   input: Base & { exitAt: string; note: string | null; workPerformed?: string | null; laborHours?: number | null },
 ): Promise<LockedResult> {
   return runLocked(actor, { ...input, clientOpTypes: CLIENT_OP_EVENTS.finish }, async (ctx) => {
-    assertAct(canActOnWorkOrder(actor, ctx.ot, "finish"))
+    assertAct(canActOnWorkOrder(actor, accessFactsOf(ctx), "finish"))
     // Sin fecha de salida no hay término: la OT sigue «En taller».
     if (!input.exitAt || Number.isNaN(Date.parse(input.exitAt))) {
       refuse("Indica la fecha y hora de salida del taller: sin ella el trabajo no se da por terminado.", "invalid", "exitAt")
@@ -377,7 +377,7 @@ export async function finishWorkOrder(
 /** «Recepción»: quien retira el equipo del taller (jefatura de mantención o administración de contrato). */
 export async function receiveWorkOrder(actor: WorkOrderActor, input: Base & { receivedAt: string; receiverName: string }): Promise<LockedResult> {
   return runLocked(actor, input, async (ctx) => {
-    assertAct(canActOnWorkOrder(actor, ctx.ot, "receive"))
+    assertAct(canActOnWorkOrder(actor, accessFactsOf(ctx), "receive"))
     const receiverName = input.receiverName.trim()
     if (receiverName.length < 2) refuse("Indica el nombre de quien recibe.", "invalid", "receiverName")
     const receivedAt = new Date(input.receivedAt)
@@ -420,7 +420,7 @@ function previousValues(ot: OtRow) {
 export async function rejectWorkOrder(actor: WorkOrderActor, input: Base & { reason: string }): Promise<LockedResult> {
   return runLocked(actor, input, async (ctx) => {
     const transition: OtTransition = ctx.ot.status === "recepcionada" ? "reject_conformity" : "reject_receipt"
-    assertAct(canActOnWorkOrder(actor, ctx.ot, transition))
+    assertAct(canActOnWorkOrder(actor, accessFactsOf(ctx), transition))
     const reason = assertReason(transition, input.reason)
     const row = await applyChange(ctx, {
       status: "en_ejecucion",
@@ -448,7 +448,7 @@ export async function rejectWorkOrder(actor: WorkOrderActor, input: Base & { rea
  */
 export async function conformWorkOrder(actor: WorkOrderActor, input: Base & { faenaReceivedAt: string; faenaReceiverName: string }): Promise<LockedResult> {
   return runLocked(actor, input, async (ctx) => {
-    assertAct(canActOnWorkOrder(actor, ctx.ot, "conform"))
+    assertAct(canActOnWorkOrder(actor, accessFactsOf(ctx), "conform"))
     const receiverName = input.faenaReceiverName.trim()
     if (receiverName.length < 2) refuse("Indica el nombre de quien recibe en faena.", "invalid", "faenaReceiverName")
     const receivedAt = new Date(input.faenaReceivedAt)
@@ -478,7 +478,7 @@ export async function conformWorkOrder(actor: WorkOrderActor, input: Base & { fa
 /** Anula la OT (jefatura, o quien la creó mientras no ha entrado a taller: «por asignar» o «asignada»). Si estaba en taller, revierte el estado del equipo. */
 export async function voidWorkOrder(actor: WorkOrderActor, input: Base & { reason: string }): Promise<LockedResult> {
   return runLocked(actor, input, async (ctx) => {
-    assertAct(canActOnWorkOrder(actor, ctx.ot, "void"))
+    assertAct(canActOnWorkOrder(actor, accessFactsOf(ctx), "void"))
     const reason = assertReason("void", input.reason)
     const wasInWorkshop = ctx.ot.status === "en_ejecucion"
     const row = await applyChange(ctx, {
@@ -498,7 +498,7 @@ export async function voidWorkOrder(actor: WorkOrderActor, input: Base & { reaso
 /** Reabre una OT cerrada (jefatura): vuelve a taller, supersede la evidencia de la CAPA y el equipo vuelve a `mantencion`. */
 export async function reopenWorkOrder(actor: WorkOrderActor, input: Base & { reason: string }): Promise<LockedResult> {
   return runLocked(actor, input, async (ctx) => {
-    assertAct(canActOnWorkOrder(actor, ctx.ot, "reopen"))
+    assertAct(canActOnWorkOrder(actor, accessFactsOf(ctx), "reopen"))
     const reason = assertReason("reopen", input.reason)
     // Un hallazgo puede tener una OT cerrada y otra viva (re-derivado tras cancelar la CAPA):
     // reabrir la vieja chocaría con el índice único y mezclaría dos intervenciones.
@@ -536,7 +536,7 @@ function summarize(ot: OtRow) {
 /** Edita la cabecera y los ítems pedidos mientras la OT está «por asignar» o «asignada». */
 export async function editWorkOrderRequest(actor: WorkOrderActor, input: EditWorkOrderInput): Promise<LockedResult> {
   return runLocked(actor, input, async (ctx) => {
-    assertAct(canEditRequest(actor, ctx.ot))
+    assertAct(canEditRequest(actor, accessFactsOf(ctx)))
     checkRequestFields(input)
     const { mantencionActionTypeRequired } = await getOperationalSettings(ctx.tx)
     // Un campo que el llamador no manda (undefined) se conserva; sólo `null` lo borra.
@@ -592,7 +592,7 @@ const sameList = (a: readonly string[] | null | undefined, b: readonly string[] 
  */
 export async function reclassifyWorkOrder(actor: WorkOrderActor, input: ReclassifyWorkOrderInput): Promise<LockedResult> {
   return runLocked(actor, input, async (ctx) => {
-    assertAct(canReclassifyWorkOrder(actor, ctx.ot))
+    assertAct(canReclassifyWorkOrder(actor, accessFactsOf(ctx)))
     const reason = (input.reason ?? "").trim()
     if (!isValidReason(reason)) refuse(`Escribe un motivo de al menos ${REASON_MIN_LENGTH} caracteres.`, "invalid", "reason")
     const { mantencionActionTypeRequired } = await getOperationalSettings(ctx.tx)

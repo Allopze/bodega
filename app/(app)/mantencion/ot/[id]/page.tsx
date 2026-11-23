@@ -7,7 +7,7 @@ import { OtAside } from "@/components/mantencion/jefatura/ot/ot-aside"
 import { equipmentText, workOrderTypeText } from "@/components/mantencion/jefatura/ot/ot-labels"
 import {
   OtHeaderSection, OtItemsSection, OtObservationsSection, OtPartsRequestsSection, OtProgressSection, OtRejectionNotice, OtRepairSection, OtWorkPerformedSection,
-  OtVoidedNotice,
+  OtTransferredNotice, OtVoidedNotice,
 } from "@/components/mantencion/jefatura/ot/ot-sections"
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
@@ -121,6 +121,7 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
       />
 
       <OtVoidedNotice detail={detail} />
+      <OtTransferredNotice detail={detail} />
       <OtRejectionNotice detail={detail} />
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">

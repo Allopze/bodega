@@ -29,11 +29,15 @@ describe("transferRowNotes", () => {
     expect(transferRowNotes(candidate(), "Mininco", "2026-11-15")).toEqual(["Sale de Santa Fe"])
   })
 
-  it("avisa que la OT abierta se queda en la faena de origen", () => {
+  it("avisa que la OT abierta sigue con el equipo: el destino da la conformidad y las horas quedan en el origen", () => {
     expect(transferRowNotes(candidate({ openWorkOrderFolio: "OT-123" }), "Mininco", "2026-11-15")).toEqual([
       "Sale de Santa Fe",
-      "Tiene la OT-123 abierta en Santa Fe: la OT se queda en Santa Fe",
+      "Tiene la OT-123 abierta: sigue con el equipo; la recepción y la conformidad las da Mininco, y las horas quedan imputadas a Santa Fe",
     ])
+  })
+
+  it("sin destino elegido todavía no inventa una faena en el aviso de la OT", () => {
+    expect(transferRowNotes(candidate({ openWorkOrderFolio: "OT-123" }), "", "2026-11-15")[1]).toContain("las da la faena de destino")
   })
 
   it("avisa que la asignación Copec pasa al destino desde la fecha del traslado", () => {

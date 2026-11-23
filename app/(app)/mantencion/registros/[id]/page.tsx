@@ -75,10 +75,10 @@ export default async function RecordDetailPage({ params, searchParams }: { param
             status={detail.status}
             review={detail.review}
             canExport={can(session, "mant:export")}
-            canObserve={can(session, "mant:records:observe") && canObserveRecord(viewer, detail)}
-            canReview={can(session, "mant:records:review")}
-            canVoid={can(session, "mant:records:void")}
-            canCorrect={can(session, "mant:app:use")}
+            canObserve={detail.canAct && can(session, "mant:records:observe") && canObserveRecord(viewer, detail)}
+            canReview={detail.canAct && can(session, "mant:records:review")}
+            canVoid={detail.canAct && can(session, "mant:records:void")}
+            canCorrect={detail.canAct && can(session, "mant:app:use")}
             queue={queue}
           />
         }
@@ -100,6 +100,15 @@ export default async function RecordDetailPage({ params, searchParams }: { param
         </div>
         {context && <RecordListNav listHref={listHref} listQuery={context.listQuery} neighbors={neighbors} />}
       </div>
+
+      {!detail.canAct && (
+        <Callout tone="info" title="Trabajo hecho en otra faena" className="mb-4">
+          <p>
+            Este registro es de {detail.worksiteName}. Lo ves porque el equipo {detail.equipment.code} está hoy en tu faena y su hoja de vida lo acompaña.
+            Observarlo, revisarlo o anularlo le corresponde a esa faena.
+          </p>
+        </Callout>
+      )}
 
       {voided && detail.voided && (
         <Callout tone="danger" title="Este registro está anulado" className="mb-4">

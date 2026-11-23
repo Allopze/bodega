@@ -111,9 +111,12 @@ describe("hoja de vida: alcance de lectura", () => {
     expect(rows.map((row) => row.folio)).toEqual(["MP-CHO-0101", "MC-BIO-0102", "MC-BIO-0101", "MP-BIO-0101"])
   })
 
-  it("un supervisor de Biodiversa no ve el registro de otra faena del mismo equipo", async () => {
+  // REG-23 (2026-11-22): la hoja de vida sigue al equipo. KA-135 está HOY en Biodiversa, así que su
+  // supervisor ve también la preventiva que se le hizo en Cholguán. El caso inverso (un equipo de
+  // otra faena que no se movió) está en mantencion-hoja-vida-sigue-equipo-pglite.test.ts.
+  it("un supervisor de Biodiversa ve el registro de otra faena porque el equipo está hoy en la suya", async () => {
     const { folios } = await lifeAs(IDS.supBio)
-    expect(folios).toEqual(["MC-BIO-0101", "MC-BIO-0102", "MP-BIO-0101"])
+    expect(folios).toEqual(["MC-BIO-0101", "MC-BIO-0102", "MP-BIO-0101", "MP-CHO-0101"])
   })
 
   it("un mecánico sólo ve lo que registró o ejecutó", async () => {
@@ -157,9 +160,9 @@ describe("hoja de vida: anuladas marcadas, totales sólo vigentes", () => {
     }
   })
 
-  it("los totales del supervisor se calculan sobre lo que ve", async () => {
+  it("los totales del supervisor se calculan sobre lo que ve (incluida la historia de otra faena)", async () => {
     const { totals } = await lifeAs(IDS.supBio)
-    expect(totals).toEqual({ active: 2, activeCorrective: 1, activePreventive: 1, activeHours: 3, voided: 1 })
+    expect(totals).toEqual({ active: 3, activeCorrective: 1, activePreventive: 2, activeHours: 3, voided: 1 })
   })
 
   it("la correctiva cuenta los días en taller y la autoría respeta la regla 10", async () => {
@@ -247,7 +250,8 @@ describe("libro de Excel del historial", () => {
 
   it("un supervisor sólo exporta lo que ve, y no puede exportar un equipo de otra faena", async () => {
     const { workbook } = await workbookOf(IDS.supBio)
-    expect(workbook!.getWorksheet("Historial")!.rowCount).toBe(4)
+    // Encabezado + las cuatro mantenciones del equipo, la de Cholguán incluida (la historia sigue al equipo).
+    expect(workbook!.getWorksheet("Historial")!.rowCount).toBe(5)
     const foreign = await workbookOf(IDS.supBio, IDS.truckCho)
     expect(foreign.outcome).toMatchObject({ ok: false })
   })

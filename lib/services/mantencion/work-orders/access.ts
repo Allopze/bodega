@@ -1,5 +1,5 @@
 import { eq, inArray, or, sql, type SQL } from "drizzle-orm"
-import { mantWorkOrders } from "@/db/schema"
+import { fuelVehicles, mantWorkOrders } from "@/db/schema"
 import {
   canTransitionFrom, isOtStatus, OT_EXECUTION_EDITABLE, OT_PERMISSIONS, OT_REQUEST_EDITABLE, OT_STATUS_LABELS, OT_TRANSITIONS,
   type OtPermission, type OtTransition,
@@ -21,6 +21,11 @@ const hasMantPermission = (viewer: AccessViewer, permission: string) => viewer.p
  * - lo propio: las que creó y las que tiene asignadas. El mecánico no toma
  *   OT: se las asigna el administrador de contrato al crearla o la jefatura,
  *   así que no ve las «por asignar».
+ *
+ * La OT sigue al equipo (decisión 2026-11-22): `mant_work_orders.worksite_id` es la faena de
+ * IMPUTACIÓN (horas, Panel, métricas) y no cambia con un traslado; la faena ACTUAL del equipo
+ * es `fuel_vehicles.worksite_id`. Se ve la OT si cualquiera de las dos está en el alcance, y la
+ * recepción y la conformidad (`WORKSITE_SCOPED`) las da la faena ACTUAL.
  *
  * Quién actúa: `canActOnWorkOrder` aplica `OT_TRANSITIONS` (permiso + regla de
  * actor) más el alcance de faena que corresponde. Ejecutar y ser el asignado
@@ -46,8 +51,40 @@ export function workOrderVisibility(viewer: AccessViewer): WorkOrderVisibility {
   }
 }
 
+/**
+ * La OT de un equipo que hoy está en alguna de estas faenas (subconsulta sobre `fuel_vehicles` por
+ * `mant_work_orders.vehicle_id`). Alias propio: la consulta de afuera puede unir `fuel_vehicles`.
+ */
+export function vehicleNowInWorksitesSql(worksiteIds: readonly string[]): SQL {
+  if (worksiteIds.length === 0) return sql`false`
+  return sql`exists (
+    select 1 from ${fuelVehicles} as fv_now
+    where fv_now.id = ${mantWorkOrders.vehicleId}
+      and fv_now.worksite_id in (${sql.join(worksiteIds.map((id) => sql`${id}`), sql`, `)})
+  )`
+}
+
 /** Predicado SQL sobre `mant_work_orders`. Sin ningún permiso de OT: `false`. */
 export function workOrderVisibilitySql(visibility: WorkOrderVisibility): SQL {
+  if (visibility.kind === "all") return sql`true`
+  const parts: SQL[] = []
+  if (visibility.worksiteIds.length) {
+    parts.push(inArray(mantWorkOrders.worksiteId, visibility.worksiteIds))
+    parts.push(vehicleNowInWorksitesSql(visibility.worksiteIds))
+  }
+  if (visibility.userId) {
+    parts.push(eq(mantWorkOrders.requestedByUserId, visibility.userId))
+    parts.push(eq(mantWorkOrders.assignedToUserId, visibility.userId))
+  }
+  return parts.length ? or(...parts)! : sql`false`
+}
+
+/**
+ * Lo mismo que `workOrderVisibilitySql`, pero SIN seguir al equipo: sólo la faena de IMPUTACIÓN (y lo propio).
+ * Es la base de las CIFRAS del Panel: las horas y las OT cuentan donde se imputaron, aunque el equipo se haya
+ * trasladado (decisión 2026-11-22). Listas, fichas y acciones usan `workOrderVisibilitySql`.
+ */
+export function workOrderImputationVisibilitySql(visibility: WorkOrderVisibility): SQL {
   if (visibility.kind === "all") return sql`true`
   const parts: SQL[] = []
   if (visibility.worksiteIds.length) parts.push(inArray(mantWorkOrders.worksiteId, visibility.worksiteIds))
@@ -62,14 +99,24 @@ export function workOrderVisibilitySql(visibility: WorkOrderVisibility): SQL {
 export interface WorkOrderAccessFacts {
   /** Un `OtStatus`; llega como `string` desde las filas de la base. */
   status: string
+  /** Faena de imputación de la OT. */
   worksiteId: string
   requestedByUserId: string
   assignedToUserId: string | null
+  /**
+   * Faena ACTUAL del equipo (`fuel_vehicles.worksite_id`), distinta de la de imputación tras un
+   * traslado. `null`/ausente: se toma `worksiteId` (sin traslado son la misma).
+   */
+  vehicleWorksiteId?: string | null
 }
+
+/** Faena que da la recepción y la conformidad: la actual del equipo. */
+export const currentWorksiteOf = (ot: Pick<WorkOrderAccessFacts, "worksiteId" | "vehicleWorksiteId">): string => ot.vehicleWorksiteId ?? ot.worksiteId
 
 export function canSeeWorkOrder(visibility: WorkOrderVisibility, ot: WorkOrderAccessFacts): boolean {
   if (visibility.kind === "all") return true
   if (visibility.worksiteIds.includes(ot.worksiteId)) return true
+  if (ot.vehicleWorksiteId && visibility.worksiteIds.includes(ot.vehicleWorksiteId)) return true
   return !!visibility.userId && (ot.requestedByUserId === visibility.userId || ot.assignedToUserId === visibility.userId)
 }
 
@@ -116,7 +163,9 @@ export function canActOnWorkOrder(viewer: AccessViewer, ot: WorkOrderAccessFacts
     return allow
   }
   if (!holds) return forbidden("No tienes permiso para esta acción.")
-  if (WORKSITE_SCOPED.has(rule.permission) && !inWorksiteScope(viewer, ot.worksiteId)) {
+  // La faena que da la recepción y la conformidad es la ACTUAL del equipo: tras un traslado, el
+  // destino las gana y el origen (que ya no tiene el equipo) las pierde.
+  if (WORKSITE_SCOPED.has(rule.permission) && !inWorksiteScope(viewer, currentWorksiteOf(ot))) {
     return forbidden("El equipo de esta OT es de otra faena: no es de tu alcance.")
   }
   return allow

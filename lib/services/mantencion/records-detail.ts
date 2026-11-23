@@ -2,7 +2,7 @@ import { and, asc, desc, eq, lte, ne } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
-  mantEquipmentProfiles, mantRecordCorrectives, mantRecordDrivers, mantRecordItems, mantRecordObservations,
+  fuelVehicles, mantEquipmentProfiles, mantRecordCorrectives, mantRecordDrivers, mantRecordItems, mantRecordObservations,
   mantRecordPhotos, mantRecordVoids, mantRecords, mantWorkshopUpdates, users, worksites,
   type MantEquipmentSnapshot,
 } from "@/db/schema"
@@ -12,7 +12,7 @@ import type {
   MantExecutorKind, MantItemValue, MantPhotoKind, MantReading, MantRecordKind, MantRecordStatus, MantReview, MantUnit,
 } from "@/lib/mantencion/types"
 import { todayInChile } from "@/lib/utils"
-import { canSeeRecord, recordVisibility, recordVisibilitySql, type MantViewer } from "./access"
+import { canActOnRecord, canSeeRecord, recordVisibility, recordVisibilitySql, type MantViewer } from "./access"
 import { STAMP_GAP_LIMIT_HOURS } from "./records-filters"
 import { loadRecordJobs, type RecordJob } from "./records-jobs"
 
@@ -51,6 +51,11 @@ export interface RecordDetail {
   vehicleId: string
   worksiteId: string
   worksiteName: string
+  /**
+   * ¿Puede quien lee observar, revisar, anular o corregir? `false` cuando el registro sólo se ve
+   * porque su equipo está hoy en la faena del lector (se hizo en otra): ve la historia, no actúa.
+   */
+  canAct: boolean
   outOfWorksite: boolean
   reading: number
   unit: MantUnit
@@ -132,6 +137,7 @@ export async function loadRecordDetail(viewer: MantViewer, id: string): Promise<
     .select({
       record: mantRecords,
       worksiteName: worksites.name,
+      vehicleWorksiteId: fuelVehicles.worksiteId,
       registeredByName: registrar.name,
       duplicateFolio: duplicate.folio,
       correctsFolio: corrects.folio,
@@ -139,6 +145,7 @@ export async function loadRecordDetail(viewer: MantViewer, id: string): Promise<
     .from(mantRecords)
     .innerJoin(worksites, eq(worksites.id, mantRecords.worksiteId))
     .innerJoin(registrar, eq(registrar.id, mantRecords.registeredBy))
+    .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantRecords.vehicleId))
     .leftJoin(duplicate, eq(duplicate.id, mantRecords.duplicateOfRecordId))
     .leftJoin(corrects, eq(corrects.id, mantRecords.correctsRecordId))
     .where(eq(mantRecords.id, id))
@@ -146,7 +153,8 @@ export async function loadRecordDetail(viewer: MantViewer, id: string): Promise<
   if (!row) return null
   const record = row.record
   const visibility = recordVisibility(viewer)
-  if (!canSeeRecord(visibility, record)) return null
+  // Leer sigue al equipo (su faena ACTUAL cuenta); actuar no (`canAct`, sólo la faena del registro).
+  if (!canSeeRecord(visibility, { ...record, vehicleWorksiteId: row.vehicleWorksiteId })) return null
 
   const responder = alias(users, "responder")
   const author = alias(users, "author")
@@ -250,6 +258,7 @@ export async function loadRecordDetail(viewer: MantViewer, id: string): Promise<
     vehicleId: record.vehicleId,
     worksiteId: record.worksiteId,
     worksiteName: row.worksiteName,
+    canAct: canActOnRecord(visibility, record),
     outOfWorksite: record.outOfWorksite,
     reading: record.reading,
     unit: record.unit as MantUnit,
@@ -320,8 +329,11 @@ export async function loadRecordAccessRow(id: string) {
     .select({
       id: mantRecords.id, folio: mantRecords.folio, status: mantRecords.status, worksiteId: mantRecords.worksiteId,
       registeredBy: mantRecords.registeredBy, executorUserId: mantRecords.executorUserId, pdfStorageKey: mantRecords.pdfStorageKey,
+      // Faena ACTUAL del equipo: la hoja de vida sigue al equipo, también su PDF.
+      vehicleWorksiteId: fuelVehicles.worksiteId,
     })
-    .from(mantRecords).where(eq(mantRecords.id, id)).limit(1)
+    .from(mantRecords).leftJoin(fuelVehicles, eq(fuelVehicles.id, mantRecords.vehicleId))
+    .where(eq(mantRecords.id, id)).limit(1)
   return row ?? null
 }
 

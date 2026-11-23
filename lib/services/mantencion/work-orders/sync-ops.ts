@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
-import { mantWorkOrderEvents, mantWorkOrders, worksites } from "@/db/schema"
+import { fuelVehicles, mantWorkOrderEvents, mantWorkOrders, worksites } from "@/db/schema"
 import { isUniqueViolation } from "@/lib/action-error"
 import type { SyncWarning, SyncWorkOrderResponse, WorkOrderOpPayload, WorkOrderOpRequest } from "@/lib/mantencion/contracts"
 import { OT_PERMISSIONS, type OtStatus } from "@/lib/mantencion/work-order-states"
@@ -98,15 +98,20 @@ async function dispatch(op: WorkOrderOpPayload, actor: WorkOrderActor): Promise<
   }
 }
 
-/** Aviso (no bloqueo) cuando el mecánico trabaja un equipo de una faena que no es la suya. */
+/**
+ * Aviso (no bloqueo) cuando el mecánico trabaja un equipo de una faena que no es la suya. La faena que
+ * cuenta es la ACTUAL del equipo (`fuel_vehicles.worksite_id`): la OT sigue al equipo tras un traslado,
+ * así que la de imputación de la OT ya no dice dónde está.
+ */
 async function worksiteWarnings(op: WorkOrderOpPayload, context: SyncContext): Promise<SyncWarning[]> {
   if (op.action !== "start") return []
   const { viewer } = context
   if (viewer.isGlobal) return []
   const [row] = await db
-    .select({ worksiteId: mantWorkOrders.worksiteId, name: worksites.name })
+    .select({ worksiteId: fuelVehicles.worksiteId, name: worksites.name })
     .from(mantWorkOrders)
-    .innerJoin(worksites, eq(worksites.id, mantWorkOrders.worksiteId))
+    .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantWorkOrders.vehicleId))
+    .innerJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId))
     .where(eq(mantWorkOrders.id, op.workOrderId))
     .limit(1)
   if (!row || viewer.worksiteIds.includes(row.worksiteId)) return []

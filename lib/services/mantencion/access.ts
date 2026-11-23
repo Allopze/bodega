@@ -1,6 +1,7 @@
 import { eq, inArray, or, sql, type SQL } from "drizzle-orm"
+import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import type { Session } from "next-auth"
-import { mantRecords } from "@/db/schema"
+import { fuelVehicles, mantRecords } from "@/db/schema"
 import type { MantWorksiteScope } from "./fleet"
 
 /**
@@ -48,8 +49,47 @@ export function recordVisibility(viewer: MantViewer): RecordVisibility {
   return { kind: "scoped", worksiteIds, ownUserId }
 }
 
-/** Predicado SQL sobre `mant_records`. Sin ningún permiso de lectura: `false`. */
+/**
+ * «La hoja de vida sigue al equipo» (decisión 2026-11-22): el equipo está HOY en una de estas
+ * faenas (`fuel_vehicles.worksite_id`). `vehicleIdColumn` es la columna del equipo de la fila
+ * que se filtra (`mant_records.vehicle_id`, `mant_historical_records.vehicle_id`).
+ *
+ * Subconsulta correlacionada con alias propio, para no chocar con un `fuel_vehicles` que la
+ * consulta externa ya una. Sin faenas no hay nada que comparar: `false`.
+ */
+export function equipmentCurrentlyInWorksites(vehicleIdColumn: AnyPgColumn, worksiteIds: readonly string[]): SQL {
+  if (worksiteIds.length === 0) return sql`false`
+  const ids = sql.join(worksiteIds.map((id) => sql`${id}`), sql`, `)
+  return sql`exists (select 1 from ${fuelVehicles} as cur_veh where cur_veh.id = ${vehicleIdColumn} and cur_veh.worksite_id in (${ids}))`
+}
+
+/**
+ * Predicado SQL sobre `mant_records` para LEER. Sin ningún permiso de lectura: `false`.
+ *
+ * Un usuario con alcance por faena ve un registro si su faena —o la faena ACTUAL del equipo— está
+ * en su alcance: la hoja de vida sigue al equipo trasladado. Ver no es actuar: observar, revisar,
+ * anular y corregir siguen exigiendo la faena del registro (`canActOnRecord`).
+ */
 export function recordVisibilitySql(visibility: RecordVisibility): SQL {
+  if (visibility.kind === "all") return sql`true`
+  const parts: SQL[] = []
+  if (visibility.worksiteIds.length) {
+    parts.push(inArray(mantRecords.worksiteId, visibility.worksiteIds))
+    parts.push(equipmentCurrentlyInWorksites(mantRecords.vehicleId, visibility.worksiteIds))
+  }
+  if (visibility.ownUserId) {
+    parts.push(eq(mantRecords.registeredBy, visibility.ownUserId))
+    parts.push(eq(mantRecords.executorUserId, visibility.ownUserId))
+  }
+  return parts.length ? or(...parts)! : sql`false`
+}
+
+/**
+ * Lo mismo que `recordVisibilitySql`, pero SIN seguir al equipo: sólo la faena DEL REGISTRO (y lo propio).
+ * Es la base de las CIFRAS (Panel, Indicadores): el trabajo cuenta donde se hizo, aunque el equipo se haya
+ * trasladado después (decisión 2026-11-22: la hoja de vida sigue al equipo; las cifras, a la faena del trabajo).
+ */
+export function recordWorksiteVisibilitySql(visibility: RecordVisibility): SQL {
   if (visibility.kind === "all") return sql`true`
   const parts: SQL[] = []
   if (visibility.worksiteIds.length) parts.push(inArray(mantRecords.worksiteId, visibility.worksiteIds))
@@ -60,7 +100,25 @@ export function recordVisibilitySql(visibility: RecordVisibility): SQL {
   return parts.length ? or(...parts)! : sql`false`
 }
 
+/**
+ * ¿Puede LEER el registro? `vehicleWorksiteId` es la faena actual de su equipo
+ * (`fuel_vehicles.worksite_id`); quien llama debe pasarla, porque omitirla da la regla vieja
+ * (sólo la faena del registro) y la hoja de vida de un equipo trasladado quedaría recortada.
+ */
 export function canSeeRecord(
+  visibility: RecordVisibility,
+  record: { worksiteId: string; registeredBy: string; executorUserId: string | null; vehicleWorksiteId?: string | null },
+): boolean {
+  if (canActOnRecord(visibility, record)) return true
+  return !!record.vehicleWorksiteId && visibility.kind === "scoped" && visibility.worksiteIds.includes(record.vehicleWorksiteId)
+}
+
+/**
+ * ¿Puede ACTUAR sobre el registro (observar, revisar, anular, corregir, cerrar su taller)? Es la
+ * regla estricta: la faena DEL REGISTRO o lo propio. Ver la historia de un equipo trasladado no da
+ * derecho a revisar el trabajo de otra faena.
+ */
+export function canActOnRecord(
   visibility: RecordVisibility,
   record: { worksiteId: string; registeredBy: string; executorUserId: string | null },
 ): boolean {
