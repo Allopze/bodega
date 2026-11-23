@@ -8,6 +8,7 @@ import type { OtView } from "@/lib/mantencion/client/ot-model"
 import { isFuture, nowLocalMax, nowLocalValue } from "@/lib/mantencion/client/ot-time"
 import { todayInChile } from "@/lib/utils"
 import { useAppData } from "./app-context"
+import { useSheetDirty, useSheetGuard } from "./dialog"
 import type { OtOpBody } from "./use-ot-op"
 import { FieldError, Label } from "./ui"
 
@@ -36,10 +37,14 @@ export function OtEntryForm({ view, saving, error, onSubmit, onBack }: {
   const [manager, setManager] = useState("")
   const [operator, setOperator] = useState("")
   const [operatorName, setOperatorName] = useState("")
-  const [entryAt, setEntryAt] = useState(nowLocalValue)
+  const [initialEntryAt] = useState(nowLocalValue)
+  const [entryAt, setEntryAt] = useState(initialEntryAt)
   const [readingText, setReadingText] = useState("")
   const [estimate, setEstimate] = useState("")
   const [errors, setErrors] = useState<Errors>({})
+
+  const { confirmThen } = useSheetGuard()
+  useSheetDirty(kind !== null || workshopId !== "" || manager.trim() !== "" || operator !== "" || operatorName.trim() !== "" || entryAt !== initialEntryAt || readingText.trim() !== "" || estimate !== "")
 
   const last = row?.status.currentReading ?? null
   const entryDay = entryAt ? todayInChile(new Date(entryAt)) : null
@@ -133,7 +138,7 @@ export function OtEntryForm({ view, saving, error, onSubmit, onBack }: {
       </div>
       <FieldError message={error ?? undefined} />
       <button type="button" className="btnp" onClick={submit} disabled={saving}>Registrar ingreso</button>
-      <button type="button" className="btns wide" onClick={onBack} disabled={saving}>Volver</button>
+      <button type="button" className="btns wide" onClick={() => confirmThen(onBack)} disabled={saving}>Volver</button>
     </>
   )
 }

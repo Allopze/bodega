@@ -9,10 +9,16 @@ import type { WorkshopEntry } from "@/lib/mantencion/client/fleet-view"
 import { equipmentLabel } from "@/lib/mantencion/client/fleet-view"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { useAppActions, useAppData } from "./app-context"
-import { Sheet } from "./dialog"
+import { Sheet, useSheetGuard } from "./dialog"
 import { FieldError, Label } from "./ui"
 
 type Option = "sigue" | "salio"
+
+/** Cierra la hoja; con algo escrito pregunta antes de descartarlo. */
+function CloseButton({ onClose, children }: { onClose: () => void; children: string }) {
+  const { confirmThen } = useSheetGuard()
+  return <button type="button" className="btns wide" onClick={() => confirmThen(onClose)}>{children}</button>
+}
 
 /** «Actualizar estado»: sigue en taller (con el motivo) o ya salió (con la fecha). Se guarda en el teléfono y se envía solo. */
 export function WorkshopSheet({ entry, onClose }: { entry: WorkshopEntry; onClose: () => void }) {
@@ -24,6 +30,8 @@ export function WorkshopSheet({ entry, onClose }: { entry: WorkshopEntry; onClos
   const [exitDate, setExitDate] = useState(today)
   const [errors, setErrors] = useState<{ option?: string; note?: string; exitDate?: string; save?: string }>({})
   const [saving, setSaving] = useState(false)
+
+  const dirty = option !== null || note.trim() !== "" || exitDate !== today
 
   const days = entry.entryDate ? Math.max(0, daysBetween(entry.entryDate, today)) : null
 
@@ -56,7 +64,7 @@ export function WorkshopSheet({ entry, onClose }: { entry: WorkshopEntry; onClos
   }
 
   return (
-    <Sheet title="Estado del equipo" onClose={onClose} stable>
+    <Sheet title="Estado del equipo" onClose={onClose} stable dirty={dirty}>
       <div>
         <div className="mono" style={{ fontWeight: 600 }}>{equipmentLabel({ code: entry.equipmentCode, plate: entry.equipmentPlate })}</div>
         <p className="hint">
@@ -86,7 +94,7 @@ export function WorkshopSheet({ entry, onClose }: { entry: WorkshopEntry; onClos
       ) : null}
       <FieldError message={errors.save} />
       <button type="button" className="btnp" onClick={() => { void save() }} disabled={saving}>Guardar estado</button>
-      <button type="button" className="btns wide" onClick={onClose}>Cancelar</button>
+      <CloseButton onClose={onClose}>Cancelar</CloseButton>
     </Sheet>
   )
 }

@@ -7,7 +7,7 @@ import { StorageFullError } from "@/lib/mantencion/client/db"
 import { enqueueSimple, newReplyItem } from "@/lib/mantencion/client/queue"
 import { formatDateTime } from "@/lib/utils"
 import { useAppActions, useAppData } from "./app-context"
-import { Sheet } from "./dialog"
+import { Sheet, useSheetDirty, useSheetGuard } from "./dialog"
 import { FieldError, Label } from "./ui"
 
 function ObservationItem({ observation, onSaved }: { observation: CatalogObservation; onSaved: () => void }) {
@@ -16,6 +16,7 @@ function ObservationItem({ observation, onSaved }: { observation: CatalogObserva
   const [text, setText] = useState("")
   const [error, setError] = useState<string | undefined>()
   const [saving, setSaving] = useState(false)
+  useSheetDirty(text.trim() !== "")
   const inputId = `obs-${observation.id}`
 
   const send = async () => {
@@ -30,6 +31,7 @@ function ObservationItem({ observation, onSaved }: { observation: CatalogObserva
       }, crypto.randomUUID()))
       toast(online ? "Respuesta guardada. Enviando…" : "Respuesta guardada en el teléfono.")
       syncNow()
+      setText("")
       onSaved()
     } catch (cause) {
       setError(cause instanceof StorageFullError ? cause.message : "No pudimos guardar la respuesta. Intenta de nuevo.")
@@ -55,6 +57,11 @@ function ObservationItem({ observation, onSaved }: { observation: CatalogObserva
   )
 }
 
+function CloseButton({ onClose }: { onClose: () => void }) {
+  const { confirmThen } = useSheetGuard()
+  return <button type="button" className="btns wide" onClick={() => confirmThen(onClose)}>Cerrar</button>
+}
+
 /** Lo que dejó el supervisor o jefatura sobre un registro; el mecánico responde y queda en la bitácora. */
 export function ObservationSheet({ observations, onClose }: { observations: CatalogObservation[]; onClose: () => void }) {
   return (
@@ -62,7 +69,7 @@ export function ObservationSheet({ observations, onClose }: { observations: Cata
       {observations.length === 0 ? <p className="empty">No quedan observaciones por responder.</p> : observations.map((observation) => (
         <ObservationItem key={observation.id} observation={observation} onSaved={() => { if (observations.length <= 1) onClose() }} />
       ))}
-      <button type="button" className="btns wide" onClick={onClose}>Cerrar</button>
+      <CloseButton onClose={onClose} />
     </Sheet>
   )
 }

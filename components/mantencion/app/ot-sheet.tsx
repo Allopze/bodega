@@ -11,7 +11,7 @@ import type { WorkOrderOpRequest } from "@/lib/mantencion/contracts"
 import { formatDate, formatDateTime, toLocalInputValue, todayInChile } from "@/lib/utils"
 import { isValidReason, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 import { useAppData } from "./app-context"
-import { Sheet } from "./dialog"
+import { Sheet, useSheetDirty, useSheetGuard } from "./dialog"
 import { OtEntryForm } from "./ot-entry-form"
 import { OtItemsEditor } from "./ot-items"
 import { otKindText } from "./ot-lists"
@@ -50,6 +50,8 @@ function EstimateForm({ view, saving, error, onSubmit, onBack }: { view: OtView;
   const [date, setDate] = useState(current)
   const [reason, setReason] = useState("")
   const [errors, setErrors] = useState<{ date?: string; reason?: string }>({})
+  const { confirmThen } = useSheetGuard()
+  useSheetDirty(date !== current || reason.trim() !== "")
 
   const submit = () => {
     const next: typeof errors = {}
@@ -75,16 +77,19 @@ function EstimateForm({ view, saving, error, onSubmit, onBack }: { view: OtView;
       </div>
       <FieldError message={error ?? undefined} />
       <button type="button" className="btnp" onClick={submit} disabled={saving}>Guardar fecha</button>
-      <button type="button" className="btns wide" onClick={onBack} disabled={saving}>Volver</button>
+      <button type="button" className="btns wide" onClick={() => confirmThen(onBack)} disabled={saving}>Volver</button>
     </>
   )
 }
 
 /** «Terminar» = salida de taller: fecha y hora. Dice qué falta antes de poder terminar. */
 function FinishForm({ view, saving, error, onSubmit, onBack }: { view: OtView; saving: boolean; error: string | null; onSubmit: (body: OtOpBody) => void; onBack: () => void }) {
-  const [exitAt, setExitAt] = useState(nowLocalValue)
+  const [initialExitAt] = useState(nowLocalValue)
+  const [exitAt, setExitAt] = useState(initialExitAt)
   const [note, setNote] = useState("")
   const [problem, setProblem] = useState<string | null>(null)
+  const { confirmThen } = useSheetGuard()
+  useSheetDirty(note.trim() !== "" || exitAt !== initialExitAt)
   const entryAt = view.ot.entry ? new Date(view.ot.entry.entryAt) : null
 
   const submit = () => {
@@ -113,7 +118,7 @@ function FinishForm({ view, saving, error, onSubmit, onBack }: { view: OtView; s
       </div>
       <FieldError message={problem ?? error ?? undefined} />
       <button type="button" className="btnp" onClick={submit} disabled={saving}>Terminar y avisar</button>
-      <button type="button" className="btns wide" onClick={onBack} disabled={saving}>Volver</button>
+      <button type="button" className="btns wide" onClick={() => confirmThen(onBack)} disabled={saving}>Volver</button>
     </>
   )
 }

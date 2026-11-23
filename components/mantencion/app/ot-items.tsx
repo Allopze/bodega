@@ -5,6 +5,7 @@ import { OT_ITEM_KINDS, OT_ITEM_KIND_LABELS, OT_ITEM_MAX_PER_KIND, type OtItemKi
 import { canAddItem } from "@/lib/mantencion/client/ot-model"
 import type { OtView } from "@/lib/mantencion/client/ot-model"
 import type { OtOpBody } from "./use-ot-op"
+import { useSheetDirty, useSheetGuard } from "./dialog"
 import { FieldError } from "./ui"
 
 type Mark = { done: "si" | "no" | null; note: string }
@@ -27,6 +28,13 @@ export function OtItemsEditor({ view, saving, error, onSubmit, onBack }: {
   const [added, setAdded] = useState<Added[]>([])
   const [draftText, setDraftText] = useState<Record<OtItemKind, string>>({ anexo: "", mantencion: "" })
   const [problem, setProblem] = useState<string | null>(null)
+
+  const { confirmThen } = useSheetGuard()
+  const markChanged = ot.items.some((item) => {
+    const mark = marks[item.id]
+    return (mark?.done ?? null) !== item.done || (mark?.note.trim() ?? "") !== (item.note ?? "").trim()
+  })
+  useSheetDirty(markChanged || added.length > 0 || Object.values(draftText).some((text) => text.trim() !== ""))
 
   const setMark = (id: string, patch: Partial<Mark>) => { setMarks((current) => ({ ...current, [id]: { ...(current[id] ?? { done: null, note: "" }), ...patch } })); setProblem(null) }
 
@@ -95,7 +103,7 @@ export function OtItemsEditor({ view, saving, error, onSubmit, onBack }: {
       })}
       <FieldError message={problem ?? error ?? undefined} />
       <button type="button" className="btnp" onClick={save} disabled={saving}>Guardar marcas</button>
-      <button type="button" className="btns wide" onClick={onBack} disabled={saving}>Volver</button>
+      <button type="button" className="btns wide" onClick={() => confirmThen(onBack)} disabled={saving}>Volver</button>
     </>
   )
 }
