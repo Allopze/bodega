@@ -634,6 +634,10 @@ export const pgliteTestFiles = [
   // Importación de consumos en modo «todas las faenas»: la faena es la del período, no la de hoy.
   "lib/__tests__/traslado-importador-todas-pglite.test.ts",
   "lib/__tests__/app-visits-pglite.test.ts",
+  // TI › Apps del teléfono: avisos de las PWA (ruta pública, cuotas, upsert) y
+  // las lecturas de TI (estado, demora, uso, accesos, alcance por faena).
+  "lib/__tests__/pwa-heartbeat-pglite.test.ts",
+  "lib/__tests__/field-apps-overview-pglite.test.ts",
   // Reglas de alertas OnWay tras un traslado: la alerta se procesa en la faena del día en que
   // ocurrió y una alerta que falla queda bloqueada sin detener la cola.
   "lib/integrations/onway/onway-automation-pglite.test.ts",
