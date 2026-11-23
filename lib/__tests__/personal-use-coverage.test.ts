@@ -87,6 +87,7 @@ const EXEMPT_FILES: Record<string, string> = {
   "lib/services/dispatch-guides.ts": "bodega (guías de despacho)",
   "lib/services/epp-delivery-scale-reconciliation.ts": "EPP",
   "lib/services/epp-pending-delivery.ts": "EPP",
+  "lib/services/field-apps/overview.ts": "TI › Apps: cuenta envíos de las apps del teléfono (demora, uso, OCR), no costos ni consumo",
   "lib/services/item-state-module/rollup.ts": "estado de ítems de compra",
   "lib/services/operational-work-queue.ts": "cola de trabajo",
   "lib/services/purchasing-module/receiving.ts": "recepción de OC (bodega)",

@@ -14,6 +14,7 @@ import { promisify } from "node:util"
 import path from "node:path"
 import fs from "node:fs/promises"
 import { todayInChile } from "@/lib/utils"
+import { BUILD_ID } from "@/lib/build-info"
 import { logger } from "@/lib/logger"
 import {
   buildOrchestratorEnv,
@@ -81,7 +82,7 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
         status: "failed",
         errorMessage: "Script backup-orchestrator.sh no encontrado en el servidor",
         errorCode: "SCRIPT_NOT_FOUND",
-        appVersion: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "unknown",
+        appVersion: BUILD_ID,
         hostname: "manual-trigger",
       })
       revalidatePath("/admin/backups")
@@ -124,9 +125,7 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
       BACKUP_DIR: backupDir,
       BACKUP_RUN_ID: logId,
       APP_VERSION:
-        process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
-        process.env.APP_VERSION ||
-        "manual",
+        BUILD_ID,
       RETENTION_DAYS: String(backupCfg.retentionDays),
       CLOUDREVE_BACKUP_ENABLED: String(backupCfg.cloudreveBackupsEnabled),
       CLOUDREVE_BACKUP_PATH: backupCfg.cloudreveBackupsPath,
@@ -154,7 +153,7 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
         status: "failed",
         errorMessage: failure.message,
         errorCode: failure.code,
-        appVersion: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "unknown",
+        appVersion: BUILD_ID,
         hostname: "manual-trigger",
       })
       revalidatePath("/admin/backups")
@@ -167,7 +166,7 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
       backupDir,
       status: status ?? { BACKUP_DATE: today },
       cloudrevePath: backupCfg.cloudreveBackupsPath,
-      appVersion: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "unknown",
+      appVersion: BUILD_ID,
     })
 
     await completeBackupLog(logId, result)
@@ -187,7 +186,7 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
           errorMessage:
             safeActionMessage(err, "Error desconocido"),
           errorCode: "BACKUP_FAILED",
-          appVersion: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "unknown",
+          appVersion: BUILD_ID,
           hostname: "manual-trigger",
         })
       } catch { /* ignora error secundario */ }

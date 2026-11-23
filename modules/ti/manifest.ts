@@ -39,8 +39,10 @@ export const tiModule = {
       items: [
         { label: "Resumen",             href: "/ti",             iconName: "Desktop",       permissions: ["ti:view"], group: "Seguimiento" },
         { label: "Reportes TI",         href: "/ti/reportes",    iconName: "ChartBar",      permissions: ["ti:view"], group: "Seguimiento" },
-        // Uso y salud de cada app de la plataforma (movimientos, usuarios, integraciones).
+        // Las apps que se instalan en el teléfono: si funcionan y quién las usa.
         { label: "Apps",                href: "/ti/apps",        iconName: "GridFour",      permissions: ["ti:view"], group: "Seguimiento" },
+        // Sincronizaciones y tareas programadas: si corrieron bien y a tiempo.
+        { label: "Integraciones",       href: "/ti/integraciones", iconName: "ArrowsClockwise", permissions: ["ti:view"], group: "Seguimiento" },
         { label: "Inventario",          href: "/ti/activos",     iconName: "Laptop",        permissions: ["ti:view"], group: "Equipos" },
         { label: "Entregas",            href: "/ti/asignaciones", iconName: "UserCirclePlus", permissions: ["ti:view"], group: "Equipos" },
         { label: "Mantenciones",        href: "/ti/mantenciones", iconName: "Wrench",        permissions: ["ti:view"], group: "Equipos" },

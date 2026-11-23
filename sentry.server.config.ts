@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs"
+import { BUILD_SHA } from "@/lib/build-info"
 import { setLoggerErrorSink } from "@/lib/logger"
 import { depurarEventoTelemetria, RECOLECCION_MINIMA } from "@/lib/security/telemetry-scrub"
 
@@ -14,7 +15,8 @@ import { depurarEventoTelemetria, RECOLECCION_MINIMA } from "@/lib/security/tele
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
   environment: process.env.SENTRY_ENVIRONMENT?.trim() || process.env.NODE_ENV,
-  release: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.trim() || undefined,
+  // El sha que pasa el deploy al compilar (`lib/build-info.ts`); vacío en un build a mano.
+  release: BUILD_SHA || undefined,
   dataCollection: RECOLECCION_MINIMA,
   // No reescribir el mensaje real de los errores de fetch: hay código que lo
   // compara (lib/network-error.ts). Sólo se enriquece lo que viaja a Sentry.

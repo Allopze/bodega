@@ -48,9 +48,16 @@ ARG NEXT_PUBLIC_SENTRY_DSN=
 # El estilo del mapa GPS también se inlinea en el bundle cliente durante el
 # build. La URL es pública; sólo usar claves públicas restringidas por dominio.
 ARG NEXT_PUBLIC_MAP_STYLE_URL=
+# Sha corto del commit que se despliega (lo pasa deploy-prod.sh). next.config.ts
+# lo incrusta como versión del build en el servidor y en las apps del teléfono
+# (`lib/build-info.ts`). Va justo antes del build para no invalidar la caché de
+# las capas anteriores en cada commit.
+ARG BODEGA_BUILD_SHA=
 RUN --mount=type=cache,id=chome-next,target=/app/.next/cache,sharing=locked \
     NODE_OPTIONS=--max-old-space-size=8192 \
     BODEGA_BUILD_SKIP_TYPECHECK="$BODEGA_BUILD_SKIP_TYPECHECK" \
+    BODEGA_BUILD_SHA="$BODEGA_BUILD_SHA" \
+    BODEGA_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     NEXT_PUBLIC_SENTRY_DSN="$NEXT_PUBLIC_SENTRY_DSN" \
     NEXT_PUBLIC_MAP_STYLE_URL="$NEXT_PUBLIC_MAP_STYLE_URL" \
     DATABASE_URL=postgres://build:build@localhost:5432/build npm run build

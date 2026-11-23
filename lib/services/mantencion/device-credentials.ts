@@ -225,6 +225,32 @@ export async function authenticateDeviceToken(
 }
 
 /**
+ * Como `authenticateDeviceToken` (mismo filtro de hash, revocación y vencimiento)
+ * pero SIN efectos: no refresca `lastUsedAt`. Lo usa el aviso de estado de las
+ * apps del teléfono (`/api/pwa/aviso`), que sólo quiere saber de quién es la
+ * credencial y no debe contar como «uso» en la pantalla de dispositivos.
+ */
+export async function findDeviceCredentialOwner(
+  token: string,
+): Promise<{ userId: string; deviceId: string; createdAt: string } | null> {
+  if (!token || token.length > 200) return null
+  const [row] = await db
+    .select({
+      userId: mantDeviceCredentials.userId,
+      deviceId: mantDeviceCredentials.deviceId,
+      createdAt: mantDeviceCredentials.createdAt,
+    })
+    .from(mantDeviceCredentials)
+    .where(and(
+      eq(mantDeviceCredentials.tokenHash, hashDeviceToken(token)),
+      isNull(mantDeviceCredentials.revokedAt),
+      sql`${mantDeviceCredentials.expiresAt} > now()`,
+    ))
+    .limit(1)
+  return row ?? null
+}
+
+/**
  * Lista para la pantalla de dispositivos de jefatura (la más reciente primero).
  * Con `actor`, sólo salen las credenciales de personas que comparten alguna de
  * sus faenas: los correos de otras faenas no se listan. El filtro va en SQL

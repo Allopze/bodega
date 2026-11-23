@@ -37,6 +37,11 @@ export const PUBLIC_PATHS = [
   // Login propio de la app del mecánico: la app instalada en el teléfono entra
   // por aquí y no por el login de escritorio. Sólo el formulario, sin datos.
   "/m/mantencion/entrar",
+  // Aviso de estado de las apps del teléfono (PPA, Mantención, TAE): PPA y TAE
+  // no tienen sesión. El cotejo es por prefijo (cubre también `/api/pwa/aviso/…`,
+  // que no existe). La ruta lleva cuota por IP y por teléfono, rechazo de
+  // peticiones de otro sitio, esquema estricto y cuerpo acotado; no devuelve datos.
+  "/api/pwa/aviso",
 ] as const
 
 export function matchesRoutePrefix(pathname: string, prefix: string) {

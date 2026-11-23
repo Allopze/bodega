@@ -23,7 +23,7 @@ await inMemoryDb.insert(schema.users).values([
   { id: "u-visit-2", name: "QA Visitas 2", email: "qa-visitas-2@example.com", hashedPassword: "x" },
 ])
 
-const { recordAppVisit, getRecentAppIds, getAppVisitWindow } = await import("@/lib/services/app-visits")
+const { recordAppVisit, getRecentAppIds } = await import("@/lib/services/app-visits")
 
 const at = (iso: string) => new Date(iso)
 
@@ -43,10 +43,6 @@ describe("visitas por app", () => {
     expect(fuel?.views).toBe(2)
     expect(rows).toHaveLength(3)
 
-    const window = await getAppVisitWindow(30, at("2026-11-19T20:00:00Z"))
-    expect(window.visits.find((row) => row.moduleId === "combustibles")?.visits).toBe(3)
-    expect(window.visitors.filter((row) => row.moduleId === "combustibles")).toHaveLength(2)
-    expect(window.trackedSince).toBe("2026-11-19")
   })
 
   it("Inicio y rutas sin app no se registran", async () => {

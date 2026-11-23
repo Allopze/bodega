@@ -399,7 +399,8 @@ fi
 run_timed "Building image from $(pwd) (main)" docker buildx build --builder "$BUILDER" --target prod --tag "$IMAGE" --load --progress=plain \
   --build-arg BODEGA_BUILD_SKIP_TYPECHECK=1 \
   --build-arg NEXT_PUBLIC_SENTRY_DSN="$PROD_SENTRY_PUBLIC_DSN" \
-  --build-arg NEXT_PUBLIC_MAP_STYLE_URL="$PROD_MAP_STYLE_URL" .
+  --build-arg NEXT_PUBLIC_MAP_STYLE_URL="$PROD_MAP_STYLE_URL" \
+  --build-arg BODEGA_BUILD_SHA="$(git rev-parse --short=12 HEAD)" .
 
 # Prod dejó de compartir el daemon Docker con este checkout, así que la imagen
 # recién construida tiene que viajar.

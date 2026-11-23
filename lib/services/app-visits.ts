@@ -4,6 +4,9 @@
  * Una «visita» es entrar a una app: navegar entre pantallas de la misma app
  * dentro de 30 minutos no suma otra. Eso lo decide la base (no el cliente),
  * así que el contador no depende de cuántas pestañas o recargas haya.
+ *
+ * Desde 2026-11-22 sólo alimenta las «recientes» del lanzador ⊞: TI › Apps dejó
+ * de medir el uso por módulo y pasó a mostrar las apps del teléfono.
  */
 import { and, desc, eq, gte, sql } from "drizzle-orm"
 import { db } from "@/db"
@@ -11,7 +14,6 @@ import { appVisits } from "@/db/schema"
 import { resolveModuleRoute } from "@/lib/services/module-toggles"
 import { findApp } from "@/lib/apps/catalog"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
-import type { AppVisitRow, AppVisitorRow } from "@/lib/apps/metrics"
 
 /** Volver a la misma app antes de este plazo es la misma visita. */
 export const VISIT_GAP_MINUTES = 30
@@ -49,31 +51,4 @@ export async function getRecentAppIds(userId: string, limit = 4, now: Date = new
     .orderBy(desc(sql`max(${appVisits.lastVisitAt})`))
     .limit(limit)
   return rows.map((row) => row.moduleId)
-}
-
-/**
- * Visitas por app de los últimos `days` días civiles, más los pares persona–app
- * (para contar personas distintas sin sumar dos veces a quien abrió dos apps).
- */
-export async function getAppVisitWindow(days: number, now: Date = new Date()): Promise<{
-  visits: AppVisitRow[]
-  visitors: AppVisitorRow[]
-  trackedSince: string | null
-}> {
-  const since = addDaysToPlainDate(todayInChile(now), -(days - 1))
-  const [visits, visitors, [first]] = await Promise.all([
-    db.select({
-      moduleId: appVisits.moduleId,
-      visits: sql<number>`sum(${appVisits.views})::int`,
-      lastVisitAt: sql<string | null>`max(${appVisits.lastVisitAt})`,
-    }).from(appVisits).where(gte(appVisits.day, since)).groupBy(appVisits.moduleId),
-    db.selectDistinct({ moduleId: appVisits.moduleId, userId: appVisits.userId })
-      .from(appVisits).where(gte(appVisits.day, since)),
-    db.select({ day: sql<string | null>`min(${appVisits.day})` }).from(appVisits),
-  ])
-  return {
-    visits: visits.map((row) => ({ ...row, visits: Number(row.visits) })),
-    visitors,
-    trackedSince: first?.day ?? null,
-  }
 }

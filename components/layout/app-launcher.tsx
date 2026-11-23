@@ -119,7 +119,7 @@ export function AppLauncher({
         {canSeeUsage && (
           <div className="border-t border-[var(--color-border)] px-4 py-2.5">
             <Link href="/ti/apps" onClick={close} className="text-xs text-[var(--color-primary-ink)] hover:underline">
-              Ver uso de las apps
+              Apps del teléfono
             </Link>
           </div>
         )}
