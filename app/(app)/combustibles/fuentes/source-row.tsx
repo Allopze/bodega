@@ -1,19 +1,8 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { CloudArrowDown, Drop, FileXls, Gauge, QrCode, Receipt, SealCheck } from "@phosphor-icons/react/dist/ssr"
 import { MetaBadge } from "@/components/states/state-badge"
 import { cn } from "@/lib/utils"
-import type { FuelSourceKey, FuelSourceStatus } from "@/lib/combustibles/sources-status"
-
-const SOURCE_ICONS: Record<FuelSourceKey, typeof Gauge> = {
-  copec: CloudArrowDown,
-  planilla: FileXls,
-  telemetria: Gauge,
-  surtidor: Drop,
-  terreno: QrCode,
-  "historico-sellos": SealCheck,
-  facturas: Receipt,
-}
+import type { FuelSourceStatus } from "@/lib/combustibles/sources-status"
 
 const BADGE_VARIANT = { ok: "success", pendiente: "signal", falla: "danger", sin_datos: "neutral" } as const
 
@@ -46,15 +35,11 @@ export function SourceRow({
   /** Contenido técnico adicional, dentro del detalle plegado. */
   children?: ReactNode
 }) {
-  const Icon = SOURCE_ICONS[source.key]
   const titleId = `fuente-${source.key}-titulo`
   const hasTechnical = source.technical.length > 0 || Boolean(children)
   return (
     <article aria-labelledby={titleId} data-source={source.key} className="min-w-0 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <header className="flex items-start gap-3">
-        <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]">
-          <Icon size={18} />
-        </span>
         <div className="min-w-0 flex-1">
           <h3 id={titleId} className="text-sm font-semibold text-[var(--color-text)]">{source.name}</h3>
           <p className="text-xs text-[var(--color-text-muted)]">{source.description}</p>

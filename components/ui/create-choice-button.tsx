@@ -11,6 +11,7 @@ export interface CreateChoice {
   /** Rótulo dentro del selector ("Comité paritario"). */
   label: string
   description: string
+  /** @deprecated Ya no se pinta: las opciones se distinguen por rótulo y descripción (decisión 2026-11-23). */
   icon?: React.ReactNode
   /** Texto del botón cuando es la única opción disponible ("Nuevo comité"). */
   soloLabel: string
@@ -57,7 +58,7 @@ export function CreateChoiceButton({
   if (choices.length === 0) return null
   const solo = choices.length === 1 ? choices[0] : null
 
-  const choiceClass = "group flex items-center gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 text-left transition-colors hover:border-(--color-primary) hover:bg-(--color-primary-tint) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
+  const choiceClass = "flex items-center gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 text-left transition-colors hover:border-(--color-primary) hover:bg-(--color-primary-tint) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
 
   return (
     <>
@@ -87,11 +88,6 @@ export function CreateChoiceButton({
               {choices.map((choice) => {
                 const content = (
                   <>
-                    {choice.icon && (
-                      <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius) bg-(--color-surface-2) text-(--color-text-muted) group-hover:bg-white group-hover:text-(--color-primary)">
-                        {choice.icon}
-                      </span>
-                    )}
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-semibold text-(--color-text)">{choice.label}</span>
                       <span className="block text-xs text-(--color-text-muted)">{choice.description}</span>

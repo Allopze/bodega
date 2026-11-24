@@ -2,12 +2,12 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { CaretRight, FileXls, Plus, Truck, Wrench } from "@phosphor-icons/react"
+import { CaretRight, Plus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { plural } from "@/lib/mantencion/format"
 
-const OPTION_CLASS = "group flex w-full items-center gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 text-left"
+const OPTION_CLASS = "flex w-full items-center gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 text-left"
 const OPTION_ENABLED_CLASS = "transition-colors hover:border-(--color-primary) hover:bg-(--color-primary-tint) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
 
 interface Option {
@@ -15,18 +15,13 @@ interface Option {
   href: string
   label: string
   description: string
-  icon: typeof Plus
   /** Sin nada que hacer por esta vía se muestra, pero apagada y diciendo por qué. */
   disabledReason?: string
 }
 
 function OptionBody({ option }: { option: Option }) {
-  const Icon = option.icon
   return (
     <>
-      <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius) bg-(--color-surface-2) text-(--color-text-muted) group-hover:bg-white group-hover:text-(--color-primary)">
-        <Icon size={18} />
-      </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-semibold text-(--color-text)">{option.label}</span>
         <span className="block text-xs text-(--color-text-muted)">{option.disabledReason ?? option.description}</span>
@@ -55,7 +50,6 @@ export function AddEquipmentButton({ pendingFleet }: { pendingFleet: number }) {
       description: pendingFleet > 0
         ? `${plural(pendingFleet, "vehículo ya está", "vehículos ya están")} en la flota: sólo falta elegir su marca y su pauta.`
         : "Vehículos que ya están en la flota: sólo falta elegir su marca y su pauta.",
-      icon: Truck,
       disabledReason: pendingFleet > 0 ? undefined : "Todos los vehículos de la flota ya están en Mantención.",
     },
     {
@@ -63,14 +57,12 @@ export function AddEquipmentButton({ pendingFleet }: { pendingFleet: number }) {
       href: "/mantencion/equipos/nuevo",
       label: "Nuevo equipo",
       description: "Un equipo con todos sus datos. Si ya está en la flota, se incorpora sin duplicarlo.",
-      icon: Wrench,
     },
     {
       key: "importar",
       href: "/mantencion/equipos/importar",
       label: "Importar desde Excel",
       description: "Varios equipos y sus lecturas iniciales desde una planilla.",
-      icon: FileXls,
     },
   ]
   // Con vehículos por incorporar esa vía va primera; sin ellos queda al final, apagada.
@@ -85,7 +77,7 @@ export function AddEquipmentButton({ pendingFleet }: { pendingFleet: number }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>¿Cómo quieres agregar equipos?</DialogTitle>
-            <DialogDescription>Elige la vía que te ahorre más escritura.</DialogDescription>
+            <DialogDescription>Elige una vía.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2">
             {ordered.map((option) => option.disabledReason ? (

@@ -2,31 +2,17 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { CaretRight, CloudArrowDown, Drop, FileXls, Gauge, GasPump, Lock, Receipt, SealCheck, UploadSimple } from "@phosphor-icons/react"
+import { CaretRight, Lock, UploadSimple } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import type { FuelAddDataKind, FuelAddDataOption } from "@/lib/combustibles/section-nav"
-
-const ICONS: Record<FuelAddDataKind, typeof Gauge> = {
-  planilla: FileXls,
-  tarjeta: CloudArrowDown,
-  facturas: Receipt,
-  telemetria: Gauge,
-  surtidor: Drop,
-  sellos: SealCheck,
-  registrar: GasPump,
-}
+import type { FuelAddDataOption } from "@/lib/combustibles/section-nav"
 
 const OPTION_CLASS = "flex w-full items-center gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 text-left"
-const OPTION_ENABLED_CLASS = "group transition-colors hover:border-(--color-primary) hover:bg-(--color-primary-tint) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
+const OPTION_ENABLED_CLASS = "transition-colors hover:border-(--color-primary) hover:bg-(--color-primary-tint) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
 
 function OptionBody({ option, allowed }: { option: FuelAddDataOption; allowed: boolean }) {
-  const Icon = ICONS[option.kind]
   return (
     <>
-      <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius) bg-(--color-surface-2) text-(--color-text-muted) group-hover:bg-white group-hover:text-(--color-primary)">
-        <Icon size={18} />
-      </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-semibold text-(--color-text)">{option.label}</span>
         <span className="block text-xs text-(--color-text-muted)">{option.description}</span>
