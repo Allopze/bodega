@@ -4,6 +4,7 @@ import { Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { useChartMotion } from "@/components/ui/chart-interactions"
 import { CHART_COLORS } from "@/lib/chart-palette"
+import { plural } from "@/lib/mantencion/format"
 import { cn, formatQty } from "@/lib/utils"
 import { equipmentAction } from "@/lib/services/mantencion/looker/filters"
 import { useCrossFilter } from "@/components/mantencion/panel/looker/use-cross-filter"
@@ -21,6 +22,11 @@ export interface HoursRecordsComboChartProps {
   /** Equipo elegido con un clic; el gráfico lo resalta pero no se filtra a sí mismo. */
   selectedKey?: string | null
   height?: number
+}
+
+/** «1 registro» / «3 registros». */
+export function recordsText(count: number): string {
+  return plural(count, "registro", "registros")
 }
 
 /**
@@ -59,7 +65,7 @@ export function HoursRecordsComboChart({
         <ComposedChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
           <CartesianGrid vertical={false} strokeDasharray="2 5" />
           <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} tick={{ fontSize: 11 }} />
-          <YAxis yAxisId="hours" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} width={44} />
+          <YAxis yAxisId="hours" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} width={44} tickFormatter={(value: number) => formatQty(value)} />
           <YAxis yAxisId="records" orientation="right" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} width={28} allowDecimals={false} />
           <ChartTooltip
             cursor={{ fill: "var(--color-surface-2)" }}
@@ -73,7 +79,7 @@ export function HoursRecordsComboChart({
                   <span className="tabular-nums">
                     {name === "hours"
                       ? `${formatQty(Number(value), undefined, { maximumFractionDigits: 1 })} h`
-                      : `${formatQty(Number(value))} registros`}
+                      : recordsText(Number(value))}
                   </span>
                 )}
               />
