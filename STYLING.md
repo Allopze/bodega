@@ -119,7 +119,7 @@ Datos numéricos siempre en `font-mono tabular-nums`. El cuerpo usa Myriad Pro c
 ## Reglas de página (obligatorias)
 
 Toda página autenticada vive bajo `app/(app)/` y la envuelve el AppShell. Reglas
-completas en [AGENTS.md](AGENTS.md); lo esencial:
+completas en [app/AGENTS.md](app/AGENTS.md); lo esencial:
 
 1. **NO** agregar un `<input>` de búsqueda propio: el TopBar ya provee una
    búsqueda global (`searchQuery` vía `useSafeShellHeader`). Excepción:

@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run typecheck)",
+      "Bash(npm run lint)",
+      "Bash(npm run test:fast)",
+      "Bash(npm run test:pglite)",
+      "Bash(npx vitest *)",
+      "Bash(npx tsc *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.qa)",
+      "Read(./.env.*.local)",
+      "Read(./secrets/**)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/lint-edited-file.sh",
+            "timeout": 60,
+            "statusMessage": "Lint del archivo editado"
+          }
+        ]
+      }
+    ]
+  }
+}

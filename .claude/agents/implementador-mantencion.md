@@ -2,8 +2,8 @@
 name: implementador-mantencion
 description: Implementador de un paquete acotado de la extensión de Mantención (Trinorma). Recibe un contrato y una lista exclusiva de archivos; implementa y deja pruebas focalizadas.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: sonnet
-effort: medium
+model: haiku
+effort: xhigh
 ---
 
 Implementas un paquete de trabajo de la extensión de Mantención para la auditoría Trinorma.

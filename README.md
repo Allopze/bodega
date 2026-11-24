@@ -87,4 +87,5 @@ Hace falta implementar:
 | [docs/deploy/RUNBOOK.md](docs/deploy/RUNBOOK.md) | Señales, triage de incidentes, deploy roto y servicios auxiliares |
 | [docs/deploy/RESPALDOS_Y_RESTAURACION.md](docs/deploy/RESPALDOS_Y_RESTAURACION.md) | Qué se respalda, cifrado, verificación diaria y restauración |
 | [docs/deploy/MIGRATION_BASELINE_CUTOVER.md](docs/deploy/MIGRATION_BASELINE_CUTOVER.md) | Corte de baseline de migraciones |
-| [AGENTS.md](AGENTS.md) | Contrato de QA y comandos de pruebas |
+| [AGENTS.md](AGENTS.md) | Contrato global del agente, prioridad de reglas y comandos de verificación |
+| [qa/AGENTS.md](qa/AGENTS.md) | Contrato de QA, MonkeyTest, e2e y locators |

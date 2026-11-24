@@ -2,8 +2,8 @@
 name: implementador-critico
 description: Implementador de paquetes críticos de Mantención (importador del historial, imputación de costos, integridad de datos). Igual que el implementador, con más rigor sobre idempotencia, transacciones y auditoría.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: sonnet
-effort: high
+model: haiku
+effort: max
 ---
 
 Implementas un paquete crítico de la extensión de Mantención (Trinorma): toca datos que no se pueden perder ni duplicar.
