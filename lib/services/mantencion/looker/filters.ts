@@ -84,6 +84,45 @@ function parseCrossFilters(raw: Raw): RawCrossFilters {
   }
 }
 
+/**
+ * Parámetros de la URL que cambian lo que muestra una pestaña: el período, los filtros manuales y los
+ * cruzados. No son `pestana` (la fija quien la elige) ni `page` (la exportación no pagina).
+ */
+export const LOOKER_FILTER_PARAMS = [
+  "desde", "hasta", "faena", "equipo", "frecuencia",
+  "x_equipo", "x_ot", "x_check", "x_conductor", "x_mes", "x_faena", "x_mecanico",
+] as const
+
+/** De los parámetros de la URL, sólo los que mueven la pestaña, sin claves vacías: es lo que viaja a «Exportar Excel». */
+export function pickFilterParams(raw: Raw): Record<string, string | string[]> {
+  const picked: Record<string, string | string[]> = {}
+  for (const key of LOOKER_FILTER_PARAMS) {
+    const value = raw[key]
+    if (Array.isArray(value)) {
+      const list = value.filter((item) => item.trim() !== "")
+      if (list.length > 0) picked[key] = list
+    } else if (value !== undefined && value.trim() !== "") {
+      picked[key] = value
+    }
+  }
+  return picked
+}
+
+/** Filtros que aceptan varios valores (repetidos o separados por coma): cada valor llega a un `IN (...)` de la consulta. */
+export const LOOKER_MULTI_VALUE_PARAMS = ["faena", "equipo", "frecuencia"] as const
+
+/** Tope de valores de un filtro múltiple: bajo el límite de parámetros de Postgres y de lo que cabe en una auditoría. */
+export const LOOKER_MAX_FILTER_VALUES = 100
+
+/**
+ * Cuántos valores trae un filtro múltiple, contados DESPUÉS de partir por comas (los vacíos no cuentan) y sin quitar
+ * repetidos: lo que se acota es lo que viaja, no sólo lo que sobrevive a la deduplicación de `multiValue`.
+ */
+export function countFilterValues(value: string | string[] | undefined): number {
+  const list = Array.isArray(value) ? value : value === undefined ? [] : [value]
+  return list.reduce((total, item) => total + item.split(",").filter((part) => part.trim() !== "").length, 0)
+}
+
 export function hasCrossFilters(cross: RawCrossFilters): boolean {
   return Object.values(cross).some((value) => value !== undefined)
 }

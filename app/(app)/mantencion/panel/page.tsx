@@ -4,12 +4,13 @@ import type { Session } from "next-auth"
 import { Callout } from "@/components/ui/callout"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { LookerExcelButton } from "@/components/mantencion/panel/looker/looker-export-button"
 import { LookerFilterBar } from "@/components/mantencion/panel/looker/filter-bar"
 import { PanelTabs } from "@/components/mantencion/panel/looker/panel-tabs"
-import { requireAnyPermission } from "@/lib/auth/can"
+import { can, requireAnyPermission } from "@/lib/auth/can"
 import { DEFAULT_RANGE_LABEL } from "@/lib/indicators/period"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
-import { filterChips, parseLookerTab } from "@/lib/services/mantencion/looker/filters"
+import { filterChips, parseLookerTab, pickFilterParams } from "@/lib/services/mantencion/looker/filters"
 import { loadLookerContext } from "@/lib/services/mantencion/looker/resolve"
 import type { LookerTab } from "@/lib/services/mantencion/looker/types"
 import { renderHoyTab } from "./hoy-tab"
@@ -62,6 +63,9 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
           { label: "Panel" },
           { label: tab === "planificacion" ? "Planificación" : tab === "camiones" ? "Camiones" : "Máquinas" },
         ]} />}
+        // Acción de página: el libro de la pestaña con los filtros de la URL, sólo con `mant:export` (el mismo criterio que
+        // el Excel de «Hoy»). La acción de servidor vuelve a exigirlo y arma el libro con el alcance de quien exporta.
+        actions={can(session, "mant:export") ? <LookerExcelButton tab={tab} params={pickFilterParams(params)} /> : undefined}
       />
 
       <PanelTabs active={tab} />

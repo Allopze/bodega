@@ -3,9 +3,9 @@ import { PreventivePanel } from "@/components/mantencion/panel/looker/preventive
 import { WorkControlTab } from "@/components/mantencion/panel/looker/work-control-tab"
 import { buildPaginationHref } from "@/lib/pagination"
 import type { MantViewer } from "@/lib/services/mantencion/access"
-import { loadCorrectivePage, loadCorrectiveSummary } from "@/lib/services/mantencion/looker/corrective"
-import { loadChecklistMatrix, loadPreventiveCompliance } from "@/lib/services/mantencion/looker/preventive"
+import { loadCorrectivePage } from "@/lib/services/mantencion/looker/corrective"
 import type { LookerContext } from "@/lib/services/mantencion/looker/types"
+import { loadWorkControlData } from "@/lib/services/mantencion/looker/work-data"
 
 const PANEL = "/mantencion/panel"
 
@@ -28,21 +28,11 @@ export async function WorkTab({
   unit: "km" | "h"
 }) {
   const { filters, cross } = context
-  const [drivers, monthly, byWorksite, byPlate, matrix] = await Promise.all([
-    loadCorrectiveSummary(viewer, filters, cross, { ignore: ["conductor"], applyConductor: false }),
-    loadPreventiveCompliance(viewer, filters, cross, ["month"]),
-    loadPreventiveCompliance(viewer, filters, cross, ["worksite", "mechanic"]),
-    loadPreventiveCompliance(viewer, filters, cross, ["equipment"]),
-    loadChecklistMatrix(viewer, filters, cross, ["check"]),
-  ])
-  const [chart, page] = await Promise.all([
-    loadCorrectiveSummary(viewer, filters, cross, {
-      ignore: ["equipment"],
-      applyConductor: true,
-      conductorWorkIds: drivers.selectedDriver?.workIds,
-    }),
-    loadCorrectivePage(viewer, filters, cross, { conductorWorkIds: drivers.selectedDriver?.workIds }),
-  ])
+  const { drivers, monthly, byWorksite, byPlate, matrix, chart, rows: page } = await loadWorkControlData(
+    viewer,
+    context,
+    (conductorWorkIds) => loadCorrectivePage(viewer, filters, cross, { conductorWorkIds }),
+  )
 
   const selectedEquipmentId = cross.equipment?.id ?? null
   const selectedMonth = cross.month?.key ?? cross.check?.month ?? null
