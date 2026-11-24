@@ -62,7 +62,12 @@ next-env.d.ts
 
 # tool artifacts (local only)
 .VSCodeCounter/
-.commandcode/
+# Command Code: sólo se versiona la configuración compartida del equipo. El resto
+# (settings.local.json, skills, taste, design) es estado personal de la máquina.
+# Se ignora con `.commandcode/*` y no con `.commandcode/` porque git no puede
+# re-incluir un archivo dentro de un directorio ya ignorado por completo.
+.commandcode/*
+!.commandcode/settings.json
 /artifacts/
 # índice local de CodeGraph (~127 MB, se regenera solo)
 .codegraph/
@@ -138,13 +143,6 @@ Lista Empleados de servicios-industriales-chome-ltda.xlsx
 !/docs/**/
 !/docs/**/*.md
 !/docs/**/*.svg
-# Excepciones de /docs:init y /docs:plan: solo configuración y planificación,
-# texto pequeño y editable a mano. docs/.knowledge/ (derivado, regenerable) y
-# las capturas (.png) siguen ignorados a propósito, para no repetir el
-# crecimiento de peso que motivó la lista blanca de arriba.
-!/docs/aidocs-config.yml
-!/docs/.ignore
-!/docs/plan.yml
 /qa/**
 !/qa/**/
 !/qa/**/*.md
@@ -162,16 +160,6 @@ OC-ejemplo-pdfcn.pdf
 /auditoria/
 # Documentation credentials (do not commit)
 docs/.auth
-
-# Volcado temporal del registry para la base de conocimiento de docs
-scripts/.tmp-docs-registry.json
-
-# Runner temporal de /docs:execute (Playwright vía node, no vía MCP) — nunca
-# debe versionarse: puede contener estado de sesión.
-scripts/.docs-runner/
-docs/generado
-docs/plan.yml
-docs/generado/index.md
 
 # Caché del detector de UI (la config sí se versiona; el caché no)
 .impeccable/hook.cache.json

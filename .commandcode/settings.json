@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(npm run typecheck:*)",
+      "Shell(npm run lint:*)",
+      "Shell(npm run test:fast:*)",
+      "Shell(npm run test:pglite:*)",
+      "Shell(npx vitest run:*)",
+      "Shell(npx tsc:*)",
+      "Shell(git status:*)",
+      "Shell(git diff:*)",
+      "Shell(git log:*)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.local)",
+      "Read(.env.qa)",
+      "Read(.env.*.local)",
+      "Read(secrets/**)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "write|edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/agent-hooks/lint-edited-file.sh",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

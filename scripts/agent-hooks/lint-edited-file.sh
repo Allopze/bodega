@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Hook PostToolUse (Edit|Write) para Claude Code y Command Code.
+#
+# Por qué sólo el archivo editado y no `npm run lint` completo: el lint del repo
+# tarda minutos y pide el lock de scripts/run-resource-guard.sh, así que un agente
+# que edita diez archivos encadenaría diez esperas. Sobre un archivo suelto ESLint
+# responde en ~1s (medido 2026-11 sobre components/ui/kpi-card.tsx: 1031 ms).
+#
+# Sale 0 siempre: este hook informa, no bloquea. Un archivo con deuda de lint
+# previa no debe impedir que el turno termine; la puerta real sigue siendo
+# `npm run lint` antes de declarar algo terminado.
+#
+# Los dos harnesses mandan el mismo payload (`.tool_input.file_path`), así que el
+# script es uno solo y lo registran tanto .claude/settings.json como
+# .commandcode/settings.json.
+set -uo pipefail
+
+payload="$(cat)"
+file="$(printf '%s' "$payload" | node -e '
+let raw = ""
+process.stdin.on("data", (chunk) => (raw += chunk))
+process.stdin.on("end", () => {
+  try {
+    const input = JSON.parse(raw)
+    process.stdout.write(input?.tool_input?.file_path ?? "")
+  } catch {
+    process.stdout.write("")
+  }
+})
+' 2>/dev/null)"
+
+[ -z "$file" ] && exit 0
+[ -f "$file" ] || exit 0
+case "$file" in
+  *.ts|*.tsx|*.js|*.jsx|*.mjs|*.cjs) ;;
+  *) exit 0 ;;
+esac
+
+repo_root="${COMMANDCODE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+cd "$repo_root" 2>/dev/null || exit 0
+[ -x node_modules/.bin/eslint ] || exit 0
+
+output="$(node_modules/.bin/eslint --no-warn-ignored "$file" 2>&1)" || status=$?
+status="${status:-0}"
+
+if [ "$status" -ne 0 ] && [ -n "$output" ]; then
+  printf 'ESLint encontró problemas en %s:\n%s\n' "$file" "$output" >&2
+fi
+
+exit 0
