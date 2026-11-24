@@ -74,7 +74,7 @@ export function PlanningTable({
     { key: "plate", label: "Patente", sortable: true, width: "w-28" },
     { key: "code", label: "Código", sortable: true, width: "w-28" },
     { key: "lastDate", label: "Última mantención", sortable: true, sortValue: (row: PlanningRow) => row.lastDate ?? "" },
-    { key: "programmed", label: `${unitLabel} programados (A)`, numeric: true, sortable: true, sortValue: (row: PlanningRow) => row.programmed ?? Number.NEGATIVE_INFINITY },
+    { key: "programmed", label: `${unitLabel} ${unit === "km" ? "programados" : "programadas"} (A)`, numeric: true, sortable: true, sortValue: (row: PlanningRow) => row.programmed ?? Number.NEGATIVE_INFINITY },
     { key: "real", label: `${unitLabel} reales (B)`, numeric: true, sortable: true, sortValue: (row: PlanningRow) => row.real ?? Number.NEGATIVE_INFINITY },
     { key: "current", label: `${unitLabel} actuales`, numeric: true, sortable: true, sortValue: (row: PlanningRow) => row.current ?? Number.NEGATIVE_INFINITY },
     { key: "next", label: "Próxima mantención", numeric: true, sortable: true, sortValue: (row: PlanningRow) => row.next ?? Number.NEGATIVE_INFINITY },

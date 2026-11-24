@@ -192,8 +192,7 @@ test("«Consolidado por horas» muestra A, B, delta, próxima y faltantes de la 
   await page.goto(tabUrl("planificacion", { equipo: EX.machine.id }))
   await ready(page)
   const table = page.getByRole("table", { name: "Consolidado mantención por horas" })
-  // La pantalla escribe «Horas programados (A)» (planning-tables.tsx, género de «Km»); el Excel dice «programadas». No se fija el error aquí.
-  const headers = (await table.getByRole("columnheader").allInnerTexts()).map((text) => text.trim().replace("programados", "programadas"))
+  const headers = (await table.getByRole("columnheader").allInnerTexts()).map((text) => text.trim())
   expect(headers).toEqual([
     "Patente", "Código", "Última mantención", "Horas programadas (A)", "Horas reales (B)", "Horas actuales", "Próxima mantención", "Delta (A − B)", "Faltantes",
   ])
