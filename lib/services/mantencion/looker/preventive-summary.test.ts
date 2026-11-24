@@ -69,7 +69,7 @@ describe("Preventivo · agregados", () => {
     const result = summarizeCompliance(checks, "2026-10-01", "2026-11-30")
     expect(result.byWorksiteMechanic).toHaveLength(3)
     const teno = result.byWorksiteMechanic.find((bucket) => bucket.mechanicKey === "javier roa")
-    expect(teno).toMatchObject({ percent: 100, checks: 1, worksiteId: "ws-1" })
+    expect(teno).toMatchObject({ percent: 100, checks: 1, worksiteId: "ws-1", worksiteName: "Teno", mechanicLabel: "Javier Roa" })
     expect(result.byPlate).toHaveLength(1)
     expect(result.byPlate[0]).toMatchObject({ code: "KA-143", percent: 95, checks: 3 })
     expect(result.byPlate[0]!.levels.sort()).toEqual(["40.000 KM", "80.000 KM"])

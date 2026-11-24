@@ -68,6 +68,7 @@ function worksiteMechanicBuckets(checks: readonly ComplianceCheck[]): Compliance
     percent: averagePercent(group.values),
     checks: group.checks,
     worksiteId: group.worksiteId,
+    worksiteName: group.worksiteName,
     mechanicKey: group.mechanic ? nameKey(group.mechanic) : null,
     mechanicLabel: group.mechanic,
   })).sort((a, b) => (b.percent ?? -1) - (a.percent ?? -1) || a.label.localeCompare(b.label, "es"))

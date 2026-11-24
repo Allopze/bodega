@@ -41,7 +41,9 @@ export function PreventivePanel({
     .filter((bucket): bucket is typeof bucket & { worksiteId: string; percent: number } => bucket.percent != null && !!bucket.worksiteId)
     .map((bucket) => ({
       key: bucket.key,
-      label: bucket.label,
+      // La faena y el mecánico van en dos líneas: juntos («A · B») se cortaban en el mismo punto.
+      label: bucket.worksiteName ?? "Sin faena",
+      sublabel: bucket.mechanicLabel ?? "Sin mecánico",
       value: bucket.percent,
       detail: plural(bucket.checks, "pauta", "pautas"),
     }))

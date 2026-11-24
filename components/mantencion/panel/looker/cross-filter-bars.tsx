@@ -5,6 +5,8 @@ import { FilterToggle } from "./filter-toggle"
 export interface CrossFilterBarItem {
   key: string
   label: string
+  /** Segunda línea de la etiqueta (la faena sobre el mecánico): se lee entera en vez de cortarse. */
+  sublabel?: string
   value: number
   detail?: string
   tone?: "ok" | "warn" | "danger" | "muted"
@@ -71,6 +73,7 @@ export function CrossFilterBars({
         const active = selectedKey === item.key
         const ratio = Math.min(1, Math.abs(item.value) / maxAbs)
         const negative = mode === "delta" && item.value < 0
+        const fullLabel = item.sublabel ? `${item.label} · ${item.sublabel}` : item.label
         const color = mode === "delta"
           ? negative ? "var(--mant-orange)" : "var(--mant-green)"
           : mode === "percent" ? "var(--mant-green)" : item.color ?? "var(--mant-green)"
@@ -78,15 +81,24 @@ export function CrossFilterBars({
           <FilterToggle
             key={item.key}
             action={actionFor(item)}
-            aria-label={`${item.label}: ${valueText(item.value, mode, unit, digits)}`}
+            aria-label={`${fullLabel}: ${valueText(item.value, mode, unit, digits)}`}
             className={cn(
               "w-full gap-2 px-1 py-1",
+              // Con segunda línea la etiqueta ocupa toda la fila en móvil y la barra baja debajo.
+              item.sublabel && "flex-wrap gap-y-1 sm:flex-nowrap",
               selectedKey && !active && "opacity-40",
               mode === "delta" && "items-center",
             )}
-            title={item.detail ? `${item.label} · ${item.detail}` : item.label}
+            title={item.detail ? `${fullLabel} · ${item.detail}` : fullLabel}
           >
-            <span className="w-28 shrink-0 truncate text-xs text-[var(--color-text)] sm:w-36">{item.label}</span>
+            {item.sublabel ? (
+              <span className="w-full min-w-0 shrink-0 text-xs text-[var(--color-text)] sm:w-48">
+                <span className="block truncate">{item.label}</span>
+                <span className="block truncate text-2xs text-[var(--color-text-muted)]">{item.sublabel}</span>
+              </span>
+            ) : (
+              <span className="w-28 shrink-0 truncate text-xs text-[var(--color-text)] sm:w-36">{item.label}</span>
+            )}
             <span className="relative h-2 min-w-0 flex-1 rounded-full bg-[var(--color-surface-3)]" aria-hidden>
               {mode === "delta" ? (
                 <>
