@@ -137,7 +137,13 @@ export function CorrectivePanel({
             </p>
           </div>
           {drivers.drivers.length === 0 ? (
-            <EmptyState compact title="Sin conductores registrados" description="Los registros del período no declaran conductores." />
+            <EmptyState
+              compact
+              title="Sin conductores registrados"
+              description={page.total === 0
+                ? "No hay trabajos correctivos en el período, así que no hay conductores."
+                : "Los registros del período no declaran conductores."}
+            />
           ) : (
             <TableRoot framed={false}>
               <Table className="text-xs">

@@ -117,4 +117,14 @@ describe("Planificación · A, B, delta y faltantes", () => {
     expect(unitMismatchMessage(selected, "h")).toContain("se controla por km")
     expect(unitMismatchMessage(selected, "km")).toBeNull()
   })
+
+  it("el mensaje nombra al equipo con la patente que muestran la fila y el chip, y cae al código sin patente", () => {
+    const selected = {
+      id: "v-1", code: "KA-143", plate: "SJFC-66", label: "KA-143 · SJFC-66", worksiteId: "ws-1", worksiteName: "Teno",
+      unit: "km" as const, intervals: [10_000], frequency: 10_000,
+    }
+    expect(unitMismatchMessage(selected, "h")).toBe("SJFC-66 se controla por km; no tiene registros por horas.")
+    expect(unitMismatchMessage({ ...selected, unit: "h" }, "km")).toBe("SJFC-66 se controla por horas; no tiene registros por kilómetros.")
+    expect(unitMismatchMessage({ ...selected, plate: "" }, "h")).toBe("KA-143 se controla por km; no tiene registros por horas.")
+  })
 })

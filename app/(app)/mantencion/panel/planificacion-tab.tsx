@@ -54,7 +54,7 @@ export async function PlanificacionTab({ context, viewer }: { context: LookerCon
           selectedId={selectedId}
           note="A = km programados de la última mantención; B = km reales. Delta = A − B; faltantes = próxima − actual."
           emptyTitle={kmMismatch ?? "Sin equipos por kilómetros con estos filtros"}
-          emptyDescription={kmMismatch ?? "Prueba con otra faena, otro código u otra frecuencia."}
+          emptyDescription={kmMismatch ? "Quita la selección para ver los equipos por kilómetros." : "Prueba con otra faena, otro código u otra frecuencia."}
         />
       </DashboardPanel>
 
@@ -85,7 +85,7 @@ export async function PlanificacionTab({ context, viewer }: { context: LookerCon
           selectedId={selectedId}
           note="A = horas programadas de la última mantención; B = horas reales. Delta = A − B; faltantes = próxima − actual."
           emptyTitle={hoursMismatch ?? "Sin equipos por horas con estos filtros"}
-          emptyDescription={hoursMismatch ?? "Prueba con otra faena, otro código u otra frecuencia."}
+          emptyDescription={hoursMismatch ? "Quita la selección para ver los equipos por horas." : "Prueba con otra faena, otro código u otra frecuencia."}
         />
       </DashboardPanel>
 
@@ -102,7 +102,7 @@ export async function PlanificacionTab({ context, viewer }: { context: LookerCon
               mode="delta"
               selectedKey={selectedId}
               actionFor={(item) => equipmentAction(item.key, item.key === selectedId)}
-              emptyMessage={hoursMismatch ?? "Sin mantenimientos con lectura programada y real en el período."}
+              emptyMessage="Sin mantenimientos con lectura programada y real en el período."
             />
           </ChartFrame>
         </PanelBlock>

@@ -101,10 +101,14 @@ export async function loadPlanningData(
   }
 }
 
-/** Texto del vacío cuando el equipo elegido se controla por la otra unidad. */
+/**
+ * Texto del vacío cuando el equipo elegido se controla por la otra unidad. Lo nombra con el mismo
+ * identificador que ven la fila seleccionada, las barras de delta y el chip: la patente, y el
+ * código sólo si no tiene.
+ */
 export function unitMismatchMessage(selected: ResolvedCrossFilters["equipment"], shown: "km" | "h"): string | null {
   if (!selected?.unit || selected.unit === shown) return null
-  const name = selected.code || selected.plate
+  const name = selected.plate || selected.code
   return shown === "h"
     ? `${name} se controla por km; no tiene registros por horas.`
     : `${name} se controla por horas; no tiene registros por kilómetros.`
