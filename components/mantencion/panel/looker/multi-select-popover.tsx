@@ -84,7 +84,8 @@ export function MultiSelectPopover({
           <CaretDown size={12} aria-hidden className="shrink-0 opacity-60" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 p-3">
+      {/* `collisionPadding`: en móvil el popover quedaba pegado al borde derecho de la pantalla. */}
+      <PopoverContent align="start" collisionPadding={16} className="w-72 p-3">
         <p className="mb-2 text-xs font-medium text-[var(--color-text-muted)]">{label}</p>
         {options.length > 6 && (
           <div className="relative mb-2">
@@ -95,7 +96,7 @@ export function MultiSelectPopover({
               onChange={(event) => setQuery(event.target.value)}
               placeholder={searchPlaceholder}
               aria-label={`Buscar ${label.toLocaleLowerCase("es-CL")}`}
-              className="h-9 pl-7 text-xs"
+              className="h-9 pl-7"
             />
           </div>
         )}
@@ -118,9 +119,11 @@ export function MultiSelectPopover({
                 checked={selected.has(option.value)}
                 onChange={() => toggle(option.value)}
                 label={(
-                  <span className="flex min-w-0 items-baseline gap-1.5">
-                    <span className="truncate">{option.label}</span>
-                    {option.hint && <span className="shrink-0 font-mono text-2xs text-[var(--color-text-subtle)]">{option.hint}</span>}
+                  // La faena pasa a la línea de abajo cuando no cabe: antes iba `shrink-0` y el
+                  // código («QA-LK-A1 · QALK…») era lo que se cortaba.
+                  <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                    <span className="break-words">{option.label}</span>
+                    {option.hint && <span className="break-words font-mono text-2xs text-[var(--color-text-subtle)]">{option.hint}</span>}
                   </span>
                 )}
               />
