@@ -108,6 +108,21 @@ export function pickFilterParams(raw: Raw): Record<string, string | string[]> {
   return picked
 }
 
+/** Filtros que aceptan varios valores (repetidos o separados por coma): cada valor llega a un `IN (...)` de la consulta. */
+export const LOOKER_MULTI_VALUE_PARAMS = ["faena", "equipo", "frecuencia"] as const
+
+/** Tope de valores de un filtro múltiple: bajo el límite de parámetros de Postgres y de lo que cabe en una auditoría. */
+export const LOOKER_MAX_FILTER_VALUES = 100
+
+/**
+ * Cuántos valores trae un filtro múltiple, contados DESPUÉS de partir por comas (los vacíos no cuentan) y sin quitar
+ * repetidos: lo que se acota es lo que viaja, no sólo lo que sobrevive a la deduplicación de `multiValue`.
+ */
+export function countFilterValues(value: string | string[] | undefined): number {
+  const list = Array.isArray(value) ? value : value === undefined ? [] : [value]
+  return list.reduce((total, item) => total + item.split(",").filter((part) => part.trim() !== "").length, 0)
+}
+
 export function hasCrossFilters(cross: RawCrossFilters): boolean {
   return Object.values(cross).some((value) => value !== undefined)
 }

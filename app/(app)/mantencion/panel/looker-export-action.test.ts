@@ -59,6 +59,38 @@ describe("exportLookerPanelAction", () => {
     expect(buildExport).not.toHaveBeenCalled()
   })
 
+  describe("tope de valores por filtro (faena, equipo y frecuencia)", () => {
+    const ids = (count: number, prefix = "ws-") => Array.from({ length: count }, (_, index) => `${prefix}${index}`)
+    const INVALID = { ok: false, message: "El panel no se pudo exportar: sus datos no son válidos." }
+
+    it("justo en el límite (100 valores) pasa; uno más falla con el mensaje de siempre y no consulta ni audita", async () => {
+      for (const key of ["faena", "equipo", "frecuencia"]) {
+        expect((await exportLookerPanelAction({ tab: "camiones", params: { [key]: ids(100).join(",") } })).ok, `${key}: 100`).toBe(true)
+        expect(await exportLookerPanelAction({ tab: "camiones", params: { [key]: ids(101).join(",") } }), `${key}: 101`).toEqual(INVALID)
+      }
+      expect(buildExport).toHaveBeenCalledTimes(3)
+      expect(mockRecordAudit).toHaveBeenCalledTimes(3)
+    })
+
+    it("el tope cuenta los valores DESPUÉS de partir por comas, también repartidos en una lista", async () => {
+      // Una sola cadena de 2000 caracteres puede traer cientos de ids: el tope no es el largo del texto.
+      expect(await exportLookerPanelAction({ tab: "camiones", params: { faena: ids(300, "w").join(",").slice(0, 1900) } })).toEqual(INVALID)
+      // 50 + 50 valores en dos entradas de la lista: pasa; 50 + 51: no.
+      expect((await exportLookerPanelAction({ tab: "camiones", params: { faena: [ids(50, "a").join(","), ids(50, "b").join(",")] } })).ok).toBe(true)
+      expect(await exportLookerPanelAction({ tab: "camiones", params: { faena: [ids(50, "a").join(","), ids(51, "b").join(",")] } })).toEqual(INVALID)
+      // Los separadores sobrantes y los vacíos no cuentan como valores.
+      expect((await exportLookerPanelAction({ tab: "camiones", params: { faena: `${ids(100).join(",,")},` } })).ok).toBe(true)
+    })
+
+    it("los valores repetidos cuentan cada vez: el tope acota también lo que queda en la auditoría", async () => {
+      expect(await exportLookerPanelAction({ tab: "camiones", params: { faena: Array.from({ length: 101 }, () => "ws-1").join(",") } })).toEqual(INVALID)
+    })
+
+    it("no limita a los filtros de un solo valor (período y filtros cruzados)", async () => {
+      expect((await exportLookerPanelAction({ tab: "camiones", params: { desde: "2026-10-01", x_conductor: "JUAN, PEREZ, SOTO" } })).ok).toBe(true)
+    })
+  })
+
   it("pasa al constructor sólo los parámetros que mueven la pantalla: ni `pestana`, ni `page`, ni inventados", async () => {
     await exportLookerPanelAction({
       tab: "camiones",

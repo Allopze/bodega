@@ -32,27 +32,44 @@ const { viewerFromSession } = await import("@/lib/services/mantencion/access")
 
 const TODAY = "2026-11-24"
 const U = "u-export"
+// Quien creó y ejecutó las OT y los registros de las ramas de OT y nativa: un usuario aparte, porque «lo propio» (lo que creó o tiene
+// asignado) se suma al alcance por faena y el usuario de la prueba vería sus propias OT de otra faena.
+const OTHER = "u-export-otro"
 const A = { ws: "ws-exp-a", vehicle: "v-exp-a", code: "KA-A1", plate: "AAAA-01", name: "Faena A" }
 const B = { ws: "ws-exp-b", vehicle: "v-exp-b", code: "KB-B1", plate: "BBBB-02", name: "Faena B" }
+// Una faena CERRADA (inactiva) con un camión: no aparece entre las opciones de la barra, pero sus datos existen y se consultan.
+const C = { ws: "ws-exp-c", vehicle: "v-exp-c", code: "KC-C1", plate: "CCCC-03", name: "Faena C cerrada" }
+// Un camión INACTIVO de la faena A, sin ficha: tampoco está entre las opciones de código.
+const A2 = { ws: A.ws, vehicle: "v-exp-a2", code: "KA-A2", plate: "AAAA-04", name: A.name }
+// Camiones sin ficha (no entran a Planificación) para las ramas de OT y de registro nativo, una por faena.
+const A3 = { ws: A.ws, vehicle: "v-exp-a3", code: "KA-A3", plate: "AAAA-05", name: A.name }
+const B3 = { ws: B.ws, vehicle: "v-exp-b3", code: "KB-B3", plate: "BBBB-06", name: B.name }
 const SNAP = (code: string, plate: string, worksite: string) => ({ code, plate, noPlate: false, type: "Camión", brand: "Scania", model: "R450", year: 2021, worksite, unit: "km" as const })
 
 const VIEW_ALL = ["mant:export", "mant:records:view_all", "mant:ot:view_all"]
 const globalSession = { user: { id: U, email: "jefe@chome.test", name: "Jefe", isGlobal: true, worksiteIds: [], permissions: VIEW_ALL } } as unknown as Session
 const scopedToA = { user: { id: U, email: "supervisor@chome.test", name: "Supervisor A", isGlobal: false, worksiteIds: [A.ws], permissions: ["mant:export", "mant:records:view_worksite", "mant:ot:view_worksite"] } } as unknown as Session
 
+const scopedToAC = { user: { id: U, email: "jefe-ac@chome.test", name: "Jefe A y C", isGlobal: false, worksiteIds: [A.ws, C.ws], permissions: ["mant:export", "mant:records:view_worksite", "mant:ot:view_worksite"] } } as unknown as Session
+
 const OCTOBER = { desde: "2026-10-01", hasta: "2026-10-31" }
+const SEPTEMBER = { desde: "2026-09-01", hasta: "2026-09-30" }
 
 beforeAll(async () => {
   await migratePGlite(pg, "db/migrations")
   const now = new Date().toISOString()
-  await testDb.insert(schema.users).values({ id: U, name: "Usuario Export", email: `${U}@chome.test`, hashedPassword: "hash", isActive: true, createdAt: now, updatedAt: now })
-  await testDb.insert(schema.worksites).values([A, B].map((site) => ({ id: site.ws, name: site.name, code: site.ws.toUpperCase(), isActive: true, createdAt: now, updatedAt: now })))
+  await testDb.insert(schema.users).values([U, OTHER].map((id) => ({ id, name: `Usuario ${id}`, email: `${id}@chome.test`, hashedPassword: "hash", isActive: true, createdAt: now, updatedAt: now })))
+  await testDb.insert(schema.worksites).values([A, B, C].map((site) => ({ id: site.ws, name: site.name, code: site.ws.toUpperCase(), isActive: site !== C, createdAt: now, updatedAt: now })))
   await testDb.insert(schema.fuelEquipmentTypes).values({ id: "fet-exp", slug: "export-km", name: "Camión", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter" })
   await testDb.insert(schema.mantBrands).values({ id: "b-exp", name: "Scania", nameKey: "scania" })
   await testDb.insert(schema.fuelVehicles).values([A, B].map((site) => ({
     id: site.vehicle, code: site.code, plate: site.plate, type: "Camión", equipmentTypeId: "fet-exp", worksiteId: site.ws, model: "R450", year: 2021, brand: "Scania",
   })))
   await testDb.insert(schema.mantEquipmentProfiles).values([A, B].map((site) => ({ vehicleId: site.vehicle, brandId: "b-exp" })))
+  await testDb.insert(schema.fuelVehicles).values([C, A2, A3, B3].map((item) => ({
+    id: item.vehicle, code: item.code, plate: item.plate, type: "Camión", equipmentTypeId: "fet-exp", worksiteId: item.ws, model: "R450", year: 2021, brand: "Scania",
+    isActive: item === C || item === A3 || item === B3,
+  })))
 
   await testDb.insert(schema.mantSchedules).values({ id: "s-exp", name: "Camiones", nameKey: "camiones-export", unit: "km", version: 1 })
   await testDb.insert(schema.mantScheduleVersions).values({
@@ -100,12 +117,41 @@ beforeAll(async () => {
     { sourceKey: `${key}-1`, checkSourceKey: key, itemName: "Cambio aceite motor", result: "realizado", sortOrder: 0 },
     { sourceKey: `${key}-2`, checkSourceKey: key, itemName: "Revisión frenos", result: "no_realizado", sortOrder: 1 },
   ]))
+
+  // Correctivas de septiembre de la faena cerrada C y del camión inactivo A2 (nadie más trabaja en septiembre).
+  const histOf = (key: string, n: number, item: typeof C, driver: string) => ({
+    ...hist(n, { ...A, ws: item.ws, vehicle: item.vehicle, code: item.code, plate: item.plate, name: item.name }, driver),
+    sourceKey: `hist-${key}-${n}`, fingerprint: `fp-${key}-${n}`, submittedAt: `2026-09-${10 + n} 10:00:00`, entryDate: `2026-09-${10 + n}`,
+  })
+  await testDb.insert(schema.mantHistoricalRecords).values([
+    ...[0, 1, 2].map((n) => histOf("c", n, C, "ANA CIERRE")),
+    ...[0, 1, 2].map((n) => histOf("a2", n, A2, "LUIS BAJA")),
+  ])
+
+  // OT en taller (agosto) y correctiva nativa (diciembre) de un camión de A y uno de B, para las otras dos ramas de la unión.
+  const ot = (id: string, item: typeof A3) => ({
+    id, folio: `OT-${id}`, vehicleId: item.vehicle, worksiteId: item.ws, equipmentSnapshot: SNAP(item.code, item.plate, item.name),
+    repair: true, maintenance: false, requestDate: "2026-08-10", requestedByUserId: OTHER, requesterName: "Solicitante", repairDescription: "Reparación",
+    status: "en_ejecucion", assignedToUserId: OTHER, assignedByUserId: OTHER, assignedAt: "2026-08-12T12:00:00Z", workshopKind: "interno",
+    workshopEntryAt: "2026-08-12T12:00:00Z", estimatedDeliveryDate: "2026-08-30", startedAt: "2026-08-12T12:00:00Z", startedByUserId: OTHER,
+    actionType: "correctiva", laborHours: 4, workPerformed: `Frenos de ${item.name}`,
+  })
+  await testDb.insert(schema.mantWorkOrders).values([ot("ot-a", A3), ot("ot-b", B3)])
+  for (const item of [A3, B3]) {
+    const id = `rec-c-${item.ws}`
+    await testDb.insert(schema.mantRecords).values({
+      id, folio: `MR-C-${item.ws}`, kind: "C", vehicleId: item.vehicle, equipmentSnapshot: SNAP(item.code, item.plate, item.name), worksiteId: item.ws,
+      reading: 150_000, unit: "km", workDate: "2026-12-05", registeredBy: OTHER, executorKind: "yo", executorUserId: OTHER, executorName: "Mecánico Nativo",
+      signedAt: "2026-12-05T15:00:00Z", receivedAt: "2026-12-05T15:00:00Z", status: "vigente", review: "pendiente",
+    })
+    await testDb.insert(schema.mantRecordCorrectives).values({ recordId: id, workTypes: ["Mecánico"], oils: [], description: `Filtro de ${item.name}`, noParts: true, hours: 2, inWorkshop: false })
+  }
 })
 
 type Params = Record<string, string | string[] | undefined>
 
-async function exportOf(session: Session, tab: "planificacion" | "camiones" | "maquinas", params: Params, maxRows?: number) {
-  const result = await buildLookerExport(session, { tab, params, today: TODAY, ...(maxRows ? { maxRows } : {}) })
+async function exportOf(session: Session, tab: "planificacion" | "camiones" | "maquinas", params: Params, maxRows?: number, today = TODAY) {
+  const result = await buildLookerExport(session, { tab, params, today, ...(maxRows ? { maxRows } : {}) })
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(Buffer.from(result.base64, "base64") as unknown as ArrayBuffer)
   return { result, workbook }
@@ -160,12 +206,12 @@ describe("Excel de Camiones · filtros de la URL", () => {
   })
 
   it("el período de la URL acota: un mes sin trabajos deja las hojas sin filas", async () => {
-    const { workbook } = await exportOf(globalSession, "camiones", { desde: "2026-09-01", hasta: "2026-09-30" })
+    const { workbook } = await exportOf(globalSession, "camiones", { desde: "2026-07-01", hasta: "2026-07-31" })
     expect(dataRows(workbook, "Correctivos")).toEqual([])
     expect(dataRows(workbook, "Conductores")).toEqual([])
     expect(dataRows(workbook, "Matriz de checklist")).toEqual([])
     // «Cumplimiento por mes» conserva el mes del período, sin pautas: el % vacío y 0 pautas.
-    expect(dataRows(workbook, "Cumplimiento por mes")).toEqual([["sept 2026", "", 0]])
+    expect(dataRows(workbook, "Cumplimiento por mes")).toEqual([["jul 2026", "", 0]])
   })
 
   it("un conductor elegido acota «Correctivos» y la serie, pero «Conductores» sigue mostrando a todos, como la pantalla", async () => {
@@ -216,7 +262,7 @@ describe("Excel de Camiones · alcance por faena", () => {
     for (const name of ["Correctivos", "Conductores", "Horas y registros", "Cumplimiento faena y mecánico", "Cumplimiento por patente", "Matriz de checklist", "Pautas de la matriz"]) {
       expect(dataRows(workbook, name), name).toEqual([])
     }
-    expect(dataRows(workbook, "Filtros")).toContainEqual(["Faenas", "1 faena fuera de tu alcance: sin datos"])
+    expect(dataRows(workbook, "Filtros")).toContainEqual(["Faenas", "1 faena sin nombre disponible (fuera de tu alcance o inactiva)"])
     expect(everything(workbook)).not.toContain(B.name)
     expect(everything(workbook)).not.toContain(B.ws)
   })
@@ -255,7 +301,11 @@ describe("Excel de Planificación", () => {
     // Sin preventiva ni lecturas: frecuencia, última mantención, A, B, actual, próxima, delta y faltantes quedan vacíos (no en cero).
     expect(rowB.slice(5)).toEqual(["", "", "", "", "", "", "", "", "Sin dato", ""])
     expect(dataRows(workbook, "Consolidado por horas")).toEqual([])
-    expect(workbook.getWorksheet("Consolidado por kilómetros")!.getRow(2).getCell(1).value).toBeTruthy()
+    // Orden de la pantalla: por faltantes, así que A (faltan 9.000) va antes que B (sin dato); la fecha es una fecha de Excel con formato de día.
+    const sheet = workbook.getWorksheet("Consolidado por kilómetros")!
+    expect([sheet.getRow(2).getCell(1).value, sheet.getRow(3).getCell(1).value]).toEqual([A.plate, B.plate])
+    expect(sheet.getRow(2).getCell(7).value).toEqual(new Date("2026-10-10T00:00:00.000Z"))
+    expect(sheet.getRow(2).getCell(7).numFmt).toBe("dd-mm-yyyy")
   })
 
   it("trae las mismas filas que la pantalla para los mismos filtros", async () => {
@@ -272,5 +322,91 @@ describe("Excel de Planificación", () => {
     const other = await exportOf(scopedToA, "planificacion", { faena: B.ws })
     expect(dataRows(other.workbook, "Consolidado por kilómetros")).toEqual([])
     expect(everything(other.workbook)).not.toContain(B.code)
+  })
+})
+
+describe("Excel de Camiones · faenas y equipos que no están entre las opciones de la barra", () => {
+  // Las opciones sólo traen faenas y equipos ACTIVOS del alcance; los datos de una faena cerrada se consultan igual. «Filtros» no
+  // puede decir «sin datos» de una faena que sí trae filas, ni nombrar una faena ajena.
+  const SINNOMBRE = "1 faena sin nombre disponible (fuera de tu alcance o inactiva)"
+
+  it("faena ACTIVA del alcance: «Filtros» la nombra", async () => {
+    const { workbook } = await exportOf(scopedToAC, "camiones", { ...OCTOBER, faena: A.ws })
+    expect(dataRows(workbook, "Correctivos")).toHaveLength(30)
+    expect(dataRows(workbook, "Filtros")).toContainEqual(["Faenas", A.name])
+  })
+
+  it("faena INACTIVA del alcance: las hojas traen sus filas y «Filtros» no afirma «sin datos» ni la nombra", async () => {
+    for (const session of [scopedToAC, globalSession]) {
+      const { workbook } = await exportOf(session, "camiones", { ...SEPTEMBER, faena: C.ws })
+      const correctives = dataRows(workbook, "Correctivos")
+      expect(correctives, session.user.email ?? "").toHaveLength(3)
+      expect(correctives.every((row) => row[6] === C.name)).toBe(true)
+      expect(dataRows(workbook, "Conductores")).toEqual([["ANA CIERRE", 3, 3]])
+      const filters = dataRows(workbook, "Filtros")
+      expect(filters).toContainEqual(["Faenas", SINNOMBRE])
+      expect(JSON.stringify(filters)).not.toMatch(/sin datos/)
+      expect(JSON.stringify(filters)).not.toContain(C.name)
+      expect(JSON.stringify(filters)).not.toContain(C.ws)
+    }
+  })
+
+  it("faena AJENA: sin filas, el mismo texto veraz y sin nombrarla", async () => {
+    const { workbook } = await exportOf(scopedToA, "camiones", { ...SEPTEMBER, faena: C.ws })
+    for (const name of ["Correctivos", "Conductores", "Horas y registros", "Cumplimiento por patente", "Matriz de checklist"]) {
+      expect(dataRows(workbook, name), name).toEqual([])
+    }
+    expect(dataRows(workbook, "Filtros")).toContainEqual(["Faenas", SINNOMBRE])
+    expect(everything(workbook)).not.toContain(C.name)
+    expect(everything(workbook)).not.toContain(C.ws)
+    expect(everything(workbook)).not.toContain("ANA CIERRE")
+  })
+
+  it("equipo inactivo: trae sus filas y «Filtros» no lo declara sin datos; uno activo con ficha se nombra", async () => {
+    const inactive = await exportOf(globalSession, "camiones", { ...SEPTEMBER, equipo: A2.vehicle })
+    expect(dataRows(inactive.workbook, "Correctivos")).toHaveLength(3)
+    const filters = dataRows(inactive.workbook, "Filtros")
+    expect(filters).toContainEqual(["Códigos (equipos)", "1 código sin nombre disponible (fuera de tu alcance o inactivo)"])
+    expect(JSON.stringify(filters)).not.toMatch(/sin datos/)
+    expect(JSON.stringify(filters)).not.toContain(A2.code)
+    const active = await exportOf(globalSession, "camiones", { ...OCTOBER, equipo: B.vehicle })
+    expect(dataRows(active.workbook, "Filtros")).toContainEqual(["Códigos (equipos)", `${B.code} · ${B.plate}`])
+  })
+})
+
+describe("Excel de Camiones · alcance por faena en las ramas de OT y de registro nativo", () => {
+  const AUGUST = { desde: "2026-08-01", hasta: "2026-08-31" }
+  const DECEMBER = { desde: "2026-12-01", hasta: "2026-12-31" }
+  const TODAY_DEC = "2026-12-31"
+
+  it("sin filtro de alcance (usuario global) trae la OT en taller y la correctiva nativa de las dos faenas", async () => {
+    const aug = await exportOf(globalSession, "camiones", AUGUST)
+    expect(dataRows(aug.workbook, "Correctivos").map((row) => [row[1], row[2], row[6]]).sort()).toEqual([
+      ["Orden de trabajo", "OT-ot-a", A.name], ["Orden de trabajo", "OT-ot-b", B.name],
+    ])
+    const dec = await exportOf(globalSession, "camiones", DECEMBER, undefined, TODAY_DEC)
+    expect(dataRows(dec.workbook, "Correctivos").map((row) => [row[1], row[2], row[6]]).sort()).toEqual([
+      ["Registro de la plataforma", `MR-C-${A.ws}`, A.name], ["Registro de la plataforma", `MR-C-${B.ws}`, B.name],
+    ])
+  })
+
+  it("un usuario de la faena A no obtiene la OT ni el registro de B: ni sin filtros, ni pidiendo B, ni con un filtro cruzado hacia ellos", async () => {
+    const cases: Array<[string, Params, string, string]> = [
+      ["OT", AUGUST, "OT-ot-a", "OT-ot-b"],
+      ["registro", DECEMBER, `MR-C-${A.ws}`, `MR-C-${B.ws}`],
+    ]
+    for (const [label, period, own, foreign] of cases) {
+      const today = label === "OT" ? TODAY : TODAY_DEC
+      const plain = await exportOf(scopedToA, "camiones", period, undefined, today)
+      expect(dataRows(plain.workbook, "Correctivos").map((row) => row[2]), label).toEqual([own])
+      const asked = await exportOf(scopedToA, "camiones", { ...period, faena: B.ws }, undefined, today)
+      expect(dataRows(asked.workbook, "Correctivos"), `${label} faena=B`).toEqual([])
+      const crossed = await exportOf(scopedToA, "camiones", { ...period, x_ot: label === "OT" ? "ot:ot-b" : `r:rec-c-${B.ws}`, x_equipo: B3.vehicle }, undefined, today)
+      expect(dataRows(crossed.workbook, "Correctivos").map((row) => row[2]), `${label} x_ot=B`).toEqual([own])
+      for (const { workbook } of [plain, asked, crossed]) {
+        expect(everything(workbook), label).not.toContain(foreign)
+        expect(everything(workbook), label).not.toContain(B3.code)
+      }
+    }
   })
 })

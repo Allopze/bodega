@@ -6,7 +6,7 @@ import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { chartExportFilename } from "@/lib/reports/chart-data-export"
-import { pickFilterParams } from "@/lib/services/mantencion/looker/filters"
+import { countFilterValues, LOOKER_MAX_FILTER_VALUES, LOOKER_MULTI_VALUE_PARAMS, pickFilterParams } from "@/lib/services/mantencion/looker/filters"
 import { buildLookerExport, LOOKER_EXPORT_MAX_ROWS } from "@/lib/services/mantencion/looker/export"
 import { todayInChile } from "@/lib/utils"
 import type { ExportActionResult } from "@/components/ui/export-button"
@@ -28,7 +28,14 @@ const paramValue = z.union([z.string().max(2000), z.array(z.string().max(2000)).
 
 const lookerExportSchema = z.object({
   tab: z.enum(["planificacion", "camiones", "maquinas"]),
-  params: z.record(z.string().max(40), paramValue).refine((value) => Object.keys(value).length <= 40, "Demasiados parámetros"),
+  params: z.record(z.string().max(40), paramValue)
+    .refine((value) => Object.keys(value).length <= 40, "Demasiados parámetros")
+    // Cada valor de faena, equipo o frecuencia llega a un `IN (...)` (Postgres admite 65.535 parámetros) y los parámetros quedan en la
+    // auditoría: el tope cuenta los valores después de partir por comas, no el largo del texto.
+    .refine(
+      (value) => LOOKER_MULTI_VALUE_PARAMS.every((key) => countFilterValues(value[key]) <= LOOKER_MAX_FILTER_VALUES),
+      `Más de ${LOOKER_MAX_FILTER_VALUES} valores en un filtro`,
+    ),
 })
 
 export type LookerExportActionInput = z.input<typeof lookerExportSchema>

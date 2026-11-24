@@ -1,6 +1,7 @@
 import { FORMS_CUTOVER_DATE, FORMS_LAST_COUNTED_DATE } from "@/lib/mantencion/forms-cutover"
 import type { MantUnit } from "@/lib/mantencion/types"
 import { EXCEL_DATE_FORMAT, excelPlainDate } from "@/lib/reports/excel-dates"
+import { sanitizeCell } from "@/lib/reports/export-module/excel-builder"
 import type { ReportSheet } from "@/lib/reports/export-module/types"
 import { formatDate } from "@/lib/utils"
 import { WORK_SOURCE_LABEL } from "../maintenance-work-sheet"
@@ -111,11 +112,20 @@ function checkLabel(check: MatrixCheck): string {
   return `${check.code || check.plate || "Equipo"} · ${formatDate(check.date)} · ${check.level}`
 }
 
+/**
+ * El libro sanea las celdas de DATOS al escribirlas (`sanitizeCell`), pero no su fila de encabezado. El nombre de una
+ * columna de la matriz sale del código y la patente del equipo, que en el histórico son texto libre: se neutraliza aquí
+ * (un valor que parte con `=`, `+`, `-` o `@` queda como texto), igual que la celda de la hoja «Pautas de la matriz».
+ */
+function checkHeader(check: MatrixCheck): string {
+  return String(sanitizeCell(checkLabel(check)))
+}
+
 /** Ítems en filas, una columna por pauta. Un ítem que la pauta no trae queda vacío (no es «no realizado»). */
 export function checklistMatrixSheet(matrix: ChecklistMatrix): ReportSheet {
   return {
     worksheetName: WORK_SHEET_NAMES.matrix,
-    headers: ["Ítem", "Sistema", ...matrix.checks.map(checkLabel)],
+    headers: ["Ítem", "Sistema", ...matrix.checks.map(checkHeader)],
     rows: matrix.items.map((item) => [
       item.name,
       item.group,

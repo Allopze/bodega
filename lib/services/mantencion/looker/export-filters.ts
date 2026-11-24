@@ -26,6 +26,14 @@ export const EXPORT_TAB_SHORT: Record<ExportTab, string> = {
 
 const dates = (from: string, to: string) => `${formatDate(from)} al ${formatDate(to)}`
 
+/** Los nombres que se conocen y, aparte, cuántos no tienen nombre disponible (ajenos o inactivos), sin nombrarlos. */
+function namedOrCounted(names: readonly string[], unnamed: number, label: { one: string; many: string; inactive: string }): string {
+  const unknown = unnamed > 0
+    ? `${unnamed} ${unnamed === 1 ? label.one : label.many} sin nombre disponible (fuera de tu alcance o ${label.inactive})`
+    : ""
+  return [names.join(", "), unknown].filter(Boolean).join("; ")
+}
+
 function periodText(filters: LookerContext["filters"]): string {
   const effective = dates(filters.from, filters.to)
   if (filters.invalidPeriod) return `${effective} (El rango de la dirección no era válido: se usó el período por defecto)`
@@ -40,16 +48,19 @@ export function filtersSheet({ tab, context, notes }: { tab: ExportTab; context:
   rows.push(["Pestaña", EXPORT_TAB_LABEL[tab]])
   rows.push(["Período", periodText(filters)])
 
-  // Una faena que no está en el alcance no se nombra (ni se repite el valor de la URL): se dice que no hay datos.
+  // Las opciones traen sólo las faenas y los equipos ACTIVOS del alcance, y las consultas de datos no miran la actividad: un
+  // id que no está entre ellas puede ser ajeno (sin filas) o estar inactivo (con filas). No se sabe cuál, así que no se afirma
+  // «sin datos» ni «fuera de tu alcance» a secas, y no se resuelve ni se repite el nombre (ni el id) de una faena que no está
+  // entre las opciones.
   const known = filters.worksiteIds.flatMap((id) => options.worksites.find((site) => site.id === id)?.name ?? [])
-  const unknown = filters.worksiteIds.length - known.length
-  const worksiteText = filters.worksiteIds.length === 0
+  rows.push(["Faenas", filters.worksiteIds.length === 0
     ? "Todas las faenas de tu alcance"
-    : [known.join(", "), unknown > 0 ? `${unknown} ${unknown === 1 ? "faena fuera de tu alcance" : "faenas fuera de tu alcance"}: sin datos` : ""].filter(Boolean).join("; ")
-  rows.push(["Faenas", worksiteText])
+    : namedOrCounted(known, filters.worksiteIds.length - known.length, { one: "faena", many: "faenas", inactive: "inactiva" })])
 
   const equipment = filters.equipmentIds.flatMap((id) => options.equipment.find((item) => item.id === id)?.label ?? [])
-  rows.push(["Códigos (equipos)", filters.equipmentIds.length === 0 ? "Todos" : equipment.join(", ") || "Fuera de tu alcance: sin datos"])
+  rows.push(["Códigos (equipos)", filters.equipmentIds.length === 0
+    ? "Todos"
+    : namedOrCounted(equipment, filters.equipmentIds.length - equipment.length, { one: "código", many: "códigos", inactive: "inactivo" })])
 
   const frequencies = filters.frequencies.map((value) => {
     const option = options.frequencies.find((item) => item.value === value)

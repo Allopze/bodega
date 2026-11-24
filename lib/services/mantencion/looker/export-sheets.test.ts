@@ -233,6 +233,18 @@ describe("matriz de checklist", () => {
     expect(sheet.columnFormats?.[3]).toBe(EXCEL_DATE_FORMAT)
   })
 
+  it("el encabezado de una columna que parte con =, +, - o @ (código o patente del histórico, texto libre) se neutraliza como el resto de las celdas", () => {
+    const hostile: ChecklistMatrix = {
+      ...matrix,
+      checks: ["=1+1", "+1", "-1", "@SUM(1)"].map((code, index) => check({ id: `h:x${index}`, code, plate: "" })),
+    }
+    const headers = checklistMatrixSheet(hostile).headers.slice(2)
+    expect(headers).toHaveLength(4)
+    for (const header of headers) expect(header).toMatch(/^'[=+\-@]/)
+    // Y es el mismo texto que la columna «Pauta (columna de la matriz)», que el libro sanea al escribirla.
+    expect(headers).toEqual(matrixChecksSheet(hostile).rows.map((row) => `'${row[0]}`))
+  })
+
   it("sin pautas con detalle, la matriz es una hoja con sus dos encabezados y sin filas", () => {
     const empty: ChecklistMatrix = { checks: [], items: [], withoutDetail: 3 }
     expect(checklistMatrixSheet(empty).headers).toEqual(["Ítem", "Sistema"])
@@ -324,16 +336,35 @@ describe("hoja «Filtros»", () => {
     expect(detail(sheet, "Filtro cruzado: Equipo")).toEqual([])
   })
 
-  it("una faena que no está en el alcance no se nombra: se dice que no hay datos; el período se corta en hoy", () => {
+  it("una faena sin nombre disponible no se nombra y el texto no afirma lo que no se sabe (ajena o inactiva); el período se corta en hoy", () => {
     const sheet = filtersSheet({
       tab: "maquinas",
       context: context({ filters: { tab: "maquinas", worksiteIds: ["ws-ajena"], requestedTo: "2026-11-30", to: "2026-11-24", from: "2026-11-01", requestedFrom: "2026-11-01" } }),
       notes: [],
     })
     expect(detail(sheet, "Pestaña")).toEqual(["Máquinas (equipos por horas)"])
-    expect(detail(sheet, "Faenas")).toEqual(["1 faena fuera de tu alcance: sin datos"])
+    // Las opciones traen sólo faenas ACTIVAS del alcance: una faena que no está ahí puede ser ajena o estar cerrada, y el
+    // libro puede traer filas de ella. Por eso no dice «sin datos» ni «fuera de tu alcance» a secas.
+    expect(detail(sheet, "Faenas")).toEqual(["1 faena sin nombre disponible (fuera de tu alcance o inactiva)"])
     expect(JSON.stringify(sheet.rows)).not.toContain("ws-ajena")
+    expect(JSON.stringify(sheet.rows)).not.toMatch(/sin datos/)
     expect(detail(sheet, "Período")).toEqual(["01-11-2026 al 24-11-2026 (se mide hasta hoy; se pidió hasta el 30-11-2026)"])
+  })
+
+  it("faenas activas del alcance se nombran y las que no, se cuentan, en plural y mezcladas", () => {
+    const faenas = (...ids: string[]) => detail(filtersSheet({ tab: "camiones", context: context({ filters: { worksiteIds: ids } }), notes: [] }), "Faenas")
+    expect(faenas("ws-1")).toEqual(["Teno"])
+    expect(faenas("ws-x", "ws-y")).toEqual(["2 faenas sin nombre disponible (fuera de tu alcance o inactiva)"])
+    expect(faenas("ws-1", "ws-x", "ws-y")).toEqual(["Teno; 2 faenas sin nombre disponible (fuera de tu alcance o inactiva)"])
+  })
+
+  it("lo mismo con los códigos: un equipo que no está entre las opciones (ajeno o inactivo) no se nombra ni se declara «sin datos»", () => {
+    const codigos = (...ids: string[]) => detail(filtersSheet({ tab: "camiones", context: context({ filters: { equipmentIds: ids } }), notes: [] }), "Códigos (equipos)")
+    expect(codigos("v-1")).toEqual(["KA-143 · SJFC-66"])
+    expect(codigos("v-x")).toEqual(["1 código sin nombre disponible (fuera de tu alcance o inactivo)"])
+    expect(codigos("v-x", "v-y")).toEqual(["2 códigos sin nombre disponible (fuera de tu alcance o inactivo)"])
+    expect(codigos("v-1", "v-x")).toEqual(["KA-143 · SJFC-66; 1 código sin nombre disponible (fuera de tu alcance o inactivo)"])
+    expect(JSON.stringify(codigos("v-x"))).not.toMatch(/sin datos/)
   })
 
   it("un rango inválido de la dirección avisa que se usó el período por defecto; las notas van al final, una por fila", () => {

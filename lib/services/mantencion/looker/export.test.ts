@@ -136,3 +136,86 @@ describe("buildLookerExport · Camiones y Máquinas", () => {
     expect(result.truncated).toBe(true)
   })
 })
+
+/**
+ * Los textos libres del histórico (observación, mecánico, conductor, trabajo realizado, ítems, código y patente) y los de la URL
+ * (conductor, mecánico) llegan a un libro que Excel abre. Un valor que parte con `=`, `+`, `-` o `@` se escribe como texto con un
+ * apóstrofo delante, nunca como fórmula. Se arma el libro real con valores hostiles en cada hoja nueva y se relee cada celda.
+ */
+describe("buildLookerExport · neutralización de fórmulas", () => {
+  const [EQ, AT, PLUS, MINUS] = ["=1+1", "@SUM(1)", "+1", "-1"] as const
+
+  async function hostileWorkbook() {
+    const hostileCheck = {
+      id: "h:p1", source: "historial" as const, date: "2026-10-15", label: EQ, code: EQ, plate: AT, worksiteName: MINUS, level: PLUS,
+      mechanic: PLUS, photoIds: [], photoUrls: [], observations: MINUS,
+      items: { [AT]: "realizado" as const, [EQ]: "no_realizado" as const }, itemOrder: { [AT]: 0, [EQ]: 1 }, itemGroups: { [AT]: MINUS, [EQ]: PLUS },
+    }
+    loadContext.mockImplementationOnce(async () => ({
+      ...context("camiones"),
+      cross: {
+        conductor: { key: "x", label: EQ },
+        mechanic: { key: "y", label: AT },
+        equipment: { id: "v-1", code: PLUS, plate: MINUS, label: EQ, worksiteId: "ws-1", worksiteName: AT, unit: "km", intervals: [], frequency: null },
+      },
+    }))
+    loadWork.mockResolvedValueOnce({
+      drivers: { drivers: [{ key: "a", label: EQ, records: 1, hours: 1, workIds: [] }], series: [], selectedDriver: null },
+      monthly: compliance,
+      byWorksite: { ...compliance, byWorksiteMechanic: [{ key: "k", label: "x", percent: 90, checks: 1, worksiteName: AT, mechanicLabel: PLUS }] },
+      byPlate: { ...compliance, byPlate: [{ vehicleId: "v-1", code: PLUS, plate: MINUS, worksiteId: null, worksiteName: EQ, percent: 90, checks: 1, levels: [AT] }] },
+      matrix: { checks: [hostileCheck], items: [{ name: AT, group: MINUS, sortOrder: 0 }, { name: EQ, group: PLUS, sortOrder: 1 }], withoutDetail: 0 },
+      chart: { drivers: [], series: [{ vehicleId: "v-1", label: PLUS, records: 1, hours: 1 }], selectedDriver: null },
+      rows: { rows: [{ ...work(1), reference: AT, code: PLUS, plate: MINUS, typeName: EQ, worksiteName: PLUS, readingText: MINUS, workPerformed: EQ }], total: 1 },
+    })
+    const result = await buildLookerExport(session, { tab: "camiones", params: {}, today: "2026-11-24" })
+    return load(result.base64)
+  }
+
+  it("ninguna celda de ninguna hoja es una fórmula ni parte con =, +, - o @: quedan como texto con apóstrofo", async () => {
+    const workbook = await hostileWorkbook()
+    const strings: string[] = []
+    for (const sheet of workbook.worksheets) {
+      sheet.eachRow((row) => row.eachCell((cell) => {
+        expect(cell.type, `${sheet.name}!${cell.address}`).not.toBe(ExcelJS.ValueType.Formula)
+        expect(cell.formula, `${sheet.name}!${cell.address}`).toBeUndefined()
+        if (typeof cell.value === "string") {
+          expect(cell.value, `${sheet.name}!${cell.address}`).not.toMatch(/^[=+\-@]/)
+          strings.push(cell.value)
+        }
+      }))
+    }
+    // Y los valores hostiles sí llegaron al libro, como texto.
+    for (const text of [`'${EQ}`, `'${AT}`, `'${PLUS}`, `'${MINUS}`]) expect(strings, text).toContain(text)
+  })
+
+  it("las celdas concretas: trabajo realizado, conductor, mecánico, observación, ítem y encabezado de la matriz", async () => {
+    const workbook = await hostileWorkbook()
+    const cell = (sheet: string, address: string) => workbook.getWorksheet(sheet)!.getCell(address).value
+    expect(cell("Correctivos", "K2")).toBe(`'${EQ}`)
+    expect(cell("Conductores", "A2")).toBe(`'${EQ}`)
+    expect(cell("Cumplimiento faena y mecánico", "B2")).toBe(`'${PLUS}`)
+    expect(cell("Pautas de la matriz", "F2")).toBe(`'${PLUS}`)
+    expect(cell("Pautas de la matriz", "I2")).toBe(`'${MINUS}`)
+    expect(cell("Matriz de checklist", "A2")).toBe(`'${AT}`)
+    expect(cell("Matriz de checklist", "C1")).toBe(`'${EQ} · 15-10-2026 · ${PLUS}`)
+    // Lo que viene de la URL (conductor y mecánico elegidos) también va saneado en «Filtros».
+    const filters = workbook.getWorksheet("Filtros")!
+    const rows = filters.getSheetValues().slice(1).map((row) => [(row as unknown[])[1], (row as unknown[])[2]])
+    expect(rows).toContainEqual(["Filtro cruzado: Conductor", `'${EQ}`])
+    expect(rows).toContainEqual(["Filtro cruzado: Mecánico", `'${AT}`])
+  })
+
+  it("Planificación: pauta, faena y observación de un equipo con texto hostil también quedan como texto", async () => {
+    loadPlanning.mockResolvedValueOnce({
+      kmData: { km: [plan({ scheduleName: EQ, worksiteName: AT, plate: PLUS, code: MINUS, manual: true, manualReason: EQ, declared: true, evidence: AT })], hours: [], selectedId: null },
+      hoursData: { km: [], hours: [], selectedId: null },
+    })
+    const result = await buildLookerExport(session, { tab: "planificacion", params: {}, today: "2026-11-24" })
+    const sheet = (await load(result.base64)).getWorksheet("Consolidado por kilómetros")!
+    const values = (sheet.getRow(2).values as unknown[]).slice(1)
+    expect(values).toEqual(expect.arrayContaining([`'${PLUS}`, `'${MINUS}`, `'${AT}`, `'${EQ}`]))
+    for (const value of values) if (typeof value === "string") expect(value).not.toMatch(/^[=+\-@]/)
+    expect(String(sheet.getRow(2).getCell(15).value)).toBe("Intervalo ajustado a mano: =1+1; Preventiva declarada (respaldo: @SUM(1))")
+  })
+})
