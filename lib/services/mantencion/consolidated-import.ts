@@ -2,7 +2,7 @@ import { eq, inArray, sql } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   fuelVehicles, mantHistoricalFindings, mantHistoricalInspections, mantHistoricalRecords, mantHistoricalScheduleChecks,
-  worksiteAliases, worksites,
+  mantHistoricalScheduleItems, worksiteAliases, worksites,
 } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
@@ -41,7 +41,22 @@ import type { MantActionResult } from "./result"
 type Client = DB | Tx
 type StoredRecord = Pick<typeof mantHistoricalRecords.$inferSelect, "sourceKey" | "vehicleId" | "worksiteId" | "equipmentMatch" | "entryDate" | "exitDate" | "sourceRecordId" | "originSource" | "actionType" | "laborHours" | "downtimeDays" | "specialties" | "contractText" | "qualityNotes" | "isTest">
 type StoredInspection = Pick<typeof mantHistoricalInspections.$inferSelect, "sourceKey" | "vehicleId" | "worksiteId" | "equipmentMatch" | "inspectionDate" | "reading" | "goodCount" | "regularCount" | "badCount" | "missingCount" | "notApplicableCount">
-type StoredSchedule = Pick<typeof mantHistoricalScheduleChecks.$inferSelect, "sourceKey" | "vehicleId" | "worksiteId" | "equipmentMatch" | "performedOn" | "compliance" | "doneCount" | "notDoneCount" | "isTest">
+type StoredSchedule = Pick<typeof mantHistoricalScheduleChecks.$inferSelect, "sourceKey" | "vehicleId" | "worksiteId" | "equipmentMatch" | "performedOn" | "compliance" | "doneCount" | "notDoneCount" | "isTest" | "mechanic" | "observations" | "itemsNotDone" | "filtersPhotoUrl" | "stickerPhotoUrl">
+
+/** Conteo del bloque «Detalle por ítem», separado de las hojas porque no es una hoja del consolidado. */
+export interface ScheduleItemCounts {
+  read: number
+  /** Ítems insertados en pautas que no tenían detalle. */
+  created: number
+  /** Pautas con detalle previo que se reemplazó (incluye ítems quitados). */
+  replaced: number
+  /** Pautas cuyo detalle coincide con el archivo. */
+  unchanged: number
+  /** Ítems que existían y ya no vienen en el archivo. */
+  removed: number
+  /** Ítems de pautas que no se importaron (por ejemplo, pauta de prueba excluida). */
+  skipped: number
+}
 const BATCH_SIZE = 200
 const LOCK = sql`select pg_advisory_xact_lock(hashtext('mant-historical-import'))`
 export const IMPORT_ENTITY_TYPE = "mant_historical_import"
@@ -76,6 +91,8 @@ export interface ConsolidatedReport {
   applied: boolean
   excludeTestRows: boolean
   sheets: Record<"maintenance" | "inspections" | "findings" | "scheduleChecks", SheetCounts>
+  /** Detalle por ítem de PAUTAS_PREVENTIVAS (no es una hoja propia). */
+  scheduleItems: ScheduleItemCounts
   notImported: NotImportedRow[]
   differences: ReportRow[]
   conflicts: ReportRow[]
@@ -388,6 +405,9 @@ async function importScheduleChecks(tx: Client, ctx: Context, data: Consolidated
     sourceKey: mantHistoricalScheduleChecks.sourceKey, vehicleId: mantHistoricalScheduleChecks.vehicleId, worksiteId: mantHistoricalScheduleChecks.worksiteId,
     equipmentMatch: mantHistoricalScheduleChecks.equipmentMatch, performedOn: mantHistoricalScheduleChecks.performedOn, compliance: mantHistoricalScheduleChecks.compliance,
     doneCount: mantHistoricalScheduleChecks.doneCount, notDoneCount: mantHistoricalScheduleChecks.notDoneCount, isTest: mantHistoricalScheduleChecks.isTest,
+    mechanic: mantHistoricalScheduleChecks.mechanic, observations: mantHistoricalScheduleChecks.observations,
+    itemsNotDone: mantHistoricalScheduleChecks.itemsNotDone, filtersPhotoUrl: mantHistoricalScheduleChecks.filtersPhotoUrl,
+    stickerPhotoUrl: mantHistoricalScheduleChecks.stickerPhotoUrl,
   }
   const stored = new Map<string, StoredSchedule>()
   for (const batch of batches(data.scheduleChecks)) {
@@ -415,6 +435,8 @@ async function importScheduleChecks(tx: Client, ctx: Context, data: Consolidated
         submittedAt: row.submittedAt, performedOn: row.performedOn, formKind: row.formKind, scheduleLabel: row.scheduleLabel, equipmentText: row.equipmentText,
         vehicleId: match.vehicleId, equipmentMatch: match.state, worksiteText: row.worksiteText, worksiteId, reading: row.reading,
         doneCount: row.doneCount, notDoneCount: row.notDoneCount, notApplicableCount: row.notApplicableCount, compliance: row.compliance,
+        mechanic: row.mechanic, observations: row.observations, itemsNotDone: row.itemsNotDone.length ? row.itemsNotDone : null,
+        filtersPhotoUrl: row.filtersPhotoUrl, stickerPhotoUrl: row.stickerPhotoUrl,
         isTest: row.isTest, fields: row.fields, importedBy: ctx.userId,
       })
       continue
@@ -426,6 +448,19 @@ async function importScheduleChecks(tx: Client, ctx: Context, data: Consolidated
     if (current.notDoneCount !== row.notDoneCount) differences.push(`ítems no realizados: guardado ${current.notDoneCount}, el archivo trae ${row.notDoneCount}`)
     if (current.isTest !== row.isTest) differences.push(`prueba: guardada como ${current.isTest ? "prueba" : "pauta real"}, el archivo la trae como ${row.isTest ? "prueba" : "pauta real"}`)
     if (current.performedOn && row.performedOn && current.performedOn !== row.performedOn) differences.push(`fecha de la pauta: guardada ${current.performedOn}, el archivo trae ${row.performedOn}`)
+    // Columnas nuevas (2026-11-23): se COMPLETAN si estaban vacías; si ya había un valor distinto,
+    // se informa y se conserva el guardado, como el resto de la importación.
+    if (!current.mechanic && row.mechanic) set.mechanic = row.mechanic
+    else if (current.mechanic && row.mechanic && current.mechanic !== row.mechanic) differences.push(`mecánico: guardado «${current.mechanic}», el archivo trae «${row.mechanic}»`)
+    if (!current.observations && row.observations) set.observations = row.observations
+    else if (current.observations && row.observations && current.observations !== row.observations) differences.push("observaciones: el archivo trae otro texto (se conserva el guardado)")
+    const storedItems = current.itemsNotDone ?? []
+    if (storedItems.length === 0 && row.itemsNotDone.length > 0) set.itemsNotDone = row.itemsNotDone
+    else if (storedItems.length > 0 && row.itemsNotDone.length > 0 && storedItems.join("|") !== row.itemsNotDone.join("|")) differences.push("ítems no realizados: el archivo trae otra lista (se conserva la guardada)")
+    if (!current.filtersPhotoUrl && row.filtersPhotoUrl) set.filtersPhotoUrl = row.filtersPhotoUrl
+    else if (current.filtersPhotoUrl && row.filtersPhotoUrl && current.filtersPhotoUrl !== row.filtersPhotoUrl) differences.push("foto de filtros: el archivo trae otro enlace (se conserva el guardado)")
+    if (!current.stickerPhotoUrl && row.stickerPhotoUrl) set.stickerPhotoUrl = row.stickerPhotoUrl
+    else if (current.stickerPhotoUrl && row.stickerPhotoUrl && current.stickerPhotoUrl !== row.stickerPhotoUrl) differences.push("foto del sticker: el archivo trae otro enlace (se conserva el guardado)")
     let vehicleId = current.vehicleId
     noteResolvedConflict(ctx, sheet, row.rowNumber, null, current, match)
     if (!current.vehicleId && match.vehicleId) { set.vehicleId = match.vehicleId; set.equipmentMatch = "linked"; vehicleId = match.vehicleId }
@@ -444,6 +479,82 @@ async function importScheduleChecks(tx: Client, ctx: Context, data: Consolidated
       for (const { sourceKey, set } of updates) await tx.update(mantHistoricalScheduleChecks).set(set).where(eq(mantHistoricalScheduleChecks.sourceKey, sourceKey))
     },
   }
+}
+
+/* ── Detalle por ítem ────────────────────────────────────────────────────── */
+
+/**
+ * Detalle por ítem de PAUTAS_PREVENTIVAS. El archivo es la fuente del conjunto: si una pauta
+ * viene con un detalle distinto al guardado, se reemplaza completo; si coincide, no se toca.
+ * Una pauta que no se importó (por ejemplo, de prueba excluida) no recibe ítems: la FK lo
+ * impediría y se informa como «omitido».
+ */
+async function importScheduleItems(tx: Client, data: ConsolidatedData): Promise<ScheduleItemCounts> {
+  const counts: ScheduleItemCounts = { read: data.scheduleItems.length, created: 0, replaced: 0, unchanged: 0, removed: 0, skipped: 0 }
+  if (data.scheduleItems.length === 0) return counts
+
+  const byCheck = new Map<string, typeof data.scheduleItems>()
+  for (const item of data.scheduleItems) {
+    const list = byCheck.get(item.checkSourceKey) ?? []
+    list.push(item)
+    byCheck.set(item.checkSourceKey, list)
+  }
+  const keys = [...byCheck.keys()]
+
+  const existingChecks = new Set<string>()
+  const storedByCheck = new Map<string, Array<{ itemName: string; result: string; sortOrder: number }>>()
+  for (const batch of batches(keys)) {
+    const [checks, items] = await Promise.all([
+      tx.select({ sourceKey: mantHistoricalScheduleChecks.sourceKey }).from(mantHistoricalScheduleChecks)
+        .where(inArray(mantHistoricalScheduleChecks.sourceKey, batch)),
+      tx.select({
+        checkSourceKey: mantHistoricalScheduleItems.checkSourceKey,
+        itemName: mantHistoricalScheduleItems.itemName,
+        result: mantHistoricalScheduleItems.result,
+        sortOrder: mantHistoricalScheduleItems.sortOrder,
+      }).from(mantHistoricalScheduleItems).where(inArray(mantHistoricalScheduleItems.checkSourceKey, batch)),
+    ])
+    for (const check of checks) existingChecks.add(check.sourceKey)
+    for (const item of items) {
+      const list = storedByCheck.get(item.checkSourceKey) ?? []
+      list.push({ itemName: item.itemName, result: item.result, sortOrder: item.sortOrder })
+      storedByCheck.set(item.checkSourceKey, list)
+    }
+  }
+
+  const replaceKeys: string[] = []
+  const inserts: Array<typeof mantHistoricalScheduleItems.$inferInsert> = []
+  const byOrder = (a: { itemName: string; sortOrder: number }, b: { itemName: string; sortOrder: number }) =>
+    a.sortOrder - b.sortOrder || a.itemName.localeCompare(b.itemName, "es")
+
+  for (const [checkSourceKey, incomingItems] of byCheck) {
+    if (!existingChecks.has(checkSourceKey)) { counts.skipped += incomingItems.length; continue }
+    const incoming = [...incomingItems].sort(byOrder)
+    const stored = [...(storedByCheck.get(checkSourceKey) ?? [])].sort(byOrder)
+    const same = stored.length === incoming.length && stored.every((row, index) => {
+      const item = incoming[index]!
+      return row.itemName === item.itemName && row.result === item.result && row.sortOrder === item.sortOrder
+    })
+    if (same) { counts.unchanged += incoming.length; continue }
+    if (stored.length === 0) counts.created += incoming.length
+    else { counts.replaced += incoming.length; counts.removed += stored.length }
+    replaceKeys.push(checkSourceKey)
+    inserts.push(...incoming.map((item) => ({
+      sourceKey: item.sourceKey,
+      checkSourceKey,
+      itemName: item.itemName,
+      result: item.result,
+      sortOrder: item.sortOrder,
+    })))
+  }
+
+  for (const batch of batches(replaceKeys)) {
+    await tx.delete(mantHistoricalScheduleItems).where(inArray(mantHistoricalScheduleItems.checkSourceKey, batch))
+  }
+  for (const batch of batches(inserts)) {
+    if (batch.length > 0) await tx.insert(mantHistoricalScheduleItems).values(batch)
+  }
+  return counts
 }
 
 /* ── Orquestación ────────────────────────────────────────────────────────── */
@@ -521,12 +632,14 @@ export async function importConsolidated(
       await inspections.write()
       await findings.write()
       await scheduleChecks.write()
+      const scheduleItemCounts = await importScheduleItems(tx, data)
 
       const sheetCounts = { maintenance: maintenance.counts, inspections: inspections.counts, findings: findings.counts, scheduleChecks: scheduleChecks.counts }
       const changed = Object.values(sheetCounts).some((counts) => counts.created || counts.completed)
+        || scheduleItemCounts.created > 0 || scheduleItemCounts.replaced > 0
       const fleet = compareFleet(data, vehicles)
       const result: ConsolidatedReport = {
-        fileName: file, applied: options.apply, excludeTestRows: excludeTests, sheets: sheetCounts,
+        fileName: file, applied: options.apply, excludeTestRows: excludeTests, sheets: sheetCounts, scheduleItems: scheduleItemCounts,
         notImported: ctx.notImported, differences: ctx.differences, conflicts: ctx.conflicts, resolvedConflicts: ctx.resolvedConflicts, warnings: ctx.warnings,
         withoutWorksite: [...ctx.withoutWorksite.values()].sort((a, b) => b.count - a.count || a.text.localeCompare(b.text)),
         unmatchedEquipment: [...ctx.unmatched.values()].sort((a, b) => b.count - a.count || a.text.localeCompare(b.text)),
@@ -581,6 +694,15 @@ export function formatConsolidatedReport(report: ConsolidatedReport): string {
     lines.push(`| ${SHEET_LABELS[key]} | ${c.total} | ${c.created} | ${c.completed} | ${c.unchanged} | ${c.withDifference} | ${c.rejected} | ${c.test} | ${c.testExcluded} |`)
   }
   lines.push("", "«Completadas» son filas que ya existían y recibieron una columna nueva o un vínculo vacío; «Con diferencia» se informan abajo y no se cambian.", "")
+
+  const items = report.scheduleItems
+  lines.push("## Detalle por ítem de las pautas", "")
+  lines.push(`- Ítems leídos: ${items.read}`)
+  lines.push(`- Insertados en pautas sin detalle previo: ${items.created}`)
+  lines.push(`- Reemplazados (pauta con detalle previo distinto): ${items.replaced}`)
+  lines.push(`- Sin cambios: ${items.unchanged}`)
+  lines.push(`- Quitados porque ya no vienen en el archivo: ${items.removed}`)
+  lines.push(`- Omitidos porque su pauta no se importó: ${items.skipped}`, "")
 
   lines.push("## Equipo y faena", "")
   lines.push("| Hoja | Con equipo vinculado | Sin equipo | Código y patente en conflicto | Sin faena |")

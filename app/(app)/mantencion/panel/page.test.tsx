@@ -68,6 +68,7 @@ vi.mock("@/components/mantencion/jefatura/panel/panel-equipment-filter", () => (
 import MantencionPanelPage from "./page"
 import { BoardHeaderActions } from "@/components/dashboard/board-scope"
 import { PageHeader } from "@/components/ui/page-header"
+import { PanelTabs } from "@/components/mantencion/panel/looker/panel-tabs"
 import { PanelEmptyState } from "@/components/mantencion/jefatura/panel/panel-empty"
 import { PanelExcelButton, PanelPdfLink } from "@/components/mantencion/jefatura/panel/panel-export"
 import { PanelToday } from "@/components/mantencion/jefatura/panel/panel-today"
@@ -97,6 +98,27 @@ function findElement(node: ReactNode, type: unknown): Found | null {
 }
 
 const page = (searchParams: Record<string, string> = {}) => MantencionPanelPage({ searchParams: Promise.resolve(searchParams) })
+
+describe("/mantencion/panel · menú de pestañas", () => {
+  // Sin este menú, desde el Panel por defecto no se llega a Planificación, Camiones ni Máquinas
+  // si no es escribiendo la URL (verificado en navegador el 2026-11-24).
+  it("la pestaña Hoy, por defecto y con ?pestana=hoy, ofrece el menú para llegar a las otras tres", async () => {
+    const cases: Array<Record<string, string>> = [{}, { pestana: "hoy" }]
+    for (const params of cases) {
+      const tabs = findElement(await page(params), PanelTabs)
+      expect(tabs, JSON.stringify(params)).not.toBeNull()
+      expect(tabs!.props).toMatchObject({ active: "hoy" })
+    }
+  })
+
+  it("el menú también se ofrece cuando no hay equipos en el alcance", async () => {
+    Object.assign(scope, { equipment: 0, records: 0, inWorkshop: 0 })
+    reporteEquipos.mockResolvedValueOnce({ hasRuns: false })
+    const tree = await page()
+    expect(findElement(tree, PanelEmptyState)).not.toBeNull()
+    expect(findElement(tree, PanelTabs)!.props).toMatchObject({ active: "hoy" })
+  })
+})
 
 describe("/mantencion/panel · franja «Hoy» y gráficos", () => {
   it("con permiso de órdenes la franja trae las órdenes por asignar y se pintan los gráficos de OT", async () => {

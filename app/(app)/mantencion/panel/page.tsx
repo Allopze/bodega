@@ -1,255 +1,90 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { BoardHeaderActions } from "@/components/dashboard/board-scope"
+import type { Session } from "next-auth"
 import { Callout } from "@/components/ui/callout"
-import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { PeriodControl } from "@/components/ui/period-control"
-import { can, requireAnyPermission } from "@/lib/auth/can"
-import { chartWindowCaption, DEFAULT_RANGE_LABEL, defaultIndicatorRange, indicatorPeriodLabel, resolveIndicatorPeriod } from "@/lib/indicators/period"
-import { logger } from "@/lib/logger"
-import { allWorksitesLabel } from "@/lib/auth/worksite-label"
-import { equipmentScope, viewerFromSession } from "@/lib/services/mantencion/access"
-import {
-  loadOpenWorkOrdersByStatus,
-  loadOutOfService,
-  loadPautaState,
-  loadRecordIndicators,
-  loadTopRepairEquipment,
-  loadWorkOrderPeriodStats,
-  loadWorkOrderSeries,
-  type MantIndicatorQuery,
-} from "@/lib/services/mantencion/indicators"
-import {
-  loadFindingsWithoutWork,
-  loadMaintenanceWork,
-  loadPanelEquipment,
-  loadScheduleCompliance,
-  resolvePanelEquipment,
-  summarizeMaintenanceWork,
-} from "@/lib/services/mantencion/maintenance-work"
-import { countPendingReview, loadPanelWorksites } from "@/lib/services/mantencion/panel"
-import { loadReporteEquipos } from "@/lib/services/mantencion/reporte-equipos"
-import { formatDate, todayInChile } from "@/lib/utils"
-import { hasNoEquipmentInScope, PanelEmptyState } from "@/components/mantencion/jefatura/panel/panel-empty"
-import { PanelEquipmentFilter } from "@/components/mantencion/jefatura/panel/panel-equipment-filter"
-import { PanelExcelButton, PanelPdfLink } from "@/components/mantencion/jefatura/panel/panel-export"
-import { PanelToday } from "@/components/mantencion/jefatura/panel/panel-today"
-import { countUnassignedWorkOrders } from "@/lib/services/mantencion/work-orders/query"
-import { PautasSection, WorkOrdersSection } from "./indicators-sections"
-import { ReporteEquiposSection } from "./reporte-equipos-section"
-import { FormsIndicatorsSection, MaintenanceWorkSection } from "./trinorma-sections"
+import { LookerFilterBar } from "@/components/mantencion/panel/looker/filter-bar"
+import { PanelTabs } from "@/components/mantencion/panel/looker/panel-tabs"
+import { requireAnyPermission } from "@/lib/auth/can"
+import { DEFAULT_RANGE_LABEL } from "@/lib/indicators/period"
+import { viewerFromSession } from "@/lib/services/mantencion/access"
+import { filterChips, parseLookerTab } from "@/lib/services/mantencion/looker/filters"
+import { loadLookerContext } from "@/lib/services/mantencion/looker/resolve"
+import type { LookerTab } from "@/lib/services/mantencion/looker/types"
+import { renderHoyTab } from "./hoy-tab"
+import { PlanificacionTab } from "./planificacion-tab"
+import { WorkTab } from "./work-tab"
 
 export const metadata: Metadata = { title: "Panel de mantención" }
 export const dynamic = "force-dynamic"
 
 type SearchParams = Record<string, string | string[] | undefined>
 
-function first(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value
+const DESCRIPTION: Record<Exclude<LookerTab, "hoy">, string> = {
+  planificacion: "Consolidado de mantención por kilómetros y por horas, con el delta y los faltantes de cada equipo.",
+  camiones: "Trabajos correctivos y cumplimiento preventivo de los equipos controlados por kilómetros.",
+  maquinas: "Trabajos correctivos y cumplimiento preventivo de las máquinas controladas por horas.",
 }
 
 /**
- * Panel de mantención: abre con la franja «Hoy» (lo pendiente ahora: órdenes sin mecánico,
- * equipos en taller, registros por revisar) y debajo los gráficos del período, que contestan
- * tres preguntas: ¿cómo avanza el trabajo de taller? (órdenes de trabajo), ¿cómo están las
- * pautas y la disponibilidad de los equipos? y ¿llegan los reportes de turno y qué fallas dejan
- * abiertas? (reportes de equipos, del motor de inspecciones de Prevención). Los Indicadores eran una página aparte hasta el
- * 2026-11-14; el usuario pidió que fueran el Panel (`/mantencion/indicadores` redirige acá).
+ * Panel de mantención con cuatro pestañas: «Hoy» (el Panel operativo de siempre) y las tres
+ * réplicas del panel de Looker. La pestaña viaja en `pestana`; cada una es un enlace que lleva
+ * sólo ese parámetro, así los filtros se reinician al cambiar de pestaña.
  *
- * Gate: `mant:records:view_*`. «Órdenes de trabajo» sólo se consulta y se
- * pinta con `mant:ot:view_*`. Cada consulta degrada sola: si
- * una falla, su bloque no se pinta y el aviso de arriba lo dice, en vez de tumbar la página o
- * mostrar ceros que parecen datos.
+ * Gate: `mant:records:view_*`. Las consultas de OT y de registros vuelven a aplicar su propia
+ * visibilidad y el alcance por faena: ocultar una pestaña no es autorización.
  */
 export default async function MantencionPanelPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  let session
+  let session: Session
   try {
     session = await requireAnyPermission(["mant:records:view_worksite", "mant:records:view_all"])
   } catch {
     redirect("/forbidden")
   }
-  const viewer = viewerFromSession(session)
   const params = await searchParams
-  const today = todayInChile()
-  const period = resolveIndicatorPeriod({ desde: params.desde, hasta: params.hasta }, today)
-  const worksites = await loadPanelWorksites(viewer)
-  // Una faena fuera del alcance (o inventada en la URL) se ignora: se mira todo lo visible.
-  const requested = first(params.faena)
-  const worksite = requested ? worksites.find((item) => item.id === requested) : undefined
-  const worksiteId = worksite?.id ?? null
-  // El equipo de la URL vale sólo dentro del alcance (y de la faena elegida); uno ajeno o inventado se ignora.
-  const equipment = await resolvePanelEquipment(viewer, worksiteId ?? undefined, first(params.equipo)).catch((error: unknown) => {
-    logger.error("[indicadores-mantencion] equipo elegido falló", error)
-    return null
-  })
-  const equipmentOptions = await loadPanelEquipment(viewer, worksiteId ?? undefined).catch((error: unknown) => {
-    logger.error("[indicadores-mantencion] opciones de equipo fallaron", error)
-    return []
-  })
+  const tab = parseLookerTab(params)
 
-  const canViewOrders = can(session, "mant:ot:view_worksite") || can(session, "mant:ot:view_all")
-  const canExport = can(session, "mant:export")
+  if (tab === "hoy") return renderHoyTab(session, params)
 
-  const query: MantIndicatorQuery = {
-    from: period.from,
-    to: period.to,
-    granularity: period.granularity,
-    previous: period.previous,
-    // Los gráficos de evolución miran los seis meses que terminan en el período cuando éste es corto.
-    chart: period.chart,
-    today,
-    ...(worksiteId ? { worksiteId } : {}),
-    ...(equipment ? { vehicleId: equipment.id } : {}),
-  }
-  // Con un equipo elegido el Panel muestra sólo lo que se mide por equipo: los registros firmados, el ranking,
-  // lo de «Hoy» y los reportes de turno se miden por faena y no se acotan a un equipo.
-  const byFleet = !equipment
-  // Los trabajos se piden sobre la unión de la ventana del gráfico y el período (la ventana ya lo contiene).
-  const workQuery = {
-    from: period.chart.from < period.from ? period.chart.from : period.from,
-    to: period.chart.to > period.to ? period.chart.to : period.to,
-    today,
-    ...(worksiteId ? { worksiteId } : {}),
-    ...(equipment ? { vehicleId: equipment.id } : {}),
-  }
-  const periodQuery = { ...workQuery, from: period.from, to: period.to }
-
-  const degraded: string[] = []
-  let tracked = 0
-  function track<T>(promise: Promise<T>, label: string): Promise<T | null> {
-    tracked++
-    return promise.catch((error: unknown) => {
-      logger.error(`[indicadores-mantencion] ${label} falló`, error)
-      degraded.push(label)
-      return null
-    })
-  }
-  const none = <T,>(): Promise<T | null> => Promise.resolve(null)
-
-  const [series, stats, byStatus, ranking, pautas, records, outOfService, unassignedOrders, pendingReview, reporteEquipos, work, compliance, findings] = await Promise.all([
-    canViewOrders ? track(loadWorkOrderSeries(viewer, query), "órdenes por período") : none<Awaited<ReturnType<typeof loadWorkOrderSeries>>>(),
-    canViewOrders ? track(loadWorkOrderPeriodStats(viewer, query), "cifras de órdenes") : none<Awaited<ReturnType<typeof loadWorkOrderPeriodStats>>>(),
-    canViewOrders ? track(loadOpenWorkOrdersByStatus(viewer, query.worksiteId, query.vehicleId), "órdenes abiertas por estado") : none<Awaited<ReturnType<typeof loadOpenWorkOrdersByStatus>>>(),
-    canViewOrders && byFleet ? track(loadTopRepairEquipment(viewer, query), "equipos con más reparaciones") : none<Awaited<ReturnType<typeof loadTopRepairEquipment>>>(),
-    track(loadPautaState(viewer, query.worksiteId, today, query.vehicleId), "estado de las pautas"),
-    byFleet ? track(loadRecordIndicators(viewer, query), "registros preventivos y correctivos") : none<Awaited<ReturnType<typeof loadRecordIndicators>>>(),
-    track(loadOutOfService(viewer, query), "días fuera de servicio"),
-    canViewOrders && byFleet ? track(countUnassignedWorkOrders(viewer, query.worksiteId), "órdenes por asignar") : none<number>(),
-    byFleet ? track(countPendingReview(viewer, query.worksiteId), "registros por revisar") : none<number>(),
-    byFleet ? track(loadReporteEquipos(viewer, query), "reportes de equipos") : none<Awaited<ReturnType<typeof loadReporteEquipos>>>(),
-    track(
-      loadMaintenanceWork(viewer, workQuery).then((result) => ({
-        summary: summarizeMaintenanceWork(result.rows, { from: period.from, to: period.to, chart: period.chart, today }),
-        includesOrders: result.includesOrders,
-      })),
-      "trabajos de mantención",
-    ),
-    track(loadScheduleCompliance(viewer, periodQuery), "checklist de pautas de formularios"),
-    track(loadFindingsWithoutWork(viewer, periodQuery), "hallazgos en mal estado sin trabajo"),
-  ])
-
-  // Sin equipos, sin registros, sin órdenes ni trabajos, hallazgos o reportes en el alcance: el Panel entero estaría vacío por una sola causa.
-  const noEquipment = byFleet && hasNoEquipmentInScope({
-    equipment: pautas?.total ?? null,
-    inWorkshop: pautas?.inWorkshop ?? null,
-    records: records ? records.points.reduce((sum, point) => sum + point.preventive + point.corrective, 0) : null,
-    workOrders: series ? series.reduce((sum, point) => sum + point.created + point.closed + point.backlog, 0) : null,
-    // Aunque no haya equipos activos, el alcance puede tener trabajos del historial, hallazgos o reportes de turno.
-    work: work ? work.summary.total + work.summary.series.reduce((sum, point) => sum + point.preventiva + point.correctiva + point.predictiva + point.sin_clasificar, 0) : null,
-    findings: findings ? findings.total + findings.unlinked : null,
-    reports: reporteEquipos ? (reporteEquipos.hasRuns ? 1 : 0) : null,
-  })
-
-  // El alcance de los equipos de Mantención no es el de la sesión: `mant:records:view_all` abre todas.
-  const allLabel = allWorksitesLabel(equipmentScope(viewer) === "all")
-  const scopeName = worksite?.name ?? (worksites.length === 1 ? worksites[0]!.name : allLabel.toLowerCase())
-  const datesOf = (range: { from: string; to: string }) => `${formatDate(range.from)} al ${formatDate(range.to)}`
-  const scopeNote = `${datesOf(period)} · ${scopeName}`
-  const common = {
-    from: period.from,
-    to: period.to,
-    granularity: period.granularity,
-    chart: period.chart,
-    chartNote: `${chartWindowCaption(period.chart, datesOf)} · ${scopeName}`,
-    worksiteId,
-    equipmentId: equipment?.id ?? null,
-    scopeNote,
-    canExport,
-  }
-  const trinorma = {
-    ...common,
-    equipment,
-    baseParams: { desde: first(params.desde), hasta: first(params.hasta), faena: worksiteId ?? undefined, equipo: equipment?.id },
-  }
-  const exportScope = { periodo: indicatorPeriodLabel(period.requested, datesOf), faena: worksite?.name ?? (worksites.length === 1 ? worksites[0]!.name : allLabel), ...(equipment ? { equipo: equipment.label } : {}) }
+  const viewer = viewerFromSession(session)
+  const context = await loadLookerContext(viewer, params)
+  const chips = filterChips(context.filters, context.options, context.cross)
 
   return (
     <PageContainer>
       <PageHeader
         title="Panel de mantención"
-        description="Lo pendiente hoy y cómo avanzan las órdenes de trabajo, las pautas, la disponibilidad y los reportes de turno de los equipos."
+        description={DESCRIPTION[tab]}
         breadcrumb={<Breadcrumbs items={[
           { label: "Control operacional", href: "/control-operacional" },
           { label: "Mantención" },
           { label: "Panel" },
+          { label: tab === "planificacion" ? "Planificación" : tab === "camiones" ? "Camiones" : "Máquinas" },
         ]} />}
-        // Esqueleto común de los tableros: faena y período primero, después las exportaciones: «Exportar Excel»
-        // (las tablas «Ver datos» de la pantalla, una hoja por gráfico, más la hoja «Trabajos») y «Exportar PDF»
-        // (el informe del Panel), ambas con este período y esta faena.
-        actions={
-          <BoardHeaderActions
-            worksites={worksites}
-            worksiteId={worksiteId}
-            allLabel={allLabel}
-            period={<PeriodControl mode="range" from={period.requested.from} to={period.requested.to} defaultRange={{ ...defaultIndicatorRange(today), label: DEFAULT_RANGE_LABEL }} />}
-          >
-            {canExport ? (
-              <>
-                <PanelExcelButton title="Panel de mantención" range={{ from: period.from, to: period.to }} scope={exportScope} faena={worksiteId} equipo={equipment?.id ?? null} />
-                <PanelPdfLink from={period.from} to={period.to} faena={worksiteId} equipo={equipment?.id ?? null} />
-              </>
-            ) : null}
-          </BoardHeaderActions>
-        }
       />
 
-      {period.invalid && (
-        <Callout tone="warning" className="mb-4">El rango de fechas de la dirección no es válido: se muestra {DEFAULT_RANGE_LABEL}.</Callout>
-      )}
-      <DegradedDataBanner degraded={degraded} total={tracked} />
+      <PanelTabs active={tab} />
 
-      {noEquipment ? (
-        // Sin equipos ni registros en el alcance hay una sola causa y un solo aviso con su salida,
-        // en vez de una franja en cero y secciones vacías. Otra faena del selector puede tener equipos.
-        <PanelEmptyState canManage={can(session, "mant:equipment:manage")} />
-      ) : (
-        <>
-          <PanelEquipmentFilter options={equipmentOptions.map((item) => ({ id: item.id, label: item.label }))} value={equipment?.id ?? null} />
-          {byFleet && (
-            <PanelToday
-              unassignedOrders={unassignedOrders}
-              inWorkshop={pautas?.inWorkshop ?? null}
-              inWorkshopByOrder={pautas?.inWorkshopByOrder ?? null}
-              pendingReview={pendingReview}
-              worksiteId={worksiteId}
-            />
-          )}
-          {equipment && (
-            <Callout tone="info" className="mb-4">
-              Con {equipment.label} elegido, el Panel muestra sólo lo que se mide por equipo. Para ver los registros firmados, los reportes de turno y «Hoy», quita el equipo.
-            </Callout>
-          )}
-          <div className="space-y-8">
-            {canViewOrders && <WorkOrdersSection {...common} series={series} stats={stats} byStatus={byStatus} />}
-            <MaintenanceWorkSection {...trinorma} summary={work?.summary ?? null} includesOrders={work?.includesOrders ?? canViewOrders} />
-            {byFleet && <PautasSection {...common} pautas={pautas} records={records} outOfService={outOfService} ranking={ranking} showRanking={canViewOrders} />}
-            <FormsIndicatorsSection {...trinorma} compliance={compliance} findings={findings} />
-            {byFleet && <ReporteEquiposSection {...common} data={reporteEquipos} canViewInspections={can(session, "prevention:inspections:view")} />}
-          </div>
-        </>
+      {context.filters.invalidPeriod && (
+        <Callout tone="warning" className="mb-4">
+          El rango de fechas de la dirección no es válido: se muestra {DEFAULT_RANGE_LABEL}.
+        </Callout>
       )}
+
+      <div className="mant-looker rounded-[var(--radius-2xl)] bg-[var(--mant-bg)] p-3 md:p-5">
+        <LookerFilterBar filters={context.filters} options={context.options} cross={context.cross} chips={chips} />
+        {tab === "planificacion" ? (
+          <PlanificacionTab context={context} viewer={viewer} />
+        ) : (
+          <WorkTab
+            context={context}
+            viewer={viewer}
+            rawParams={params}
+            unit={tab === "camiones" ? "km" : "h"}
+          />
+        )}
+      </div>
     </PageContainer>
   )
 }

@@ -614,3 +614,17 @@ strong, b {
 }
 .fleet-gps-popup .maplibregl-popup-close-button:hover { background: var(--color-surface-2); color: var(--color-text); }
 .fleet-gps-popup .maplibregl-popup-close-button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+
+/* ─── Panel de mantención · réplica Looker (2026-11-23) ──────────────────── */
+/* La paleta de marca Chome del tablero de mantención. Es scoped a esta
+   superficie: el resto de la plataforma sigue con los tokens de `@theme`.
+   #f39200 y #ffd51e fallan AA como texto, así que se usan sólo como relleno
+   de barra/insignia con la cifra visible; el texto va en tokens -ink. */
+.mant-looker {
+  --mant-green: #27894d;
+  --mant-amber: #ffd51e;
+  --mant-orange: #f39200;
+  --mant-gray: #4b4f54;
+  --mant-black: #1d1d1b;
+  --mant-bg: #f5f7f6;
+}

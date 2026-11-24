@@ -49,7 +49,16 @@ export interface FleetRow {
   initialReading: { value: number; date: string } | null
   /** Lecturas vigentes más recientes (hasta `readingsPerEquipment`), de mayor a menor fecha. */
   readings: MantReading[]
-  recentPreventives: Array<{ id: string; folio: string | null; reading: number; date: string; intervalValue: number }>
+  recentPreventives: Array<{
+    id: string
+    folio: string | null
+    reading: number
+    date: string
+    intervalValue: number
+    /** Intervalo que la regla sugería al firmar; distinto de `intervalValue` = elección manual. */
+    suggestedIntervalValue: number | null
+    manualScheduleReason: string | null
+  }>
   status: MantEquipmentStatus
   /**
    * Estimación de la próxima mantención con la última lectura GPS, cuando es
@@ -235,7 +244,15 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
       ? { value: row.initialReading, date: row.initialReadingDate }
       : null
     const preventives = (preventivesByVehicle.get(row.vehicleId) ?? [])
-      .map((item) => ({ id: item.id, folio: item.folio, reading: item.reading, date: item.workDate, intervalValue: item.intervalValue ?? 0 }))
+      .map((item) => ({
+        id: item.id,
+        folio: item.folio,
+        reading: item.reading,
+        date: item.workDate,
+        intervalValue: item.intervalValue ?? 0,
+        suggestedIntervalValue: item.suggestedIntervalValue,
+        manualScheduleReason: item.manualScheduleReason,
+      }))
     const signed = preventives[0]
     // La declarada (anterior a la plataforma) manda sólo si es más reciente que la última firmada.
     const declared: MantPreventiveSummary | null = row.priorPreventiveDate != null && row.priorPreventiveReading != null && row.priorPreventiveInterval != null
@@ -315,6 +332,8 @@ async function recentRecords(vehicleIds: string[], limit: number, preventiveOnly
       reading: mantRecords.reading,
       workDate: mantRecords.workDate,
       intervalValue: mantRecords.intervalValue,
+      suggestedIntervalValue: mantRecords.suggestedIntervalValue,
+      manualScheduleReason: mantRecords.manualScheduleReason,
       rn: sql<number>`row_number() over (partition by ${mantRecords.vehicleId} order by ${mantRecords.workDate} desc, ${mantRecords.reading} desc)`.as("rn"),
     })
     .from(mantRecords)

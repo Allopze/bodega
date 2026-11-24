@@ -98,6 +98,7 @@ async function tables() {
   return JSON.stringify({
     records: order(await testDb.select().from(schema.mantHistoricalRecords)), inspections: order(await testDb.select().from(schema.mantHistoricalInspections)),
     findings: order(await testDb.select().from(schema.mantHistoricalFindings)), schedules: order(await testDb.select().from(schema.mantHistoricalScheduleChecks)),
+    scheduleItems: order(await testDb.select().from(schema.mantHistoricalScheduleItems)),
   })
 }
 const records = () => testDb.select().from(schema.mantHistoricalRecords)
@@ -168,6 +169,7 @@ describe.sequential("importador del consolidado de mantención", () => {
     if (!result.ok) throw new Error(result.message)
     expect(result.data.applied).toBe(false)
     expect(result.data.sheets.maintenance).toMatchObject({ total: 9, created: 6, completed: 2, rejected: 1, test: 1, unchanged: 0 })
+    expect(result.data.scheduleItems).toMatchObject({ read: 5, created: 5 })
     expect(await tables()).toBe(before)
     expect(await audits()).toHaveLength(0)
   })
@@ -185,6 +187,10 @@ describe.sequential("importador del consolidado de mantención", () => {
     expect(await testDb.select().from(schema.mantHistoricalInspections)).toHaveLength(2)
     expect(await testDb.select().from(schema.mantHistoricalFindings)).toHaveLength(3)
     expect(await testDb.select().from(schema.mantHistoricalScheduleChecks)).toHaveLength(2)
+    expect(await testDb.select().from(schema.mantHistoricalScheduleItems)).toHaveLength(5)
+    expect(result.data.scheduleItems).toMatchObject({ read: 5, created: 5 })
+    const [importedPauta] = await testDb.select().from(schema.mantHistoricalScheduleChecks).where(eq(schema.mantHistoricalScheduleChecks.vehicleId, "v1"))
+    expect(importedPauta).toMatchObject({ mechanic: "Mecánico de prueba", filtersPhotoUrl: "https://drive.google.com/open?id=img" })
     const audit = await audits()
     expect(audit).toHaveLength(1)
     expect(audit[0]).toMatchObject({ userId: actor.userId, action: "create" })
@@ -271,11 +277,16 @@ describe.sequential("importador del consolidado de mantención", () => {
     expect(new Set(findings.map((item) => item.sourceKey)).size).toBe(3)
   })
 
-  it("las pautas ignoran la tabla de detalle y guardan el cumplimiento", async () => {
+  it("las pautas guardan el cumplimiento y el detalle por ítem", async () => {
     const pautas = await testDb.select().from(schema.mantHistoricalScheduleChecks)
     expect(pautas).toHaveLength(2)
     const real = pautas.find((pauta) => !pauta.isTest)!
-    expect(real).toMatchObject({ scheduleLabel: "40.000 KM", compliance: 0.9512, doneCount: 39, notDoneCount: 2, notApplicableCount: 7, vehicleId: "v1", performedOn: "2026-07-21", reading: 402622, submittedAt: "2026-07-23 12:03:18" })
+    expect(real).toMatchObject({ scheduleLabel: "40.000 KM", compliance: 0.9512, doneCount: 39, notDoneCount: 2, notApplicableCount: 7, vehicleId: "v1", performedOn: "2026-07-21", reading: 402622, submittedAt: "2026-07-23 12:03:18", mechanic: "Mecánico de prueba" })
+    expect(real.filtersPhotoUrl).toBe("https://drive.google.com/open?id=img")
+    const items = await testDb.select().from(schema.mantHistoricalScheduleItems)
+    expect(items).toHaveLength(5)
+    expect(items.every((item) => item.checkSourceKey === real.sourceKey)).toBe(true)
+    expect(items.map((item) => item.result)).toEqual(Array.from({ length: 5 }, () => "realizado"))
     expect(real.fields.some((field) => field.header === "IMG_FILTROS")).toBe(false)
     expect(real.fields.find((field) => field.header === "%_CUMPLIMIENTO")?.formula).toMatch(/K2/)
   })
@@ -290,6 +301,7 @@ describe.sequential("importador del consolidado de mantención", () => {
     expect(again.data.sheets.inspections.unchanged).toBe(2)
     expect(again.data.sheets.findings.unchanged).toBe(3)
     expect(again.data.sheets.scheduleChecks.unchanged).toBe(2)
+    expect(again.data.scheduleItems).toMatchObject({ read: 5, created: 0, replaced: 0, unchanged: 5 })
     expect(await tables()).toBe(before)
     expect((await audits()).length).toBe(auditsBefore)
   })
@@ -424,8 +436,9 @@ describe.sequential("importador del consolidado de mantención", () => {
     if (!parsed.ok) throw new Error(parsed.message)
     expect(parsed.data.maintenance).toHaveLength(9)
     expect(parsed.data.rejected.map((rejected) => rejected.sheet)).toEqual(["HALLAZGOS_INSPECCION", "HALLAZGOS_INSPECCION"])
-    // La tabla de detalle de las pautas se avisa en las notas, no se lee como pautas.
+    // La tabla de detalle de las pautas se lee como ítems, no como pautas nuevas.
     expect(parsed.data.scheduleChecks).toHaveLength(2)
-    expect(parsed.data.notes.join(" ")).toMatch(/tabla de detalle.*7 filas con datos quedaron sin importar/)
+    expect(parsed.data.scheduleItems).toHaveLength(5)
+    expect(parsed.data.notes.join(" ")).toMatch(/5 ítems de detalle leídos/)
   })
 })

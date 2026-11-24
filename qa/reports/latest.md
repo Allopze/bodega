@@ -1,3 +1,45 @@
+# Panel de mantención estilo Looker — cierre de verificación, 2026-11-24
+
+Cuatro pestañas en `/mantencion/panel` (`Hoy`, `Planificación`, `Camiones`, `Máquinas`) con filtro
+cruzado por URL, migración 0401 y el importador del consolidado con detalle por ítem. El detalle está en
+[mantencion-panel-looker-2026-11-23.md](mantencion-panel-looker-2026-11-23.md).
+
+- **PASS · puertas** (sobre el árbol final del 11-24): typecheck y lint sin errores; `test:fast` con
+  `NODE_ENV=test`: 22.009 en verde, 0 fallos, 275 omitidas (los 8 fallos de `dense-chart` ya no se
+  reproducen). `check:secrets` y `db:verify-migrations` (402 entradas) verdes sobre el árbol previo al
+  cambio del TopBar, que no los afecta. `test:pglite` (5.662) pasó el 11-23 y no se repitió: lo posterior
+  no toca `lib/` ni `db/`.
+- **PASS · navegador:** `e2e/mantencion-panel-looker.spec.ts`, 16 escenarios: 15 verifican comportamiento
+  y 1 se omite hasta 2026-12-01 (visor de la matriz con foto preventiva nativa). Pasan en el arnés de
+  producción junto con otros seis archivos que visitan el Panel `Hoy` (89 pruebas: 87 pasan, 1 omitida,
+  1 falla, la preexistente de abajo), sin errores de consola ni respuestas 4xx/5xx del origen.
+- **PASS · arreglo de `Hoy`:** el defecto de la pestaña sin menú está corregido
+  (`<PanelTabs active="hoy" />` en `hoy-tab.tsx`), con prueba primero (2 pruebas nuevas en `page.test.tsx`,
+  rojas antes y verdes después) y verificado en navegador a 1440 y 390 px: enlaces de 36 y 44 px, sin
+  scroll horizontal, 0 errores de consola.
+- **PASS · reimportación en dev:** consolidado real sobre `bodega_dev`, 266 de 266 ítems de detalle
+  leídos (contrastados con un conteo independiente), 0 rechazos, 0 ambigüedades; la segunda simulación
+  no dejó cambios.
+- **FALLA · `test:e2e` completo:** 1.206 pruebas, 1.111 pasan, **64 fallan**, 25 no corrieron, 6 omitidas.
+  Ninguna del tablero: 61 vienen de una segunda faena «Faena E2E» que crea `admin-flow.spec.ts` (se repite
+  sobre `HEAD` sin estos cambios) y 3 son deterministas y preexistentes (`legacy-mantenciones-retired:5`,
+  `mantencion-historico:21`, `reflow-anchos:158`). Con la base reseteada, 61 de los 64 pasan. La corrida
+  fue **antes** de los dos arreglos de abajo y no se repitió completa.
+- **PASS · arreglo del TopBar (`reflow-anchos.spec.ts:158`):** el `banner` crecía a 105,4 px en Catálogos PDTP
+  a 1024 px porque `lg:block` pisaba el `line-clamp-2` de la descripción (`top-bar.tsx`, desde `e2ca62ca0`,
+  2026-11-07). Causa confirmada en el navegador con una sola variable antes de editar; arreglo
+  `lg:line-clamp-2`. Los cuatro specs que miden el TopBar o el shell pasan 27/27 en `next dev` y 27/27 sobre
+  build de producción. Efecto: la descripción del TopBar se recorta a 2 líneas desde 1024 px en toda la
+  plataforma; no se revisó pantalla por pantalla.
+- **LÍMITES:** las capturas de estados interactivos **no se tomaron** (el lanzamiento fue denegado tres
+  veces por el clasificador de permisos, también tras la aprobación del usuario); la matriz con datos
+  reales tiene como máximo 4 columnas y Máquinas queda sin pautas, por lo que el tope de 8 pautas no se
+  vio con datos reales; teclado no probado en todas las barras; la causa exacta de la segunda faena
+  «Faena E2E» no se determinó; sin Safari/Android reales ni lector de pantalla.
+- **PENDIENTE (fuera de alcance):** migración 0401 y reimportación en producción, exportaciones de las
+  pestañas nuevas, comparación contra una captura real de Looker, push y despliegue (el trabajo queda en
+  commits locales de `main`, sin push).
+
 # Corrección del módulo de combustibles — 2026-11-05
 
 Se corrigieron los 45 hallazgos de la auditoría estática del 2026-11-05, con un reparto por día

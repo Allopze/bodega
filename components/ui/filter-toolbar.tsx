@@ -29,6 +29,8 @@ export interface FilterToolbarProps {
   /** Título y bajada de la hoja «Más filtros». Por defecto, genéricos; conviene decir qué filtra. */
   overflowTitle?: string
   overflowDescription?: string
+  /** Rótulo del botón que quita todos los filtros. Por defecto, «Limpiar filtros». */
+  clearLabel?: string
 }
 
 export function FilterToolbar({
@@ -43,6 +45,7 @@ export function FilterToolbar({
   actions,
   overflowTitle = "Filtros avanzados",
   overflowDescription = "Aplica parámetros adicionales para reducir los resultados.",
+  clearLabel = "Limpiar filtros",
 }: FilterToolbarProps) {
   const [sheetOpen, setSheetOpen] = React.useState(false)
 
@@ -125,7 +128,7 @@ export function FilterToolbar({
               className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
             >
               <X size={12} className="mr-1" />
-              Limpiar filtros
+              {clearLabel}
             </Button>
           )}
         </div>

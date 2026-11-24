@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm"
-import { boolean, check, foreignKey, index, integer, jsonb, numeric, pgTable, text, timestamp } from "drizzle-orm/pg-core"
+import { boolean, check, foreignKey, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { fuelVehicles } from "./fuel-vehicles"
 import { users } from "./users"
 import { worksites } from "./worksites"
@@ -116,6 +116,15 @@ export const mantHistoricalScheduleChecks = pgTable("mant_historical_schedule_ch
   notApplicableCount: integer("not_applicable_count").notNull().default(0),
   /** Realizados / (realizados + no realizados), de 0 a 1. */
   compliance: numeric("compliance", { precision: 5, scale: 4, mode: "number" }),
+  /** Mecánico que ejecutó la pauta, tal como lo trae el consolidado. */
+  mechanic: text("mechanic"),
+  /** Observaciones de la pauta. */
+  observations: text("observations"),
+  /** Ítems no realizados, tal como los trae el consolidado (separados por «;»). */
+  itemsNotDone: text("items_not_done").array(),
+  /** Enlaces de respaldo del formulario (Google Drive): se guardan como evidencia, no se descargan. */
+  filtersPhotoUrl: text("filters_photo_url"),
+  stickerPhotoUrl: text("sticker_photo_url"),
   /** Fila de prueba (ES_PRUEBA). Se importa marcada; el tablero la excluye. */
   isTest: boolean("is_test").notNull().default(false),
   fields: jsonb("fields").$type<HistoricalField[]>().notNull(),
@@ -128,4 +137,33 @@ export const mantHistoricalScheduleChecks = pgTable("mant_historical_schedule_ch
   check("mant_historical_schedule_checks_match_valid", matchValid(table.equipmentMatch, table.vehicleId)),
   check("mant_historical_schedule_checks_counts_valid", sql`${table.doneCount} >= 0 AND ${table.notDoneCount} >= 0 AND ${table.notApplicableCount} >= 0`),
   check("mant_historical_schedule_checks_compliance_valid", sql`${table.compliance} IS NULL OR (${table.compliance} >= 0 AND ${table.compliance} <= 1)`),
+])
+
+/**
+ * Detalle por ítem de una pauta preventiva importada («Detalle por ítem», bloque que
+ * sigue a la tabla resumen de PAUTAS_PREVENTIVAS en el consolidado). Es lo que permite
+ * dibujar la matriz ítem × mantención sin volver a leer el archivo.
+ *
+ * No tiene marca temporal propia: se vincula a la pauta resumen por formulario + fecha
+ * + patente + pauta. Una clave ambigua se rechaza en la importación y se informa.
+ */
+export const mantHistoricalScheduleItems = pgTable("mant_historical_schedule_items", {
+  /** sha256(clave de la pauta + nombre del ítem). */
+  sourceKey:      text("source_key").primaryKey(),
+  checkSourceKey: text("check_source_key").notNull(),
+  itemName:       text("item_name").notNull(),
+  /** `realizado`, `no_realizado` o `no_aplica`. */
+  result:         text("result").notNull(),
+  sortOrder:      integer("sort_order").notNull().default(0),
+  importedAt:     timestamp("imported_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  foreignKey({
+    columns: [table.checkSourceKey],
+    foreignColumns: [mantHistoricalScheduleChecks.sourceKey],
+    name: "mant_historical_schedule_items_check_fk",
+  }).onDelete("cascade"),
+  uniqueIndex("mant_historical_schedule_items_name_unique").on(table.checkSourceKey, table.itemName),
+  index("mant_historical_schedule_items_check_idx").on(table.checkSourceKey, table.sortOrder),
+  check("mant_historical_schedule_items_result_valid", sql`${table.result} IN ('realizado', 'no_realizado', 'no_aplica')`),
+  check("mant_historical_schedule_items_sort_valid", sql`${table.sortOrder} >= 0`),
 ])

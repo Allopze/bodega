@@ -119,8 +119,28 @@ export interface ConsolidatedScheduleRow extends RowBase {
   notDoneCount: number
   notApplicableCount: number
   compliance: number | null
+  /** Mecánico que ejecutó la pauta (columna MECANICO). */
+  mechanic: string | null
+  /** Observaciones de la pauta (columna OBSERVACIONES). */
+  observations: string | null
+  /** Ítems no realizados, separados por «;» en el consolidado. */
+  itemsNotDone: string[]
+  /** Enlaces de respaldo del formulario; no se descargan. */
+  filtersPhotoUrl: string | null
+  stickerPhotoUrl: string | null
   isTest: boolean
   keyCollision: boolean
+}
+
+/** Una fila del bloque «Detalle por ítem» de PAUTAS_PREVENTIVAS. */
+export interface ConsolidatedScheduleItemRow {
+  sourceKey: string
+  sheet: string
+  rowNumber: number
+  checkSourceKey: string
+  itemName: string
+  result: "realizado" | "no_realizado" | "no_aplica"
+  sortOrder: number
 }
 
 export interface ConsolidatedEquipmentRow { rowNumber: number; code: string; plate: string; category: string; type: string; notEquipment: boolean }
@@ -131,6 +151,8 @@ export interface ConsolidatedData {
   inspections: ConsolidatedInspectionRow[]
   findings: ConsolidatedFindingRow[]
   scheduleChecks: ConsolidatedScheduleRow[]
+  /** Detalle por ítem de las pautas; vacío si el archivo no trae ese bloque. */
+  scheduleItems: ConsolidatedScheduleItemRow[]
   equipment: ConsolidatedEquipmentRow[]
   quality: ConsolidatedQualityRow[]
   /** Filas que el lector descartó con su motivo (fecha ilegible, clave repetida, hallazgo sin inspección…). */
@@ -270,6 +292,52 @@ function readTable(sheet: ExcelJS.Worksheet, required: readonly string[], option
     })
   }
   return { ok: true, rows, stoppedAt, skippedAfter }
+}
+
+/**
+ * Bloque «Detalle por ítem» de PAUTAS_PREVENTIVAS. Empieza después de la fila en blanco que
+ * detiene la tabla resumen; puede traer un título antes del encabezado. No aborta la lectura del
+ * archivo si falta o está incompleto: se informa y las pautas quedan sin detalle.
+ */
+function readScheduleDetail(sheet: ExcelJS.Worksheet, startRow: number): { ok: true; rows: SheetRow[] } | { ok: false; message: string } {
+  const required = ["FORMULARIO", "FECHA", "PAUTA", "ITEM", "RESULTADO"]
+  let headerRow = -1
+  const index = new Map<string, number>()
+  const headers: string[] = []
+  for (let number = startRow; number <= Math.min(sheet.rowCount, startRow + 20); number++) {
+    const row = sheet.getRow(number)
+    const candidate: string[] = []
+    for (let column = 1; column <= sheet.columnCount; column++) candidate.push(text(rawValue(row.getCell(column))))
+    if (!candidate.some((header) => compactKey(header) === "ITEM")) continue
+    headerRow = number
+    headers.push(...candidate)
+    candidate.forEach((header, i) => {
+      const key = compactKey(header)
+      if (key && !index.has(key)) index.set(key, i + 1)
+    })
+    break
+  }
+  if (headerRow < 0) return { ok: false, message: "no se encontró el encabezado del detalle por ítem" }
+  const missing = required.filter((header) => !index.has(compactKey(header)))
+  if (missing.length) return { ok: false, message: `el detalle por ítem no tiene las columnas ${missing.join(", ")}` }
+  const rows: SheetRow[] = []
+  for (let number = headerRow + 1; number <= sheet.rowCount; number++) {
+    const row = sheet.getRow(number)
+    const empty = headers.every((_, i) => rawValue(row.getCell(i + 1)) === null)
+    if (empty) continue
+    rows.push({
+      rowNumber: number,
+      get: (header) => {
+        const column = index.get(compactKey(header))
+        return column ? rawValue(row.getCell(column)) : null
+      },
+      fields: (exclude) => headers.flatMap((header, i) => {
+        if (!header || exclude(header)) return []
+        return [cellField(row.getCell(i + 1), header)]
+      }),
+    })
+  }
+  return { ok: true, rows }
 }
 
 /** Las fotos, imágenes y respaldos son enlaces a archivos de terceros: no se guardan. */
@@ -461,7 +529,6 @@ export async function parseConsolidatedWorkbook(buffer: ArrayBuffer | Uint8Array
   /* PAUTAS_PREVENTIVAS */
   const scheduleTable = readTable(sheetOf(CONSOLIDATED_SHEETS.scheduleChecks)!, SCHEDULE_HEADERS, { stopAtBlank: true })
   if (!scheduleTable.ok) return scheduleTable
-  if (scheduleTable.stoppedAt) notes.push(`${CONSOLIDATED_SHEETS.scheduleChecks}: la lectura se detuvo en la fila ${scheduleTable.stoppedAt} (fila en blanco). Lo que sigue es una tabla de detalle por ítem, que no se importa: ${scheduleTable.skippedAfter} filas con datos quedaron sin importar (incluyen el título y el encabezado de esa tabla).`)
   const scheduleChecks: ConsolidatedScheduleRow[] = []
   const scheduleKeys = new Map<string, number>()
   for (const row of scheduleTable.rows) {
@@ -484,15 +551,89 @@ export async function parseConsolidatedWorkbook(buffer: ArrayBuffer | Uint8Array
     if (compliance === null && done + notDone > 0) compliance = Math.round((done / (done + notDone)) * 10_000) / 10_000
     const code = text(row.get("ID_EQUIPO"))
     const test = text(row.get("ES_PRUEBA"))
+    const itemsNotDone = text(row.get("ITEMS_NO_REALIZADOS")).split(";").map((item) => item.trim()).filter(Boolean)
     scheduleChecks.push({
       sourceKey, fingerprint: hash(JSON.stringify(fields)), sheet: CONSOLIDATED_SHEETS.scheduleChecks, rowNumber: row.rowNumber, fields, warnings,
       submittedAt: stamp, performedOn: toDate(row.get("FECHA")), formKind: text(row.get("FORMULARIO")), scheduleLabel,
       equipmentText: equipmentLabel(code, plate), code, plate, worksiteText: text(row.get("FAENA")),
       reading: storableNumber(row.get("ODOMETRO_HOROMETRO"), "ODOMETRO_HOROMETRO", 1, 1e13, warnings),
       doneCount: done, notDoneCount: notDone, notApplicableCount: count(row.get("NO_APLICA")), compliance,
+      mechanic: text(row.get("MECANICO")) || null,
+      observations: text(row.get("OBSERVACIONES")) || null,
+      itemsNotDone,
+      filtersPhotoUrl: text(row.get("IMG_FILTROS")) || null,
+      stickerPhotoUrl: text(row.get("IMG_STICKER")) || null,
       // ES_PRUEBA distinto de «No» es prueba; vacío no se puede afirmar como prueba y se importa como pauta real.
       isTest: test !== "" && nameKey(test) !== "no", keyCollision: collision,
     })
+  }
+
+  /* Detalle por ítem: bloque que sigue a la fila en blanco. */
+  const scheduleItems: ConsolidatedScheduleItemRow[] = []
+  if (scheduleTable.stoppedAt) {
+    const sheet = CONSOLIDATED_SHEETS.scheduleChecks
+    const detail = readScheduleDetail(sheetOf(sheet)!, scheduleTable.stoppedAt + 1)
+    if (!detail.ok) {
+      notes.push(`${sheet}: ${detail.message}; las pautas quedan sin detalle por ítem.`)
+    } else {
+      const equipmentKey = (plate: string, code: string) => plateKey(plate) || compactKey(code)
+      const exactKey = (formKind: string, date: string, plate: string, code: string, label: string) =>
+        `${compactKey(formKind)}|${date}|${equipmentKey(plate, code)}|${compactKey(label)}`
+      const looseKey = (formKind: string, plate: string, code: string, label: string) =>
+        `${compactKey(formKind)}|${equipmentKey(plate, code)}|${compactKey(label)}`
+      const byExact = new Map<string, ConsolidatedScheduleRow[]>()
+      const byLoose = new Map<string, ConsolidatedScheduleRow[]>()
+      for (const check of scheduleChecks) {
+        const date = check.performedOn ?? check.submittedAt.slice(0, 10)
+        const exact = exactKey(check.formKind, date, check.plate, check.code, check.scheduleLabel)
+        const loose = looseKey(check.formKind, check.plate, check.code, check.scheduleLabel)
+        byExact.set(exact, [...(byExact.get(exact) ?? []), check])
+        byLoose.set(loose, [...(byLoose.get(loose) ?? []), check])
+      }
+      const itemKeys = new Map<string, number>()
+      const seenByCheck = new Map<string, Set<string>>()
+      const orderByCheck = new Map<string, number>()
+      let rejectedItems = 0
+      for (const row of detail.rows) {
+        const reject = (reason: string) => {
+          rejectedItems++
+          rejected.push({ sheet, rowNumber: row.rowNumber, recordId: null, reason })
+        }
+        const itemName = text(row.get("ITEM")).trim()
+        if (!itemName) { reject("El detalle por ítem no trae el nombre del ítem."); continue }
+        const date = toDate(row.get("FECHA"))
+        const formKind = text(row.get("FORMULARIO"))
+        const plate = text(row.get("PATENTE"))
+        const code = text(row.get("ID_EQUIPO"))
+        const label = text(row.get("PAUTA"))
+        if (!date || !formKind || !label) { reject("El detalle por ítem no trae formulario, fecha o pauta."); continue }
+        const exact = byExact.get(exactKey(formKind, date, plate, code, label)) ?? []
+        const loose = byLoose.get(looseKey(formKind, plate, code, label)) ?? []
+        const matches = exact.length > 0 ? exact : loose
+        if (matches.length !== 1) {
+          reject(matches.length > 1
+            ? "Más de una pauta coincide con el detalle por ítem (formulario, fecha, patente y pauta)."
+            : "No se encontró la pauta del detalle por ítem.")
+          continue
+        }
+        const check = matches[0]!
+        const seen = seenByCheck.get(check.sourceKey) ?? new Set<string>()
+        if (seen.has(itemName)) { reject("El ítem está repetido en la misma pauta."); continue }
+        const rawResult = compactKey(text(row.get("RESULTADO")))
+        const result = rawResult === "REALIZADO" ? "realizado" as const
+          : rawResult === "NOREALIZADO" ? "no_realizado" as const
+            : rawResult === "NOAPLICA" ? "no_aplica" as const
+              : null
+        if (!result) { reject("El resultado del ítem no es Realizado, No realizado ni No aplica."); continue }
+        seen.add(itemName)
+        seenByCheck.set(check.sourceKey, seen)
+        const sortOrder = orderByCheck.get(check.sourceKey) ?? 0
+        orderByCheck.set(check.sourceKey, sortOrder + 1)
+        const { key: sourceKey } = uniqueKey(`${check.sourceKey}\n${itemName}`, itemKeys)
+        scheduleItems.push({ sourceKey, sheet, rowNumber: row.rowNumber, checkSourceKey: check.sourceKey, itemName, result, sortOrder })
+      }
+      notes.push(`${sheet}: ${scheduleItems.length} ítems de detalle leídos${rejectedItems > 0 ? `; ${rejectedItems} filas rechazadas` : ""}.`)
+    }
   }
 
   /* EQUIPOS y CALIDAD_DATOS (sólo para clasificar e informar) */
@@ -518,5 +659,5 @@ export async function parseConsolidatedWorkbook(buffer: ArrayBuffer | Uint8Array
     if (table.ok) for (const row of table.rows) quality.push({ source: text(row.get("FUENTE")), problem: text(row.get("PROBLEMA")), count: toNumber(row.get("CANTIDAD")) })
   }
 
-  return { ok: true, data: { maintenance, inspections, findings, scheduleChecks, equipment, quality, rejected, notes } }
+  return { ok: true, data: { maintenance, inspections, findings, scheduleChecks, scheduleItems, equipment, quality, rejected, notes } }
 }
