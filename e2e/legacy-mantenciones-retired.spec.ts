@@ -14,6 +14,11 @@ test.describe("retiro de mantenciones antiguas", () => {
       const url = new URL(request.url())
       const errorText = request.failure()?.errorText
       if (url.searchParams.has("_rsc") && errorText === "net::ERR_ABORTED") return
+      // Beacon de `AppVisitTracker` (`fetch` con keepalive): Chromium lo reporta ERR_ABORTED al
+      // descargar el documento aunque la petición ya terminó. Medido (18 pantallas, con pausa y sin
+      // ella): las 18 recibieron 204, el log del dev trae un `POST /api/apps/visita 204` por cada beacon
+      // emitido y cada visita quedó en `app_visits`. Es una vista del navegador, no una visita perdida.
+      if (url.pathname === "/api/apps/visita" && request.method() === "POST" && errorText === "net::ERR_ABORTED") return
       failedRequests.push(`${request.url()}: ${errorText ?? "failed"}`)
     })
 

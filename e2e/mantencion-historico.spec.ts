@@ -13,6 +13,16 @@ function trackFailures(page: Page, errors: string[]) {
     const failure = request.failure()?.errorText ?? ""
     if (failure.includes("ERR_ABORTED") && request.url().includes("_rsc=")) return
     const url = new URL(request.url())
+    // Beacon de `AppVisitTracker` (`fetch` con keepalive): Chromium lo reporta ERR_ABORTED al descargar
+    // el documento aunque la petición ya terminó (recibió 204 y la visita quedó en `app_visits`; medido
+    // en 18 pantallas, con pausa y sin ella). Es una vista del navegador, no una visita perdida.
+    if (failure.includes("ERR_ABORTED") && request.method() === "POST" && url.pathname === "/api/apps/visita") return
+    // Server Actions (cabecera `next-action`): Chromium a veces cierra con ERR_ABORTED una acción cuya
+    // respuesta ya se consumió (la pantalla pintó el resultado de esa misma respuesta antes del aviso;
+    // la traza la registra con 200 y ~60 ms). Cada acción de este caso se afirma por lo que muestra la
+    // pantalla o la base —«2 respuestas · 2 nuevas», «2 trabajos guardados», el vínculo del equipo—, así
+    // que una acción que de verdad no llegó ya falla ahí; un corte de red real sigue pasando por aquí.
+    if (failure.includes("ERR_ABORTED") && request.method() === "POST" && "next-action" in request.headers()) return
     errors.push(`Fallo de red: ${failure} ${request.method()} ${request.resourceType()} ${url.pathname} [${[...url.searchParams.keys()].join(",")}]`)
   })
   page.on("response", (response) => { if (response.status() >= 500) errors.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`) })
@@ -67,6 +77,10 @@ test("importa y consulta historia, conserva pendientes y permite conciliarlos", 
     await expect(supervisor.getByRole("link", { name: "Importar historial anterior", exact: true })).toHaveCount(0)
     await expect(supervisor.getByRole("link", { name: /Ver el trabajo de/ })).toBeVisible()
     expect(await supervisor.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+    // `screenshot` oculta el cursor con un `style` inline sobre el campo de búsqueda. Si cae antes de que la
+    // página hidrate (en `next dev` pasa siempre), React avisa «hydration mismatch» y `errors` deja de estar
+    // vacío. Con la red quieta —medido 3 de 3 sin este paso fallaba y 3 de 3 con él pasa— hidrató primero.
+    await supervisor.waitForLoadState("networkidle")
     await supervisor.screenshot({ path: testInfo.outputPath("historial-supervision-movil.png"), fullPage: true })
     await supervisorContext.close()
 
