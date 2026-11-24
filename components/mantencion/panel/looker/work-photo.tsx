@@ -1,12 +1,18 @@
 "use client"
 
 import * as React from "react"
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 /**
  * Miniatura de la foto de respaldo de una correctiva. Se abre en un visor modal; la imagen
  * sale de `/api/mantencion/fotos/{id}`, que verifica sesión y alcance en cada petición.
  * Los trabajos históricos no traen foto local: se dice «Sin foto» en vez de inventar una.
+ *
+ * El visor lleva una fila de título encima de la foto. El botón de cierre del diálogo
+ * compartido está fijo en la esquina superior derecha y no admite estilos: con la foto pegada
+ * a esa esquina quedaba SOBRE la imagen, con un gris de texto secundario sobre un fondo
+ * cualquiera (1,4:1 medido; WCAG 1.4.11 pide 3:1). En la fila de título cae sobre el fondo
+ * de la tarjeta, que es donde está en el resto de los diálogos de la plataforma.
  */
 export function WorkPhoto({ photoId, alt, compact = false }: { photoId: string | null; alt: string; compact?: boolean }) {
   const [open, setOpen] = React.useState(false)
@@ -30,15 +36,17 @@ export function WorkPhoto({ photoId, alt, compact = false }: { photoId: string |
         />
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl p-2" aria-describedby={undefined}>
-          <DialogTitle className="sr-only">Foto de respaldo de {alt}</DialogTitle>
+        <DialogContent className="max-w-3xl p-4" aria-describedby={undefined}>
+          <DialogHeader className="mb-3 flex min-h-11 items-center pr-12 sm:min-h-7">
+            <DialogTitle className="text-sm font-medium">Foto de respaldo de {alt}</DialogTitle>
+          </DialogHeader>
           <DialogDescription className="sr-only">Vista ampliada de la foto del trabajo realizado.</DialogDescription>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`/api/mantencion/fotos/${photoId}`}
             alt={`Foto de respaldo de ${alt}`}
             onError={() => { setFailed(true); setOpen(false) }}
-            className="max-h-[80vh] w-full object-contain"
+            className="max-h-[calc(min(90dvh,54rem)-6rem)] w-full object-contain"
           />
         </DialogContent>
       </Dialog>
