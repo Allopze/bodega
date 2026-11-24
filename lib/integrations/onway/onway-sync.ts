@@ -16,6 +16,10 @@ import { buildVehicleResolverByPlate } from "@/lib/integrations/fleet-gps/identi
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { todayInChile } from "@/lib/utils"
+import {
+  isOnwayInteractiveAuthCooldownActive,
+  type OnwayRunAttempt,
+} from "./onway-auth-cooldown"
 import { fetchOnwayTelemetry, OnwayClientError } from "./onway-client"
 import { resolveOnwayDriverMappings } from "./onway-driver-mappings"
 import { reconcileOnwayDevices, type OnwayDeviceLink } from "./onway-reconciliation"
@@ -133,6 +137,35 @@ export async function hasStalledOnwayCronRun(now = new Date()): Promise<boolean>
     .limit(1)
   if (!latest || latest.status !== "running") return false
   return now.getTime() - new Date(latest.startedAt).getTime() > ONWAY_STALLED_RUN_MS
+}
+
+/**
+ * Última corrida de OnWay, que decide si la cuarentena por verificación
+ * interactiva sigue vigente. Consulta mínima: una fila.
+ */
+async function readLatestOnwayAttempt(): Promise<OnwayRunAttempt | undefined> {
+  const [latest] = await db.select({
+    startedAt: fleetGpsSyncRuns.startedAt,
+    status: fleetGpsSyncRuns.status,
+    errorCode: fleetGpsSyncRuns.errorCode,
+  })
+    .from(fleetGpsSyncRuns)
+    .where(eq(fleetGpsSyncRuns.provider, "onway"))
+    .orderBy(desc(fleetGpsSyncRuns.startedAt))
+    .limit(1)
+  return latest
+}
+
+/**
+ * ¿El último intento automático se rindió esperando que una persona resuelva
+ * el CAPTCHA hace poco? Ver `onway-auth-cooldown.ts`: la cuarentena existe para
+ * que el cron no martille el tenant de Auth0 cientos de veces al día, que es lo
+ * que mantiene el desafío vivo. Un intento manual o la sincronización que
+ * dispara la propia vista asistida no se filtran: sólo se consulta para
+ * `trigger: "cron"` y `"live"`.
+ */
+export async function isOnwaySyncCoolingDown(now: Date = new Date()): Promise<boolean> {
+  return isOnwayInteractiveAuthCooldownActive(await readLatestOnwayAttempt(), now)
 }
 
 export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnwayResult> {

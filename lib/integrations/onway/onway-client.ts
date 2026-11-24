@@ -14,6 +14,7 @@ import {
   type OnwayChallengeStatus,
   type OnwayChallengeViewport,
 } from "./onway-interactive-auth-contract"
+import { killProcessGroupsAndWait, listChromiumProcesses, processGroups } from "./browser-reaper"
 import { parseOnwaySnapshot, type OnwaySnapshotResult } from "./onway-contract"
 import {
   parseOnwayAlertRows,
@@ -70,6 +71,19 @@ interface OnwayBrowserSession {
   page: Page
   /** Huella (sólo en memoria) de la cuenta con la que se autenticó la página. */
   account: string
+  /**
+   * Grupos de proceso de los Chromium que este lanzamiento creó. Se registran
+   * al abrir porque `launchServer` no expone el `pid` del driver, y sin el dato
+   * el cierre sólo puede adivinar cuáles matar. Ver `browser-reaper.ts`.
+   */
+  groups: number[]
+  /**
+   * Grupos que ya existían antes de lanzar. En el cierre se vuelve a censar y se
+   * matan los grupos nuevos que no estén en `groups`: Chromium crea algunos
+   * (los `chrome_crashpad` van en su propio grupo) después de `newPage`, así que
+   * un censo único al abrir se quedaba corto y esos procesos sobrevivían.
+   */
+  groupsBefore: number[]
 }
 
 interface OnwayPortalDeviceRef {
@@ -325,17 +339,50 @@ const state: OnwayClientState = globalThis.__onwayClient ??= {
 state.challenge ??= null
 state.challengeStarting ??= false
 
+/**
+ * Cierra el navegador del scraper y se asegura de que **no quede ningún
+ * Chromium vivo**.
+ *
+ * `server.kill()` mata al driver de Playwright, pero Chromium es su hijo: queda
+ * reparentado a PID 1 y sigue girando. Medido en producción el 2026-11-24, cada
+ * `ONWAY_PORTAL_TIMEOUT` dejaba así un renderer al 100 % de CPU para siempre
+ * (se encontraron árboles de 4 h y 18 h, ocho renderers al 100 %, load average
+ * 12 sobre 12 núcleos).
+ *
+ * Los grupos de proceso se registran al lanzar el navegador (`getBrowserSession`),
+ * no al cerrarlo: cuando el driver muere, el parentesco se pierde y ya no hay
+ * forma de saber cuáles eran suyos. Matar el grupo entero es lo que sí termina
+ * al proceso y a sus hijos de una vez.
+ */
 async function closeBrowserSession(): Promise<void> {
   const current = state.browserSession
   state.browserSession = null
   if (!current) return
+
   try {
     // Con `connect`, `browser.close()` sólo desconecta: el proceso lo cierra el servidor.
     await withOnwayDeadline(current.browser.close().then(() => current.server.close()), BROWSER_CLOSE_TIMEOUT_MS)
   } catch {
-    // Un navegador colgado puede no responder ni al cierre. Sin el kill quedaba
-    // vivo (con sus renderers) hasta reiniciar el contenedor.
+    // Un navegador colgado puede no responder ni al cierre.
     await withOnwayDeadline(current.server.kill(), BROWSER_CLOSE_TIMEOUT_MS).catch(() => undefined)
+  }
+
+  // Pase lo que pase arriba, los grupos de ESTE lanzamiento se terminan: el
+  // cierre de Playwright mata al driver y deja a Chromium huérfano girando.
+  // Se censa de nuevo en vez de confiar sólo en lo registrado al abrir, porque
+  // Chromium arranca los `chrome_crashpad` en su propio grupo más tarde: con la
+  // foto del lanzamiento esos quedaban vivos (medido: sobrevivían 2 por sesión).
+  const before = new Set(current.groupsBefore)
+  const groups = [...new Set([...current.groups, ...processGroups(listChromiumProcesses())])]
+    .filter((group) => !before.has(group))
+  if (groups.length === 0) return
+
+  const outcome = await killProcessGroupsAndWait(groups, { graceMs: 3_000 })
+  if (outcome.survived.length > 0) {
+    logger.error("[flota/onway] quedaron procesos de Chromium vivos tras el cierre", {
+      groups,
+      survived: outcome.survived,
+    })
   }
 }
 
@@ -356,6 +403,9 @@ async function getBrowserSession(account: string): Promise<OnwayBrowserSession> 
   const { chromium } = await import("playwright")
   const configuredPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim()
   const launchPath = configuredPath && existsSync(configuredPath) ? configuredPath : undefined
+  // Censo previo: lo que ya existía no es de este lanzamiento y no se toca al
+  // cerrarlo (podría ser la vista asistida de otra persona).
+  const groupsBefore = new Set(processGroups(listChromiumProcesses()))
   // `launchServer` en vez de `launch`: sólo el servidor expone `kill()`, que
   // termina el grupo de procesos aunque el navegador no conteste.
   const server = await chromium.launchServer(resolveOnwayLaunchOptions(launchPath))
@@ -367,10 +417,19 @@ async function getBrowserSession(account: string): Promise<OnwayBrowserSession> 
       serviceWorkers: "block",
     })
     const page = await context.newPage()
-    state.browserSession = { server, browser, page, account }
+    // Los grupos que aparecieron son los de este navegador. Se capturan ahora,
+    // que los procesos siguen vivos y con su `pgid` intacto: después del cierre
+    // del driver quedan huérfanos y ya no se distingue a quién pertenecían.
+    const groups = processGroups(listChromiumProcesses()).filter((group) => !groupsBefore.has(group))
+    state.browserSession = { server, browser, page, account, groups, groupsBefore: [...groupsBefore] }
     return state.browserSession
   } catch (error) {
     await withOnwayDeadline(server.kill(), BROWSER_CLOSE_TIMEOUT_MS).catch(() => undefined)
+    // El mismo hueco que en `closeBrowserSession`: matar el driver no mata a
+    // Chromium. Si falla `connect` o `newPage`, este camino es el único cierre
+    // que corre y sin esto el navegador queda huérfano girando.
+    const leaked = processGroups(listChromiumProcesses()).filter((group) => !groupsBefore.has(group))
+    if (leaked.length > 0) await killProcessGroupsAndWait(leaked, { graceMs: 3_000 })
     throw error
   }
 }
@@ -805,6 +864,23 @@ async function requireAwaitingChallenge(id: string, userId: string): Promise<Onw
 }
 
 /**
+ * Cuánto espera la vista asistida a que termine la lectura en vuelo.
+ *
+ * Con 8 s el botón «Resolver verificación» nunca abría nada. La causa no era
+ * una lectura ocasional: la propia página de Monitoreo GPS pide refresco en
+ * vivo cada 10 s, y cada lectura de OnWay ocupa el navegador ~45 s, así que
+ * mientras alguien mira la pantalla hay una lectura en curso casi todo el
+ * tiempo. El modal («Hay una actualización de OnWay en curso») no esperaba
+ * nada, sólo rechazaba.
+ *
+ * 75 s cubre el promedio medido en producción (46 s, máximo 111 s) y deja
+ * presupuesto para abrir el portal dentro de los 120 s de `maxDuration` de la
+ * ruta: la espera ocurre ANTES de navegar y a la apertura le quedan sus propios
+ * topes. Una lectura colgada se rinde igual: el tope no es infinito.
+ */
+export const ONWAY_CHALLENGE_INFLIGHT_WAIT_MS = 75_000
+
+/**
  * La lectura que ya estaba en vuelo termina antes de abrir la vista; no se
  * cancela a la mitad porque comparte el navegador y dejaría la página cerrada
  * bajo los pies de la persona. Pasado el tope, la apertura se rinde con BUSY.
@@ -856,10 +932,13 @@ async function startOnwayInteractiveAuthenticationUnlocked(
     if (existing.cleanupTimer) { clearTimeout(existing.cleanupTimer); existing.cleanupTimer = null }
   }
 
-  // El refresco en vivo suele durar segundos: se le da esa ventana antes de
-  // responderle a la persona que hay otra actualización en curso. Desde que
-  // `challengeStarting` está activo, ninguna lectura nueva entra al portal.
-  if (!await waitForInFlightOnwayRead(8_000)) throw new OnwayChallengeError("ONWAY_CHALLENGE_BUSY")
+  // La lectura en vuelo se espera hasta `ONWAY_CHALLENGE_INFLIGHT_WAIT_MS`:
+  // rechazar a los 8 s le cerraba el botón a la persona cada vez que el cron
+  // estaba leyendo el portal (46 s de promedio). Desde que `challengeStarting`
+  // está activo, ninguna lectura nueva entra al portal.
+  if (!await waitForInFlightOnwayRead(ONWAY_CHALLENGE_INFLIGHT_WAIT_MS)) {
+    throw new OnwayChallengeError("ONWAY_CHALLENGE_BUSY")
+  }
 
   const { page } = await getBrowserSession(accountKey(credentials))
   try {

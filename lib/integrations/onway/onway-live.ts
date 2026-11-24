@@ -7,7 +7,7 @@ import { latestProviderObservedAt } from "@/lib/services/fleet-gps-latest"
 import { isOnwayInteractiveAuthPending, OnwayClientError } from "./onway-client"
 import type { OnwayLiveResult } from "./onway-live-contract"
 import { readOnwayConfig } from "./onway-settings"
-import { syncOnway } from "./onway-sync"
+import { isOnwaySyncCoolingDown, syncOnway } from "./onway-sync"
 
 export type { OnwayLiveResult } from "./onway-live-contract"
 
@@ -53,6 +53,14 @@ export async function refreshOnwayLive(options: { actorUserId?: string; now?: Da
   const config = await readOnwayConfig()
   if (!config.hasCredentials) return { outcome: "disabled", reason: "credentials" }
   if (!config.syncEnabled) return { outcome: "disabled", reason: "sync_disabled" }
+  // Esperando que una persona resuelva el desafío de Auth0: la página no puede
+  // reintentar el portal cada 50 s. Es la mitad del bucle que dejó el GPS
+  // detenido desde el 2026-11-22 — con la pestaña abierta el navegador quedaba
+  // ocupado casi todo el tiempo y «Resolver verificación» nunca alcanzaba a
+  // abrirse.
+  if (await isOnwaySyncCoolingDown(now).catch(() => false)) {
+    return { outcome: "disabled", reason: "interactive_auth" }
+  }
   if (isNearOnwayCronSlot(now)) return { outcome: "skipped", reason: "cron_window" }
 
   const [latest] = await db.select({ startedAt: fleetGpsSyncRuns.startedAt })

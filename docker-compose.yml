@@ -35,6 +35,11 @@ services:
         NEXT_PUBLIC_MAP_STYLE_URL: ${NEXT_PUBLIC_MAP_STYLE_URL:-}
     image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    # PID 1 real para el contenedor. `node server.js` corre como PID 1 y no
+    # recolecta a sus hijos: el 2026-11-24 producción acumulaba 1 092 procesos
+    # zombie, todos hijos muertos de Playwright que nadie cosechaba. Con un init
+    # delante, cada hijo que termina se recoge y deja de ocupar una entrada.
+    init: true
     depends_on:
       migrate:
         condition: service_completed_successfully

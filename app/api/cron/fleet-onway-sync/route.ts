@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
+import { alertOnwayNeedsAttention } from "@/lib/integrations/onway/onway-alerts"
 import { OnwayClientError } from "@/lib/integrations/onway/onway-client"
 import { onwayCronContractFor, type OnwayCronOutcome } from "@/lib/integrations/onway/onway-cron-contract"
 import { readOnwayConfig } from "@/lib/integrations/onway/onway-settings"
-import { hasStalledOnwayCronRun, syncOnway } from "@/lib/integrations/onway/onway-sync"
+import { hasStalledOnwayCronRun, isOnwaySyncCoolingDown, syncOnway } from "@/lib/integrations/onway/onway-sync"
 import { logger } from "@/lib/logger"
 import { cronRequestSource, parseCronAllowedSources, verifyCronInternalRequest, verifyCronRequest } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
+import { latestProviderObservedAt } from "@/lib/services/fleet-gps-latest"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { consumeFixedWindowLimit } from "@/lib/services/rate-limit"
 
@@ -50,6 +52,15 @@ export async function GET(request: NextRequest) {
     })
   }
 
+  // Auth0 pidió CAPTCHA en la corrida anterior y todavía nadie lo resolvió:
+  // reintentar cada 5 minutos es lo que mantiene el desafío vivo (2 873
+  // corridas fallidas seguidas desde el 2026-11-22). Se informa `disabled`
+  // —el job no está roto, está esperando a una persona— y no se navega el portal.
+  if (await isOnwaySyncCoolingDown().catch(() => false)) {
+    logger.warn("[cron/fleet-onway-sync]", { code: "ONWAY_INTERACTIVE_AUTH_COOLDOWN" })
+    return respond("disabled", { reason: "verificación interactiva pendiente" })
+  }
+
   try {
     const result = await withCronLock("fleet-onway-sync", () => syncOnway({ trigger: "cron" }))
     if ("skipped" in result) {
@@ -74,8 +85,20 @@ export async function GET(request: NextRequest) {
     const code = error instanceof OnwayClientError ? error.code : "ONWAY_SYNC_FAILED"
     const interactive = code === "ONWAY_INTERACTIVE_AUTH_REQUIRED"
     logger.error("[cron/fleet-onway-sync]", { code })
+    // Avisa a quien puede resolverlo. Sin esto la caída del 2026-11-22 pasó
+    // 2 días en silencio: el estado existía, pero sólo se veía abriendo TI ›
+    // Integraciones. Se espera (no fire-and-forget) porque la ruta termina acá
+    // y `alertOnwayNeedsAttention` no lanza nunca.
+    if (error instanceof OnwayClientError) {
+      await alertOnwayNeedsAttention({ code: error.code, latestObservedAt: await latestOnwayObservedAt().catch(() => null) })
+    }
     return respond(interactive ? "partial" : "failed", { errorCode: code })
   }
+}
+
+/** Última captura real de la fuente, para que el aviso diga cuánto lleva detenido. */
+async function latestOnwayObservedAt(): Promise<string | null> {
+  return latestProviderObservedAt("onway")
 }
 
 function respond(outcome: OnwayCronOutcome, extra?: Record<string, unknown>) {

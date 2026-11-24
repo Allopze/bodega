@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   readOnwayConfig: vi.fn(),
   syncOnway: vi.fn(),
   hasStalledOnwayCronRun: vi.fn(async () => false),
+  isOnwaySyncCoolingDown: vi.fn(async () => false),
+  alertOnwayNeedsAttention: vi.fn(async (_input: unknown) => undefined),
+  latestProviderObservedAt: vi.fn(async (_provider: string): Promise<string | null> => null),
   withCronLock: vi.fn(async (_job: string, run: () => Promise<unknown>) => run()),
   consumeFixedWindowLimit: vi.fn(async () => ({ allowed: true, remaining: 9 })),
 }))
@@ -25,6 +28,13 @@ vi.mock("@/lib/integrations/onway/onway-settings", () => ({ readOnwayConfig: (..
 vi.mock("@/lib/integrations/onway/onway-sync", () => ({
   syncOnway: (...args: unknown[]) => Reflect.apply(mocks.syncOnway, null, args),
   hasStalledOnwayCronRun: (...args: unknown[]) => Reflect.apply(mocks.hasStalledOnwayCronRun, null, args),
+  isOnwaySyncCoolingDown: (...args: unknown[]) => Reflect.apply(mocks.isOnwaySyncCoolingDown, null, args),
+}))
+vi.mock("@/lib/integrations/onway/onway-alerts", () => ({
+  alertOnwayNeedsAttention: (...args: unknown[]) => Reflect.apply(mocks.alertOnwayNeedsAttention, null, args),
+}))
+vi.mock("@/lib/services/fleet-gps-latest", () => ({
+  latestProviderObservedAt: (...args: unknown[]) => Reflect.apply(mocks.latestProviderObservedAt, null, args),
 }))
 vi.mock("@/lib/services/cron-lock", () => ({ withCronLock: (...args: [string, () => Promise<unknown>]) => Reflect.apply(mocks.withCronLock, null, args) }))
 vi.mock("@/lib/services/rate-limit", () => ({ consumeFixedWindowLimit: (...args: unknown[]) => Reflect.apply(mocks.consumeFixedWindowLimit, null, args) }))
@@ -48,6 +58,11 @@ describe("GET /api/cron/fleet-onway-sync", () => {
     mocks.readOnwayConfig.mockResolvedValue({ username: "configured", password: "configured", syncEnabled: true, hasCredentials: true })
     mocks.withCronLock.mockImplementation(async (_job: string, run: () => Promise<unknown>) => run())
     mocks.hasStalledOnwayCronRun.mockResolvedValue(false)
+    // `clearAllMocks` limpia llamadas pero NO implementaciones: sin este reset,
+    // el `true` de un test dejaba la cuarentena activa en los siguientes y la
+    // ruta ni llegaba a sincronizar.
+    mocks.isOnwaySyncCoolingDown.mockResolvedValue(false)
+    mocks.latestProviderObservedAt.mockResolvedValue(null)
     // El mock tiene que devolver `SyncOnwayResult` COMPLETO: la ruta lee
     // `result.warnings.length` para decidir entre `success` y `partial`, y con
     // el mock incompleto reventaba con TypeError dentro del `try`, se
@@ -106,5 +121,57 @@ describe("GET /api/cron/fleet-onway-sync", () => {
     const response = await GET(request())
     expect(response.status).toBe(503)
     expect(await response.json()).toMatchObject({ outcome: "failed", health: "unhealthy", errorCode: "ONWAY_SYNC_STALLED" })
+  })
+
+  // 2026-11-22 → 11-24: Auth0 pedía CAPTCHA y el cron reintentaba cada 5
+  // minutos, 2 873 corridas fallidas seguidas. La cuarentena baja el ritmo.
+  it("no vuelve a navegar el portal mientras dura la cuarentena por verificación interactiva", async () => {
+    mocks.isOnwaySyncCoolingDown.mockResolvedValue(true)
+    const response = await GET(request())
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      outcome: "disabled",
+      reason: "verificación interactiva pendiente",
+    })
+    expect(mocks.syncOnway).not.toHaveBeenCalled()
+    expect(mocks.withCronLock).not.toHaveBeenCalled()
+  })
+
+  it("avisa a quien puede resolver el CAPTCHA cuando el intento se rinde", async () => {
+    mocks.syncOnway.mockRejectedValue(new OnwayClientError("ONWAY_INTERACTIVE_AUTH_REQUIRED"))
+    mocks.latestProviderObservedAt.mockResolvedValue("2026-11-22T01:30:00.000Z")
+
+    await GET(request())
+
+    expect(mocks.alertOnwayNeedsAttention).toHaveBeenCalledWith({
+      code: "ONWAY_INTERACTIVE_AUTH_REQUIRED",
+      latestObservedAt: "2026-11-22T01:30:00.000Z",
+    })
+  })
+
+  it("pasa el código a la capa de avisos, que decide cuáles son accionables", async () => {
+    // La ruta no filtra: un `ONWAY_PORTAL_TIMEOUT` es un hipo de red y
+    // `alertOnwayNeedsAttention` lo descarta sin notificar. Separar la decisión
+    // deja la lista de códigos en un solo lugar, junto a su justificación.
+    mocks.syncOnway.mockRejectedValue(new OnwayClientError("ONWAY_PORTAL_TIMEOUT"))
+
+    await GET(request())
+
+    expect(mocks.alertOnwayNeedsAttention).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "ONWAY_PORTAL_TIMEOUT" }),
+    )
+  })
+
+  it("una corrida buena no avisa nada", async () => {
+    mocks.syncOnway.mockResolvedValue({
+      received: 5, matched: 5, rejected: 0, unmatched: 0, unmatchedPlates: [],
+      observedAt: "2026-08-29T00:00:00.000Z", alerts: 0, points: 0, trips: 0, warnings: [],
+    })
+
+    const response = await GET(request())
+
+    expect(response.status).toBe(200)
+    expect(mocks.alertOnwayNeedsAttention).not.toHaveBeenCalled()
   })
 })

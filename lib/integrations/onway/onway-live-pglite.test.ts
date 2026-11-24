@@ -20,7 +20,11 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock("@/lib/integrations/onway/onway-settings", () => ({ readOnwayConfig: async () => mocks.config }))
-vi.mock("@/lib/integrations/onway/onway-sync", () => ({
+// Mock parcial: `refreshOnwayLive` también consulta la cuarentena por
+// verificación interactiva, que se ejerce de verdad contra la base de prueba
+// (una corrida `failed` con `ONWAY_INTERACTIVE_AUTH_REQUIRED` la activa).
+vi.mock("@/lib/integrations/onway/onway-sync", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./onway-sync")>(),
   syncOnway: (...args: unknown[]) => Reflect.apply(mocks.syncOnway, null, args),
 }))
 vi.mock("@/lib/services/cron-lock", async (importOriginal) => {
@@ -128,6 +132,42 @@ describe("refreshOnwayLive", () => {
     mocks.syncOnway.mockRejectedValue(new OnwayClientError("ONWAY_PORTAL_TIMEOUT"))
 
     expect(await refreshOnwayLive({ now: NOW })).toEqual({ outcome: "failed", code: "ONWAY_PORTAL_TIMEOUT" })
+  })
+
+  /**
+   * 2026-11-22 → 11-24: con Monitoreo GPS abierto, esta ruta pedía el portal
+   * cada 50 s y el cron cada 5 minutos. Como cada lectura ocupa el navegador
+   * ~45 s, «Resolver verificación» nunca alcanzaba a abrirlo. La cuarentena
+   * corta esa mitad del bucle.
+   */
+  it("con el CAPTCHA pendiente no vuelve a navegar el portal cada 50 s", async () => {
+    await testDb.insert(schema.fleetGpsSyncRuns).values({
+      id: "gpsrun-captcha",
+      provider: "onway",
+      trigger: "cron",
+      status: "failed",
+      errorCode: "ONWAY_INTERACTIVE_AUTH_REQUIRED",
+      startedAt: "2026-11-09T12:01:00.000Z",
+      finishedAt: "2026-11-09T12:01:45.000Z",
+    })
+
+    expect(await refreshOnwayLive({ now: NOW })).toEqual({ outcome: "disabled", reason: "interactive_auth" })
+    expect(mocks.syncOnway).not.toHaveBeenCalled()
+  })
+
+  it("pasada la cuarentena vuelve a intentar: el portal pudo dejar de pedir el desafío", async () => {
+    await testDb.insert(schema.fleetGpsSyncRuns).values({
+      id: "gpsrun-captcha-viejo",
+      provider: "onway",
+      trigger: "cron",
+      status: "failed",
+      errorCode: "ONWAY_INTERACTIVE_AUTH_REQUIRED",
+      startedAt: "2026-11-09T10:00:00.000Z",
+      finishedAt: "2026-11-09T10:00:45.000Z",
+    })
+
+    expect((await refreshOnwayLive({ now: NOW })).outcome).toBe("synced")
+    expect(mocks.syncOnway).toHaveBeenCalledTimes(1)
   })
 })
 

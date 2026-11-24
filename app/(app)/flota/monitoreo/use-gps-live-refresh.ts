@@ -11,7 +11,7 @@ import {
 
 export type GpsLiveStatus =
   | { kind: "ok" }
-  | { kind: "disabled"; reason: "credentials" | "sync_disabled" | "module" }
+  | { kind: "disabled"; reason: "credentials" | "sync_disabled" | "module" | "interactive_auth" }
   | { kind: "failed"; code: string }
 
 export type GpsLiveProvider = keyof GpsLiveResponse

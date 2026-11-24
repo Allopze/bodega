@@ -16,6 +16,12 @@ function messageFor(provider: "OnWay" | "Wialon", status: GpsLiveStatus): string
   if (status.kind === "disabled" && status.reason === "credentials" && provider === "OnWay") {
     return "La sincronización con OnWay está desactivada: se muestra la última lectura."
   }
+  // La automatización está en pausa a propósito, esperando a una persona: sin
+  // este mensaje la pantalla decía «desactivada» y parecía una configuración
+  // mal puesta en vez de algo que se resuelve desde acá al lado.
+  if (status.kind === "disabled" && status.reason === "interactive_auth") {
+    return `${provider} pide verificación: usa «Resolver verificación» para reanudar la actualización.`
+  }
   return null
 }
 

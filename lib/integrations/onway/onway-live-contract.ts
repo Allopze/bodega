@@ -25,7 +25,11 @@ export type GpsLiveResult =
      */
     observedAt?: string
   }
-  | { outcome: "disabled"; reason: "credentials" | "sync_disabled" | "module" }
+  /**
+   * `interactive_auth`: Auth0 pidió CAPTCHA/OTP y todavía no lo resuelve una
+   * persona. La automatización queda en espera para no alimentar el desafío.
+   */
+  | { outcome: "disabled"; reason: "credentials" | "sync_disabled" | "module" | "interactive_auth" }
   | { outcome: "failed"; code: string }
 
 /** Respuesta del endpoint: el desenlace de cada proveedor por separado. */
