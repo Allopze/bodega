@@ -148,7 +148,7 @@ export function FleetGpsWorkspace({ positions, alerts, adminStatus, wialonStatus
               <Card>
                 <CardHeader>
                   <CardTitle as="h2" className="text-base">Configuración de OnWay</CardTitle>
-                  <CardDescription>Credenciales cifradas, sincronización, catálogo de alertas y mapeos de conductores se administran aquí. Si Auth0 pide una verificación, «Resolver verificación» abre el navegador del servidor para completarla sin salir de la plataforma. Las reglas quedan desactivadas hasta asignar un propietario con permiso para la faena.</CardDescription>
+                  <CardDescription>Credenciales, sincronización, catálogo de alertas y mapeos de conductores se administran aquí. Si Auth0 pide una verificación, «Resolver verificación» abre el navegador del servidor. Las reglas quedan desactivadas hasta asignar un propietario con permiso para la faena.</CardDescription>
                 </CardHeader>
                 <div className="px-6 pb-6">
                   <OnwayControls status={adminStatus} onVerifyOnway={() => setVerifyOpen(true)} />

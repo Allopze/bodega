@@ -104,8 +104,7 @@ export function SecretSettingField({
 export function SettingsKeyringCallout({ children }: { children?: React.ReactNode }) {
   return (
     <Callout tone="danger" role="alert" title="No hay llavero de cifrado en el servidor">
-      Sin <code>DTE_SETTINGS_KEYRING</code> no se puede guardar ninguna credencial: el guardado se
-      rechaza en vez de escribirla en claro.{children ? <> {children}</> : null}
+      Sin <code>DTE_SETTINGS_KEYRING</code> no se puede guardar ninguna credencial.{children ? <> {children}</> : null}
     </Callout>
   )
 }

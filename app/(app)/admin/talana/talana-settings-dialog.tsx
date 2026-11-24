@@ -135,8 +135,7 @@ export function TalanaSettingsDialog({ status }: { status: TalanaAdminStatus }) 
             <DialogHeader>
               <DialogTitle>Configurar la sincronización con Talana</DialogTitle>
               <DialogDescription>
-                El token de la API y el modo de la sincronización diaria. El token se guarda cifrado y no
-                vuelve a mostrarse: deja el campo vacío para conservar el actual.
+                El token de la API y el modo de la sincronización diaria. Deja el campo vacío para conservar el token actual.
               </DialogDescription>
             </DialogHeader>
 

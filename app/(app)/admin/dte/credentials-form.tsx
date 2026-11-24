@@ -172,7 +172,7 @@ export function DteCredentialsForm({ status }: DteCredentialsFormProps) {
       {!status.canStoreSecrets && (
         <section role="alert" className="rounded-[var(--radius-xl)] border border-[var(--color-danger)] bg-[var(--color-danger-tint)] p-4 text-[var(--color-danger-ink)]">
           <h2 className="font-semibold">No hay keyring activo</h2>
-          <p className="mt-1 text-sm">Sin una clave activa en <code>DTE_SETTINGS_KEYRING</code> no se puede guardar ninguna credencial: escribirla en claro no es una opción, así que el guardado se rechaza. Configure el keyring en el servicio <code>app</code> y vuelva a intentarlo.</p>
+          <p className="mt-1 text-sm">Sin una clave activa en <code>DTE_SETTINGS_KEYRING</code> no se puede guardar ninguna credencial. Configure el keyring en el servicio <code>app</code> y vuelva a intentarlo.</p>
         </section>
       )}
 

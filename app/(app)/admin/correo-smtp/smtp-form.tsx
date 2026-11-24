@@ -193,7 +193,7 @@ function ResendStatusCard({ resendStatus }: { resendStatus: ResendStatus }) {
         <p className="mt-1 text-sm text-(--color-text-muted)">
           Los correos se envían a través de{" "}
           <span className="font-medium text-(--color-text)">Resend</span>.
-          La clave de API se guarda cifrada en la plataforma; si no hay una guardada,
+          La clave de API se guarda en la plataforma; si no hay una guardada,
           se usa la que tenga configurada el servidor.
         </p>
       </div>

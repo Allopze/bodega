@@ -16,7 +16,7 @@ export function CopecSettingsDialog({ status }: { status: CopecAdminStatus }) {
     <IntegrationSettingsDialog
       idPrefix="copec"
       providerName="Copec"
-      description="Usuario y contraseña de la cuenta ADMINISTRADOR CLIENTE del portal de Copec, con el RUT de la empresa. Los secretos se guardan cifrados y no vuelven a mostrarse: deja un campo vacío para conservar el valor actual."
+      description="Usuario y contraseña de la cuenta ADMINISTRADOR CLIENTE del portal de Copec, con el RUT de la empresa. Deja un campo vacío para conservar el valor actual."
       canStoreSecrets={canStoreSecrets}
       withoutKeyringNote="El RUT, el usuario de la corrida y el interruptor sí se pueden guardar."
       hasStoredSettings={status.hasStoredSettings}

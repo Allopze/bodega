@@ -16,7 +16,7 @@ export function VisionLinkSettingsDialog({ status }: { status: VisionLinkAdminSt
     <IntegrationSettingsDialog
       idPrefix="visionlink"
       providerName="VisionLink"
-      description="Las credenciales de aplicación que entrega Cat Digital Marketplace. El client secret se guarda cifrado y no vuelve a mostrarse: deja el campo vacío para conservar el valor actual."
+      description="Las credenciales de aplicación que entrega Cat Digital Marketplace. Deja un campo vacío para conservar el valor actual."
       canStoreSecrets={canStoreSecrets}
       withoutKeyringNote="El client id, el scope y el interruptor sí se pueden guardar."
       hasStoredSettings={status.hasStoredSettings}

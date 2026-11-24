@@ -109,8 +109,7 @@ export function ChipaxSettingsDialog({ status }: { status: ChipaxAdminStatus }) 
             <DialogHeader>
               <DialogTitle>Credenciales de Chipax</DialogTitle>
               <DialogDescription>
-                Las credenciales de aplicación que entrega Chipax. Se guardan cifradas y no vuelven a
-                mostrarse: deja un campo vacío para conservar el valor actual.
+                Las credenciales de aplicación que entrega Chipax. Deja un campo vacío para conservar el valor actual.
               </DialogDescription>
             </DialogHeader>
 

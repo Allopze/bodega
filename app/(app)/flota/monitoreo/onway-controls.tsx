@@ -25,7 +25,7 @@ import type { ActionState } from "@/lib/validation/masters"
 import { clearOnwaySettingsAction, runOnwaySyncAction, saveOnwaySettingsAction } from "./actions"
 
 const SOURCE_LABEL = {
-  system_settings: "guardado cifrado en la plataforma",
+  system_settings: "guardado en la plataforma",
   environment: "definido en el servidor",
   missing: "sin configurar",
 } as const
@@ -91,10 +91,7 @@ export function OnwayControls({ status, namedActions = false, onVerifyOnway }: {
           <form action={formAction} className="space-y-4">
             <DialogHeader>
               <DialogTitle>Conexión con Entel OnWay</DialogTitle>
-              <DialogDescription>
-                El servidor inicia sesión en el portal y conserva la sesión solo en memoria. Las credenciales
-                guardadas quedan cifradas y nunca vuelven al navegador.
-              </DialogDescription>
+              <DialogDescription>El servidor inicia sesión en el portal.</DialogDescription>
             </DialogHeader>
 
             {!status.canStoreSecrets && (
@@ -149,11 +146,6 @@ export function OnwayControls({ status, namedActions = false, onVerifyOnway }: {
               />
               <input type="hidden" name="syncEnabled" value={syncEnabled ? "on" : ""} />
             </div>
-
-            <p className="flex items-start gap-1.5 text-xs text-[var(--color-text-subtle)]">
-              <LockKey size={13} className="mt-0.5 shrink-0" aria-hidden />
-              Solo se guardan patente, posición, velocidad, encendido y momento de captura. No se almacena el payload del portal.
-            </p>
 
             <DialogFooter>
               {status.hasStoredSettings && (

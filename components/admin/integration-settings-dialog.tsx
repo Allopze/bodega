@@ -2,7 +2,6 @@
 
 import { useActionState, useEffect, useState, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
-import { LockKey } from "@phosphor-icons/react/dist/ssr"
 import { toast } from "@/lib/toast"
 import { SETTING_SOURCE_LABELS, SettingsKeyringCallout } from "@/components/admin/secret-setting-field"
 import { Button } from "@/components/ui/button"
@@ -206,9 +205,8 @@ export function IntegrationSettingsDialog({
               )}
             </div>
 
-            <p className="flex items-start gap-1.5 text-xs text-[var(--color-text-subtle)]">
-              <LockKey size={13} className="mt-0.5 shrink-0" aria-hidden />
-              Los valores guardados no se vuelven a mostrar. Lo que no se guarda aquí sigue saliendo del .env del servidor.
+            <p className="text-xs text-[var(--color-text-subtle)]">
+              Lo que no se guarda aquí sigue saliendo del .env del servidor.
             </p>
 
             <DialogFooter>

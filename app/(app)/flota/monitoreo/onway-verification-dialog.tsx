@@ -356,7 +356,7 @@ export function OnwayVerificationDialog({
           <DialogDescription>
             {phase === "starting"
               ? "El servidor está abriendo el portal y presentando las credenciales."
-              : "Resuelve aquí la verificación que pide el portal. Esta vista es el navegador del servidor, no una captura, y no se graba."}
+              : "Resuelve aquí la verificación que pide el portal. Esta vista es el navegador del servidor."}
           </DialogDescription>
         </DialogHeader>
 
