@@ -58,7 +58,7 @@ export function HistoricalImportPanel() {
   )
   return (
     <div className="flex flex-col gap-5">
-      <SectionCard title="1. Elige la exportación de Google Forms" description="Usa el Excel que se descarga de las respuestas del formulario de mantención. Sirve para subir las últimas respuestas hasta el corte de los formularios; se conservarán los datos de los trabajos y lo ya cargado no se sobrescribe.">
+      <SectionCard title="1. Elige la exportación de Google Forms" description="Usa el Excel de respuestas del formulario de mantención, hasta el corte de los formularios. Lo ya cargado no se sobrescribe.">
         <FileDropzone
           id="historical-import-file"
           accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -81,7 +81,7 @@ export function HistoricalImportPanel() {
             {stage.preview.summary.linked} con equipo identificado · {stage.preview.summary.unmatched} sin coincidencia · {stage.preview.summary.conflicts} con datos de equipo dudosos · {stage.preview.summary.unresolvedWorksites} con faena sin identificar.
           </p>
           {stage.preview.summary.differing > 0 && (
-            <Callout tone="info" className="mt-3" title="Respuestas ya cargadas con contenido distinto">
+            <Callout tone="info" className="mt-3" title="Ya cargadas con contenido distinto">
               {stage.preview.summary.differing} ya estaban cargadas con contenido distinto (se conservó lo cargado). No se sobrescriben; sólo se completan el equipo o la faena si faltaban.
             </Callout>
           )}
@@ -96,12 +96,12 @@ export function HistoricalImportPanel() {
             </Callout>
           )}
           {stage.preview.summary.afterCutover > 0 && (
-            <Callout tone="warning" className="mt-3" title="Respuestas posteriores al corte de los formularios">
+            <Callout tone="warning" className="mt-3" title="Posteriores al corte de formularios">
               {cutoverNotice(stage.preview.summary.afterCutover)}
             </Callout>
           )}
           {stage.preview.pending.length > 0 && (
-            <Callout tone="warning" className="mt-3" title="Hay trabajos con equipo o faena sin identificar">
+            <Callout tone="warning" className="mt-3" title="Equipo o faena sin identificar">
               Se guardarán con sus datos originales y podrás identificarlos después, desde cada trabajo.
             </Callout>
           )}

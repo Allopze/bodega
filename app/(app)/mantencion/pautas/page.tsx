@@ -41,7 +41,7 @@ export default async function SchedulesPage() {
         {withoutSchedule > 0 && (
           <Callout tone="warning" icon={<Info size={16} />} title={`${plural(withoutSchedule, "equipo activo está", "equipos activos están")} sin pauta`}>
             El mecánico no podrá registrarles una mantención preventiva.{" "}
-            <Link href="/mantencion/equipos?pauta=sin" className="font-semibold underline underline-offset-2">Ver cuáles</Link>
+            <Link href="/mantencion/equipos?pauta=sin" className="font-semibold underline underline-offset-2">Ver equipos sin pauta</Link>
           </Callout>
         )}
         <SchedulesTable rows={rows} />

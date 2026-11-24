@@ -24,7 +24,7 @@ export function MechanicAppInstallDialog() {
       id: "app",
       label: "App del mecánico",
       url: `${origin}${MECHANIC_APP_PATH}`,
-      pdfTitle: "App de mantención — Chome",
+      pdfTitle: "App de mantención, Chome",
       pdfFileName: "app-mantencion-chome-qr.pdf",
     }]
     : [], [origin])
@@ -32,7 +32,7 @@ export function MechanicAppInstallDialog() {
   return (
     <PublicFormQrDialog
       title="Instalar la app del mecánico"
-      description="El mecánico escanea este código con su teléfono, entra con su cuenta y deja la app en la pantalla de inicio. Funciona sin señal después del primer ingreso."
+      description="El mecánico escanea este código con su teléfono."
       selectorLabel="App"
       options={options}
       selectedOptionId="app"

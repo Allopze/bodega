@@ -107,7 +107,7 @@ export function CatalogsWorkbench({ catalog, rows, counts, canEdit = true }: {
         <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">{labels.purpose}</p>
         {!canEdit && (
           <Callout tone="info" title="Sólo lectura">
-            Estos catálogos son comunes a todas las faenas: los cambia la jefatura que ve todas. Si falta una entrada, pídesela.
+            Son comunes a todas las faenas y los cambia sólo la jefatura que ve todas. Si falta una entrada, pídesela.
           </Callout>
         )}
 
@@ -121,7 +121,7 @@ export function CatalogsWorkbench({ catalog, rows, counts, canEdit = true }: {
             hideDensityToggle
             pageSize={50}
             emptyTitle="Ninguna entrada coincide"
-            emptyDescription="Prueba con otra palabra o borra la búsqueda de la barra superior."
+            emptyDescription="Prueba con otra palabra o borra la búsqueda."
             renderRow={(raw) => {
               const row = raw as Row
               return (
@@ -161,7 +161,7 @@ export function CatalogsWorkbench({ catalog, rows, counts, canEdit = true }: {
         open={deactivating !== null}
         onOpenChange={(open) => { if (!open) setDeactivating(null) }}
         title={deactivating ? `Desactivar «${deactivating.name}»` : "Desactivar"}
-        description={`Dejará de ofrecerse en los selectores y en la app del mecánico. ${labels.keeps}, y puedes volver a activarla cuando quieras. Ojo: un registro que un teléfono sin señal tenga en cola con esta entrada quedará «Por corregir» al llegar.`}
+        description={`Dejará de ofrecerse en los selectores y en la app del mecánico. ${labels.keeps}, y puedes volver a activarla cuando quieras. Un registro que un teléfono sin señal tenga en cola con esta entrada quedará «Por corregir» al llegar.`}
         confirmLabel="Desactivar"
         variant="warning"
         loading={op.pending}

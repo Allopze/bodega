@@ -147,7 +147,7 @@ describe("detalle de un registro", () => {
   it("resultado por sistema: cuenta, no realizado con motivo y aviso del fabricante", () => {
     render(<PreventiveSection detail={detail()} />)
     expect(screen.getByText(/1 realizados · 1 no realizados · 0 no aplica/)).toBeTruthy()
-    expect(screen.getByText(/Revisión pastillas — Falta repuesto/)).toBeTruthy()
+    expect(screen.getByText(/Revisión pastillas \(Falta repuesto\)/)).toBeTruthy()
     expect(screen.getByText(/Confirmar con la pauta del fabricante: Revisión pastillas/)).toBeTruthy()
   })
 
@@ -213,7 +213,7 @@ describe("detalle de un registro", () => {
   it("el snapshot del equipo no cambia aunque la ficha cambie: lo muestra tal cual se firmó", () => {
     render(<EquipmentSection detail={detail()} />)
     expect(screen.getByText("Scania R450")).toBeTruthy()
-    expect(screen.getByText(/editar la ficha después no cambia este registro/)).toBeTruthy()
+    expect(screen.getByText(/editarla después no cambia el registro/)).toBeTruthy()
   })
 
   it("la sección de texto libre del mecánico se llama «Notas del mecánico»", () => {

@@ -216,7 +216,7 @@ export function OtRecordSheet({ kind, workOrderId, folio, userId, userName, form
         open={confirmClose}
         onOpenChange={setConfirmClose}
         title="¿Descartar el registro?"
-        description="Lo que escribiste y las fotos cargadas se pierden. El registro no se guardó."
+        description="Lo que escribiste y las fotos cargadas se pierden."
         variant="destructive"
         confirmLabel="Descartar"
         cancelLabel="Seguir registrando"

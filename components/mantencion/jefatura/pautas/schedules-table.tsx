@@ -33,7 +33,7 @@ export function SchedulesTable({ rows }: { rows: ScheduleListRow[] }) {
       searchKeys={["name"]}
       hideDensityToggle
       emptyTitle="Todavía no hay pautas"
-      emptyDescription="Crea la primera con «Nueva pauta»: define cómo se mide y cada cuánto se hace, y después asígnala a los equipos."
+      emptyDescription="Crea la primera con «Nueva pauta» y asígnala a los equipos."
       renderRow={(raw) => {
         const row = raw as Row
         return (

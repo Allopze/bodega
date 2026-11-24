@@ -88,7 +88,7 @@ export function ScheduleIntervalsCard({ scheduleId, unit, intervals, equipmentCo
   return (
     <SectionCard
       title="Intervalos"
-      description={base ? `Cada intervalo es una mantención de la pauta. El menor (${formatReading(base, unit)}) es la base: la app redondea la lectura a ese intervalo y sugiere el mayor que calce.` : undefined}
+      description={base ? `El menor (${formatReading(base, unit)}) es la base: la app redondea la lectura a ese intervalo y sugiere el mayor que calce.` : undefined}
     >
       <ul ref={listRef} tabIndex={-1} className="flex flex-wrap items-center gap-2" aria-label="Intervalos de la pauta">
         {intervals.map((interval) => (
@@ -112,7 +112,7 @@ export function ScheduleIntervalsCard({ scheduleId, unit, intervals, equipmentCo
           </li>
         ))}
       </ul>
-      {onlyOne && <p className="mt-2 text-xs text-[var(--color-text-muted)]">La pauta necesita al menos un intervalo: el único que queda no se puede quitar.</p>}
+      {onlyOne && <p className="mt-2 text-xs text-[var(--color-text-muted)]">La pauta necesita al menos un intervalo. El único que queda no se puede quitar.</p>}
       <form
         className="mt-3 flex flex-wrap items-end gap-2"
         onSubmit={(event) => { event.preventDefault(); add() }}

@@ -60,7 +60,7 @@ export function DevicesList({ groups, canRevoke }: { groups: DevicePersonGroup[]
     return (
       <EmptyState
         title="Todavía no hay dispositivos conectados"
-        description="Cuando un mecánico instala la app y entra con su cuenta, su teléfono aparece aquí y puedes desconectarlo si lo pierde o deja de usarlo."
+        description="Aparece cuando un mecánico instala la app y entra con su cuenta. Puedes desconectarlo si lo pierde o deja de usarlo."
         action={<MechanicAppInstallDialog />}
       />
     )
@@ -86,7 +86,7 @@ export function DevicesList({ groups, canRevoke }: { groups: DevicePersonGroup[]
         open={target !== null}
         onOpenChange={(open) => { if (!open) setTarget(null) }}
         title={target ? `Revocar el acceso de ${target.userName}` : "Revocar acceso"}
-        description={`El dispositivo «${target?.deviceName ?? ""}» dejará de sincronizar y se cerrarán todas las sesiones de ${target?.userName ?? "la persona"} en la plataforma, también en sus otros equipos: tendrá que volver a entrar con su contraseña. Los registros que tenga sin enviar no se pierden y se envían cuando vuelva a entrar.`}
+        description={`El dispositivo «${target?.deviceName ?? ""}» dejará de sincronizar y se cerrarán todas las sesiones de ${target?.userName ?? "la persona"}, también en sus otros equipos. Tendrá que volver a entrar con su contraseña. Sus registros sin enviar no se pierden.`}
         confirmLabel="Revocar acceso"
         variant="destructive"
         loading={op.pending}

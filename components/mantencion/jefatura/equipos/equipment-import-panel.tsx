@@ -70,7 +70,7 @@ export function EquipmentImportPanel() {
         <ImportSummaryLine summary={summary} written />
         {summary.newWorksites.length > 0 && <p className="mt-2 text-sm text-[var(--color-text-muted)]">Faenas creadas: {summary.newWorksites.join(", ")}.</p>}
         {summary.newBrands.length > 0 && <p className="mt-2 text-sm text-[var(--color-text-muted)]">Marcas creadas: {summary.newBrands.join(", ")}.</p>}
-        {summary.errors > 0 && <p className="mt-2 text-sm text-[var(--color-danger-ink)]">{plural(summary.errors, "fila con error no se importó", "filas con error no se importaron")}: corrígelas en la planilla y vuelve a subirla.</p>}
+        {summary.errors > 0 && <p className="mt-2 text-sm text-[var(--color-danger-ink)]">{plural(summary.errors, "fila con error no se importó", "filas con error no se importaron")}. Corrígelas en la planilla y vuelve a subirla.</p>}
         {summary.errorRows && summary.errorRows.length > 0 && <div className="mt-3"><ImportPreviewTable rows={summary.errorRows} /></div>}
         <div className="mt-4 flex flex-wrap gap-2">
           <Button asChild><Link href="/mantencion/equipos">Ver los equipos</Link></Button>
@@ -86,7 +86,7 @@ export function EquipmentImportPanel() {
   return (
     <div className="flex flex-col gap-5">
       <Callout tone="info" title="¿Los vehículos ya están en la flota?">
-        No hace falta cargarlos de nuevo: en <Link href="/mantencion/equipos/incorporar" className="font-semibold underline underline-offset-2">Incorporar desde la flota</Link> sólo eliges su marca y su pauta. La plantilla de abajo también viene con ellos ya llenos.
+        En <Link href="/mantencion/equipos/incorporar" className="font-semibold underline underline-offset-2">Incorporar desde la flota</Link> sólo eliges su marca y su pauta. La plantilla también los trae llenos.
       </Callout>
       <SectionCard title="1. Descarga la plantilla" description="Trae los vehículos de la flota que aún no están en Mantención, las listas de tipos, marcas, faenas y pautas, e instrucciones.">
         <Button variant="secondary" size="sm" onClick={downloadTemplate} loading={template.pending}>
@@ -123,7 +123,7 @@ export function EquipmentImportPanel() {
             <Callout tone="warning" className="mt-3" title={plural(preview.summary.newBrands.length, "marca no está en la lista", "marcas no están en la lista")}>
               <p>
                 {preview.summary.newBrands.map((name) => preview.summary.newBrandHints?.[name] ? `${name} (¿es «${preview.summary.newBrandHints[name]}»?)` : name).join(", ")}.
-                {" "}Revisa que estén bien escritas: si una ya existe con otro nombre, corrígela en la planilla en vez de crearla. Las nuevas quedarán en Mantención › Catálogos.
+                {" "}Si una ya existe con otro nombre, corrígela en la planilla. Las nuevas quedarán en Mantención › Catálogos.
               </p>
               <div className="mt-2">
                 <Checkbox id="crear-marcas" checked={allowNewBrands} onChange={(event) => setAllowNewBrands(event.target.checked)}

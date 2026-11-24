@@ -186,7 +186,7 @@ export function EntryDialog({
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>{correcting ? "Corregir el ingreso de" : "Registrar ingreso de"} {folio}</DialogTitle>
-            <DialogDescription>Los datos de «Ingreso a taller» del talonario. Al ingresar, el equipo pasa a mantención si estaba operativo.</DialogDescription>
+            <DialogDescription>Al ingresar, el equipo pasa a mantención si estaba operativo.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -247,13 +247,11 @@ export function EstimateDialog({ open, onOpenChange, base, folio, current }: Dia
   }
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!op.pending) onOpenChange(next) }}>
-      <DialogContent>
+      <DialogContent {...(current ? {} : { "aria-describedby": undefined })}>
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>Cambiar la entrega estimada de {folio}</DialogTitle>
-            <DialogDescription>
-              {current ? "El cambio queda en el historial con su motivo." : "Indica cuándo se estima entregar el equipo."}
-            </DialogDescription>
+            {current && <DialogDescription>El cambio queda en el historial con su motivo.</DialogDescription>}
           </DialogHeader>
           <div className="flex flex-col gap-4">
             <Field label="Nueva fecha estimada" htmlFor="ot-estimate-date" required>
@@ -309,7 +307,7 @@ export function ItemsDialog({ open, onOpenChange, base, folio, items }: DialogPr
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>Marcar los ítems de {folio}</DialogTitle>
-            <DialogDescription>Marca Sí o No en cada trabajo pedido. Para terminar la orden, todos deben quedar marcados.</DialogDescription>
+            <DialogDescription>Para terminar la orden, todos deben quedar marcados.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             {items.length === 0 && <p className="text-sm text-[var(--color-text-muted)]">La orden no trae ítems pedidos. Puedes agregar los que se hacen en el taller.</p>}
@@ -475,7 +473,7 @@ export function ReceiptDialog({
             <DialogTitle>{conform ? "Dar conformidad a" : "Recibir equipo"} {folio}</DialogTitle>
             <DialogDescription>
               {conform
-                ? "Es la conformidad en faena: confirma que el equipo llegó bien y cierra la orden."
+                ? "Confirma que el equipo llegó bien y cierra la orden."
                 : "La registra quien retira el equipo del taller."}
             </DialogDescription>
           </DialogHeader>
@@ -599,7 +597,7 @@ export function ReclassifyDialog({
           <DialogHeader>
             <DialogTitle>Corregir la clasificación de {folio}</DialogTitle>
             <DialogDescription>
-              Tipo de acción, especialidades, faena de ejecución{classification.hasExit ? " y horas hombre" : ""}. Alimentan el Panel y el Excel; el cambio queda en el historial con su motivo.
+              Estos datos alimentan el Panel y el Excel; el cambio queda en el historial con su motivo.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">

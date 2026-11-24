@@ -82,7 +82,7 @@ export function EquipmentDetailView({
   React.useEffect(() => {
     if (!justCreated || announcedRef.current) return
     announcedRef.current = true
-    toast.success(`Equipo ${data.code} creado. Aparecerá en la app del mecánico en su próxima sincronización.`)
+    toast.success(`Equipo ${data.code} creado.`)
     router.replace(pathname, { scroll: false })
   }, [justCreated, data.code, pathname, router])
 

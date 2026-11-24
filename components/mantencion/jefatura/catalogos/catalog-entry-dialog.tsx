@@ -51,8 +51,8 @@ function EntryForm({ catalog, state, onClose }: { catalog: MantCatalogKey; state
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             {renaming
-              ? "El cambio se ve en todo lo que ya la usa. Si el nombre ya existe en este catálogo no se guarda."
-              : "Si ya existe una desactivada con ese nombre, se reactiva en vez de duplicarse."}
+              ? "Cambia en todo lo que ya la usa. Si el nombre ya existe en el catálogo, no se guarda."
+              : "Si existe una inactiva con ese nombre, se reactiva."}
           </DialogDescription>
         </DialogHeader>
         <Field label={labels.nameLabel} required htmlFor="catalog-entry-name" error={op.message || undefined}>

@@ -98,13 +98,13 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
             <ul className="flex flex-col gap-1">
               {showNoSchedule && (
                 <li>
-                  {plural(withoutSchedule, "equipo activo no tiene", "equipos activos no tienen")} pauta: el mecánico no podrá registrarles una mantención preventiva.{" "}
+                  {plural(withoutSchedule, "equipo activo no tiene", "equipos activos no tienen")} pauta. El mecánico no podrá registrarles una mantención preventiva.{" "}
                   <Link href={`/mantencion/equipos?pauta=${NO_SCHEDULE}`} className="font-semibold underline underline-offset-2">Ver cuáles</Link>
                 </li>
               )}
               {showPendingFleet && (
                 <li>
-                  {plural(pendingFleet, "vehículo de la flota aún no está", "vehículos de la flota aún no están")} en Mantención: sólo falta su marca y su pauta.{" "}
+                  {plural(pendingFleet, "vehículo de la flota aún no está", "vehículos de la flota aún no están")} en Mantención. Sólo falta su marca y su pauta.{" "}
                   <Link href="/mantencion/equipos/incorporar" className="font-semibold underline underline-offset-2">Incorporarlos</Link>
                 </li>
               )}

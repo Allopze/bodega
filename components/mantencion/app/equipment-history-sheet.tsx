@@ -95,7 +95,7 @@ export function EquipmentHistorySheet({ vehicleId, onClose }: { vehicleId: strin
                 <p className="empty">Todavía no bajamos el historial y no hay señal. Conéctate una vez para verlo; después se lee sin señal.</p>
               )
             ) : records.length === 0 ? (
-              <p className="empty">Este equipo no tiene mantenciones registradas todavía. Cuando se registre una preventiva o una correctiva, aparece acá.</p>
+              <p className="empty">Este equipo no tiene mantenciones registradas todavía. Se llena cuando registres una preventiva o correctiva.</p>
             ) : (
               <>
                 <div className="cap" role="status">{records.length === 1 ? "Última mantención" : `Últimas ${records.length} mantenciones`}</div>

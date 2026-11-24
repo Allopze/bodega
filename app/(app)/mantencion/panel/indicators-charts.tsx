@@ -366,7 +366,7 @@ export function WorkOrderFlowChart({ data, granularity, scopeNote, excel }: Char
   const ongoing = ongoingAbovePeak(data, (point) => point.created)
   const headlineValue = at ? at.created : ongoing ? ongoing.value : peak.value
   const headlineCaption = at
-    ? `OT creadas en ${bucketFullLabel(at.key, granularity)} · ${formatQty(at.closed)} cerradas y ${formatQty(at.backlog)} en cola al cierre`
+    ? `OT creadas en ${bucketFullLabel(at.key, granularity)}`
     : ongoing
       ? `OT creadas en ${bucketFullLabel(ongoing.point.key, granularity)}${ongoingPeakClause(granularity)}`
       : peak.point

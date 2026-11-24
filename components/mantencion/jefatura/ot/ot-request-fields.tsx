@@ -174,7 +174,7 @@ export function OtRequestFields({ values, setValues, fieldError, actionTypeRequi
       </div>
 
       {values.repair && (
-        <Field label="Reparación" htmlFor="ot-reparacion-desc" required error={fieldError("repairDescription")} helper="Qué hay que reparar, con el detalle que tengas.">
+        <Field label="Reparación" htmlFor="ot-reparacion-desc" required error={fieldError("repairDescription")}>
           <Textarea
             id="ot-reparacion-desc"
             value={values.repairDescription}
@@ -190,7 +190,7 @@ export function OtRequestFields({ values, setValues, fieldError, actionTypeRequi
         <OtItemListEditor
           idPrefix="ot-anexo"
           legend="Trabajos anexos (reparación)"
-          helper="Trabajos que se piden junto con la reparación. Opcional."
+          helper="Opcional."
           placeholder="Ej. Cambiar pastillas de freno"
           items={values.annexItems}
           onChange={(next) => set("annexItems", next)}
@@ -202,7 +202,7 @@ export function OtRequestFields({ values, setValues, fieldError, actionTypeRequi
         <OtItemListEditor
           idPrefix="ot-mant"
           legend="Mantenciones solicitadas o asignadas en taller"
-          helper="Cada mantención que se pide hacer. El mecánico marca Sí o No al terminar."
+          helper="El mecánico marca Sí o No al terminar."
           placeholder="Ej. Cambio de aceite y filtros"
           items={values.maintenanceItems}
           onChange={(next) => set("maintenanceItems", next)}

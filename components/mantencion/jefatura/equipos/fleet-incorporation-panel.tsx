@@ -175,7 +175,7 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
         {header}
         <EmptyState
           title="Toda la flota de tus faenas ya está en Mantención"
-          description="Cuando se agregue un vehículo con odómetro u horómetro en Vehículos, aparecerá aquí para completarle marca y pauta."
+          description="Se agrega al crear un vehículo con odómetro u horómetro en Vehículos. Completa aquí marca y pauta."
           action={<Button asChild variant="secondary"><Link href="/mantencion/equipos">Ver los equipos</Link></Button>}
         />
       </>
@@ -188,8 +188,7 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
       <div className="flex flex-col gap-4">
         {blocked > 0 && (
           <Callout tone="info" title={`${plural(blocked, "vehículo necesita", "vehículos necesitan")} un arreglo en Vehículos antes de incorporarse`}>
-            Les falta el código interno o su patente no es válida. Se muestran con el motivo y no se pueden marcar.
-          </Callout>
+            Les falta el código interno o su patente no es válida.          </Callout>
         )}
         <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
           {worksites.length > 1 && (

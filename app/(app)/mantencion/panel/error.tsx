@@ -24,7 +24,7 @@ export default function MantencionPanelError({
       <EmptyState
         as="h1"
         title="No se pudo cargar el Panel de mantención"
-        description="Ocurrió un error al armar el Panel. Intenta nuevamente o reporta el error para que el equipo lo revise."
+        description="Intenta de nuevo o repórtalo al equipo."
         action={
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={reset}>

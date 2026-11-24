@@ -135,7 +135,7 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
             <div>
               <SheetTitle>Nueva orden de trabajo</SheetTitle>
               <SheetDescription>
-                Pide una reparación o una mantención para un equipo. Le avisamos a Mantención y la orden queda en tu nombre.
+                Le avisamos a Mantención y la orden queda en tu nombre.
               </SheetDescription>
             </div>
             <SheetCloseButton />

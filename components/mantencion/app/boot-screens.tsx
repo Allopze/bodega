@@ -29,7 +29,7 @@ export const NoPermission = () => (
 
 export const Revoked = ({ onSignIn }: { onSignIn: () => void }) => (
   <Splash title="Acceso revocado" action={<button type="button" className="btns wide" style={{ maxWidth: 320 }} onClick={onSignIn}>Entrar de nuevo</button>}>
-    Jefatura desconectó tu acceso a la app. Para volver a usarla en este teléfono, entra de nuevo con tu correo y contraseña.
+    Jefatura desconectó tu acceso. Entra de nuevo con tu correo y contraseña.
   </Splash>
 )
 

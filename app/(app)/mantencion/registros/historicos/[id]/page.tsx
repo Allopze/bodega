@@ -8,7 +8,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { ACTION_TYPE_LABELS, SPECIALTY_LABELS, type ActionTypeOrUnknown, type Specialty } from "@/lib/mantencion/action-type"
-import { FORMS_CUTOVER_DATE, FORMS_LAST_COUNTED_DATE } from "@/lib/mantencion/forms-cutover"
+import { FORMS_LAST_COUNTED_DATE } from "@/lib/mantencion/forms-cutover"
 import { formatHours } from "@/lib/mantencion/format"
 import { equipmentScope, viewerFromSession } from "@/lib/services/mantencion/access"
 import { loadFleet } from "@/lib/services/mantencion/fleet"
@@ -75,15 +75,15 @@ export default async function HistoricalRecordPage({ params }: { params: Promise
       <div className="flex flex-col gap-5">
         <SectionCard title="Origen" description={`Archivo «${row.sourceFile}»`}>
           <p className="text-sm">
-            Antecedente de los formularios anteriores: cuenta en los indicadores de trabajos del Panel hasta el {formatDate(FORMS_LAST_COUNTED_DATE)} (salvo que esté marcado como posible prueba; desde el {formatDate(FORMS_CUTOVER_DATE)} la plataforma reemplaza a los formularios), pero no en el semáforo de pautas, las alertas ni la lectura oficial del equipo.{" "}
-            Este trabajo viene de un formulario anterior. Está en la hoja «{row.sourceSheet}», fila {row.sourceRow}, por si hay que revisarlo en el Excel original.{" "}
+            Viene de un formulario anterior. Cuenta en los indicadores del Panel hasta el {formatDate(FORMS_LAST_COUNTED_DATE)}, salvo posible prueba, pero no en el semáforo, las alertas ni la lectura oficial.{" "}
+            Está en la hoja «{row.sourceSheet}», fila {row.sourceRow}, del Excel original.{" "}
             {equipment.length && row.vehicleId
               ? <Link className={TEXT_LINK} href={vehicleFichaHref(row.vehicleId, "mantencion")}>Ver ficha del equipo</Link>
               : row.vehicleId ? "El equipo está asociado a la flota." : "El equipo aún no está identificado."}
           </p>
         </SectionCard>
         {(facts.length > 0 || row.isTest || row.qualityNotes) && (
-          <SectionCard title="Clasificación del consolidado" description="Lo que agrega el consolidado de Chome a este trabajo.">
+          <SectionCard title="Clasificación del consolidado">
             {row.isTest && (
               <Callout tone="warning" className="mb-3" title="Posible prueba">
                 El consolidado marca este trabajo como posible prueba. El Panel no lo cuenta en sus indicadores de trabajos.
@@ -108,7 +108,7 @@ export default async function HistoricalRecordPage({ params }: { params: Promise
           </SectionCard>
         )}
         {options && (
-          <SectionCard title="Identificar equipo y faena" description="Elige el equipo y la faena que no se pudieron reconocer en el archivo.">
+          <SectionCard title="Identificar equipo y faena" description="Elige lo que no se reconoció en el archivo.">
             <HistoricalLinkForm
               sourceKey={row.sourceKey}
               needsVehicle={!row.vehicleId}

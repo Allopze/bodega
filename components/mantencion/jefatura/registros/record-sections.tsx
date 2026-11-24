@@ -55,7 +55,7 @@ export function EquipmentSection({ detail }: { detail: RecordDetail }) {
   const plate = equipment.noPlate || equipment.plate === equipment.code ? "Sin patente" : equipment.plate
   return (
     <div id="equipo" className="scroll-mt-4">
-      <SectionCard title="Equipo" description="Tal como estaba en la ficha cuando se firmó; editar la ficha después no cambia este registro.">
+      <SectionCard title="Equipo" description="Como estaba en la ficha al firmar; editarla después no cambia el registro.">
         <dl className={GRID}>
           <DetailItem layout="stacked" label="Código" value={equipment.code} mono />
           <DetailItem layout="stacked" label="Patente" value={plate} mono />
@@ -160,7 +160,7 @@ export function PreventiveSection({ detail }: { detail: RecordDetail }) {
                       {missing.length > 0 && (
                         <p className="text-[var(--color-text)]">
                           <strong className="font-semibold text-[var(--color-signal-ink)]">No realizado:</strong>{" "}
-                          {missing.map((item) => `${item.name} — ${item.reason ?? "sin motivo"}`).join("; ")}
+                          {missing.map((item) => `${item.name} (${item.reason ?? "sin motivo"})`).join("; ")}
                         </p>
                       )}
                       {skipped.length > 0 && <p>No aplica: {skipped.map((item) => item.name).join(", ")}</p>}

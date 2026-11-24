@@ -162,7 +162,7 @@ export function RecordStepTrabajo({ draft, dispatch, row, catalogs, folio }: {
       </Field>
 
       <div className="flex flex-col gap-2">
-        <Field label="Conductores de las últimas 24 h" htmlFor="ot-rec-drivers" helper="Todos los que usaron el equipo. Busca por apellido." error={errors.drivers}>
+        <Field label="Conductores de las últimas 24 h" htmlFor="ot-rec-drivers" helper="Todos los que usaron el equipo." error={errors.drivers}>
           <Combobox id="ot-rec-drivers" options={driverOptions} value="" placeholder="Busca por apellido"
             onChange={(value) => { if (value) dispatch({ type: "toggleId", field: "driverIds", id: value }) }} />
         </Field>

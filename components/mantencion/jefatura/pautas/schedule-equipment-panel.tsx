@@ -17,7 +17,7 @@ export function ScheduleEquipmentPanel({ scheduleId, equipment, onAssign }: {
       action={<Button variant="secondary" size="sm" onClick={onAssign}>Asignar equipos</Button>}
     >
       {equipment.total === 0 ? (
-        <p className="text-sm text-[var(--color-text-muted)]">Ningún equipo usa esta pauta todavía. Asígnalos para que el mecánico pueda registrarles preventivas.</p>
+        <p className="text-sm text-[var(--color-text-muted)]">Ningún equipo usa esta pauta todavía. Asígnalos para registrar sus preventivas.</p>
       ) : (
         <>
           <ul className="flex flex-wrap gap-x-5 gap-y-1 text-sm" aria-label="Equipos por faena">

@@ -53,7 +53,7 @@ export function recordAlertTags(detail: AlertSource): RecordAlertTag[] {
     const previous = detail.previousReading
     const diff = previous ? detail.reading - previous.value : null
     const how = previous && diff !== null && diff > 0
-      ? `La lectura es ${formatReading(detail.reading, detail.unit)}: ${formatNumber(diff)} ${detail.unit} más que la anterior (${formatReading(previous.value, detail.unit)}, del ${formatDate(previous.date)}), más de lo esperado para ese lapso.`
+      ? `La lectura es ${formatReading(detail.reading, detail.unit)}, ${formatNumber(diff)} ${detail.unit} más que la anterior (${formatReading(previous.value, detail.unit)}, del ${formatDate(previous.date)}), más de lo esperado para ese lapso.`
       : "La lectura supera lo esperado desde el registro anterior."
     tags.push({
       key: "jump",
@@ -122,7 +122,7 @@ export function recordAlertTags(detail: AlertSource): RecordAlertTag[] {
       tags.push({
         key: "stamp",
         label,
-        title: "La hora de la firma no cuadra",
+        title: "Firma con hora que no cuadra",
         message: `El teléfono firmó el registro el ${formatDateTime(at)}, ${gap} ${direction} de que llegara a la plataforma, y no declaró un período sin señal. La hora del teléfono puede estar mal.`,
         action: "Confirma con el mecánico la fecha en que hizo el trabajo.",
         anchor: { href: DATA_ANCHOR, label: "Ver las fechas" },

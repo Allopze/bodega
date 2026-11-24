@@ -61,7 +61,7 @@ export function EquipmentInsuranceCard({
           title="Sin datos de seguro en la flota"
           description={canViewFleet
             ? "La póliza y su vencimiento se cargan en la ficha del vehículo de la flota."
-            : "La póliza y su vencimiento se cargan en la ficha del vehículo de la flota; pídeselo a quien la administra."}
+            : "Se carga en la ficha de Flota; pídeselo a quien la administra."}
           action={canViewFleet
             ? <Button asChild variant="secondary" size="sm"><Link href={`${vehicleFichaHref(vehicleId, "flota")}#documentos`}>Cargar en Flota</Link></Button>
             : undefined}

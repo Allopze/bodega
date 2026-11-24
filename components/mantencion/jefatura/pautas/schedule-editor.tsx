@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { ExportButton } from "@/components/ui/export-button"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
-import { formatNumber, plural, unitName } from "@/lib/mantencion/format"
+import { formatNumber, plural } from "@/lib/mantencion/format"
 import type { AssignCandidate } from "@/lib/services/mantencion/schedule-assign"
 import type { ScheduleEditorModel } from "@/lib/services/mantencion/schedules"
 import { toast } from "@/lib/toast"
@@ -73,7 +73,7 @@ export function ScheduleEditor({ model, candidates, canExport }: { model: Schedu
     <PageContainer width="workbench">
       <PageHeader
         title={model.name}
-        description={`Pauta en ${unitName(model.unit)} · versión ${formatNumber(model.version)} publicada${dirty ? ` · cambios sin publicar (${formatNumber(changeCount)})` : ""}`}
+        description={`Versión ${formatNumber(model.version)} publicada${dirty ? ` · ${plural(changeCount, "cambio", "cambios")} sin publicar` : ""}`}
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Pautas", href: "/mantencion/pautas" }, { label: model.name }]}
         actions={(
           <div className="flex flex-wrap items-center gap-2">
@@ -86,7 +86,7 @@ export function ScheduleEditor({ model, candidates, canExport }: { model: Schedu
       <div className="flex flex-col gap-5">
         {activityCount === 0 && (
           <Callout tone="warning" title="Esta pauta aún no tiene actividades">
-            Mientras no tenga ninguna, el mecánico no puede registrar una mantención preventiva con ella. Agrega las actividades en la matriz de más abajo.
+            Mientras no tenga ninguna, el mecánico no puede registrar una mantención preventiva con ella. Agrega las actividades en la matriz.
           </Callout>
         )}
         {dirty && <ScheduleDraftBar version={model.version} changes={model.draft.changes} pending={pending} onDiscard={() => setDiscardOpen(true)} />}

@@ -32,7 +32,7 @@ export const CATALOG_LABELS: Record<MantCatalogKey, CatalogLabels> = {
   brands: {
     keeps: "Los equipos y las reglas de pauta que ya la usan la conservan",
     tab: "Marcas", singular: "marca", plural: "marcas", feminine: true, create: "Nueva marca",
-    purpose: "Marcas de los equipos. Las reglas de las pautas se definen por marca, así que un equipo sólo puede crearse con una marca de esta lista.",
+    purpose: "Un equipo sólo se crea con una marca de esta lista.",
     emptyTitle: "Todavía no hay marcas",
     emptyDescription: "Sin marcas no se pueden crear equipos. Agrega la primera con «Nueva marca».",
     nameLabel: "Nombre de la marca", namePlaceholder: "Ej: Toyota",

@@ -74,7 +74,7 @@ function MaintenanceLifeSection({ life, code }: { life: EquipmentLifeData; code:
         <EmptyState
           compact
           title="Este equipo aún no tiene mantenciones"
-          description="Aparecen aquí cuando el mecánico firma una preventiva o una correctiva desde la app. Si esperabas verlas y no están, puede que pertenezcan a una faena que tu perfil no alcanza."
+          description="Se llenan cuando el mecánico firma una preventiva o una correctiva desde la app. Si esperabas verlas y no están, puede que pertenezcan a una faena que tu perfil no alcanza."
         />
       ) : (
         <>
@@ -194,7 +194,7 @@ function EquipmentWorkOrdersSection({ workOrders, code, impact }: { workOrders: 
         <EmptyState
           compact
           title="Este equipo aún no tiene órdenes de trabajo"
-          description="Aparecen aquí cuando se pide una reparación o una mantención en el taller para este equipo."
+          description="Se llenan cuando se pide una reparación o una mantención para este equipo."
         />
       ) : (
         <>

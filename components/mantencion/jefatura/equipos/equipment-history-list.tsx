@@ -5,7 +5,7 @@ import { SectionCard } from "../shared/section-card"
 /** Historial de cambios de la ficha: fecha y autor en una línea y, debajo, qué se hizo. */
 export function EquipmentHistoryList({ entries }: { entries: EquipmentHistoryEntry[] }) {
   return (
-    <SectionCard title="Historial de cambios" description="Quién cambió qué en la ficha">
+    <SectionCard title="Historial de cambios">
       {entries.length === 0 ? (
         <p className="text-sm text-[var(--color-text-muted)]">Todavía no hay cambios registrados.</p>
       ) : (

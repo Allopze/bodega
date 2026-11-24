@@ -34,7 +34,7 @@ export function DoneScreen({ itemId, onHome, onStartOther }: {
         ? "Enviando a la plataforma…"
         : item.status === "needs_login"
           ? "Está guardado en el teléfono. Entra de nuevo desde el inicio para enviarlo."
-          : "Está guardado en el teléfono. Se enviará solo cuando vuelva la señal; no necesitas hacer nada más."
+          : "Está guardado en el teléfono. Se enviará solo cuando vuelva la señal."
 
   return (
     <div className="scr">

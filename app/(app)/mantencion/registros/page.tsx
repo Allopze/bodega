@@ -77,15 +77,15 @@ function emptyCopy(review: MantReview | undefined, filtered: boolean): { title: 
     }
   }
   if (review === "pendiente") {
-    return { title: "No hay registros por revisar", description: "Los registros nuevos aparecen aquí apenas un mecánico los firma y su teléfono los sincroniza." }
+    return { title: "No hay registros por revisar", description: "Llegan apenas un mecánico los firma y su teléfono los sincroniza." }
   }
   if (review === "observado") {
-    return { title: "No hay registros observados", description: "Aquí quedan los registros en los que pediste una corrección, hasta que los marques como revisados." }
+    return { title: "No hay registros observados", description: "Quedan los registros con corrección pedida, hasta que los marques como revisados." }
   }
   if (review === "revisado") {
-    return { title: "Aún no hay registros revisados", description: "Cuando marques un registro como revisado, aparece aquí." }
+    return { title: "Aún no hay registros revisados", description: "Aparece al marcar un registro como revisado." }
   }
-  return { title: "Aún no hay registros firmados", description: "Aparecen aquí apenas un mecánico firma una mantención y su teléfono la sincroniza." }
+  return { title: "Aún no hay registros firmados", description: "Llegan apenas un mecánico firma una mantención y su teléfono la sincroniza." }
 }
 
 export default async function RecordsPage({ searchParams }: { searchParams: Promise<RawSearchParams> }) {

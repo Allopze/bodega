@@ -38,7 +38,7 @@ export function NewScheduleDialog({ schedules }: { schedules: CopyableSchedule[]
         <form action={action} noValidate>
           <DialogHeader>
             <DialogTitle>Nueva pauta</DialogTitle>
-            <DialogDescription>Define cómo se mide y cada cuánto se hace. Después ajustas las actividades y asignas los equipos.</DialogDescription>
+            <DialogDescription>Define cómo se mide y cada cuánto se hace.</DialogDescription>
           </DialogHeader>
           {!state.ok && state.message && !state.fieldErrors && <Callout tone="danger" role="alert" className="mb-3">{state.message}</Callout>}
           <div className="flex flex-col gap-4">
@@ -59,7 +59,7 @@ export function NewScheduleDialog({ schedules }: { schedules: CopyableSchedule[]
             <Field label="Intervalos" required htmlFor="np-intervals" error={error("intervals")} helper="Separados por coma. El menor es el intervalo base.">
               <Input id="np-intervals" name="intervals" className="font-mono" autoComplete="off" placeholder={unit === "km" ? "10000, 20000, 40000" : "250, 500, 1000"} error={!!error("intervals")} />
             </Field>
-            <Field label="Partir de" htmlFor="np-copy" error={error("copyFromId")} helper="Al copiar se traen los sistemas, ítems y reglas por marca; luego se ajustan.">
+            <Field label="Partir de" htmlFor="np-copy" error={error("copyFromId")} helper="Al copiar se traen sistemas, ítems y reglas por marca.">
               <OptionSelect id="np-copy" name="copyFromId" className="h-11 w-full sm:h-9" emptyLabel="Pauta vacía" value={copyFromId} onValueChange={setCopyFromId} options={copyable.map((item) => ({ value: item.id, label: `Copia de «${item.name}»`, textValue: item.name }))} />
             </Field>
           </div>

@@ -29,7 +29,7 @@ export function PautaBox({ draft, dispatch, row, analysis }: { draft: FlowDraft;
     return (
       <div className="card">
         <div className="cap">Pauta que corresponde · {schedule.name}</div>
-        <p className="hint">Escribe la lectura y la app te dice qué pauta toca.</p>
+        <p className="hint">Escribe la lectura para ver qué pauta toca.</p>
       </div>
     )
   }

@@ -116,7 +116,7 @@ function stagesOf(detail: WorkOrderDetail): Stage[] {
 export function OtProgressSection({ detail }: { detail: WorkOrderDetail }) {
   const stages = stagesOf(detail)
   return (
-    <SectionCard title="Avance" description="Dónde está la orden y qué sigue. Cada etapa muestra quién la registró.">
+    <SectionCard title="Avance" description="Dónde está la orden y qué sigue.">
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span data-testid="ot-estado"><MetaBadge meta={OT_STATE_META[detail.status]} size="sm" /></span>
         <p className="text-sm text-[var(--color-text)]">{nextStepText(detail)}</p>
@@ -152,7 +152,7 @@ export function OtProgressSection({ detail }: { detail: WorkOrderDetail }) {
 /** Orden de trabajo: tipo, fecha, solicitante, mecánico y quién la creó. El folio, el equipo y la faena ya están en el título de la página. */
 export function OtHeaderSection({ detail }: { detail: WorkOrderDetail }) {
   return (
-    <SectionCard title="Orden de trabajo" description="Reparación / mantención">
+    <SectionCard title="Orden de trabajo">
       <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2" role="group" aria-label="Tipo de trabajo">
         <PaperCheck checked={detail.repair} label="Reparación" />
         <PaperCheck checked={detail.maintenance} label="Mantención" />

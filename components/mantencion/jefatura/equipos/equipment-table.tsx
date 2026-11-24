@@ -121,8 +121,8 @@ export function EquipmentTable({ rows, canManage, canViewGps = true, filtered, p
         description={filtered
           ? "Prueba con otra faena, tipo, pauta o estado, o quita los filtros."
           : pendingFleet > 0
-            ? `${plural(pendingFleet, "vehículo ya está", "vehículos ya están")} en la flota con su código, patente, tipo y faena: sólo falta elegir su marca y su pauta, y aparecen en la app del mecánico en su próxima sincronización.`
-            : "Agrega los equipos uno a uno o impórtalos desde una planilla de Excel: aparecerán en la app del mecánico en su próxima sincronización."}
+            ? `${plural(pendingFleet, "vehículo ya está", "vehículos ya están")} en la flota: sólo falta elegir su marca y su pauta.`
+            : "Agrega equipos uno a uno o impórtalos desde Excel."}
         action={filtered
           ? <Button asChild variant="secondary" size="sm"><Link href="/mantencion/equipos">Quitar los filtros</Link></Button>
           : !canManage ? undefined

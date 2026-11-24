@@ -207,8 +207,8 @@ export function ReporteEquiposSection({
           {failures.byEquipment.length > 0 && (
             <ChartSlot span={spans.age}>
               <ChartFrame
-                title="Fallas abiertas por equipo, según antigüedad"
-                description={`Hoy · ${common.worksiteId ? "faena elegida" : "todas las faenas del alcance"} · Fuente: hallazgos sin cerrar de los reportes; la antigüedad cuenta desde que se detectó la falla`}
+                title="Fallas abiertas por antigüedad"
+                description={`Hoy · ${common.worksiteId ? "faena elegida" : "todas las faenas del alcance"} · Fuente: hallazgos sin cerrar de los reportes`}
                 headline={
                   <>
                     <ChartHeadlineValue tone={oldFailures > 0 ? "danger" : "neutral"}>{formatQty(oldFailures)}</ChartHeadlineValue>
@@ -220,7 +220,7 @@ export function ReporteEquiposSection({
               >
                 <OpenFailuresAgeChart rows={ageRows} ariaLabel="Fallas abiertas por equipo, por antigüedad" limit={8} />
                 <ChartDataTable
-                  caption="Fallas abiertas por equipo, según antigüedad"
+                  caption="Fallas abiertas por antigüedad"
                   headers={["Equipo", "Patente", ...AGE_BUCKETS.map((bucket) => bucket.label), "Total", "De seguridad"]}
                   rows={failures.byEquipment.map((row) => [row.code, row.plate, row.fresh, row.week, row.old, row.total, row.safety])}
                   excel={excel}
@@ -232,7 +232,7 @@ export function ReporteEquiposSection({
             <ChartSlot span={spans.system}>
               <ChartFrame
                 title="Fallas reportadas por sistema"
-                description={`${common.scopeNote} · Fuente: ítems marcados «Falla» en los reportes recibidos (cada reporte cuenta una vez)`}
+                description={`${common.scopeNote} · Fuente: ítems marcados «Falla» en los reportes recibidos`}
                 headline={
                   <>
                     <ChartHeadlineValue>{formatQty(topSystem.count)}</ChartHeadlineValue>

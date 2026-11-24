@@ -128,7 +128,7 @@ export function RecordActions({ recordId, folio, status, review, canExport, canO
             <DialogHeader>
               <DialogTitle>Observar {label}</DialogTitle>
               <DialogDescription>
-                El mecánico verá la observación en su inicio y podrá responderla. Quedan registradas con tu nombre.
+                El mecánico la verá en su inicio y podrá responderla. Queda con tu nombre.
               </DialogDescription>
             </DialogHeader>
             <Field label="¿Qué hay que revisar?" htmlFor="mant-observation-text" required>
@@ -155,7 +155,7 @@ export function RecordActions({ recordId, folio, status, review, canExport, canO
         open={voidOpen}
         onOpenChange={setVoidOpen}
         title={`Anular ${label}`}
-        description="El registro sigue visible, marcado como anulado, pero deja de contar en las lecturas, el estado de los equipos y los indicadores. No se puede deshacer."
+        description="Queda visible como anulado y deja de contar en lecturas, estado de equipos e indicadores. No se puede deshacer."
         variant="destructive"
         confirmLabel="Anular registro"
         reasonLabel="Motivo de la anulación"
@@ -173,7 +173,7 @@ export function RecordActions({ recordId, folio, status, review, canExport, canO
           <DialogHeader>
             <DialogTitle>Registro anulado</DialogTitle>
             <DialogDescription>
-              {label} ya no cuenta en los cálculos. Si el trabajo se hizo bien pero se registró mal, crea el registro corregido: queda enlazado con este.
+              {label} ya no cuenta en los cálculos. Si el trabajo se hizo bien pero se registró mal, crea el registro corregido; queda enlazado con este.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

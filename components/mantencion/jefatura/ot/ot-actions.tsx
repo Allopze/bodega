@@ -309,7 +309,7 @@ export function OtActions(props: OtActionsProps) {
         open={dialog === "void"}
         onOpenChange={(open) => { if (!open) setDialog(null) }}
         title={`Anular ${props.folio}`}
-        description="La orden sigue visible, marcada como anulada, con su motivo. Si el equipo estaba en taller, vuelve a su estado anterior. No se puede deshacer."
+        description="Queda visible como anulada, con su motivo. Si el equipo estaba en taller, vuelve a su estado anterior. No se puede deshacer."
         variant="destructive"
         confirmLabel="Anular orden"
         reasonLabel="Motivo de la anulación"

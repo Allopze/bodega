@@ -115,7 +115,7 @@ export function ScheduleMatrix({ scheduleId, unit, intervals, groups, headerTop 
       className="p-0 [&>div:first-child]:px-5 [&>div:first-child]:pt-5"
     >
       {groups.length === 0 ? (
-        <EmptyState compact align="start" title="Esta pauta aún no tiene actividades" description="Agrega el primer sistema con su primer ítem aquí abajo; después podrás sumar más en cada sistema." />
+        <EmptyState compact align="start" title="Esta pauta aún no tiene actividades" description="Agrega el primer sistema con su primer ítem abajo." />
       ) : (
         <div className="max-md:overflow-x-auto" aria-busy={pending}>
           <p id={hintId} className="sr-only">

@@ -76,9 +76,8 @@ export function EquipmentStatusCard({ data }: { data: EquipmentDetailData }) {
       {data.workshop && <WorkshopNote workshop={data.workshop} />}
       {status.state === "sin_preventiva" ? (
         <p className="mb-3 text-sm text-[var(--color-text-muted)]">
-          No hay ninguna preventiva firmada ni declarada, así que la próxima mantención no se puede calcular. Si hubo una
-          preventiva antes de usar la plataforma, jefatura la declara en «Editar mantención», con su respaldo (orden de
-          trabajo o factura); la próxima firmada en la app la reemplaza.
+          Sin preventiva firmada ni declarada no hay próxima mantención. Si hubo una antes de la plataforma, declárala en
+          «Editar mantención» con su respaldo.
         </p>
       ) : null}
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -100,7 +99,7 @@ export function EquipmentStatusCard({ data }: { data: EquipmentDetailData }) {
               <>
                 <ValueOnDate value={recordKindText("P", data.priorPreventive.intervalValue, unit)} date={data.priorPreventive.date} />
                 <PreventiveOrigin preventive={{ origin: "declarada", evidence: data.priorPreventive.evidence }} declaredBy={data.priorPreventive} />
-                <span className="block text-xs font-normal text-[var(--color-text-muted)]">La firmada más reciente es la que manda en el estado.</span>
+                <span className="block text-xs font-normal text-[var(--color-text-muted)]">Manda la firmada más reciente.</span>
               </>
             )}
           />
@@ -137,7 +136,7 @@ export function EquipmentStatusCard({ data }: { data: EquipmentDetailData }) {
             />
           </dl>
           <p className="mt-2 text-xs text-[var(--color-text-subtle)]">
-            No reemplaza la lectura registrada: es una referencia para programar la mantención.
+            Referencia para programar; no reemplaza la lectura registrada.
           </p>
         </div>
       ) : null}

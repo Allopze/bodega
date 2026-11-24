@@ -63,7 +63,7 @@ export function classificationChanges(event: WorkOrderEventDetail): string[] {
 export function OtTimeline({ events }: { events: WorkOrderEventDetail[] }) {
   const sorted = sortEventsNewestFirst(events)
   return (
-    <SectionCard title="Historial" description="Cada paso de la orden, con quién lo hizo y el motivo cuando lo hay.">
+    <SectionCard title="Historial" description="Quién lo hizo y el motivo, cuando lo hay.">
       {sorted.length === 0 ? (
         <p className="text-sm text-[var(--color-text-muted)]">Sin movimientos todavía.</p>
       ) : (
@@ -112,7 +112,7 @@ export function OtTimeline({ events }: { events: WorkOrderEventDetail[] }) {
 export function OtLinks({ detail }: { detail: WorkOrderDetail }) {
   const records = detail.linkedRecords
   return (
-    <SectionCard title="Registros y origen" description="Lo que el mecánico firmó contra esta orden y, si nació de una inspección, el hallazgo.">
+    <SectionCard title="Registros y origen" description="Registros firmados contra esta orden y, si nació de una inspección, su hallazgo.">
       <div className="flex flex-col gap-4">
         <div>
           <h3 className="mb-1.5 text-sm font-semibold text-[var(--color-text)]">Registros de mantención</h3>

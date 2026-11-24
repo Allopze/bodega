@@ -77,13 +77,13 @@ export default async function HistoricalRecordsPage({ searchParams }: { searchPa
 
       <p className="mb-3 text-sm text-[var(--color-text-muted)]">
         {plural(list.total, "trabajo", "trabajos")} {vehicleId ? "de este equipo" : "en el historial anterior"}
-        {list.applied.worksite ? ` en ${list.applied.worksite.name}` : ""}{period ? ` ${period}` : ""}. No modifican las lecturas, el semáforo de pautas ni las alertas. Cuentan en los indicadores de trabajos del Panel hasta el {formatDate(FORMS_LAST_COUNTED_DATE)}, salvo los marcados como posible prueba; desde el {formatDate(FORMS_CUTOVER_DATE)} la plataforma reemplaza a los formularios.
+        {list.applied.worksite ? ` en ${list.applied.worksite.name}` : ""}{period ? ` ${period}` : ""}. No modifican lecturas, pautas ni alertas. Cuentan en los indicadores del Panel hasta el {formatDate(FORMS_LAST_COUNTED_DATE)}, salvo posible prueba; desde el {formatDate(FORMS_CUTOVER_DATE)} la plataforma reemplaza a los formularios.
       </p>
 
       {list.rows.length === 0 ? (
         <EmptyState
           title="No hay trabajos para mostrar"
-          description={filtered ? "Prueba con otra búsqueda o quita los filtros para ver todo el historial anterior." : "Cuando se importe un archivo de historial anterior, sus trabajos aparecerán aquí."}
+          description={filtered ? "Prueba con otra búsqueda o quita los filtros para ver todo el historial anterior." : "Se llenan al importar un archivo de historial anterior."}
           action={filtered
             ? <Button asChild variant="secondary"><Link href={PATH}>Ver todo el historial</Link></Button>
             : canImport ? <Button asChild><Link href={`${PATH}/importar`}>Importar historial anterior</Link></Button> : undefined}

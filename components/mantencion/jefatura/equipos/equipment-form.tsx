@@ -68,14 +68,14 @@ export function EquipmentForm({
   return (
     <form action={formAction} noValidate className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:p-6">
       {!state.ok && state.message && !hasFieldErrors(state) && <Callout tone="danger" role="alert" className="mb-4">{state.message}</Callout>}
-      <p className="mb-4 text-sub">Los campos con * son obligatorios. El equipo aparece en la app del mecánico en su próxima sincronización.</p>
+      <p className="mb-4 text-sub">Los campos con * son obligatorios.</p>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Código interno" required htmlFor="eq-code" error={error("code")}>
           <Input id="eq-code" name="code" className="font-mono" autoComplete="off" placeholder="Ej: KA-147" value={values.code} onChange={(e) => set("code", e.target.value)} error={!!error("code")} />
         </Field>
         <div>
           <Field label="Patente" required={!values.noPlate} htmlFor="eq-plate" error={error("plate")} helper={values.noPlate ? "Sin patente: la patente será igual al código." : "Formato ABCD-12 o AB-1234."}>
-            <Input id="eq-plate" name="plate" className="font-mono" autoComplete="off" placeholder="ABCD-12" disabled={values.noPlate} value={values.noPlate ? "" : values.plate} onChange={(e) => set("plate", e.target.value)} error={!!error("plate")} />
+            <Input id="eq-plate" name="plate" className="font-mono" autoComplete="off" disabled={values.noPlate} value={values.noPlate ? "" : values.plate} onChange={(e) => set("plate", e.target.value)} error={!!error("plate")} />
           </Field>
           <div className="mt-2">
             <Checkbox id="eq-noPlate" label="Sin patente" checked={values.noPlate} onChange={(e) => set("noPlate", e.target.checked)} />
@@ -92,7 +92,7 @@ export function EquipmentForm({
             options={catalogs.types.map((item) => ({ value: item.id, label: `${item.name} · ${item.unit}`, textValue: item.name }))}
           />
         </Field>
-        <Field label="Marca" required htmlFor="eq-brand" error={error("brandId")} helper="Lista cerrada: las reglas por marca de las pautas dependen de ella.">
+        <Field label="Marca" required htmlFor="eq-brand" error={error("brandId")} helper="Lista cerrada: las pautas dependen de la marca.">
           <OptionSelect id="eq-brand" name="brandId" className={SELECT} placeholder="Elige la marca…" value={values.brandId} error={!!error("brandId")} onValueChange={(v) => set("brandId", v)} options={catalogs.brands.map((item) => ({ value: item.id, label: item.name }))} />
         </Field>
         <Field label="Modelo" htmlFor="eq-model" error={error("model")}>
