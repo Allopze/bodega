@@ -13,6 +13,7 @@ import { loadPanelWorksites } from "../panel"
 import { getCurrentScheduleSnapshots } from "../schedule-versions"
 import { workOrderVisibility, workOrderVisibilitySql } from "../work-orders/access"
 import { monthLabel, parseLookerFilters } from "./filters"
+import { scopeLookerToTab } from "./tab-scope"
 import type {
   LookerContext, LookerEquipmentOption, LookerFilters, LookerFrequencyOption, LookerOptions,
   ResolvedCheck, ResolvedCrossFilters, ResolvedEquipment, ResolvedWork,
@@ -277,10 +278,13 @@ export async function resolveCrossFilters(
   }
 }
 
-/** Contexto completo de una pestaña Looker: filtros parseados, opciones y filtros cruzados resueltos. */
+/**
+ * Contexto completo de una pestaña Looker: filtros parseados, opciones y filtros cruzados resueltos.
+ * Camiones y Máquinas reciben sólo los equipos y frecuencias de su unidad (`scopeLookerToTab`); un
+ * equipo de la otra unidad que llegue por la URL, manual o cruzado, se ignora.
+ */
 export async function loadLookerContext(viewer: MantViewer, raw: Raw, today: string = todayInChile()): Promise<LookerContext> {
-  const filters = parseLookerFilters(raw, today)
-  const options = await loadLookerOptions(viewer)
+  const { filters, options } = scopeLookerToTab(parseLookerFilters(raw, today), await loadLookerOptions(viewer))
   const cross = await resolveCrossFilters(viewer, filters, options)
   return { filters, options, cross }
 }

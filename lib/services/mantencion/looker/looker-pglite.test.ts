@@ -24,12 +24,12 @@ vi.mock("@/db", () => ({
 
 const { loadCorrectivePage, loadCorrectiveSummary } = await import("@/lib/services/mantencion/looker/corrective")
 const { loadChecklistMatrix, loadComplianceChecks, loadPreventiveCompliance } = await import("@/lib/services/mantencion/looker/preventive")
-const { loadLookerOptions } = await import("@/lib/services/mantencion/looker/resolve")
+const { loadLookerContext, loadLookerOptions } = await import("@/lib/services/mantencion/looker/resolve")
 const { loadPlanningData } = await import("@/lib/services/mantencion/looker/planning")
 
 const WS = "ws-looker"
 const U = "u-looker"
-const V = { hist: "v-looker-hist", ot: "v-looker-ot", rec: "v-looker-rec" } as const
+const V = { hist: "v-looker-hist", ot: "v-looker-ot", rec: "v-looker-rec", hours: "v-looker-hours" } as const
 const GLOBAL = { userId: U, email: null, permissions: ["mant:records:view_all", "mant:ot:view_all"], worksiteIds: [], isGlobal: true }
 const SNAP = (code: string, plate: string) => ({ code, plate, noPlate: false, type: "Camión", brand: "Scania", model: "R450", year: 2021, worksite: "Faena Looker", unit: "km" as const })
 
@@ -146,6 +146,47 @@ beforeAll(async () => {
     createdBy: U,
   })
   await testDb.update(schema.mantEquipmentProfiles).set({ scheduleId: "s-looker" }).where(eq(schema.mantEquipmentProfiles.vehicleId, V.rec))
+
+  // Una máquina por horas con su pauta (300 h y 900 h): sirve para ver que Camiones no la ofrece.
+  await testDb.insert(schema.fuelEquipmentTypes).values({ id: "fet-looker-h", slug: "looker-h", name: "Excavadora", category: "heavy", defaultMeterType: "hour_meter", defaultPerformanceUnit: "liters_per_hour" })
+  await testDb.insert(schema.fuelVehicles).values({ id: V.hours, code: "TO-H", plate: "HRS-01", type: "Excavadora", equipmentTypeId: "fet-looker-h", worksiteId: WS, model: "D4", year: 2020, brand: "Caterpillar" })
+  await testDb.insert(schema.mantEquipmentProfiles).values({ vehicleId: V.hours, brandId: "b-looker" })
+  await testDb.insert(schema.mantSchedules).values({ id: "s-looker-h", name: "Maquinaria", nameKey: "maquinaria-looker", unit: "h", version: 1 })
+  await testDb.insert(schema.mantScheduleVersions).values({
+    scheduleId: "s-looker-h",
+    version: 1,
+    snapshot: { id: "s-looker-h", name: "Maquinaria", unit: "h", version: 1, intervals: [300, 900], groups: [], brandRules: [] },
+    summary: "Pauta de máquinas de prueba",
+    createdBy: U,
+  })
+  await testDb.update(schema.mantEquipmentProfiles).set({ scheduleId: "s-looker-h" }).where(eq(schema.mantEquipmentProfiles.vehicleId, V.hours))
+})
+
+describe("Contexto de la pestaña · opciones acotadas por unidad", () => {
+  const ofTab = (raw: Record<string, string>) => loadLookerContext(GLOBAL, { desde: "2026-10-01", hasta: "2026-10-31", ...raw }, "2026-11-23")
+
+  it("Camiones ofrece sólo lo de km y Máquinas sólo lo de horas", async () => {
+    const trucks = await ofTab({ pestana: "camiones" })
+    expect(trucks.options.equipment.map((item) => item.id).sort()).toEqual([V.hist, V.ot, V.rec].sort())
+    expect(trucks.options.frequencies.map((item) => item.unit)).toEqual(["km", "km"])
+    const machines = await ofTab({ pestana: "maquinas" })
+    expect(machines.options.equipment.map((item) => item.id)).toEqual([V.hours])
+    expect(machines.options.frequencies.map((item) => item.value)).toEqual([300, 900])
+  })
+
+  it("Planificación y Hoy conservan las dos unidades", async () => {
+    expect((await ofTab({ pestana: "planificacion" })).options.equipment).toHaveLength(4)
+    expect((await ofTab({})).options.frequencies).toHaveLength(4)
+  })
+
+  it("un equipo o una frecuencia de la otra unidad en la URL se ignora, manual o cruzado", async () => {
+    const context = await ofTab({ pestana: "camiones", equipo: `${V.rec},${V.hours}`, frecuencia: "40000,300", x_equipo: V.hours })
+    expect(context.filters.equipmentIds).toEqual([V.rec])
+    expect(context.filters.frequencies).toEqual([40_000])
+    expect(context.cross.equipment).toBeUndefined()
+    // En Planificación el mismo equipo sí se resuelve: la pestaña muestra las dos unidades.
+    expect((await ofTab({ pestana: "planificacion", x_equipo: V.hours })).cross.equipment?.id).toBe(V.hours)
+  })
 })
 
 describe("Correctivo · unión y paginación", () => {
@@ -187,7 +228,7 @@ describe("Planificación · opciones y A/B", () => {
     const options = await loadLookerOptions(GLOBAL)
     const rec = options.equipment.find((equipment) => equipment.id === V.rec)
     expect(rec).toMatchObject({ unit: "km", frequency: 40_000, intervals: [10_000, 40_000] })
-    expect(options.frequencies.map((frequency) => frequency.value)).toEqual([10_000, 40_000])
+    expect(options.frequencies.map((frequency) => `${frequency.value} ${frequency.unit}`)).toEqual(["10000 km", "40000 km", "300 h", "900 h"])
 
     const planning = await loadPlanningData(GLOBAL, filters("2026-12-01", "2026-12-31"), {})
     const row = planning.km.find((item) => item.vehicleId === V.rec)!
