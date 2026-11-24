@@ -209,7 +209,25 @@ Sobre `bodega_dev` (127.0.0.1:5433), con respaldo previo en `~/backups-dev` y la
    - **Sin resolver, aparte**: a 1024 px con el menú lateral abierto el bloque izquierdo del TopBar mide 416
      px y el título queda en 128–175 px, de modo que la descripción se lee unos 30 caracteres. Es una
      decisión de diseño del TopBar, no del arreglo.
-3. **Preexistentes, ajenos al tablero** (ver «Verificación ejecutada»): la segunda faena «Faena E2E» que
+3. **SEGURIDAD · media — enlaces de fotos del histórico sin validar el esquema. CORREGIDO el 11-24**
+   (hallazgo de la revisión de seguridad automática del commit del tablero).
+   - **Qué pasaba**: `MatrixPhotos` pintaba `href={link.url}` con la URL tal como venía de la celda
+     `IMG_FILTROS`/`IMG_STICKER` del Excel importado, sin comprobar esquema ni host.
+   - **Alcance real**: React 19 ya neutraliza `javascript:` (lo reescribe a un `throw`, visto en la prueba),
+     de modo que el vector XSS directo no se ejecutaba; pero `data:`, `http:` y hosts ajenos seguían siendo
+     enlaces navegables (suplantación desde una celda de Excel). El hallazgo es válido como defensa en
+     profundidad.
+   - **Arreglo** (reutiliza el criterio que ya tenía `registros/historicos/[id]/page.tsx`): `driveLink`
+     pasa a `lib/mantencion/drive-link.ts` —sólo `https:` hacia `drive.google.com`/`docs.google.com`— y se
+     usa en tres puntos: el cargador del servidor (`preventive.ts`, para que una URL insegura ni llegue al
+     cliente), `MatrixPhotos` (el límite de seguridad al pintar) y la página histórica, que ya no tiene su
+     copia local. Pruebas primero: 4 de `driveLink` (esquemas `javascript:`/`data:`/`vbscript:`, `http:`,
+     hosts ajenos, `drive.google.com.evil…`, `drive.google.com@evil…`, texto y vacíos) y 3 del componente;
+     rojas antes, verdes después. Typecheck y eslint en 0; 92 archivos y 1.080 pruebas de mantención verdes.
+   - **No adoptado**: validar también al importar. El valor original se conserva tal cual en la base
+     (trazabilidad) y se valida al mostrar, que además cubre a cualquier otro escritor de la tabla. Los 12
+     valores reales de dev son todos `https://drive.google.com`, así que la lista no oculta nada legítimo.
+4. **Preexistentes, ajenos al tablero** (ver «Verificación ejecutada»): la segunda faena «Faena E2E» que
    crea `admin-flow.spec.ts` y el beacon `POST /api/apps/visita` abortado.
 
 ## Límites y datos pendientes

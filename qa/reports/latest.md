@@ -25,6 +25,11 @@ cruzado por URL, migración 0401 y el importador del consolidado con detalle por
   sobre `HEAD` sin estos cambios) y 3 son deterministas y preexistentes (`legacy-mantenciones-retired:5`,
   `mantencion-historico:21`, `reflow-anchos:158`). Con la base reseteada, 61 de los 64 pasan. La corrida
   fue **antes** de los dos arreglos de abajo y no se repitió completa.
+- **PASS · seguridad (revisión automática del commit):** los enlaces de fotos del histórico se pintaban en un
+  `href` sin validar el esquema. Ahora sólo pasan `https:` a Drive/Docs (`lib/mantencion/drive-link.ts`) en el
+  cargador, el componente y la página histórica; con pruebas rojas antes y verdes después. React 19 ya
+  neutralizaba `javascript:`, pero `data:`, `http:` y hosts ajenos seguían siendo enlaces. Validado al
+  mostrar, no al importar (el valor original se conserva).
 - **PASS · arreglo del TopBar (`reflow-anchos.spec.ts:158`):** el `banner` crecía a 105,4 px en Catálogos PDTP
   a 1024 px porque `lg:block` pisaba el `line-clamp-2` de la descripción (`top-bar.tsx`, desde `e2ca62ca0`,
   2026-11-07). Causa confirmada en el navegador con una sola variable antes de editar; arreglo

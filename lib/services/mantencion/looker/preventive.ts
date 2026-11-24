@@ -5,6 +5,7 @@ import {
   mantRecordItems, mantRecordPhotos, mantRecords, worksites,
 } from "@/db/schema"
 import { worksiteScopeSqlFor } from "@/lib/auth/scope"
+import { driveLink } from "@/lib/mantencion/drive-link"
 import { FORMS_CUTOVER_DATE } from "@/lib/mantencion/forms-cutover"
 import { recordVisibility, recordVisibilitySql, type MantViewer } from "../access"
 import { unitFromMeter } from "../fleet"
@@ -325,12 +326,13 @@ export async function loadChecklistMatrix(
         itemGroups[item.itemName] = item.groupName
       }
     }
-    const photoUrls = meta
-      ? [
-        meta.filtersPhotoUrl ? { label: "Filtros usados", url: meta.filtersPhotoUrl } : null,
-        meta.stickerPhotoUrl ? { label: "Sticker", url: meta.stickerPhotoUrl } : null,
-      ].filter((value): value is { label: string; url: string } => value !== null)
-      : []
+    // Texto libre de una celda de Excel: sólo viajan al cliente los enlaces https a Drive/Docs.
+    const filtersUrl = driveLink(meta?.filtersPhotoUrl)
+    const stickerUrl = driveLink(meta?.stickerPhotoUrl)
+    const photoUrls = [
+      filtersUrl ? { label: "Filtros usados", url: filtersUrl } : null,
+      stickerUrl ? { label: "Sticker", url: stickerUrl } : null,
+    ].filter((value): value is { label: string; url: string } => value !== null)
     return {
       id: check.id,
       source: check.source,

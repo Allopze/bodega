@@ -8,6 +8,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { ACTION_TYPE_LABELS, SPECIALTY_LABELS, type ActionTypeOrUnknown, type Specialty } from "@/lib/mantencion/action-type"
+import { driveLink } from "@/lib/mantencion/drive-link"
 import { FORMS_LAST_COUNTED_DATE } from "@/lib/mantencion/forms-cutover"
 import { formatHours } from "@/lib/mantencion/format"
 import { equipmentScope, viewerFromSession } from "@/lib/services/mantencion/access"
@@ -33,15 +34,6 @@ function consolidatedFacts(row: { actionType: string | null; specialties: string
 }
 
 const TEXT_LINK = "font-semibold text-[var(--color-primary-ink)] hover:underline"
-
-function driveLink(value: string): string | null {
-  try {
-    const url = new URL(value)
-    return url.protocol === "https:" && ["drive.google.com", "docs.google.com"].includes(url.hostname) ? url.href : null
-  } catch {
-    return null
-  }
-}
 
 export default async function HistoricalRecordPage({ params }: { params: Promise<{ id: string }> }) {
   let session

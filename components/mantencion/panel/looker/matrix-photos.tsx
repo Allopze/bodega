@@ -2,15 +2,18 @@
 
 import * as React from "react"
 import { PhotoLightbox, type LightboxPhoto } from "@/components/mantencion/jefatura/registros/photo-lightbox"
+import { driveLink } from "@/lib/mantencion/drive-link"
 import type { MatrixCheck } from "@/lib/services/mantencion/looker/types"
 
 /**
  * Fotos de una columna de la matriz. Las nativas se abren en el visor de siempre; las del
  * histórico son enlaces de Google Drive y se ofrecen como enlaces, no como imágenes inline.
+ * Las URLs vienen de una celda de Excel: sólo se pintan las que `driveLink` acepta (https a
+ * Drive/Docs), aunque el servidor ya las filtra; lo demás se trata como «sin foto».
  */
 export function MatrixPhotos({
   photos,
-  links,
+  links: rawLinks,
   equipment,
 }: {
   photos: MatrixCheck["photoIds"]
@@ -18,6 +21,10 @@ export function MatrixPhotos({
   equipment: string
 }) {
   const [open, setOpen] = React.useState<number | null>(null)
+  const links = rawLinks.flatMap((link) => {
+    const url = driveLink(link.url)
+    return url ? [{ label: link.label, url }] : []
+  })
   const lightbox: LightboxPhoto[] = photos.map((photo) => ({
     id: photo.id,
     caption: photo.caption,
