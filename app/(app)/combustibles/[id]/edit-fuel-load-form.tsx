@@ -254,7 +254,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, canDelete, vehicle
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-load-receipt">Nro factura/boleta</Label>
+              <Label htmlFor="edit-load-receipt">N.º de factura o boleta</Label>
               <Input id="edit-load-receipt" name="receiptNumber" defaultValue={load.receiptNumber ?? ""} disabled={!isEditable} />
             </div>
             <div className="space-y-2">
@@ -271,7 +271,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, canDelete, vehicle
               <div className="space-y-2 sm:col-span-2">
                 <Checkbox name="meterReplaced" value="1" label="El medidor fue reemplazado o reiniciado" defaultChecked={load.meterReplaced} />
                 <p className="text-xs text-[var(--color-text-muted)]">
-                  Márcalo sólo si el equipo estrenó medidor. Sin esto, una lectura menor que la anterior se rechaza como error de tipeo. Queda registrado en la carga con tu explicación.
+                  Márcalo sólo si el equipo estrenó medidor. Sin esto, una lectura menor que la anterior se rechaza como error de tipeo.
                 </p>
                 <Label htmlFor="meterReplacementReason">Motivo del reemplazo</Label>
                 <Textarea
@@ -311,7 +311,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, canDelete, vehicle
                   <Input id="edit-load-iec-variable" value={formatCLP(iecVariable)} disabled className="bg-[var(--color-surface-2)]" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-load-iva">IVA (19%)</Label>
+                  <Label htmlFor="edit-load-iva">IVA (19 %)</Label>
                   <Input id="edit-load-iva" value={formatCLP(ivaAmount)} disabled className="bg-[var(--color-surface-2)]" />
                 </div>
                 <div className="space-y-2">
@@ -320,7 +320,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, canDelete, vehicle
                 </div>
                 {litersChanged && (
                   <p className="sm:col-span-2 text-xs text-[var(--color-warning-ink)]">
-                    Cambiaste los litros: el IEC (CLP por litro) y el total se recalculan al guardar con las tasas vigentes. Los valores de arriba son los de la carga actual.
+                    Cambiaste los litros. El IEC (CLP por litro) y el total se recalculan al guardar con las tasas vigentes; los valores de arriba son los actuales.
                   </p>
                 )}
               </>
@@ -342,7 +342,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, canDelete, vehicle
         open={confirmDeleteOpen}
         onOpenChange={setConfirmDeleteOpen}
         title="¿Eliminar carga de combustible?"
-        description="Esta acción no se puede deshacer. La carga y sus montos asociados serán eliminados permanentemente."
+        description="Se elimina la carga y sus montos. No se puede deshacer."
         confirmLabel="Eliminar"
         variant="destructive"
         loading={isPending}
@@ -351,7 +351,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, canDelete, vehicle
             {isEditable && (
               <div className="flex gap-3">
                 <Button type="button" variant="secondary" onClick={() => router.back()}>Cancelar</Button>
-                <Button type="submit" disabled={isPending}>{isPending ? "Guardando..." : "Guardar cambios"}</Button>
+                <Button type="submit" disabled={isPending}>{isPending ? "Guardando…" : "Guardar cambios"}</Button>
               </div>
             )}
           </div>

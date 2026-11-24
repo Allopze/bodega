@@ -46,7 +46,7 @@ export function EquipmentPlanFields({
     <>
       <Field
         label="Pauta de mantención" htmlFor="eq-schedule" error={error("scheduleId")}
-        helper={!unit ? "Elige primero el tipo de equipo." : offered.length ? `Solo aparecen pautas en ${unitName(unit)}.` : `No hay pautas en ${unitName(unit)}. Crea una en Pautas.`}
+        helper={!unit ? "Elige primero el tipo de equipo." : offered.length ? `Sólo aparecen pautas en ${unitName(unit)}.` : `No hay pautas en ${unitName(unit)}. Crea una en Pautas.`}
       >
         <OptionSelect
           id="eq-schedule" name="scheduleId" className={SELECT} emptyLabel="Sin pauta" disabled={!unit} value={values.scheduleId} error={!!error("scheduleId")} onValueChange={(v) => onChange({ scheduleId: v })}

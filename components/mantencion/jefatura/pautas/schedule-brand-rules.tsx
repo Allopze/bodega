@@ -58,7 +58,7 @@ export function ScheduleBrandRules({ scheduleId, brands, rows }: {
   return (
     <SectionCard
       title="Diferencias por marca"
-      description="Solo las actividades que cambian según la marca. Toca un cuadro para cambiarlo: con «No aplica» la app oculta el ítem para esa marca; con «Revisar» lo muestra con el aviso «Confirmar con pauta del fabricante». Las marcas que no figuran aquí aplican todos los ítems."
+      description="Sólo las actividades que cambian según la marca. Con «No aplica» la app oculta el ítem para esa marca; con «Revisar» lo muestra con el aviso «Confirmar con pauta del fabricante». Las marcas que no figuran aquí aplican todos los ítems."
     >
       <ul className="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-sm" aria-label="Significado de los símbolos">
         {(Object.keys(RULE) as MantBrandRuleValue[]).map((key) => {

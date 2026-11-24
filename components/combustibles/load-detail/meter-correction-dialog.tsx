@@ -78,7 +78,7 @@ export function MeterCorrectionDialog({
         <DialogHeader>
           <DialogTitle>Corregir lectura del medidor</DialogTitle>
           <DialogDescription>
-            Confirma o corrige la lectura y deja el motivo. Si la foto trae una lectura sugerida automáticamente, no se aplica hasta que guardes esta corrección.
+            Confirma o corrige la lectura y deja el motivo. La lectura sugerida por la foto no se aplica hasta que guardes la corrección.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -112,7 +112,7 @@ export function MeterCorrectionDialog({
               onChange={(event) => setMeterReset(event.target.checked)}
             />
             <p className="pl-6 text-xs text-[var(--color-text-muted)]">
-              Márcalo solo si el medidor se reemplazó o se reinició. Esta lectura deja de compararse con las anteriores y pasa a ser el punto de partida del rendimiento.
+              Márcalo sólo si el medidor se reemplazó o se reinició. Esta lectura pasa a ser el punto de partida del rendimiento.
             </p>
           </div>
           <div>
@@ -126,7 +126,7 @@ export function MeterCorrectionDialog({
             />
           </div>
           <Button onClick={handleSubmit} disabled={pending} className="w-full">
-            {pending ? "Guardando..." : "Guardar corrección"}
+            {pending ? "Guardando…" : "Guardar corrección"}
           </Button>
         </div>
       </DialogContent>

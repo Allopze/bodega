@@ -76,7 +76,7 @@ export function AssignEquipmentDialog({ open, onOpenChange, scheduleId, schedule
         <DialogHeader className="mb-0 px-6 pt-6">
           <DialogTitle>Asignar equipos a «{scheduleName}»</DialogTitle>
           <DialogDescription>
-            Solo equipos activos que se miden en {unitName(unit)}. Los marcados quedan con esta pauta; si desmarcas uno que la tenía, queda sin pauta.
+            Sólo equipos activos que se miden en {unitName(unit)}. Los marcados quedan con esta pauta; si desmarcas uno que la tenía, queda sin pauta.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap items-end gap-2 px-6 pt-3">

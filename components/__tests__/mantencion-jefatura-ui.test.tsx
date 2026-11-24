@@ -274,7 +274,7 @@ describe("EquipmentForm", () => {
     renderForm({ equipmentTypeId: "t-h" })
     expect(screen.queryByLabelText("Nombre de la faena nueva", { exact: true })).toBeNull()
     expect(screen.queryByText("Nueva faena…")).toBeNull()
-    expect(screen.getByText(/Solo aparecen pautas en horas/)).toBeDefined()
+    expect(screen.getByText(/Sólo aparecen pautas en horas/)).toBeDefined()
   })
 
   it("una pauta elegida de otra unidad se suelta cuando el tipo ya no la admite", async () => {
@@ -315,7 +315,7 @@ describe("EquipmentPlanForm («Editar mantención», crítica 2026-11-15, paso 4
     for (const label of ["Código interno", "Patente", "Modelo", "Año"]) expect(screen.queryByLabelText(new RegExp(`^${label}`))).toBeNull()
     for (const label of ["Tipo de equipo", "Marca", "Faena"]) expect(screen.queryByRole("combobox", { name: new RegExp(`^${label}`) })).toBeNull()
     expect(screen.getByText(/se cambian en «Editar vehículo»/)).toBeDefined()
-    expect(screen.getByText(/Solo aparecen pautas en kilómetros/)).toBeDefined()
+    expect(screen.getByText(/Sólo aparecen pautas en kilómetros/)).toBeDefined()
   })
 
   it("«Dado de baja» pide el motivo y con registros la lectura queda fija", () => {

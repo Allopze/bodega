@@ -45,7 +45,7 @@ export function ReportsPerDayChart({ data, granularity, scopeNote, excel }: {
   const unit = granularity === "day" ? "día" : "mes"
   return (
     <StackedBucketsChart
-      title="Reportes recibidos por día"
+      title={`Reportes recibidos por ${unit}`}
       source="reportes de equipos (los cancelados no se esperaban)"
       ariaLabel="Reportes de equipos esperados y recibidos por período"
       series={REPORT_SERIES}
