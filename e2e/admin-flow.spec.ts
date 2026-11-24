@@ -53,8 +53,10 @@ async function selectRadixById(page: Page, id: string, option: string | RegExp) 
  */
 async function ensurePositionE2E(page: Page) {
   await page.goto("/admin/cargos")
+  // Se espera al listado ANTES de decidir; ver `ensureWorksiteE2E`.
+  await expect(page.getByRole("table", { name: "Catálogo de cargos" })).toBeVisible()
   const exists = page.getByRole("row", { name: /Montajista E2E/ })
-  if (await exists.first().isVisible().catch(() => false)) return
+  if (await exists.first().isVisible()) return
 
   await page.getByRole("button", { name: /nuevo registro/i }).click()
   await page.getByRole("menuitem", { name: /nuevo cargo/i }).click()
@@ -77,8 +79,19 @@ async function ensureWorksiteE2E(page: Page) {
   // cualquier spec que buscara /Faena E2E/ —el selector de faenas del invite,
   // el alcance del PDTP— fallaba por strict mode con 2 elementos. La celda no
   // sirve para comprobarlo porque concatena nombre y código ("Faena E2EE2E-001").
+  //
+  // Tampoco basta `isVisible()` justo después del `goto`: no espera. El listado
+  // llega en un boundary de Suspense (`loading.tsx`) y React 19 no lo revela de
+  // inmediato —su runtime de streaming escalona la revelación unos 300 ms desde
+  // el primer pintado—, así que `goto` puede resolver en `load` con las filas ya
+  // en el DOM pero dentro de `div#S:n[hidden]`: invisibles para `isVisible()` y
+  // ausentes de `getByRole`. En ese instante el helper concluía «no existe» y
+  // creaba otra «Faena E2E» (medido: la fila tarda ~120–290 ms tras `load` en
+  // 3 de cada 8 cargas). Se espera a que la tabla esté visible y recién ahí se
+  // decide; sin `.catch`, para que un fallo real no se lea como «no existe».
+  await expect(page.getByRole("table", { name: "Faenas activas" })).toBeVisible()
   const exists = page.getByRole("row", { name: /Faena E2E/ })
-  if (await exists.first().isVisible().catch(() => false)) return
+  if (await exists.first().isVisible()) return
 
   await page.getByRole("button", { name: /nueva faena/i }).click()
   const dialog = page.getByRole("dialog", { name: "Nueva faena" })
