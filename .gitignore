@@ -155,6 +155,9 @@ OC-ejemplo-pdfcn.pdf
 /odoo-19.0
 # Worktrees de sesión (EnterWorktree) — scratch local, no código fuente
 .claude/worktrees/
+# Preferencias personales del agente (rutas absolutas de la máquina, DSNs locales):
+# las reglas del equipo van en .claude/settings.json, que sí se versiona.
+.claude/settings.local.json
 
 /auditoria/
 # Documentation credentials (do not commit)
