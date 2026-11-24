@@ -54,28 +54,17 @@ export function filterAdminAreas(areas: AreaNode[], query: string): AreaNode[] {
   return result
 }
 
-function DestinationLink({ href, label, iconName, nested }: {
+function DestinationLink({ href, label, nested }: {
   href: string
   label: string
-  iconName?: string
   nested?: boolean
 }) {
-  const Icon = (iconName && NAV_ICONS[iconName]) || undefined
   return (
     <Link
       href={href}
       data-pressable
       className="group flex items-center gap-3 rounded-[var(--radius-lg)] px-2 py-2 transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]"
     >
-      {Icon ? (
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)] transition-colors duration-[var(--duration-fast)] group-hover:text-[var(--color-primary)]">
-          <Icon size={16} />
-        </span>
-      ) : (
-        // Los hijos no declaran icono en `admin-nav`; un guion mantiene la
-        // rejilla alineada sin inventarles uno que no les corresponde.
-        <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center text-[var(--color-text-faint)]">–</span>
-      )}
       <span className={nested
         ? "min-w-0 flex-1 truncate text-sm text-[var(--color-text-muted)]"
         : "min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)]"}>
@@ -135,7 +124,7 @@ export function AdminAreaIndex({ areas }: { areas: AreaNode[] }) {
             <ul>
               {area.items.map((item) => (
                 <li key={item.href}>
-                  <DestinationLink href={item.href} label={item.label} iconName={item.iconName} />
+                  <DestinationLink href={item.href} label={item.label} />
                   {item.children?.length ? (
                     <ul className="ml-4 border-l border-[var(--color-border)] pl-2">
                       {item.children.map((child) => (

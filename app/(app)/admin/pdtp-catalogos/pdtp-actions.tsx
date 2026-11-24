@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { BookBookmark, CaretRight, ListPlus, Plus, Table, UserPlus } from "@phosphor-icons/react"
+import { CaretRight, Plus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { ResponsibleForm } from "./responsible-form"
 import { SheetForm, type ProgramOption } from "./sheet-form"
@@ -38,14 +38,13 @@ export function PdtpActions({
    * Cada opción abre el mismo formulario de antes; "Publicar y agregar" sigue
    * exigiendo `prevention:pdtp:program:manage` y un programa en borrador.
    */
-  type Choice = { key: string; label: string; desc: string; icon: React.ReactNode; open: () => void }
+  type Choice = { key: string; label: string; desc: string; open: () => void }
   const choices: Choice[] = [
     ...(canManagePrograms && draftPrograms.length > 0
       ? [{
           key: "publicar",
           label: "Publicar y agregar actividad",
           desc: "Crea la actividad en el catálogo y la agrega a un programa en borrador, en una sola operación.",
-          icon: <ListPlus size={18} />,
           open: () => setActivitySheetOpen(true),
         }]
       : []),
@@ -53,21 +52,18 @@ export function PdtpActions({
       key: "identidad",
       label: "Identidad de catálogo",
       desc: "Actividad preventiva reutilizable, sin agregarla todavía a un programa.",
-      icon: <BookBookmark size={18} />,
       open: () => setCatalogSheetOpen(true),
     },
     {
       key: "responsable",
       label: "Responsable",
       desc: "Rol, grupo o persona a quien se asignan actividades.",
-      icon: <UserPlus size={18} />,
       open: () => setRespSheetOpen(true),
     },
     {
       key: "hoja",
       label: "Hoja de programa",
       desc: "Agrupación de actividades por área dentro de un programa anual.",
-      icon: <Table size={18} />,
       open: () => setSheetSheetOpen(true),
     },
   ]
@@ -93,9 +89,6 @@ export function PdtpActions({
                 onClick={() => { setChooserOpen(false); choice.open() }}
                 className="group flex items-center gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 text-left transition-colors hover:border-(--color-primary) hover:bg-(--color-primary-tint) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
               >
-                <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius) bg-(--color-surface-2) text-(--color-text-muted) group-hover:bg-white group-hover:text-(--color-primary)">
-                  {choice.icon}
-                </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold text-(--color-text)">{choice.label}</span>
                   <span className="block text-xs text-(--color-text-muted)">{choice.desc}</span>

@@ -21,7 +21,6 @@ interface EvaluationCardProps {
   /** Título del cargo admin_contrato en el contrato de la faena. */
   worksiteAdminContratoLabel: string | null
   role: 'prevencionista_faena' | 'admin_contrato' | 'conductor_lider'
-  icon: React.ReactNode
   evaluation: SstEvaluation | undefined
   weeklyEvals: SstWeeklyEvaluation[]
   permissions: {
@@ -38,7 +37,6 @@ export function EvaluationCard({
   title,
   worksiteAdminContratoLabel,
   role,
-  icon,
   evaluation,
   weeklyEvals,
   permissions,
@@ -58,14 +56,7 @@ export function EvaluationCard({
   return (
     <Card className="flex flex-col h-full border border-(--color-border) bg-(--color-surface) hover:bg-[var(--color-surface-2)] transition-colors">
       <CardHeader className="flex flex-row items-start justify-between border-b border-(--color-border) bg-(--color-surface-2) p-4">
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-(--radius-lg) bg-(--color-primary-tint) text-(--color-primary)">
-            {icon}
-          </span>
-          <div>
-            <CardTitle className="text-sm font-semibold">{title}</CardTitle>
-          </div>
-        </div>
+        <CardTitle className="text-sm font-semibold">{title}</CardTitle>
         {evaluation && (
           <MetaBadge meta={{ label: `${estadoLabel(evaluation.estado)}`, variant: estadoBadgeVariant(evaluation.estado) }} />
         )}

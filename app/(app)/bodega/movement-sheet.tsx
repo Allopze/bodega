@@ -3,10 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import {
-  ClipboardText, ArrowsDownUp, Plus, CaretRight, CaretLeft,
-  Trash, Truck, Spinner, Warning, HandArrowUp, Package,
-} from "@phosphor-icons/react"
+import { Plus, CaretRight, CaretLeft, Spinner, Warning } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import {
   Sheet, SheetContent, SheetHeader, SheetBody, SheetTitle, SheetDescription, SheetCloseButton,
@@ -46,9 +43,7 @@ export function BodegaMovementTrigger() {
 }
 
 const ROW_CLASS =
-  "group flex items-center gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 text-left transition-colors hover:border-(--color-primary) hover:bg-(--color-primary-tint)"
-const ICON_CLASS =
-  "flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius) bg-(--color-surface-2) text-(--color-text-muted) group-hover:bg-white group-hover:text-(--color-primary)"
+  "flex items-center gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 text-left transition-colors hover:border-(--color-primary) hover:bg-(--color-primary-tint)"
 
 /**
  * Hoja "Registrar movimiento", ordenada por los trabajos del bodeguero y no por
@@ -135,12 +130,12 @@ export function BodegaMovementSheet({
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }, [initialRequest, openWith, pathname, router, searchParams])
 
-  type Choice = { key: BodegaMovementMode; label: string; desc: string; icon: React.ReactNode }
+  type Choice = { key: BodegaMovementMode; label: string; desc: string }
   const adjustChoices: Choice[] = canAdjust
     ? [
-        { key: "discard", label: "Baja o merma", desc: "Se dañó, venció o se perdió. Sale del stock con folio propio.", icon: <Trash size={18} /> },
-        { key: "adjust", label: "Ajuste", desc: "El número del sistema no cuadra con lo que hay en la estantería.", icon: <ArrowsDownUp size={18} /> },
-        { key: "count", label: "Conteo físico", desc: "Cuenta la estantería y, antes de cerrar, revisa un resumen de los ajustes.", icon: <ClipboardText size={18} /> },
+        { key: "discard", label: "Baja o merma", desc: "Se dañó, venció o se perdió. Sale del stock con folio propio." },
+        { key: "adjust", label: "Ajuste", desc: "El número del sistema no cuadra con lo que hay en la estantería." },
+        { key: "count", label: "Conteo físico", desc: "Cuenta la estantería y, antes de cerrar, revisa un resumen de los ajustes." },
       ]
     : []
 
@@ -210,7 +205,6 @@ export function BodegaMovementSheet({
             <div className="flex flex-col gap-2">
               {canDeliver && (
                 <Link href={deliverHref} className={ROW_CLASS}>
-                  <span className={ICON_CLASS}><HandArrowUp size={18} /></span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-(--color-text)">Entregar a trabajador</span>
                     <span className="block text-xs text-(--color-text-muted)">
@@ -223,9 +217,6 @@ export function BodegaMovementSheet({
 
               {hasReceive && (
                 <div className="flex items-start gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius) bg-(--color-surface-2) text-(--color-text-muted)">
-                    <Package size={18} />
-                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-(--color-text)">Recibir guía u OC</span>
                     <span className="block text-xs text-(--color-text-muted)">
@@ -262,7 +253,6 @@ export function BodegaMovementSheet({
                   onClick={() => { setType(choice.key); setProductId(undefined) }}
                   className={ROW_CLASS}
                 >
-                  <span className={ICON_CLASS}>{choice.icon}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-(--color-text)">{choice.label}</span>
                     <span className="block text-xs text-(--color-text-muted)">{choice.desc}</span>
@@ -281,7 +271,6 @@ export function BodegaMovementSheet({
                   href="/recepcion"
                   className={`${ROW_CLASS} border-dashed`}
                 >
-                  <span className={ICON_CLASS}><Truck size={18} /></span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-(--color-text)">Traslado a faena</span>
                     <span className="block text-xs text-(--color-text-muted)">

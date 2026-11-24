@@ -3,7 +3,6 @@
 import * as React from "react"
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { ShieldCheck, Briefcase, Car } from "@phosphor-icons/react"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "@/lib/toast"
 import { deleteEvaluationAction } from "@/app/(app)/prevencion/actions"
@@ -66,7 +65,6 @@ export function WorkerEvaluations({
           title="Prevencionista de faena"
           role="prevencionista_faena"
           worksiteAdminContratoLabel={worker.adminContratoLabel}
-          icon={<ShieldCheck size={18} />}
           evaluation={prevEval}
           weeklyEvals={weeklyEvals}
           permissions={permissions}
@@ -78,7 +76,6 @@ export function WorkerEvaluations({
           title={adminLabel}
           role="admin_contrato"
           worksiteAdminContratoLabel={worker.adminContratoLabel}
-          icon={<Briefcase size={18} />}
           evaluation={adminEval}
           weeklyEvals={weeklyEvals}
           permissions={permissions}
@@ -90,7 +87,6 @@ export function WorkerEvaluations({
           title="Conductor líder (acompañamiento)"
           role="conductor_lider"
           worksiteAdminContratoLabel={worker.adminContratoLabel}
-          icon={<Car size={18} />}
           evaluation={condEval}
           weeklyEvals={weeklyEvals}
           permissions={permissions}

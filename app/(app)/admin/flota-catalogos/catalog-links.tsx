@@ -1,11 +1,5 @@
 import Link from "next/link"
-import {
-  Truck,
-  GasPump,
-  TreeStructure,
-  Drop,
-  ArrowRight,
-} from "@phosphor-icons/react/ssr"
+import { ArrowRight } from "@phosphor-icons/react/ssr"
 import type { Permission } from "@/modules/permissions"
 
 const LINKS = [
@@ -13,42 +7,36 @@ const LINKS = [
     title:       "Estanques de combustible",
     description: "Configura los estanques físicos por faena y producto para operar el ciclo.",
     href:        "/admin/flota-catalogos/estanques-combustible",
-    icon:        Drop,
     permission:  "admin:fleet_catalog" satisfies Permission,
   },
   {
     title:       "Productos de combustible",
     description: "Administra Diésel, BlueMax, unidades y alias de integración.",
     href:        "/admin/flota-catalogos/productos-combustible",
-    icon:        Drop,
     permission:  "admin:fleet_catalog" satisfies Permission,
   },
   {
     title:       "Tipos de equipo",
     description: "Clasifica camiones, vehículos livianos, maquinaria y sus unidades de rendimiento.",
     href:        "/admin/flota-catalogos/tipos-equipo",
-    icon:        TreeStructure,
     permission:  "admin:fleet_catalog" satisfies Permission,
   },
   {
     title:       "Vehículos",
     description: "Crear, editar y dar de baja vehículos asociados a faenas.",
     href:        "/admin/flota-catalogos/vehiculos",
-    icon:        Truck,
     permission:  "admin:fleet_vehicles" satisfies Permission,
   },
   {
     title:       "Proveedores de combustible",
     description: "Mantén el listado maestro de proveedores y sus condiciones.",
     href:        "/admin/flota-catalogos/proveedores-combustible",
-    icon:        GasPump,
     permission:  "combustibles:manage_suppliers" satisfies Permission,
   },
   {
     title:       "Viajes y consumo",
     description: "Resumen operacional de viajes, combustible y kilómetros.",
     href:        "/flota",
-    icon:        Truck,
     permission:  "combustibles:view" satisfies Permission,
   },
 ] as const
@@ -59,16 +47,12 @@ export function CatalogLinks({ permissions }: { permissions: string[] }) {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
       {visibleLinks.map((link) => {
-        const Icon = link.icon
         return (
           <Link
             key={link.href}
             href={link.href}
             className="group flex items-start gap-3 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)] transition-[background-color,transform] duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]"
           >
-            <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)] group-hover:bg-[var(--color-primary-tint)] group-hover:text-[var(--color-primary)]">
-              <Icon size={20} />
-            </span>
             <span className="min-w-0 flex-1">
               <span className="block font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary)]">
                 {link.title}

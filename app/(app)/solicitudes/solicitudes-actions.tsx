@@ -3,7 +3,7 @@
 import { ExportLink } from "@/components/ui/export-button"
 import { useState } from "react"
 import Link from "next/link"
-import { Plus, Warning } from "@phosphor-icons/react"
+import { Plus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
@@ -47,9 +47,6 @@ export function SolicitudesActions({ canCreate, hasWorksites, exportHref }: Soli
       <Dialog open={showWarningModal} onOpenChange={setShowWarningModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader className="flex flex-col items-center text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)] mb-3">
-              <Warning size={24} weight="bold" />
-            </div>
             <DialogTitle>Sin faenas asignadas</DialogTitle>
             <DialogDescription className="mt-2 text-sm text-center">
               No tienes faenas activas asignadas a tu cuenta o no existen faenas en el sistema. Contacta a un administrador para que te asigne una faena antes de poder crear una solicitud.

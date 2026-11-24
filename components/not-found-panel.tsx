@@ -2,8 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { MagnifyingGlass, ArrowRight } from "@phosphor-icons/react"
-import { NAV_ICONS } from "@/components/layout/nav-icons"
+import { ArrowRight } from "@phosphor-icons/react"
 import { navTargetContext, type NavTarget } from "@/components/layout/nav-items"
 import { Button } from "@/components/ui/button"
 import { resolveNotFound } from "@/lib/routing/not-found-suggestion"
@@ -44,17 +43,13 @@ export function NotFoundPanel({ targets }: { targets: NavTarget[] }) {
 
   return (
     <div className="mx-auto max-w-2xl py-10">
-      <div className="flex h-12 w-12 items-center justify-center rounded-[var(--radius-2xl)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]">
-        <MagnifyingGlass size={22} />
-      </div>
-      <p className="mt-5 text-eyebrow">Error 404</p>
+      <p className="text-eyebrow">Error 404</p>
       <h1 className="mt-1 text-h1 text-[var(--color-text)]">{title}</h1>
       <p className="mt-2 max-w-[60ch] text-sub">{description}</p>
 
       {suggestion.kind === "unknown" && targets.length > 0 ? (
         <div className="mt-6 grid gap-px overflow-hidden rounded-[var(--radius-2xl)] bg-[var(--color-border)] sm:grid-cols-2">
           {targets.slice(0, FALLBACK_LIMIT).map((target) => {
-            const Icon = NAV_ICONS[target.iconName] ?? MagnifyingGlass
             return (
               <Link
                 key={target.href}
@@ -62,9 +57,6 @@ export function NotFoundPanel({ targets }: { targets: NavTarget[] }) {
                 data-pressable
                 className="group flex items-center gap-3 bg-[var(--color-surface)] p-4 transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]"
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)] transition-colors duration-[var(--duration-fast)] group-hover:text-[var(--color-primary)]">
-                  <Icon size={18} />
-                </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-[var(--color-text)]">{target.label}</span>
                   {/* Un módulo que es su propia área ("Mis pendientes") no se repite a sí mismo. */}

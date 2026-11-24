@@ -9,7 +9,7 @@ import { Field } from "@/components/ui/field"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { toast } from "@/lib/toast"
 import { formatDate } from "@/lib/utils"
-import { FileText, UploadSimple } from "@phosphor-icons/react"
+import { UploadSimple } from "@phosphor-icons/react"
 
 const MAX_FILE_MB = 25
 
@@ -128,9 +128,6 @@ export function AssetDocuments({ assetId, documents, canManage, maxAttachments }
                 rel="noreferrer"
                 className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xs transition-colors hover:bg-[var(--color-surface-2)]"
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]">
-                  <FileText size={16} aria-hidden />
-                </span>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-[var(--color-text)]">{doc.fileName}</p>
                   <p className="text-xs text-[var(--color-text-muted)]">

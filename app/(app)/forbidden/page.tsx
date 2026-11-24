@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { LockSimple } from "@phosphor-icons/react/dist/ssr"
 import { PageContainer } from "@/components/ui/page-container"
 import { Button } from "@/components/ui/button"
 import { safeInternalPath, sectionLabelFromPath } from "@/lib/routing/return-path"
@@ -33,10 +32,7 @@ export default async function ForbiddenPage({
   return (
     <PageContainer width="form">
       <div className="mx-auto max-w-2xl py-10">
-        <div className="flex h-12 w-12 items-center justify-center rounded-[var(--radius-2xl)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]">
-          <LockSimple size={22} />
-        </div>
-        <p className="mt-5 text-eyebrow">Sin acceso</p>
+        <p className="text-eyebrow">Sin acceso</p>
         <h1 className="mt-1 text-h1 text-[var(--color-text)]">Sin permisos suficientes</h1>
         <p className="mt-2 max-w-[60ch] text-sub">
           Tu cuenta no autoriza esta vista. Si esperabas llegar aquí, pide a un administrador que

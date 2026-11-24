@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { ChartLineUp } from "@phosphor-icons/react/dist/ssr"
 import { cn, formatDateTime, MONTH_LABELS, formatQty } from "@/lib/utils"
 import { Progress } from "@/components/ui/progress"
 import { getPdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
@@ -97,9 +96,6 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] group-hover:bg-[var(--color-surface)] group-hover:text-[var(--color-primary)]">
-            <ChartLineUp size={14} weight="bold" />
-          </span>
           {/* h3 como los demás bloques del panel (`ChartFrame`). */}
           <h3 className="text-eyebrow text-[var(--color-text)]">PDTP {year}</h3>
         </div>

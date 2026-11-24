@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useId } from "react"
 import { useRouter } from "next/navigation"
-import { CalendarBlank, CheckCircle, IdentificationBadge, MapPin, UserFocus } from "@phosphor-icons/react"
+import { CalendarBlank, CheckCircle, IdentificationBadge, MapPin } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field, FieldGroup } from "@/components/ui/field"
@@ -142,16 +142,11 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
 
         {/* Worker search + select */}
         <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-bg) p-3 sm:p-4">
-          <div className="mb-3 flex items-start gap-3">
-            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-(--radius) bg-(--color-primary-tint) text-(--color-primary)">
-              <UserFocus size={18} weight="bold" aria-hidden="true" />
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-(--color-text)">Trabajador evaluado</p>
-              <p className="mt-0.5 text-xs leading-5 text-text-subtle">
-                Abre el selector y busca por nombre o RUT antes de continuar.
-              </p>
-            </div>
+          <div className="mb-3">
+            <p className="text-sm font-semibold text-(--color-text)">Trabajador evaluado</p>
+            <p className="mt-0.5 text-xs leading-5 text-text-subtle">
+              Abre el selector y busca por nombre o RUT antes de continuar.
+            </p>
           </div>
           <Field
             label="Trabajador"
