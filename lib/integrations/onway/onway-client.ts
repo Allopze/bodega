@@ -310,6 +310,10 @@ interface OnwayChallenge {
   timer: ReturnType<typeof setTimeout> | null
   /** Rellena credenciales si Auth0 vuelve a pintar el formulario vacío. */
   fillTimer: ReturnType<typeof setInterval> | null
+  /** Rondas de login que la plataforma ya reenvió en esta vista. */
+  loginRounds: number
+  /** Última vez que se pulsó entrar/enviar: evita ráfagas contra Auth0. */
+  lastLoginActionAt: number
   /** Conserva el estado terminal unos segundos para que la vista lo lea. */
   cleanupTimer: ReturnType<typeof setTimeout> | null
   lastFrame: { data: Buffer; at: number } | null
@@ -610,8 +614,12 @@ async function scrapeWithSession(
       timeout: timeouts.navigationTimeoutMs ?? NAVIGATION_TIMEOUT_MS,
     })
     const currentPageUrl = new URL(page.url())
+    // El portal sin sesión aterriza en la portada pública (`/Home/Index/en`),
+    // no en `/home/login` como se creía. Si sólo se miraba esa ruta, la corrida
+    // seguía sin autenticarse y se quedaba esperando un snapshot que nunca llega
+    // hasta expirar en `ONWAY_PORTAL_TIMEOUT`.
     const needsAuthentication = currentPageUrl.origin !== ONWAY_PORTAL_ORIGIN
-      || currentPageUrl.pathname.toLocaleLowerCase("en-US").startsWith("/home/login")
+      || !isOnwayChallengeSolvedUrl(currentPageUrl.href)
       || await page.locator("#smalAuth0ActionLogin").isVisible()
 
     if (needsAuthentication) {
@@ -691,6 +699,13 @@ function challengeViewport(page: Page): OnwayChallengeViewport {
  * Auth0 puede repintar el formulario vacío después del CAPTCHA. La plataforma
  * deja usuario y contraseña sólo si están vacíos: la persona nunca necesita
  * conocer la credencial de la cuenta de servicio y el desafío sigue siendo suyo.
+ *
+ * También reenvía el login cuando el CAPTCHA ya se resolvió pero el portal
+ * devolvió la portada pública (`/Home/Index/en`): ahí el formulario de Auth0 no
+ * existe y el botón de entrada está visible. Sin este reenvío la cookie de
+ * Auth0 quedaba sin canjear, la vista se cerraba como «resuelta» y el sync
+ * siguiente volvía a pedir el CAPTCHA — el síntoma «resolví el captcha y al
+ * minuto dice que no respondió».
  */
 async function fillEmptyCredentials(page: Page, credentials: OnwayCredentials): Promise<void> {
   try {
@@ -707,6 +722,54 @@ async function fillEmptyCredentials(page: Page, credentials: OnwayCredentials): 
     // La página puede estar navegando entre Auth0 y el portal: el próximo
     // intento del rellenador la alcanza.
   }
+}
+
+/**
+ * Tras resolver el CAPTCHA, Auth0 deja la cookie pero el portal puede volver a
+ * su portada. Reenvía el login para canjearla, con un tope de rondas para no
+ * convertir la vista en un martillo contra Auth0.
+ *
+ * Devuelve `true` si inició una ronda nueva.
+ */
+async function resumeLoginAfterChallenge(
+  page: Page,
+  credentials: OnwayCredentials,
+  challenge: OnwayChallenge,
+): Promise<boolean> {
+  const MAX_ROUNDS = 3
+  if (challenge.loginRounds >= MAX_ROUNDS) return false
+  if (Date.now() - challenge.lastLoginActionAt < 4_000) return false
+  // Sólo en la portada pública: en Auth0 resuelve el rellenador, y en la app de
+  // seguimiento ya hay sesión.
+  if (!isOnwayPortalHome(page.url())) return false
+
+  const signIn = page.locator("#smalAuth0ActionLogin")
+  if (!await signIn.isVisible().catch(() => false)) return false
+
+  challenge.loginRounds++
+  challenge.lastLoginActionAt = Date.now()
+  logger.warn("[flota/onway] verificación resuelta; la plataforma reenvía el login", {
+    round: challenge.loginRounds,
+    path: safePath(page.url()),
+  })
+  await signIn.click({ timeout: 10_000 }).catch(() => undefined)
+  return true
+}
+
+/** `/`, `/Home/...` y la raíz con `?ReturnUrl=`: la pantalla de entrada del portal. */
+function isOnwayPortalHome(input: string): boolean {
+  try {
+    const url = new URL(input)
+    if (url.origin !== ONWAY_PORTAL_ORIGIN) return false
+    const path = url.pathname.toLocaleLowerCase("en-US")
+    return path === "/" || path.startsWith("/home")
+  } catch {
+    return false
+  }
+}
+
+function safePath(input: string): string {
+  try { return new URL(input).pathname } catch { return "unknown" }
 }
 
 /**
@@ -754,6 +817,8 @@ async function openChallenge(page: Page, userId: string, credentials: OnwayCrede
     lastFrame: null,
     frameInFlight: null,
     navigationGuard: null,
+    loginRounds: 0,
+    lastLoginActionAt: 0,
   }
   const guard = challengeNavigationGuard(page)
   challenge.navigationGuard = guard
@@ -761,7 +826,14 @@ async function openChallenge(page: Page, userId: string, credentials: OnwayCrede
   // `continue()` de esta. La página no tiene otros handlers propios.
   await page.unroute("**/*").catch(() => undefined)
   await page.route("**/*", guard).catch(() => { /* la página puede estar cerrándose */ })
-  challenge.fillTimer = setInterval(() => { void fillEmptyCredentials(page, credentials) }, 2_000)
+  challenge.fillTimer = setInterval(() => {
+    // Rellena el formulario si Auth0 lo repinta, o reenvía el login cuando la
+    // persona ya resolvió el CAPTCHA pero el portal volvió a su portada.
+    if (!isOnwayChallengeSolvedUrl(page.url())) {
+      void fillEmptyCredentials(page, credentials)
+      void resumeLoginAfterChallenge(page, credentials, challenge)
+    }
+  }, 2_000)
   challenge.timer = setTimeout(() => { void expireChallenge(challenge) }, ONWAY_CHALLENGE_TTL_MS)
   state.challenge = challenge
   logger.warn("[flota/onway] verificación interactiva abierta", { challengeId: challenge.id })
@@ -841,13 +913,29 @@ function findChallenge(id: string, userId: string): OnwayChallenge {
   return challenge
 }
 
+/**
+ * ¿La sesión quedó realmente establecida? Combina la señal fuerte de URL con la
+ * funcional: si el portal muestra el botón de entrada, no hay sesión aunque la
+ * ruta parezca del área privada.
+ *
+ * Hace falta porque el portal puede devolver la portada pública
+ * (`/Home/Index/en`) después de Auth0 —medido el 2026-11-24—, y ahí el único
+ * indicio fiable es el propio botón. Sin esta comprobación la vista daba el
+ * desafío por resuelto y el siguiente sync salía sin sesión.
+ */
+async function isOnwaySessionEstablished(page: Page): Promise<boolean> {
+  if (!isOnwayChallengeSolvedUrl(page.url())) return false
+  // En la app de seguimiento el botón no existe; si aparece, la cookie no sirvió.
+  return !await page.locator("#smalAuth0ActionLogin").isVisible().catch(() => false)
+}
+
 async function refreshChallengeStatus(challenge: OnwayChallenge): Promise<void> {
   if (challenge.status !== "awaiting") return
   if (challenge.page.isClosed()) {
     await endChallenge(challenge, "failed")
     return
   }
-  if (isOnwayChallengeSolvedUrl(challenge.page.url())) {
+  if (await isOnwaySessionEstablished(challenge.page)) {
     await markChallengeSolved(challenge)
     return
   }

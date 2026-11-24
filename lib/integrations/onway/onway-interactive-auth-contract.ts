@@ -104,19 +104,37 @@ export function parseOnwayChallengeInput(
   }
 }
 
-/**
- * Una página autenticada del portal (cualquiera salvo el login) significa que
- * Auth0 ya devolvió la sesión. No se exige el mapa: el callback intermedio ya
- * dejó la cookie y la vista debe cerrarse ahí para no mostrar el portal.
- */
-export function isOnwayChallengeSolvedUrl(input: string): boolean {
+/** La app de seguimiento: la única ruta que no existe sin sesión válida. */
+export function isOnwayTrackingPage(input: string): boolean {
   try {
     const url = new URL(input)
     return url.origin === ONWAY_PORTAL_ORIGIN
-      && !url.pathname.toLocaleLowerCase("en-US").startsWith("/home/login")
+      && url.pathname.toLocaleLowerCase("en-US").startsWith("/onlinetracking")
   } catch {
     return false
   }
+}
+
+/**
+ * Señal **fuerte** de sesión establecida: el portal está en la app de
+ * seguimiento. Es la que se exige para persistir un snapshot o dar la
+ * verificación por resuelta.
+ *
+ * Antes bastaba «cualquier ruta del portal salvo /home/login», y eso declaraba
+ * resuelta la verificación en cuanto Auth0 devolvía a la portada pública:
+ * medido el 2026-11-24, una navegación sin sesión aterriza en
+ * `/Home/Index/en` con `#smalAuth0ActionLogin` **visible**. La vista decía
+ * «Verificación completada. Actualizando…», la sincronización salía sin sesión,
+ * Auth0 volvía a pedir el CAPTCHA y a los 45 s la persona veía «OnWay no
+ * respondió en el tiempo» — el síntoma reportado como «luego de resolver el
+ * captcha, al minuto dice que no resolvió».
+ *
+ * `/Home/...` queda deliberadamente fuera: es la portada, no prueba sesión. Para
+ * ese caso ambiguo el cliente mira el botón de entrada (`isOnwaySessionEstablished`
+ * en `onway-client.ts`), que es la señal funcional que sí lo distingue.
+ */
+export function isOnwayChallengeSolvedUrl(input: string): boolean {
+  return isOnwayTrackingPage(input)
 }
 
 /**

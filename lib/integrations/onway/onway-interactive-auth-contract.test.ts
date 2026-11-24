@@ -36,9 +36,13 @@ describe("parseOnwayChallengeInput", () => {
 })
 
 describe("isOnwayChallengeSolvedUrl", () => {
-  it("cualquier página autenticada del portal cuenta como resuelta; el login y otros orígenes no", () => {
+  it("sólo la app de seguimiento prueba una sesión válida", () => {
     expect(isOnwayChallengeSolvedUrl("https://onway.enteldigital.cl/OnlineTracking/Index/es")).toBe(true)
-    expect(isOnwayChallengeSolvedUrl("https://onway.enteldigital.cl/")).toBe(true)
+    expect(isOnwayChallengeSolvedUrl("https://onway.enteldigital.cl/onlinetracking/index/es")).toBe(true)
+    // El portal sin sesión aterriza acá (medido el 2026-11-24) con el botón de
+    // entrada visible: darlo por resuelto hacía que el sync saliera sin sesión.
+    expect(isOnwayChallengeSolvedUrl("https://onway.enteldigital.cl/Home/Index/en")).toBe(false)
+    expect(isOnwayChallengeSolvedUrl("https://onway.enteldigital.cl/")).toBe(false)
     expect(isOnwayChallengeSolvedUrl("https://onway.enteldigital.cl/home/login")).toBe(false)
     expect(isOnwayChallengeSolvedUrl("https://onway.enteldigital.cl.evil.example/OnlineTracking/Index/es")).toBe(false)
     expect(isOnwayChallengeSolvedUrl("no-es-url")).toBe(false)
