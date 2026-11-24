@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Truck } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
@@ -175,7 +174,6 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
       <>
         {header}
         <EmptyState
-          icon={<Truck size={20} aria-hidden />}
           title="Toda la flota de tus faenas ya está en Mantención"
           description="Cuando se agregue un vehículo con odómetro u horómetro en Vehículos, aparecerá aquí para completarle marca y pauta."
           action={<Button asChild variant="secondary"><Link href="/mantencion/equipos">Ver los equipos</Link></Button>}

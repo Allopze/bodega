@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { FunnelSimple, ShieldCheck } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { FUEL_PATHS, fuelInboxHref } from "@/lib/combustibles/routes"
@@ -17,7 +16,6 @@ export function AnomalyEmptyState({ filtered, canManageRules }: { filtered: bool
   if (filtered) {
     return (
       <EmptyState
-        icon={<FunnelSimple size={24} />}
         title="Ningún caso coincide con los filtros"
         description="Prueba con otra faena, estado o severidad, o quita los filtros para ver todos los casos."
         action={<Button asChild variant="secondary" size="sm"><Link href={fuelInboxHref({ tipo: "caso" })}>Limpiar filtros</Link></Button>}
@@ -26,7 +24,6 @@ export function AnomalyEmptyState({ filtered, canManageRules }: { filtered: bool
   }
   return (
     <EmptyState
-      icon={<ShieldCheck size={24} />}
       tone="success"
       title="Aún no hay anomalías de combustible"
       description="Un caso aparece cuando una carga rompe una regla de control, por ejemplo un medidor que retrocede, litros sobre la capacidad del estanque o un sello repetido. Todavía no se ha detectado ninguno."

@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { Truck } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 
@@ -45,7 +44,6 @@ export function hasNoEquipmentInScope({ equipment, inWorkshop, records, workOrde
 export function PanelEmptyState({ canManage }: { canManage: boolean }) {
   return (
     <EmptyState
-      icon={<Truck size={24} aria-hidden />}
       title="Todavía no hay equipos en mantención para estas faenas"
       description={canManage
         ? "Agrega o importa los equipos desde Equipos: con ellos el panel mostrará cuáles necesitan mantención, qué está en taller y cuánto se ha registrado."

@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
-import { GasPump } from "@phosphor-icons/react/dist/ssr"
 import { can, requirePermission } from "@/lib/auth/can"
 import { Button } from "@/components/ui/button"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
@@ -126,7 +125,6 @@ export default async function FamilyPerformancePage({ params, searchParams }: Pa
 
       {anyLoads.data === false ? (
         <EmptyState
-          icon={<GasPump size={24} aria-hidden />}
           title="Todavía no hay cargas de equipos para analizar"
           description="Los rendimientos se calculan con las lecturas de odómetro y horómetro de cada carga. Agrega la planilla de cargas o registra cargas en terreno para empezar."
           action={emptyAction}

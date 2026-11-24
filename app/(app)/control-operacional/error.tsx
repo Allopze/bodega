@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect } from "react"
-import { ChartLineUp, WifiSlash } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ReportErrorButton } from "@/components/report-error-button"
@@ -26,7 +25,6 @@ export default function OperationalControlError({
     <div className="flex min-h-[50vh] items-center justify-center p-8">
       <EmptyState
         as="h1"
-        icon={isNetwork ? <WifiSlash size={24} /> : <ChartLineUp size={24} />}
         title={isNetwork ? "Error de conexión" : "Error al cargar el control operacional"}
         description={isNetwork
           ? "No se pudo conectar con el servidor. Verifica tu conexión a internet y que el servicio esté disponible, luego intenta nuevamente."

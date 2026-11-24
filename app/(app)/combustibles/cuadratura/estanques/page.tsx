@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { Drop, Receipt, Scales, Truck } from "@phosphor-icons/react/dist/ssr"
 import { and, asc, eq } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelProducts, fuelStorageLocations, fuelSuppliers, fuelVehicles } from "@/db/schema"
@@ -130,23 +129,19 @@ export default async function CuadraturaEstanquesPage({ searchParams }: { search
 
           {/* Cuatro tiles (regla A1), cada uno lleva a su subconjunto: las tres etapas físicas y la diferencia que importa, recibido − entregado. */}
           <section aria-label="Etapas del ciclo y diferencia" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <KpiCard
-              icon={<Drop size={16} aria-hidden />} label="Recibido en estanques" value={stageAmount(data.received)} href={receivedHref}
+            <KpiCard label="Recibido en estanques" value={stageAmount(data.received)} href={receivedHref}
               detail={data.received ? `${data.received.records} ${data.received.records === 1 ? "recepción" : "recepciones"}` : "Sin recepciones en el período"}
               empty={data.received ? undefined : { message: "Sin recepciones", actionLabel: canCreate ? "Registrar una recepción" : "Ver movimientos" }}
             />
-            <KpiCard
-              icon={<Receipt size={16} aria-hidden />} label="Facturado en cargas" value={stageAmount(data.registered)} href={invoicedHref}
+            <KpiCard label="Facturado en cargas" value={stageAmount(data.registered)} href={invoicedHref}
               detail={data.registered ? `${data.registered.records} ${data.registered.records === 1 ? "carga facturada" : "cargas facturadas"}` : "Sin cargas facturadas"}
               empty={data.registered ? undefined : { message: "Sin cargas facturadas", actionLabel: "Ver las cargas" }}
             />
-            <KpiCard
-              icon={<Truck size={16} aria-hidden />} label="Entregado a equipos" value={stageAmount(data.delivered)} href={deliveredHref}
+            <KpiCard label="Entregado a equipos" value={stageAmount(data.delivered)} href={deliveredHref}
               detail={data.delivered ? `${data.delivered.records} ${data.delivered.records === 1 ? "entrega" : "entregas"}` : "Sin entregas en el período"}
               empty={data.delivered ? undefined : { message: "Sin entregas", actionLabel: "Ver movimientos" }}
             />
-            <KpiCard
-              icon={<Scales size={16} aria-hidden />} label="Diferencia recibido − entregado" href={allHref}
+            <KpiCard label="Diferencia recibido − entregado" href={allHref}
               value={difference.status === "available" ? litersText(difference.absolute) : "—"}
               detail={difference.status === "available" ? `${difference.percent === null ? "Base cero" : `${formatQty(Math.abs(difference.percent), undefined, { maximumFractionDigits: 1 })} %`} · ${severity.label}` : "Falta una de las dos etapas para comparar"}
               tone={severity.variant === "danger" ? "danger" : severity.variant === "warning" ? "signal" : "neutral"}

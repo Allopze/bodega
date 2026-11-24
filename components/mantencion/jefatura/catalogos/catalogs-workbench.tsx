@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { BookOpenText, PencilSimple, Plus } from "@phosphor-icons/react"
+import { PencilSimple, Plus } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -149,7 +149,6 @@ export function CatalogsWorkbench({ catalog, rows, counts, canEdit = true }: {
           />
         ) : (
           <EmptyState
-            icon={<BookOpenText size={24} aria-hidden />}
             title={labels.emptyTitle}
             description={labels.emptyDescription}
             action={canEdit ? <Button onClick={create}><Plus size={14} aria-hidden />{labels.create}</Button> : undefined}

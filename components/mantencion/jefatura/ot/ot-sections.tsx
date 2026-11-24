@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { CheckCircle, Circle, CheckSquare, Package, Square } from "@phosphor-icons/react/dist/ssr"
+import { CheckCircle, Circle, CheckSquare, Square } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { DetailItem } from "@/components/ui/detail-item"
@@ -298,7 +298,6 @@ export function OtPartsRequestsSection({
           <EmptyState
             compact
             as="p"
-            icon={<Package size={20} aria-hidden />}
             title="Sin repuestos pedidos"
             description="Si esta orden necesita repuestos, pídelos desde aquí: la solicitud queda vinculada a la OT y al equipo."
             action={orderLink}

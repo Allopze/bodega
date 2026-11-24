@@ -222,7 +222,6 @@ export default async function OperationalControlPage({
               // Sin ícono: la etiqueta ya dice de qué es la cifra (auditoría 2026-11-13, P6).
               <KpiCard
                 key={tile.key}
-                icon={null}
                 label={tile.label}
                 value={tile.value}
                 valueKind={tile.valueKind}

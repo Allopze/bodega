@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { MapPin, Truck } from "@phosphor-icons/react/dist/ssr"
+import { MapPin } from "@phosphor-icons/react/dist/ssr"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { MetaBadge } from "@/components/states/state-badge"
 import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
@@ -30,7 +30,6 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
   if (positions.length === 0) {
     return (
       <EmptyState
-        icon={<Truck size={24} aria-hidden />}
         title="Todavía no hay vehículos vinculados"
         description="Configura OnWay o Wialon, revisa que las patentes o unidades coincidan con los vehículos de Flota y actualiza."
         action={<Button asChild variant="secondary" size="sm"><Link href="/flota">Revisar vehículos</Link></Button>}
@@ -42,7 +41,6 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
     return (
       <EmptyState
         compact
-        icon={<MapPin size={20} aria-hidden />}
         title="Ningún vehículo coincide"
         description="Prueba otra patente, código, marca, modelo o faena en el filtro superior."
       />

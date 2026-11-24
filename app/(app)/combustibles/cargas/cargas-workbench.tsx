@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { GasPump } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -128,7 +127,6 @@ export function CargasWorkbench({
         filtered ? (
           <EmptyState
             compact
-            icon={<GasPump size={20} />}
             title="Ninguna carga coincide con estos filtros"
             description="Prueba con otra faena u otro estado, o quita los filtros para ver todas las cargas del período."
             action={<Button type="button" size="sm" variant="secondary" onClick={() => clearFilters(["periodo", "desde", "hasta"])}>Quitar filtros</Button>}
@@ -137,7 +135,6 @@ export function CargasWorkbench({
         ) : (
           <EmptyState
             compact
-            icon={<GasPump size={20} />}
             title={`Aún no hay cargas ${period.inLabel}`}
             description="Aquí aparecen las cargas que se registran en terreno, las que llegan en una planilla y las facturadas. Registra una o agrega datos para llenar esta lista."
             action={canRegister ? <Button asChild size="sm"><Link href={FUEL_PATHS.registrar}>Registrar carga</Link></Button> : undefined}

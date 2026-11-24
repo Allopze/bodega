@@ -59,7 +59,6 @@ export function DevicesList({ groups, canRevoke }: { groups: DevicePersonGroup[]
   if (groups.length === 0) {
     return (
       <EmptyState
-        icon={<DeviceMobile size={24} aria-hidden />}
         title="Todavía no hay dispositivos conectados"
         description="Cuando un mecánico instala la app y entra con su cuenta, su teléfono aparece aquí y puedes desconectarlo si lo pierde o deja de usarlo."
         action={<MechanicAppInstallDialog />}

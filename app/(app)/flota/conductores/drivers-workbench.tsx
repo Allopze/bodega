@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { CheckCircle, IdentificationCard, Info, Plus } from "@phosphor-icons/react"
+import { Info, Plus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -287,7 +287,6 @@ export function DriversWorkbench({
           {rows.length === 0 ? (
             <div className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
               <EmptyState
-                icon={<IdentificationCard size={28} aria-hidden />}
                 title="Aún no hay licencias registradas en tus faenas"
                 description="Registra la licencia de quienes conducen para ver aquí qué vence y a quién le falta."
                 action={
@@ -303,14 +302,12 @@ export function DriversWorkbench({
               {estado === "atencion" ? (
                 <EmptyState
                   tone="success"
-                  icon={<CheckCircle size={28} weight="fill" aria-hidden />}
                   title="Todos los conductores tienen su licencia al día"
                   description="No hay licencias vencidas, por vencer ni por registrar."
                   action={<Button type="button" variant="secondary" onClick={() => changeEstado("todos")}>Ver todos</Button>}
                 />
               ) : (
                 <EmptyState
-                  icon={<IdentificationCard size={28} aria-hidden />}
                   title="Ninguna licencia vigente por ahora"
                   description="Cuando se renueven o se registren, aparecerán en esta vista."
                   action={<Button type="button" variant="secondary" onClick={() => changeEstado("todos")}>Ver todos</Button>}

@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { CheckCircle, ClipboardText, FunnelSimple } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import type { FuelInboxKind } from "@/lib/combustibles/inbox/types"
@@ -56,7 +55,6 @@ export function InboxEmptyState({
   if (filtered) {
     return (
       <EmptyState
-        icon={<FunnelSimple size={24} />}
         title="Nada coincide con los filtros"
         description="Prueba con otra faena o gravedad, o quita los filtros para ver todo lo que espera."
         action={<Button asChild variant="secondary" size="sm"><Link href={clearHref}>Limpiar filtros</Link></Button>}
@@ -66,7 +64,6 @@ export function InboxEmptyState({
   if (view === "decididas") {
     return (
       <EmptyState
-        icon={<ClipboardText size={24} />}
         title="Aún no hay decisiones en este período"
         description="Cuando alguien decida si una carga cuenta, cierre un caso, vincule una patente o revise un pedido, quedará aquí con su nota y la fecha. Desde aquí también se puede deshacer una decisión."
         action={<Button asChild variant="secondary" size="sm"><Link href={otherViewHref}>Ver lo pendiente</Link></Button>}
@@ -77,7 +74,6 @@ export function InboxEmptyState({
     const copy = KIND_COPY[kind]
     return (
       <EmptyState
-        icon={<CheckCircle size={24} />}
         tone="success"
         title={copy.title}
         description={`${copy.description} Mira también los otros tipos.`}
@@ -89,7 +85,6 @@ export function InboxEmptyState({
   const cases = followUp && followUp.count > 0 ? followUp : null
   return (
     <EmptyState
-      icon={<CheckCircle size={24} />}
       tone="success"
       title="Nada espera una decisión"
       description="Aquí aparece lo que la plataforma no puede decidir sola: cargas dudosas, patentes sin vincular y pedidos de revisión. Los casos de las reglas de control están en «En seguimiento» y lo ya decidido, en «Decididas»."

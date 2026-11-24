@@ -2,7 +2,6 @@
 
 import Link from "next/link"
 import { useEffect } from "react"
-import { ChartBar } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ReportErrorButton } from "@/components/report-error-button"
@@ -24,7 +23,6 @@ export default function MantencionPanelError({
     <div className="flex min-h-[50vh] items-center justify-center p-8">
       <EmptyState
         as="h1"
-        icon={<ChartBar size={24} />}
         title="No se pudo cargar el Panel de mantención"
         description="Ocurrió un error al armar el Panel. Intenta nuevamente o reporta el error para que el equipo lo revise."
         action={

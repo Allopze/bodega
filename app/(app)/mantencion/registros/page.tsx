@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { Suspense } from "react"
 import { redirect } from "next/navigation"
-import { CheckCircle, Truck, Warning, Wrench } from "@phosphor-icons/react/dist/ssr"
+import { Truck, Warning } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
@@ -210,7 +210,6 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
 
       {list.rows.length === 0 ? (
         <EmptyState
-          icon={query.filters.review === "pendiente" && !filtered ? <CheckCircle size={22} aria-hidden /> : <Wrench size={22} aria-hidden />}
           title={empty.title}
           description={empty.description}
           action={filtered

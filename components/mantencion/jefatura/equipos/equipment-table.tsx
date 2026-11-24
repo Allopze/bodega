@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { CaretDown, CaretUp, CaretUpDown, Truck } from "@phosphor-icons/react"
+import { CaretDown, CaretUp, CaretUpDown } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
 import { Button } from "@/components/ui/button"
@@ -117,7 +117,6 @@ export function EquipmentTable({ rows, canManage, canViewGps = true, filtered, p
   if (rows.length === 0) {
     return (
       <EmptyState
-        icon={<Truck size={24} aria-hidden />}
         title={filtered ? "Ningún equipo coincide con los filtros" : "Todavía no hay equipos en la mantención"}
         description={filtered
           ? "Prueba con otra faena, tipo, pauta o estado, o quita los filtros."

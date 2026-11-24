@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { UploadSimple } from "@phosphor-icons/react/dist/ssr"
 import { requireAnyPermission } from "@/lib/auth/can"
 import { settle } from "@/lib/async-settle"
 import { Button } from "@/components/ui/button"
@@ -66,7 +65,6 @@ export default async function ArchivosImportadosPage({ searchParams }: { searchP
           <ArchivosFilters kind={kind} status={status} counts={page.counts} visibleKinds={page.visibleKinds} total={page.total} />
           {page.rows.length === 0 ? (
             <EmptyState
-              icon={<UploadSimple size={24} />}
               title={kind || status ? "Ningún archivo coincide con el filtro" : "Todavía no se ha importado ningún archivo"}
               description={kind || status
                 ? "Quita el filtro de tipo o de estado para ver todos los archivos."

@@ -2,7 +2,6 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { and, asc, eq, inArray } from "drizzle-orm"
-import { GasPump } from "@phosphor-icons/react/dist/ssr"
 import { db } from "@/db"
 import { fuelTaeLoadingPoints, worksites } from "@/db/schema"
 import { can, requirePermission } from "@/lib/auth/can"
@@ -92,7 +91,6 @@ export default async function RegistrarCargaPage({ searchParams }: { searchParam
 
       {noPoints ? (
         <EmptyState
-          icon={<GasPump size={24} />}
           title="Aún no hay puntos de carga para registrar"
           description={canManagePoints
             ? "Para registrar una carga hace falta una faena a tu alcance con un punto de carga activo (surtidor, camión surtidor, bidón…). Se crean en Ajustes."

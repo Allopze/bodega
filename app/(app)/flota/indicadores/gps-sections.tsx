@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { Info, WifiSlash } from "@phosphor-icons/react/dist/ssr"
+import { Info } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -64,7 +64,6 @@ function EmptyBlock({ title, description, ctaLabel, ctaHref }: { title: string; 
     <ChartSlot span="full">
       <EmptyState
         compact
-        icon={<WifiSlash size={20} />}
         title={title}
         description={description}
         action={<Button asChild variant="secondary" size="sm"><Link href={ctaHref}>{ctaLabel}</Link></Button>}

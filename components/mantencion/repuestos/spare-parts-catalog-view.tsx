@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Package, Plus } from "@phosphor-icons/react"
+import { Plus } from "@phosphor-icons/react"
 import { exportSparePartsAction } from "@/app/(app)/mantencion/repuestos/actions"
 import { Button } from "@/components/ui/button"
 import { DataTable, type ColumnDef } from "@/components/ui/data-table"
@@ -197,7 +197,6 @@ export function SparePartsCatalogView({ rows, counts, tab, units }: SparePartsCa
 
       {rows.length === 0 ? (
         <EmptyState
-          icon={<Package size={24} aria-hidden />}
           title={empty.title}
           description={empty.description}
           action={empty.cta ? newButton : undefined}
