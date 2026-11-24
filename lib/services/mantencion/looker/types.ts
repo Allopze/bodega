@@ -270,6 +270,7 @@ export interface ComplianceBucket {
   checks: number
   /** Para el clic de una barra faena + mecánico. */
   worksiteId?: string | null
+  worksiteName?: string | null
   mechanicKey?: string | null
   mechanicLabel?: string | null
 }

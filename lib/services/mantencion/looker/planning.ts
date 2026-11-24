@@ -15,7 +15,7 @@ import type { CrossDimension, LookerFilters, PlanningData, PlanningRow, Resolved
  * La próxima usa la regla vigente del módulo: punto de la última preventiva + intervalo base.
  */
 
-export { deltaTone, remainingTone, type PlanningTone } from "./planning-rules"
+export { deltaTone, remainingTone, unitMismatchMessage, type PlanningTone } from "./planning-rules"
 
 function signedPreventive(row: FleetRow) {
   if (row.status.lastPreventive?.origin !== "firmada") return undefined
@@ -99,13 +99,4 @@ export async function loadPlanningData(
     hours: rows.filter((row) => row.unit === "h"),
     selectedId: cross.equipment?.id ?? null,
   }
-}
-
-/** Texto del vacío cuando el equipo elegido se controla por la otra unidad. */
-export function unitMismatchMessage(selected: ResolvedCrossFilters["equipment"], shown: "km" | "h"): string | null {
-  if (!selected?.unit || selected.unit === shown) return null
-  const name = selected.code || selected.plate
-  return shown === "h"
-    ? `${name} se controla por km; no tiene registros por horas.`
-    : `${name} se controla por horas; no tiene registros por kilómetros.`
 }

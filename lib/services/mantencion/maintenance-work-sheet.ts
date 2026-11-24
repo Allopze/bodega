@@ -4,7 +4,8 @@ import type { MaintenanceWorkRow } from "./maintenance-work"
 
 /** Hoja «Trabajos» del Excel del Panel. Aparte de la acción: un archivo `"use server"` sólo exporta funciones async. */
 
-const SOURCE_LABEL: Record<MaintenanceWorkRow["source"], string> = {
+/** Cómo se rotula en un libro la fuente de un trabajo (el Panel `Hoy` y las pestañas Looker usan el mismo texto). */
+export const WORK_SOURCE_LABEL: Record<MaintenanceWorkRow["source"], string> = {
   historial: "Historial de formularios",
   ot: "Orden de trabajo",
   registro: "Registro de la plataforma",
@@ -31,7 +32,7 @@ export function workSheetRow(row: MaintenanceWorkRow): Array<string | number | D
     row.workshopDays,
     row.inWorkshop ? "Sí" : "No",
     row.external === null ? "No informado" : row.external ? "Sí" : "No",
-    SOURCE_LABEL[row.source],
+    WORK_SOURCE_LABEL[row.source],
     row.reference || null,
   ]
 }

@@ -63,12 +63,25 @@ vi.mock("./indicators-sections", () => ({ WorkOrdersSection: () => null, PautasS
 vi.mock("./reporte-equipos-section", () => ({ ReporteEquiposSection: () => null }))
 vi.mock("./trinorma-sections", () => ({ MaintenanceWorkSection: () => null, FormsIndicatorsSection: () => null }))
 vi.mock("@/components/mantencion/jefatura/panel/panel-export", () => ({ PanelExcelButton: () => null, PanelPdfLink: () => null }))
+// Las tres pestañas nuevas leen su contexto (filtros, opciones y filtros cruzados) con `loadLookerContext`.
+vi.mock("@/lib/services/mantencion/looker/resolve", () => ({
+  loadLookerContext: async (_viewer: unknown, raw: Record<string, string>) => ({
+    filters: {
+      tab: raw.pestana, from: "2026-11-01", to: "2026-11-10", requestedFrom: "2026-11-01", requestedTo: "2026-11-10", invalidPeriod: false,
+      worksiteIds: [], equipmentIds: [], frequencies: [], page: 1, cross: {},
+    },
+    options: { worksites: [], equipment: [], frequencies: [] },
+    cross: {},
+  }),
+}))
+vi.mock("@/components/mantencion/panel/looker/looker-export-button", () => ({ LookerExcelButton: () => null }))
 vi.mock("@/components/mantencion/jefatura/panel/panel-equipment-filter", () => ({ PanelEquipmentFilter: () => null }))
 
 import MantencionPanelPage from "./page"
 import { BoardHeaderActions } from "@/components/dashboard/board-scope"
 import { PageHeader } from "@/components/ui/page-header"
 import { PanelTabs } from "@/components/mantencion/panel/looker/panel-tabs"
+import { LookerExcelButton } from "@/components/mantencion/panel/looker/looker-export-button"
 import { PanelEmptyState } from "@/components/mantencion/jefatura/panel/panel-empty"
 import { PanelExcelButton, PanelPdfLink } from "@/components/mantencion/jefatura/panel/panel-export"
 import { PanelToday } from "@/components/mantencion/jefatura/panel/panel-today"
@@ -290,5 +303,41 @@ describe("/mantencion/panel · trabajos de mantención y equipo elegido", () => 
     const tree = await page()
     expect(findElement(tree, FormsIndicatorsSection)!.props.findings).toBeNull()
     expect(findElement(tree, MaintenanceWorkSection)).not.toBeNull()
+  })
+})
+
+describe("/mantencion/panel · Exportar Excel de Planificación, Camiones y Máquinas", () => {
+  const tabs = ["planificacion", "camiones", "maquinas"] as const
+
+  it("«Exportar Excel» sólo aparece con `mant:export`: sin él, la cabecera de las tres pestañas no lo trae", async () => {
+    for (const pestana of tabs) {
+      const header = findElement(await page({ pestana }), PageHeader)!
+      expect(findElement(header.props.actions as ReactNode, LookerExcelButton), pestana).toBeNull()
+    }
+  })
+
+  it("con `mant:export` el botón está en la cabecera de las tres pestañas y lleva la pestaña y los filtros de la URL", async () => {
+    session.permissions = ["mant:records:view_all", "mant:export"]
+    for (const pestana of tabs) {
+      const header = findElement(await page({ pestana }), PageHeader)!
+      const button = findElement(header.props.actions as ReactNode, LookerExcelButton)
+      expect(button, pestana).not.toBeNull()
+      expect(button!.props).toMatchObject({ tab: pestana, params: {} })
+    }
+  })
+
+  it("el botón recibe sólo los parámetros que mueven la pantalla (no `pestana` ni `page`), tal como están en la URL", async () => {
+    session.permissions = ["mant:records:view_worksite", "mant:export"]
+    const tree = await page({ pestana: "camiones", desde: "2026-11-01", hasta: "2026-11-10", faena: "ws-1", x_conductor: "JUAN PEREZ", page: "3" })
+    const button = findElement(findElement(tree, PageHeader)!.props.actions as ReactNode, LookerExcelButton)!
+    expect(button.props).toMatchObject({ tab: "camiones", params: { desde: "2026-11-01", hasta: "2026-11-10", faena: "ws-1", x_conductor: "JUAN PEREZ" } })
+    expect(button.props.params).not.toHaveProperty("page")
+    expect(button.props.params).not.toHaveProperty("pestana")
+  })
+
+  it("la pestaña Hoy no lo trae: tiene su propio «Exportar Excel»", async () => {
+    session.permissions = ["mant:records:view_all", "mant:export"]
+    const header = findElement(await page({ pestana: "hoy" }), PageHeader)!
+    expect(findElement(header.props.actions as ReactNode, LookerExcelButton)).toBeNull()
   })
 })

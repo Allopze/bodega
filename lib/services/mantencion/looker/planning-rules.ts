@@ -1,4 +1,5 @@
 import { NEXT_THRESHOLD } from "@/lib/mantencion/status"
+import type { ResolvedCrossFilters } from "./types"
 
 /**
  * Semáforos de Planificación, sin dependencias de base de datos: los importa también la
@@ -22,4 +23,13 @@ export function deltaTone(row: { delta: number | null; base: number | null }): P
   if (row.delta >= 0) return "ok"
   if (row.base && row.delta >= -row.base * 0.05) return "warn"
   return "danger"
+}
+
+/** Texto del vacío cuando el equipo elegido se controla por la otra unidad. */
+export function unitMismatchMessage(selected: ResolvedCrossFilters["equipment"], shown: "km" | "h"): string | null {
+  if (!selected?.unit || selected.unit === shown) return null
+  const name = selected.code || selected.plate
+  return shown === "h"
+    ? `${name} se controla por km; no tiene registros por horas.`
+    : `${name} se controla por horas; no tiene registros por kilómetros.`
 }

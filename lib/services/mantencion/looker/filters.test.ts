@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   buildCrossFilterHref, checkAction, clearFiltersHref, crossFilterActive, equipmentAction, filterChips,
-  monthLabel, multiValue, parseLookerFilters, parseLookerTab, queryFilters, removeChipHref, tabHref, workAction,
+  monthLabel, multiValue, parseLookerFilters, parseLookerTab, pickFilterParams, queryFilters, removeChipHref, tabHref, workAction,
 } from "./filters"
 import type { LookerOptions, ResolvedCrossFilters } from "./types"
 
@@ -201,5 +201,29 @@ describe("chips y limpieza", () => {
 
   it("rotula el mes", () => {
     expect(monthLabel("2026-10")).toBe("octubre 2026")
+  })
+})
+
+describe("parámetros que mueven una pestaña", () => {
+  it("se queda con el período, los filtros manuales y los cruzados; descarta la pestaña, la página y lo desconocido", () => {
+    expect(pickFilterParams({
+      pestana: "camiones", page: "3", desde: "2026-10-01", hasta: "2026-10-31", faena: ["ws-1", "ws-2"], equipo: "v-1", frecuencia: "40000",
+      x_equipo: "v-1", x_ot: "ot:1", x_check: "h:1", x_conductor: "JUAN PEREZ", x_mes: "2026-10", x_faena: "ws-1", x_mecanico: "Javier Roa", otro: "1",
+    })).toEqual({
+      desde: "2026-10-01", hasta: "2026-10-31", faena: ["ws-1", "ws-2"], equipo: "v-1", frecuencia: "40000",
+      x_equipo: "v-1", x_ot: "ot:1", x_check: "h:1", x_conductor: "JUAN PEREZ", x_mes: "2026-10", x_faena: "ws-1", x_mecanico: "Javier Roa",
+    })
+  })
+
+  it("no lleva claves vacías ni sin valor", () => {
+    expect(pickFilterParams({ desde: "", faena: undefined, equipo: [], hasta: "2026-10-31" })).toEqual({ hasta: "2026-10-31" })
+  })
+
+  it("lo que devuelve da los mismos filtros que la URL completa (es lo que viaja a la exportación)", () => {
+    const raw = { pestana: "camiones", page: "2", desde: "2026-10-01", hasta: "2026-10-31", faena: "ws-1,ws-2", frecuencia: ["10000", "40000"], x_conductor: "JUAN" }
+    const picked = { ...pickFilterParams(raw), pestana: "camiones" }
+    const { page: _page, ...full } = parseLookerFilters(raw, TODAY)
+    const { page: _otherPage, ...fromPicked } = parseLookerFilters(picked, TODAY)
+    expect(fromPicked).toEqual(full)
   })
 })

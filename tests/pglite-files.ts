@@ -673,6 +673,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/trinorma-tablero-pglite.test.ts",
   // Tablero de mantención estilo Looker: unión correctiva, cumplimiento y matriz (2026-11-23).
   "lib/services/mantencion/looker/looker-pglite.test.ts",
+  // «Exportar Excel» de las pestañas Looker: filtros de la URL, alcance por faena y filas sin paginar (2026-11-24).
+  "lib/services/mantencion/looker/looker-export-pglite.test.ts",
   "lib/__tests__/mantencion-trabajos-corte-pglite.test.ts",
   "lib/__tests__/mantencion-work-orders-traslado-pglite.test.ts",
   "lib/__tests__/mantencion-hoja-vida-sigue-equipo-pglite.test.ts",

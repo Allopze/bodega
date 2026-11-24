@@ -34,6 +34,8 @@ import type {
  */
 
 const PAGE_SIZE = 25
+/** Equipos que dibuja el gráfico de horas y registros. */
+const SERIES_LIMIT = 8
 const HISTORICAL_DATE = sql<string>`CASE WHEN ${mantHistoricalRecords.entryDate} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN left(${mantHistoricalRecords.entryDate}, 10) ELSE left(${mantHistoricalRecords.submittedAt}, 10) END`
 const OT_DATE = sql<string>`to_char(${mantWorkOrders.workshopEntryAt} AT TIME ZONE 'America/Santiago', 'YYYY-MM-DD')`
 const DRIVER_FIELD = sql<string | null>`(select f->>'value' from jsonb_array_elements(${mantHistoricalRecords.fields}) f where upper(f->>'header') like '%CONDUCTOR%' limit 1)`
@@ -226,6 +228,46 @@ export interface CorrectiveSummaryOptions {
   /** El gráfico sí se filtra por conductor; la tabla de conductores no. */
   applyConductor?: boolean
   conductorWorkIds?: string[]
+  /** Equipos de la serie (por horas): los 8 que dibuja el gráfico; la exportación pide todos. */
+  seriesLimit?: number
+}
+
+/**
+ * La unión de trabajos correctivos con los filtros de la tabla de OT: la OT elegida no la acota (la tabla no se
+ * filtra a sí misma) y el conductor elegido sí (`conductorWorkIds`). `null` = no hay nada que consultar. La
+ * comparten la página de la tabla y la exportación a Excel, para que den siempre las mismas filas.
+ */
+function correctiveTableFilter(
+  viewer: MantViewer,
+  filters: LookerFilters,
+  cross: ResolvedCrossFilters,
+  conductorWorkIds: string[] | undefined,
+) {
+  const query = queryFilters(filters, cross, ["work"])
+  const { union, where, empty } = buildUnion(viewer, filters, query)
+  if (empty || (conductorWorkIds && conductorWorkIds.length === 0)) return null
+  const conductor = conductorWorkIds ? inArray(union.id, conductorWorkIds) : undefined
+  return { union, filtered: conductor ? and(where, conductor) : where }
+}
+
+/**
+ * TODAS las filas de la tabla de trabajos correctivos con los mismos filtros que `loadCorrectivePage`, sin
+ * paginar: es lo que exporta el Excel. Trae hasta `limit` filas (las más recientes primero) y el total, para
+ * que quien exporta pueda decir cuándo cortó. No consulta las fotos: el libro no las lleva.
+ */
+export async function loadCorrectiveRows(
+  viewer: MantViewer,
+  filters: LookerFilters,
+  cross: ResolvedCrossFilters,
+  options: { conductorWorkIds?: string[]; limit: number },
+): Promise<{ rows: CorrectiveWorkRow[]; total: number }> {
+  const table = correctiveTableFilter(viewer, filters, cross, options.conductorWorkIds)
+  if (!table) return { rows: [], total: 0 }
+  const [countRow] = await db.select({ n: sql<number>`count(*)::int` }).from(table.union).where(table.filtered)
+  const rawRows = await db.select().from(table.union).where(table.filtered)
+    .orderBy(desc(table.union.date), desc(table.union.id))
+    .limit(options.limit)
+  return { rows: rawRows.map((row) => toWorkRow(row as UnionRow)), total: Number(countRow?.n ?? 0) }
 }
 
 /** Página de la tabla de trabajos correctivos. */
@@ -235,14 +277,9 @@ export async function loadCorrectivePage(
   cross: ResolvedCrossFilters,
   options: { conductorWorkIds?: string[] } = {},
 ): Promise<CorrectivePage> {
-  const query = queryFilters(filters, cross, ["work"])
-  const { union, where, empty } = buildUnion(viewer, filters, query)
-  if (empty) return { rows: [], total: 0, page: 1, pageSize: PAGE_SIZE }
-  if (options.conductorWorkIds && options.conductorWorkIds.length === 0) {
-    return { rows: [], total: 0, page: 1, pageSize: PAGE_SIZE }
-  }
-  const conductor = options.conductorWorkIds ? inArray(union.id, options.conductorWorkIds) : undefined
-  const filtered = conductor ? and(where, conductor) : where
+  const table = correctiveTableFilter(viewer, filters, cross, options.conductorWorkIds)
+  if (!table) return { rows: [], total: 0, page: 1, pageSize: PAGE_SIZE }
+  const { union, filtered } = table
   const [countRow] = await db.select({ n: sql<number>`count(*)::int` }).from(union).where(filtered)
   const total = Number(countRow?.n ?? 0)
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -350,7 +387,7 @@ export async function loadCorrectiveSummary(
     records: value.records,
     hours: Math.round(value.hours * 10) / 10,
   })).sort((a, b) => b.hours - a.hours || b.records - a.records || a.label.localeCompare(b.label, "es"))
-    .slice(0, 8)
+    .slice(0, options.seriesLimit ?? SERIES_LIMIT)
 
   const selectedKey = cross.conductor?.key
   return {

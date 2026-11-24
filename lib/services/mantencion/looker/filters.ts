@@ -84,6 +84,30 @@ function parseCrossFilters(raw: Raw): RawCrossFilters {
   }
 }
 
+/**
+ * Parámetros de la URL que cambian lo que muestra una pestaña: el período, los filtros manuales y los
+ * cruzados. No son `pestana` (la fija quien la elige) ni `page` (la exportación no pagina).
+ */
+export const LOOKER_FILTER_PARAMS = [
+  "desde", "hasta", "faena", "equipo", "frecuencia",
+  "x_equipo", "x_ot", "x_check", "x_conductor", "x_mes", "x_faena", "x_mecanico",
+] as const
+
+/** De los parámetros de la URL, sólo los que mueven la pestaña, sin claves vacías: es lo que viaja a «Exportar Excel». */
+export function pickFilterParams(raw: Raw): Record<string, string | string[]> {
+  const picked: Record<string, string | string[]> = {}
+  for (const key of LOOKER_FILTER_PARAMS) {
+    const value = raw[key]
+    if (Array.isArray(value)) {
+      const list = value.filter((item) => item.trim() !== "")
+      if (list.length > 0) picked[key] = list
+    } else if (value !== undefined && value.trim() !== "") {
+      picked[key] = value
+    }
+  }
+  return picked
+}
+
 export function hasCrossFilters(cross: RawCrossFilters): boolean {
   return Object.values(cross).some((value) => value !== undefined)
 }

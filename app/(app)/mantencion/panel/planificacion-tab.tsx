@@ -3,8 +3,9 @@ import { DashboardPanel, PanelBlock } from "@/components/ui/dashboard-panel"
 import { CrossFilterBars } from "@/components/mantencion/panel/looker/cross-filter-bars"
 import { PlanningTable } from "@/components/mantencion/panel/looker/planning-tables"
 import { equipmentAction } from "@/lib/services/mantencion/looker/filters"
-import { loadPlanningData, unitMismatchMessage } from "@/lib/services/mantencion/looker/planning"
+import { unitMismatchMessage } from "@/lib/services/mantencion/looker/planning"
 import type { LookerContext, PlanningRow } from "@/lib/services/mantencion/looker/types"
+import { loadPlanningTabData } from "@/lib/services/mantencion/looker/work-data"
 import type { MantViewer } from "@/lib/services/mantencion/access"
 import { formatQty } from "@/lib/utils"
 
@@ -29,11 +30,8 @@ function deltaItems(rows: PlanningRow[]) {
  * sí aplican el equipo y, si es de km, muestran el mensaje contextual.
  */
 export async function PlanificacionTab({ context, viewer }: { context: LookerContext; viewer: MantViewer }) {
-  const { filters, cross } = context
-  const [kmData, hoursData] = await Promise.all([
-    loadPlanningData(viewer, filters, cross, ["equipment"]),
-    loadPlanningData(viewer, filters, cross),
-  ])
+  const { cross } = context
+  const { kmData, hoursData } = await loadPlanningTabData(viewer, context)
   const selectedId = cross.equipment?.id ?? null
   const hoursMismatch = unitMismatchMessage(cross.equipment, "h")
   const kmMismatch = unitMismatchMessage(cross.equipment, "km")
