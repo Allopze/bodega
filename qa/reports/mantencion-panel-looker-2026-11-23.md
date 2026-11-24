@@ -37,18 +37,46 @@ histórico + nativo.
   código con buscador, frecuencia), chips individuales, «Borrar filtros», barras de mes y de faena +
   mecánico, gráfico combinado, OT ↔ conductores, patente → matriz, recarga con la URL, teclado (Tab,
   Enter, Espacio), pestaña Máquinas por horas, visor de la foto de una correctiva y la pestaña `Hoy`.
+- **Exportar Excel** de Planificación, Camiones y Máquinas (merge `36cd514ce`):
+  - Acción de servidor `app/(app)/mantencion/panel/looker-export-action.ts`: exige `mant:export` y el gate de
+    la página, valida la entrada con zod (lista blanca de parámetros; tope de 100 ids por clave), vuelve a
+    consultar con los filtros de la URL y el alcance de quien exporta (del navegador no viaja ninguna fila),
+    registra auditoría y corta cada hoja en 20.000 filas con aviso. Sin permisos nuevos.
+  - Libro por pestaña: Planificación trae «Consolidado por kilómetros» y «Consolidado por horas»; Camiones y
+    Máquinas traen «Correctivos» (todas las filas del filtro, sin paginar), «Conductores», «Horas y registros»,
+    «Cumplimiento por mes», «Cumplimiento faena y mecánico», «Cumplimiento por patente», «Matriz de checklist»
+    y «Pautas de la matriz». Todas llevan «Filtros» (período, faenas, códigos, frecuencia, filtros cruzados y
+    notas de lectura) y «Metadatos». **No exporta** las fotos (de las pautas va la cantidad y los enlaces https a
+    Drive ya validados) ni los gráficos como hojas aparte: salen de las mismas tablas.
+  - Donde la pantalla recorta, el libro trae más y las notas lo dicen: la matriz llega a 60 pautas (la pantalla
+    muestra 8), «Horas y registros» incluye todos los equipos (la pantalla, 8) y «Cumplimiento faena y mecánico»
+    todas las combinaciones (la pantalla, 12). Es una decisión del implementador que el usuario puede revertir.
+  - Refactor: `work-tab.tsx` y `planificacion-tab.tsx` cargan sus datos por `work-data.ts`, compartido con el
+    libro, de modo que pantalla y Excel no pueden divergir.
+  - Revisión independiente de solo lectura: sin hallazgos críticos ni altos; 1 medio (texto engañoso en
+    «Filtros» con faenas inactivas) y 3 bajos (tope de ids, prueba de fórmulas, aserciones débiles), los cuatro
+    corregidos con prueba en `f4927687b`.
+- **Pulido tras la revisión visual** (6 commits, `0f723c596` … `f00ebd5d6`): listas de Código y Frecuencia
+  acotadas a la unidad de la pestaña (`tab-scope.ts`); barras de faena y mecánico con dos líneas; visor de
+  la foto de la correctiva con el botón Cerrar legible; eje de horas con coma y «1 registro»; mensaje «se
+  controla por km» una sola vez y con la patente; texto de vacío de conductores; popovers de filtros sin zoom
+  en iOS.
+- **E2E ampliado**: `e2e/mantencion-panel-looker-export.spec.ts` (8 escenarios), `…-cobertura.spec.ts` (7) y
+  el helper `…-seed-extra.ts`.
 
 ## Verificación ejecutada
 
-Cierre del 2026-11-24. La columna «Fecha» distingue lo corrido en el cierre de lo corrido el 11-23.
+Cierre del 2026-11-24. Las cuatro primeras filas son las puertas finales, corridas al final sobre el código
+definitivo; el resto de la tabla está en el orden en que se ejecutó durante el día. La fila de la suite
+completa que dice «No verde» es la **anterior** a los arreglos: el resultado vigente está en la subsección
+«Corridas de la tarde».
 
 | Puerta | Fecha | Resultado |
 |---|---|---|
-| `npm run typecheck` | 11-24 | Pasa (tras ampliar el E2E) |
-| `npx eslint` de los dos archivos E2E nuevos | 11-24 | Limpio |
-| `npm run lint`, `check:secrets`, `db:verify-migrations` | 11-23 | Pasan; 402 entradas hasta `0401_clumsy_taskmaster`. **No se repitieron el 11-24** |
-| `NODE_ENV=test npm run test:fast` | 11-24 | **22.006 pasan, 0 fallan, 275 omitidas** (1.458 archivos pasan, 32 omitidos; 555 s) |
-| `npm run test:pglite` | 11-23 | 5.662 pasan, 1 omitida, 441 archivos. **No se repitió el 11-24** (el cierre no cambió código de la aplicación) |
+| **Puertas finales** en un worktree limpio de `HEAD` (`d21f8bdc8`, sin los cambios sin commitear de otra sesión): `typecheck`, `lint` y `check:secrets` | 11-24 | Las tres con exit 0 |
+| `npm run db:verify-migrations` (mismo worktree) | 11-24 | 402 entradas verificadas hasta `0401_clumsy_taskmaster`, checksums verificados |
+| `NODE_ENV=test npm run test:fast` (mismo worktree) | 11-24 | 1.471 archivos pasan y 32 omitidos; **22.101 pruebas pasan, 0 fallan, 277 omitidas** (497 s) |
+| `NODE_ENV=test npm run test:pglite` (mismo worktree) | 11-24 | 442 archivos; **5.685 pruebas pasan, 0 fallan, 1 omitida** (477 s) |
 | `e2e/mantencion-panel-looker.spec.ts` en `next dev` aislado :3006, base `bodega_e2e_looker` (antes del arreglo de `Hoy`) | 11-24 | 3 corridas seguidas: 15 «passed» (14 verifican + 1 `test.fail`) + 1 omitido, sin reintentos |
 | `npm run test:e2e` completo, sin filtrar (antes del arreglo de `Hoy`) | 11-24 | **No verde**: 1.206 pruebas; 1.111 pasan, 64 fallan, 25 no corrieron, 6 omitidas (58 min 48 s, exit 1) |
 | `page.test.tsx` («menú de pestañas», prueba nueva) | 11-24 | Rojo antes del cambio (2 fallos, `PanelTabs` ausente); verde después: 20/20, y 88/88 en el directorio del Panel |
@@ -104,6 +132,37 @@ Cierre del 2026-11-24. La columna «Fecha» distingue lo corrido en el cierre de
   son contenedores docker (`plataforma-app-1`, `plataforma-dev-app-1`) con su propia imagen y no usan el
   `.next` del repositorio. Con el host libre se corrió la suite completa.
 
+### Corridas de la tarde del 11-24 (tras exportaciones, pulido y arreglos de E2E)
+
+| Qué | Resultado |
+|---|---|
+| Fusión de las exportaciones (`36cd514ce`): typecheck, 105 archivos de mantención / charts, 32 PGlite del tablero y de la exportación | typecheck 0; **1.178 pruebas pasan**; 32/32 PGlite. Un conflicto en `planning.ts` resuelto a mano; una prueba del Excel esperaba el código en vez de la patente y se actualizó |
+| E2E nuevo (`export` 8 + `cobertura` 7) en `next dev` aislado, dos corridas | **15/15 y 15/15**; el spec existente, 15 pasan + 1 omitido |
+| Control negativo del escenario «sin `mant:export`» | Al concederle el permiso al usuario de prueba el escenario **falló**, como debía |
+| **Suite E2E completa**, intento 1 (`npm run test:e2e`) | **No ejecutó ninguna prueba**: el `webServer` agotó sus 600 s entre el reseteo de la base y el `next build`, que quedó cortado en el empaquetado final. Carga de la máquina de 8–9 sobre 12 núcleos y seis Chromium ajenos al 100 % de CPU. Log guardado |
+| Suite completa, intento 2 (build aparte con el mismo comando y variables de `e2e/start-server.sh`, sin tope de tiempo, y `E2E_SKIP_BUILD=true`) | 1.221 pruebas; **se detuvo en la 1.186** (la detuvo el sistema o el usuario; sin resumen final): **1.171 pasan, 1 falla, 14 omitidas** |
+| Las 35 pruebas que no llegaron a correr (`uso-personal`, `worker-delivery-flow`, `zoom-200`) | **35/35 pasan** |
+| El spec del único fallo, `prevencion-miper-revision-lectura.spec.ts`, aislado | **7/7 pasan** (en la corrida completa falló el primero, 7,1 s, y las 6 siguientes se omitieron en cadena) |
+| **Consolidado de la suite** | 1.171 + 35 + 7 = **1.213 pasan, 8 omisiones condicionales y 0 fallos reproducibles** |
+
+- **Cómo leer ese consolidado**: no es una sola corrida ininterrumpida, sino tres invocaciones contra el mismo
+  build (con la base reseteada en cada una). El fallo único **no se reprodujo** y su causa **no se determinó**:
+  el spec es serial y depende de datos sembrados por pruebas previas, y esa corrida se hizo con la máquina muy
+  cargada. Se declara como intermitente no explicado, no como resuelto.
+- **Qué árbol se probó**: `d21f8bdc8`. Otra sesión modificó archivos de OnWay (`lib/integrations/onway/*`,
+  monitoreo de flota) entre las 16:00 y las 16:08, **después** del build de las 15:49: no están en lo probado.
+- **Frente a la corrida completa anterior (64 fallos)**: pasan los 61 que dependían de la segunda «Faena E2E»,
+  los 2 del beacon de visitas (`legacy-mantenciones-retired:5`, `mantencion-historico:21`) y
+  `reflow-anchos:158`. Por archivo, en la corrida completa: tablero 15 + 1 omitida, `export` 8/8, `cobertura`
+  7/7, `admin-flow` 7/7, `reflow-anchos` 15/15, `contratos-faena`, `flota-conductores` 8/8,
+  `emergency-resource-catalog`, `pdtp-cobertura` 3/3, `pdtp-obligaciones` 3/3, `prevencion-incidentes-re20`
+  32/32 y `prevencion-miper-escenario` 10/10.
+- **Las 8 omisiones condicionales** son del propio código y no se reintentaron: el visor de la matriz por
+  fecha (`CUTOVER`), `dashboard-rediseno:104`, `matriz-estados:107`, `negative-flows:102`,
+  `pdtp-habilitacion:67` y `:98`, `ppa-offline:314` y `tae-history-import:36`.
+- **Navegador**: el visor de la matriz con una foto preventiva nativa sigue sin correr con el reloj real
+  (las preventivas nativas cuentan desde 2026-12-01).
+
 ## Reimportación del consolidado en desarrollo
 
 Sobre `bodega_dev` (127.0.0.1:5433), con respaldo previo en `~/backups-dev` y la migración 0401 aplicada
@@ -130,17 +189,33 @@ Sobre `bodega_dev` (127.0.0.1:5433), con respaldo previo en `~/backups-dev` y la
 
 ## Evidencia visual
 
-> **Capturas de estados interactivos: NO ejecutadas.** El lanzamiento del flujo que las tomaba fue
-> denegado tres veces por el clasificador de permisos del modo automático (categoría «Undermining
-> Oversight», sin más detalle), la última después de que el usuario aprobara explícitamente las acciones
-> concretas (dev en :3007 contra `bodega_dev`, login con el usuario QA, siembra y borrado de filas `QA_`,
-> PNG en `audit/`). No se reintentó ni se hizo por otra vía. Falta además la captura de `Hoy` con el menú
-> de pestañas, que no existía antes del arreglo. Siguen pendientes: popovers de faena,
-> código y frecuencia; chip activo y «Borrar filtros»; columna de matriz y fila de OT seleccionadas;
-> visor de foto; estados vacíos; foco de teclado; y las tres pestañas en móvil con los ajustes finales.
-> Las capturas de abajo son de la pasada anterior; no se rehicieron ni se revisaron en el cierre.
+**Capturas de estados interactivos (11-24): 45 nuevas** (19 a 1440×900 y 26 a 390×844), prefijo `i-`, en
+`audit/screenshots/mantencion-panel-looker/` (carpeta ignorada por git: es evidencia local, no viaja con el
+repositorio). Las 11 anteriores se conservan.
 
-- Escritorio 1440×900 y móvil 390×844, guardadas en `audit/screenshots/mantencion-panel-looker/`:
+- **Cómo se tomaron**: el flujo con `bodega_dev` y el usuario QA fue denegado tres veces por el clasificador
+  de permisos del modo automático (categoría «Undermining Oversight», sin más detalle), la última con la
+  aprobación explícita del usuario; no se hizo por otra vía. Se tomaron con una variante más segura: base E2E
+  desechable (`bodega_e2e_looker`), usuario público del fixture y datos sintéticos `QA_…` sembrados con el
+  helper del spec. **Por eso muestran datos sintéticos y no los del consolidado real.** Las de 390 px usan
+  emulación táctil de Chromium, no un teléfono real; el indicador de `next dev` se ocultó con CSS.
+- **Estados cubiertos**: popovers de faena, código (con «QALKA1» escrito: la lista pasa de 124 opciones a 1) y
+  frecuencia; chips activos con «Borrar filtros»; columna de matriz y fila de OT seleccionadas con el resto de
+  bloques filtrados; visor de la foto de la correctiva; vacíos (período sin datos, filtro sin coincidencia,
+  mensaje contextual km/horas); foco de teclado en el filtro Faena (46 Tab, anillo de 2 px, contraste 7,6:1
+  contra la página); `Hoy` con el menú de pestañas; y las tres pestañas en móvil.
+- **Tras el pulido** se regeneraron y sobrescribieron los estados afectados (visor, popovers, vacíos y las
+  dos páginas móviles largas). El estado «filtro sin coincidencia» ya no se puede producir con un código de
+  otra unidad (era el defecto de las listas sin acotar) y se rehízo con Faena B + código de la faena A.
+- **No capturado o parcial**: el visor de la foto preventiva de la plataforma y las miniaturas de la matriz
+  (esas preventivas cuentan desde 2026-12-01); el foco de teclado sólo en Faena (no en Código, Frecuencia ni en
+  los controles de filtro cruzado); el popover de Faena sólo con una opción ya marcada; Planificación en
+  móvil en tres tramos por su largo. Cuatro PNG no los abrió el agente que los tomó.
+- Revisión visual con medición: a 390 px no hay scroll horizontal de página en ningún estado
+  (`scrollWidth` ≤ `innerWidth`); las pestañas miden 44 px de alto en móvil y 36 px en escritorio; 0 errores
+  de consola y 0 respuestas HTTP ≥ 400 del origen.
+
+Capturas de la pasada anterior (11-23), 1440×900 y 390×844:
   - `shot-planificacion-top.png`, `shot-planificacion-delta.png`;
   - `shot-camiones-top.png`, `shot-camiones-preventivo.png`, `shot-camiones-matrix.png`;
   - `shot-maquinas-top.png`, `shot-maquinas-matrix.png`;
@@ -227,8 +302,70 @@ Sobre `bodega_dev` (127.0.0.1:5433), con respaldo previo en `~/backups-dev` y la
    - **No adoptado**: validar también al importar. El valor original se conserva tal cual en la base
      (trazabilidad) y se valida al mostrar, que además cubre a cualquier otro escritor de la tabla. Los 12
      valores reales de dev son todos `https://drive.google.com`, así que la lista no oculta nada legítimo.
-4. **Preexistentes, ajenos al tablero** (ver «Verificación ejecutada»): la segunda faena «Faena E2E» que
-   crea `admin-flow.spec.ts` y el beacon `POST /api/apps/visita` abortado.
+4. **Hallazgos de la revisión visual (11-24)**, verificados contra el código o el DOM antes de actuar:
+   - **Corregidos** (7, con medición antes y después y prueba): (a) *FUNCTIONAL FINDING, media* — las listas de
+     Código y Frecuencia no se acotaban por pestaña (Camiones ofrecía horas y máquinas; Máquinas, km y camiones;
+     elegirlos dejaba la pestaña vacía): `tabUnit()` existía y no se aplicaba a las opciones; ahora Camiones
+     ofrece 73 códigos y 10.000–160.000 km, Máquinas 50 y 300–1.200 h, y un valor de la otra unidad en la URL
+     se ignora sin chips ni error; (b) etiquetas truncadas en las barras de faena + mecánico; (c) la X del visor
+     de foto con contraste 1,36:1 (ahora 5,99:1), arreglada en `work-photo.tsx` sin tocar el `dialog.tsx`
+     compartido; (d) eje de horas con coma decimal y «1 registro»; (e) el mensaje «se controla por km» triplicado
+     y con el código en vez de la patente; (f) «no declaran conductores» cuando había 0 registros; (g) buscador
+     de los popovers a 12 px (iOS hace zoom), borde derecho y opción cortada.
+   - **No corregidos, decisión de diseño o no alcanzables por una persona**: tablas anchas de móvil sin señal de
+     scroll horizontal; objetivos táctiles de 32 px (cumplen el mínimo de 24 px de WCAG 2.5.8); largo de
+     Planificación en móvil; la carrera de `setMulti`/`toggle` con dos cambios a 0 ms de diferencia; los chips
+     derivados de Planificación; y la unidad repetida en las opciones de Frecuencia («10.000 km» + insignia «km»).
+5. **AUTOMATION WARNING — la segunda «Faena E2E» (explicaba 61 de los 64 fallos). CORREGIDO** (`c91be1f7f`).
+   - **Causa raíz demostrada**: `ensureWorksiteE2E` llama a `isVisible()` justo después de `goto`, y
+     `isVisible()` no espera. El listado de `/admin/faenas` llega dentro de un `Suspense` y React 19 revela su
+     contenido unos 300 ms después del primer pintado: la fila existe pero «no se ve» entre 120 y 290 ms
+     después del evento `load`. Medido con un `MutationObserver`: `isVisible()` dio `false` con la fila
+     presente en 3/8 y 5/8 (dev), 3/10 (prod) y 3/15 con el helper exacto bajo el runner; una copia del helper
+     antiguo creó el duplicado (SQL: `ws-e2e`/`E2E-001` y `FAE-E2E`) en 2 de 20 corridas. El mismo defecto
+     estaba en `ensurePositionE2E` (`/admin/cargos`, 5/8 en dev).
+   - **Descartado con evidencia**: paginación (8 filas en «Activas», `pageSize` 20), nombre accesible y filtro
+     por defecto.
+   - **No es determinista**: la traza y el video del runner retrasan el `isVisible()` y enmascaran la carrera;
+     8 corridas en dev y ~31 en prod no la dispararon. Lo demostrado es la carrera y su tasa (2,5–20 % por
+     llamada), no un fallo en cada corrida.
+   - **Arreglo**: esperar a que la tabla («Faenas activas» / «Catálogo de cargos») sea visible antes de decidir,
+     y quitar el `.catch(() => false)`. Verificado: `admin-flow` dos veces seguidas 7/7 con una sola fila;
+     el test del trabajador `--repeat-each 40` 40/40; `admin-flow` + `contratos-faena`, `flota-conductores`,
+     `emergency-resource-catalog` y `pdtp-cobertura` 20/20 en prod; y la suite completa ya no tiene el duplicado.
+   - **Sin tocar, con riesgo**: otros helpers del repo con el mismo patrón `isVisible().catch` sin esperar
+     (`negative-flows:108,116`, `pdtp-annual-adjustments:77`, `pdtp-habilitacion:71,101,104`,
+     `pdtp-actions-plan:27-29`, `perceived-latency:75,107,129`, `facturacion:71,83`,
+     `keyboard-navigation:106,147,154,161`, `bodega-conteo-fisico:150`). Los que deciden un `test.skip` o una
+     acción pueden saltarse en silencio con la misma carrera: **no se verificó si las dos omisiones de
+     `pdtp-habilitacion` en la suite son legítimas o causadas por ella**.
+6. **AUTOMATION WARNING — el aborto de `POST /api/apps/visita` es del navegador. CORREGIDO en los tests**
+   (`d21f8bdc8`). Pregunta central: ¿se pierden visitas? **No**. Se midieron 18 pantallas (una por app) contra
+   `app_visits`: las 18 peticiones emitidas recibieron 204 y quedaron registradas (17 filas: `/prevencion` no es
+   una app); con navegación inmediata y con pausas el resultado fue el mismo. Con `keepalive`, Chromium informa
+   `ERR_ABORTED` al descargar el documento aunque el servidor ya recibió la petición. Cada spec traía su filtro
+   inline de las precargas `_rsc` canceladas; se sumó el beacon a lo ignorado, con el comentario que cita la
+   evidencia. Eso destapó un segundo aborto en `mantencion-historico` —las Server Actions (cabecera
+   `next-action`), con la pantalla ya pintada y la traza en 200—, que fallaba 1 de cada 4–6 corridas en prod y
+   ahora pasa 12/12, y un aviso de hidratación en dev por el `screenshot` (resuelto con `networkidle`).
+   Riesgo teórico no observado: el tracker marca la sección en `sessionStorage` antes de que el `fetch`
+   responda, así que ante una caída real de red no se reintentaría en 5 minutos.
+7. **UX FINDING · media — el recorte a 2 líneas de la descripción del TopBar a 1024 px (decisión pendiente).**
+   Medición de solo lectura sobre 131 rutas con el administrador de fixture, a 1024×768 y con el menú lateral en
+   su estado por defecto (evidencia: `qa/reports/evidencia-topbar-1024-2026-11-24.md`):
+   - 130 rutas tienen descripción y **80 (61,5 %) quedan recortadas**; en 25 se pierden 3 o más líneas (la que más,
+     `/facturacion/pendientes`, tiene 11 y muestra 2). En 44 de las 130 el bloque izquierdo queda en su mínimo de
+     128 px; el ~416 px que se citaba es el máximo, no lo habitual. El texto completo sigue en el `title`.
+   - El alto del `banner` es 72–72,4 px en 110 de 131 rutas; **21 superan 73 px** y 7 de ellas no tienen
+     descripción recortada, así que su altura viene de otros elementos de la cabecera. Las más altas:
+     `/prevencion/documentacion` 160 px, `/admin/proveedores` y `/admin/trabajadores` 140, `/admin/inventario-faena`
+     122, `/admin/productos` 118, y `/combustibles*` 94.
+   - Es el intercambio del arreglo: antes el TopBar crecía sin tope (hasta 105 px); ahora no crece, pero esconde
+     texto. Rediseñarlo a 1024 px (ocultar la descripción hasta `xl`, ensanchar el bloque del título, o llevarla
+     bajo el título) es una decisión de diseño que **no se tomó**.
+8. **Preexistentes, ajenos al tablero y no resueltos aquí**: los 4 specs que fallan sólo sobre `next dev` por
+   hidratación (`flota-conductores:87` y `:100`, `pdtp-cobertura:26` y `:63`; en producción pasan 20/20); y el
+   fallo intermitente de `prevencion-miper-revision-lectura:119` (ver «Verificación ejecutada»).
 
 ## Límites y datos pendientes
 
@@ -245,21 +382,65 @@ Sobre `bodega_dev` (127.0.0.1:5433), con respaldo previo en `~/backups-dev` y la
   ejemplo de Looker. La diferencia está documentada en la pestaña y en `PLAN-dashboard-mantencion.md`.
 - **Frecuencia**: el filtro se genera con los intervalos activos realmente presentes; no se fijan
   40.000/10.000/300/250.
-- **Suite E2E completa**: ejecutada el 11-24 y **no verde** (64 fallos preexistentes, ver arriba). No
-  hay una corrida verde de referencia del repositorio con la que comparar.
-- **Cobertura del spec no ejecutada**: el visor de la matriz con una foto preventiva nativa sólo corre
-  desde 2026-12-01 (se probó con el reloj adelantado, no con el real); teclado no probado en barras de
-  faena + mecánico, leyenda del gráfico combinado ni filas de conductor; sin aserciones del valor
-  numérico de las barras de cumplimiento ni de la tabla «Consolidado por horas» de Planificación con la
-  máquina sembrada.
-- **Capturas interactivas**: no se tomaron (ver «Evidencia visual»). Tampoco se midió el desborde
-  horizontal a 390 px ni se revisó visualmente el foco de teclado.
+- **Suite E2E completa**: 1.213 pasan, 8 omisiones condicionales y 0 fallos reproducibles, pero armada con
+  tres invocaciones y con un fallo intermitente no explicado (ver «Verificación ejecutada»). No hay una
+  corrida única e ininterrumpida; el build del arnés agotó su tope de 600 s bajo carga y se construyó aparte.
+- **Cobertura que sigue sin ejecutarse**:
+  - el visor de la matriz con una foto preventiva nativa corre sólo desde 2026-12-01 (pasó con el reloj
+    adelantado, no con el real);
+  - la llamada directa a la acción de exportación sin `mant:export` (sólo hay prueba unitaria con la
+    autenticación simulada; en navegador sólo se comprobó que el botón no aparece);
+  - el tope de 20.000 filas de la exportación y los avisos que genera, con volumen real (se probó con un
+    tope artificial de 10);
+  - `x_check` y `x_equipo` en el Excel (sólo en pantalla); viewport móvil en el E2E (solo Desktop Chrome);
+  - el contenido del libro de `Hoy` más allá de los nombres de hoja;
+  - abrir los .xlsx en Excel o LibreOffice (se leyeron con `exceljs` y `openpyxl`);
+  - Safari/Android reales y lector de pantalla.
+- **La matriz con datos reales**: el consolidado trae sólo 4 pautas de camiones con detalle y 2 de máquinas de
+  prueba; el tope de «últimas 8 pautas» se verificó en E2E con 10 pautas sintéticas de un equipo (muestra las 8
+  más recientes), no con datos reales.
 - **Fuera de alcance, declarado**:
-  - aplicar la migración 0401 y reimportar el consolidado en **producción**;
-  - **exportaciones** (Excel/PDF) de las pestañas nuevas;
-  - **comparación contra una captura real de Looker**: no hay captura del panel original en el
-    repositorio; la comparación fue estructural, contra la especificación y el consolidado;
-  - proxy o descarga de las fotos de Google Drive de las pautas históricas.
+  - aplicar la migración 0401 y reimportar el consolidado en **producción** (ver el runbook de abajo);
+  - **exportación a PDF** de las pestañas nuevas (el Excel está hecho);
+  - **comparación contra una captura real de Looker**: no hay captura del panel original en el repositorio; la
+    comparación fue estructural, contra la especificación y el consolidado. Hace falta que alguien aporte esa
+    captura;
+  - proxy o descarga de las fotos de Google Drive de las pautas históricas: la plataforma eliminó su
+    integración con Drive, así que un proxy necesitaría credenciales de Google que no existen aquí;
+  - rediseño del TopBar a 1024 px (hallazgo 7).
+
+## Despliegue a producción (runbook; NO ejecutado)
+
+Para quien corra el despliegue. Está armado con lo que se hizo en desarrollo y con las notas del proyecto;
+los pasos de producción **no se probaron** y deben confirmarse con lecturas antes de actuar.
+
+1. **Antes de desplegar**: el trabajo está en `main`; confirmar que la integración continua queda verde. El
+   deploy lo corre una persona (`npm run deploy:prod`, que exige `main` y el árbol limpio; un worktree limpio
+   de `main` evita arrastrar cambios ajenos del checkout principal).
+2. **Qué aplica el deploy**: la migración `0401_clumsy_taskmaster` (verificada en la cadena: 402 entradas) con el
+   servicio `migrate`, y `sync-rbac`. **No hay permisos nuevos** en este trabajo (el Excel usa `mant:export`).
+   La 0401 sólo **agrega** columnas y una tabla; no hay migración inversa: revertir significa restaurar el
+   respaldo que toma el deploy.
+3. **Comprobar después, sólo con lecturas**: 402 migraciones aplicadas contra el journal; `/mantencion/panel`
+   muestra el menú de cuatro pestañas; `?pestana=camiones` carga sin error.
+4. **Reimportar el consolidado** (`CONSOLIDADO_CHOME_COMBUSTIBLE_MANTENCION_INSPECCION.xlsx`, 3,1 MB, ignorado
+   por git; contiene datos personales: no copiarlo fuera del canal que se use). Una carga anterior del historial
+   en producción (2026-11-18) se hizo con un bundle esbuild por stdin contra el contenedor de la app; este
+   script (`scripts/import-consolidado-mantencion.ts`) **no se ha probado en producción**, así que habrá que
+   empaquetarlo igual. Orden: respaldo → **simulación** con `--report` → revisar el informe → `--apply` →
+   segunda simulación, que debe dejar todo «sin cambios». El respaldo y la simulación van en una sesión ssh
+   distinta de la que pasa el bundle por stdin (un `docker compose exec -T` previo se come el stdin).
+5. **Advertencia de volumen**: el importador carga **todas las hojas** del consolidado, no sólo las 6 pautas
+   del tablero. En desarrollo fueron MANTENCIONES 2.344 filas (2.202 nuevas y 142 completadas), INSPECCIONES
+   1.333, HALLAZGOS 1.132 y PAUTAS 6, sin rechazos. En producción debe esperarse una carga de ese orden;
+   las notas del proyecto indican que el historial de producción sólo tenía los 142 trabajos cargados el
+   2026-11-18 desde otro archivo —**verificarlo con una lectura antes de aplicar**—. Decidir si se quiere esa
+   carga completa o sólo el detalle de las pautas.
+6. **Qué esperar en pantalla tras la carga**: la matriz de Camiones con hasta 4 columnas (las 4 pautas reales),
+   Máquinas sin pautas (las 2 de máquinas son de prueba y el tablero las excluye) y la pauta KCH-135/SRCJ-42 sin
+   vínculo de equipo por un conflicto de código y patente que debe conciliarse a mano.
+7. **No cubierto**: `plataforma-dev` (:3001) tiene otra base y tampoco tiene la 0401; su despliegue también
+   lo corre una persona.
 
 ## Diferencias que quedan frente a Looker
 

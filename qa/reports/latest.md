@@ -1,49 +1,56 @@
 # Panel de mantención estilo Looker — cierre de verificación, 2026-11-24
 
 Cuatro pestañas en `/mantencion/panel` (`Hoy`, `Planificación`, `Camiones`, `Máquinas`) con filtro
-cruzado por URL, migración 0401 y el importador del consolidado con detalle por ítem. El detalle está en
+cruzado por URL, «Exportar Excel» en las tres nuevas, migración 0401 y el importador del consolidado con
+detalle por ítem. El detalle está en
 [mantencion-panel-looker-2026-11-23.md](mantencion-panel-looker-2026-11-23.md).
 
-- **PASS · puertas** (sobre el árbol final del 11-24): typecheck y lint sin errores; `test:fast` con
-  `NODE_ENV=test`: 22.009 en verde, 0 fallos, 275 omitidas (los 8 fallos de `dense-chart` ya no se
-  reproducen). `check:secrets` y `db:verify-migrations` (402 entradas) verdes sobre el árbol previo al
-  cambio del TopBar, que no los afecta. `test:pglite` (5.662) pasó el 11-23 y no se repitió: lo posterior
-  no toca `lib/` ni `db/`.
-- **PASS · navegador:** `e2e/mantencion-panel-looker.spec.ts`, 16 escenarios: 15 verifican comportamiento
-  y 1 se omite hasta 2026-12-01 (visor de la matriz con foto preventiva nativa). Pasan en el arnés de
-  producción junto con otros seis archivos que visitan el Panel `Hoy` (89 pruebas: 87 pasan, 1 omitida,
-  1 falla, la preexistente de abajo), sin errores de consola ni respuestas 4xx/5xx del origen.
-- **PASS · arreglo de `Hoy`:** el defecto de la pestaña sin menú está corregido
-  (`<PanelTabs active="hoy" />` en `hoy-tab.tsx`), con prueba primero (2 pruebas nuevas en `page.test.tsx`,
-  rojas antes y verdes después) y verificado en navegador a 1440 y 390 px: enlaces de 36 y 44 px, sin
-  scroll horizontal, 0 errores de consola.
-- **PASS · reimportación en dev:** consolidado real sobre `bodega_dev`, 266 de 266 ítems de detalle
-  leídos (contrastados con un conteo independiente), 0 rechazos, 0 ambigüedades; la segunda simulación
-  no dejó cambios.
-- **FALLA · `test:e2e` completo:** 1.206 pruebas, 1.111 pasan, **64 fallan**, 25 no corrieron, 6 omitidas.
-  Ninguna del tablero: 61 vienen de una segunda faena «Faena E2E» que crea `admin-flow.spec.ts` (se repite
-  sobre `HEAD` sin estos cambios) y 3 son deterministas y preexistentes (`legacy-mantenciones-retired:5`,
-  `mantencion-historico:21`, `reflow-anchos:158`). Con la base reseteada, 61 de los 64 pasan. La corrida
-  fue **antes** de los dos arreglos de abajo y no se repitió completa.
-- **PASS · seguridad (revisión automática del commit):** los enlaces de fotos del histórico se pintaban en un
-  `href` sin validar el esquema. Ahora sólo pasan `https:` a Drive/Docs (`lib/mantencion/drive-link.ts`) en el
-  cargador, el componente y la página histórica; con pruebas rojas antes y verdes después. React 19 ya
-  neutralizaba `javascript:`, pero `data:`, `http:` y hosts ajenos seguían siendo enlaces. Validado al
-  mostrar, no al importar (el valor original se conserva).
-- **PASS · arreglo del TopBar (`reflow-anchos.spec.ts:158`):** el `banner` crecía a 105,4 px en Catálogos PDTP
-  a 1024 px porque `lg:block` pisaba el `line-clamp-2` de la descripción (`top-bar.tsx`, desde `e2ca62ca0`,
-  2026-11-07). Causa confirmada en el navegador con una sola variable antes de editar; arreglo
-  `lg:line-clamp-2`. Los cuatro specs que miden el TopBar o el shell pasan 27/27 en `next dev` y 27/27 sobre
-  build de producción. Efecto: la descripción del TopBar se recorta a 2 líneas desde 1024 px en toda la
-  plataforma; no se revisó pantalla por pantalla.
-- **LÍMITES:** las capturas de estados interactivos **no se tomaron** (el lanzamiento fue denegado tres
-  veces por el clasificador de permisos, también tras la aprobación del usuario); la matriz con datos
-  reales tiene como máximo 4 columnas y Máquinas queda sin pautas, por lo que el tope de 8 pautas no se
-  vio con datos reales; teclado no probado en todas las barras; la causa exacta de la segunda faena
-  «Faena E2E» no se determinó; sin Safari/Android reales ni lector de pantalla.
-- **PENDIENTE (fuera de alcance):** migración 0401 y reimportación en producción, exportaciones de las
-  pestañas nuevas, comparación contra una captura real de Looker, push y despliegue (el trabajo queda en
-  commits locales de `main`, sin push).
+- **PASS · puertas** (worktree limpio de `HEAD`, sin los cambios sin commitear de otra sesión): typecheck, lint y
+  `check:secrets` con exit 0; `db:verify-migrations` 402 entradas hasta la 0401; `test:fast` 22.101 pruebas
+  pasan, 0 fallan, 277 omitidas (1.471 archivos); `test:pglite` 5.685 pasan, 0 fallan, 1 omitida (442 archivos).
+- **PASS · E2E del tablero y de la exportación:** `mantencion-panel-looker.spec.ts` 15 + 1 omitido (el visor de
+  la matriz con foto preventiva nativa, hasta 2026-12-01), `…-export.spec.ts` 8/8 y `…-cobertura.spec.ts` 7/7,
+  sin errores de consola ni respuestas 4xx/5xx del origen. Verifican en navegador: descarga real del .xlsx y
+  lectura con `exceljs` en las tres pestañas (hojas, «Filtros», «Correctivos» con las 31 filas del filtro y no
+  las 25 visibles), alcance por faena (un usuario de una faena que pide otra recibe las hojas vacías, sin
+  nombrarla), el botón ausente sin `mant:export` (con control negativo que falló como debía), listas de Código
+  y Frecuencia acotadas por pestaña, tope de 8 columnas de la matriz con 10 pautas, teclado (barras, conductor y
+  leyenda), cumplimiento del mes como promedio (60 %, no 43 %) y los valores de «Consolidado por horas».
+- **PASS · «Exportar Excel» de las pestañas nuevas:** acción de servidor con `mant:export` + el gate de la página,
+  alcance por faena en el servidor, auditoría, tope de filas y de ids, y saneo de fórmulas (comprobado con un
+  libro real: ninguna celda es fórmula). Revisión independiente de solo lectura: sin hallazgos críticos ni
+  altos; 1 medio y 3 bajos corregidos con prueba.
+- **PASS con salvedades · `test:e2e` completo:** 1.221 pruebas, **1.213 pasan, 8 omisiones condicionales y 0
+  fallos reproducibles** (antes: 64 fallos). Es un consolidado de tres invocaciones, no una corrida ininterrumpida:
+  el intento 1 no ejecutó nada (el `webServer` agotó 600 s con la máquina cargada), el intento 2 construyó aparte
+  y se detuvo en la prueba 1.186 (1.171 pasan, 1 falla, 14 omitidas), y las 35 restantes pasan 35/35. El fallo
+  (`prevencion-miper-revision-lectura:119`, que dejó 6 omitidas en cadena) **no se reprodujo**: el spec pasa 7/7
+  aislado; la causa no se determinó. Árbol probado: `d21f8bdc8`.
+- **PASS · reimportación en dev:** consolidado real sobre `bodega_dev`, 266 de 266 ítems de detalle leídos
+  (contrastados con un conteo independiente), 0 rechazos, 0 ambigüedades; la segunda simulación no dejó cambios.
+- **PASS · arreglos con prueba o medición antes y después:** `Hoy` sin menú de pestañas (`PanelTabs`); TopBar sin
+  tope de líneas a 1024 px (`lg:block` pisaba `line-clamp-2`; `reflow-anchos:158` ahora pasa); 7 defectos de la
+  revisión visual (listas de Código/Frecuencia sin acotar por pestaña, etiquetas truncadas, X del visor a
+  1,36:1, eje decimal y plural, mensaje triplicado, texto de vacío, popovers en iOS); «Horas programadas»;
+  enlaces de fotos del histórico sin validar el esquema (React 19 ya neutralizaba `javascript:`; `data:`, `http:` y
+  hosts ajenos seguían siendo enlaces).
+- **PASS · automatización:** la segunda «Faena E2E» (explicaba 61 de 64 fallos) tenía causa raíz demostrada
+  —`isVisible()` sin espera contra un `Suspense` que React 19 revela ~300 ms tras `load`; el duplicado salía en
+  2 de 20 corridas— y el helper ahora espera la tabla. El aborto de `POST /api/apps/visita` es un artefacto del
+  navegador: 18 pantallas medidas, todas con 204 y registradas; no se pierden visitas.
+- **UX FINDING · decisión pendiente:** a 1024 px, **80 de 130 pantallas (61,5 %)** quedan con la descripción del
+  TopBar recortada a 2 líneas (25 pierden 3 o más) y 21 superan 73 px de alto; antes el TopBar crecía sin tope.
+  Evidencia: `evidencia-topbar-1024-2026-11-24.md`. Rediseñarlo es de diseño y no se hizo.
+- **LÍMITES:** capturas con datos sintéticos de una base E2E desechable (el flujo con `bodega_dev` y el usuario
+  QA fue denegado tres veces por el clasificador, también con la aprobación del usuario); la matriz con datos
+  reales tiene como máximo 4 columnas y Máquinas queda sin pautas (el tope de 8 se verificó con datos sintéticos);
+  la llamada directa a la acción de exportación sin `mant:export`, el tope de 20.000 filas con volumen real y
+  la apertura de los .xlsx en Excel no se probaron; otros helpers con el patrón `isVisible().catch` pueden
+  saltarse pruebas en silencio (no se verificó si las 2 omisiones de `pdtp-habilitacion` lo son); 4 specs fallan
+  sólo en `next dev` por hidratación; sin Safari/Android reales ni lector de pantalla.
+- **PENDIENTE:** migración 0401 y reimportación en producción (runbook en el informe; el importador carga todas
+  las hojas, no sólo las 6 pautas), exportación a PDF de las pestañas nuevas, comparación contra una captura real
+  de Looker (hace falta que alguien la aporte), decisión sobre el TopBar a 1024 px, y push y despliegue.
 
 # Corrección del módulo de combustibles — 2026-11-05
 
