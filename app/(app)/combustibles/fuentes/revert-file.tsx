@@ -42,7 +42,7 @@ export async function revertImportedFile(kind: ImportedFileKind, id: string): Pr
 
 /** Lo que borra revertir, dicho por tipo: es un acto irreversible y se explica. */
 export function revertDescription(target: RevertTarget): string {
-  const traza = "El archivo y su historial se conservan para trazabilidad. Queda registrado en la auditoría. Esta acción no se puede deshacer."
+  const traza = "El archivo y su historial se conservan. Queda en la auditoría y no se puede deshacer."
   switch (target.kind) {
     case "tarjeta":
       return `Se eliminarán los totales por patente y mes que trajo «${target.fileName}». ${traza}`

@@ -98,9 +98,7 @@ export function TaeImportReportForm() {
       <CardHeader>
         <CardTitle as="h2">Reporte de mapeo sugerido</CardTitle>
         <CardDescription>
-          Sube el Excel de la planilla antigua del formulario de sellos. Se genera un Excel de solo lectura con la faena, equipo, conductor y
-          supervisor sugeridos para cada fila (con nivel de confianza), más observaciones de continuidad de sello y
-          lecturas. Descarga y revisa ese reporte antes de habilitar la importación definitiva.
+          Sube el Excel antiguo y descarga el reporte de equivalencias. Revísalo antes de importar.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -161,7 +159,7 @@ export function TaeImportReportForm() {
             </li>
           })}
         </ul>}
-        {preview.reviewItems.length === 0 && <Callout tone="success">No hay identidades ambiguas pendientes. El plan usa sólo coincidencias confiables o decisiones ya guardadas.</Callout>}
+        {preview.reviewItems.length === 0 && <Callout tone="success">No hay identidades ambiguas pendientes.</Callout>}
         <div className="border-t border-(--color-border) pt-4">
           <Checkbox checked={confirmed} onChange={(event) => dispatch({ type: "confirmed", value: event.target.checked })} disabled={pendingDecisions > 0} label={<>Revisé el reporte y las decisiones anteriores. Confirmo importar las filas con faena válida; las cargas que conserven observaciones de lectura, sello o identidad quedarán en estado <strong>Observada</strong>.</>} />
           {pendingDecisions > 0 && <p className="mt-2 text-xs text-(--color-warning-ink)">Faltan {pendingDecisions.toLocaleString("es-CL")} decisiones de mapeo.</p>}

@@ -37,9 +37,6 @@ function Hero({ data, period, canRegister, link }: { data: FieldPanelData; perio
     >
       <div>
         <h2 id="panel-registrar" className="text-h2 text-[var(--color-text)]">Registrar una carga</h2>
-        <p className="mt-2 max-w-[52ch] text-base text-[var(--color-primary-ink)]">
-          Equipo, medidor, litros, sellos y personas, una pregunta por pantalla.
-        </p>
         {canRegister ? (
           <Button asChild size="lg" className="mt-4">
             <Link href={FUEL_PATHS.registrar}>
@@ -78,7 +75,7 @@ function MyLoads({ data, period, canRegister, link }: { data: FieldPanelData; pe
         <EmptyState
           compact
           title={`Todavía no registraste cargas en ${period.inLabel}`}
-          description="Cuando registres una desde la plataforma, aparece acá con su estado."
+          description="Se llena cuando registres una, con su estado."
           action={canRegister ? <Button asChild size="sm"><Link href={FUEL_PATHS.registrar}>Registrar carga</Link></Button> : undefined}
         />
       ) : (
@@ -116,7 +113,7 @@ function ToFix({ data, userId, link }: { data: FieldPanelData; userId: string; l
     <Card className="p-5">
       <h2 className={sectionTitle}>Lo que te toca</h2>
       <p className="mb-3 mt-1 text-sm text-[var(--color-text-muted)]">
-        Lo que está pendiente y puedes corregir, con lo más urgente arriba. Lo nuevo lleva un punto hasta que lo abres.
+        Lo pendiente que puedes corregir, lo más urgente arriba. Lo nuevo lleva un punto hasta abrirlo.
       </p>
       {toFix === null ? (
         <p className="flex items-start gap-2 py-2 text-sm text-[var(--color-text-muted)]">

@@ -78,7 +78,7 @@ export function CaseWeeksChart({ weeks, ruleChanges = NO_CHANGES }: { weeks: Ano
           ))}
         </BarChart>
       </ChartContainer>
-      {hasPartial ? <p className="mt-1 text-xs text-[var(--color-text-muted)]">La última columna, punteada, es la semana en curso: todavía no termina.</p> : null}
+      {hasPartial ? <p className="mt-1 text-xs text-[var(--color-text-muted)]">La última columna, punteada, es la semana en curso.</p> : null}
       {markedWeeks.length > 0 ? (
         <p className="mt-1 text-xs text-[var(--color-text-muted)]">
           Las líneas verticales punteadas marcan las semanas en que se creó o se modificó una regla de detección: un salto de casos ahí puede venir del cambio y no de un problema real. El detalle está en «Ver datos».

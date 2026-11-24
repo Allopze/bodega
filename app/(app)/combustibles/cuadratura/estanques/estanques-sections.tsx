@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowSquareOut, WarningCircle } from "@phosphor-icons/react/dist/ssr"
+import { WarningCircle } from "@phosphor-icons/react/dist/ssr"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -222,7 +222,7 @@ export function StorageLevels({ balances, canCreateTank }: { balances: FuelStora
         </TableBody>
       </Table>
       <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">
-        El nivel arrastra todo lo registrado antes del período («Al inicio») y le suma el movimiento del rango. No distingue una merma real de una carga no registrada: para eso falta el aforo físico periódico del estanque.
+        Parte de lo registrado antes del período («Al inicio») y suma el movimiento del rango. No distingue merma de carga no registrada: falta el aforo físico periódico.
       </p>
     </TableRoot>
   )
@@ -290,7 +290,7 @@ export function MovementsTable({ rows }: { rows: CycleMovementRow[] }) {
                 <TableCell>
                   {movement.documentNumber ? <span className="mr-2 font-mono text-xs">{movement.documentNumber}</span> : null}
                   {href
-                    ? <Link className="inline-flex min-h-6 items-center gap-1 text-[var(--color-primary-ink)] hover:underline" href={href}>Abrir carga <ArrowSquareOut size={14} aria-hidden /></Link>
+                    ? <Link className="inline-flex min-h-6 items-center gap-1 text-[var(--color-primary-ink)] hover:underline" href={href}>Abrir carga</Link>
                     : movement.documentNumber ? null : <span className="inline-flex min-h-6 items-center gap-1 text-[var(--color-text-muted)]"><WarningCircle size={14} aria-hidden />Sin documento</span>}
                 </TableCell>
               </TableRow>

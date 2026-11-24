@@ -56,7 +56,7 @@ function NewLoadingPointDialog({ worksites, storageLocations, onClose }: { works
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Nuevo punto de carga</DialogTitle>
-          <DialogDescription>El lugar donde se carga combustible. Después podrás generar su QR.</DialogDescription>
+          <DialogDescription>Después podrás generar su QR.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} noValidate>
           <FieldGroup>

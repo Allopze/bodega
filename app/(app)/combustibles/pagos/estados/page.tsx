@@ -69,7 +69,6 @@ export default async function EstadosCuentaPage({ searchParams }: { searchParams
     <PageContainer>
       <PageHeader
         title="Estados de cuenta"
-        description="El resumen mensual de cada proveedor, con lo que se debe y lo pagado"
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Facturas y pagos", href: FUEL_PATHS.pagos }, { label: "Estados de cuenta" }]} />}
         actions={
           <FuelHeaderActions period={period} granularity="month">
@@ -83,7 +82,7 @@ export default async function EstadosCuentaPage({ searchParams }: { searchParams
 
       {!degraded.includes("estados-saldos") && <PayablesSentence payables={payables} today={today} />}
       <p className="mb-4 text-xs text-[var(--color-text-muted)]">
-        Se muestran los estados de cuenta {period.isWholeMonths && months.length === 1 ? `de ${fuelMonthLabel(months[0] ?? "")}` : `de los meses que toca ${period.label}`} y los de meses anteriores que todavía tienen saldo.
+        Meses del período y anteriores con saldo pendiente.
       </p>
 
       {degraded.includes("estados-lista") ? null : (

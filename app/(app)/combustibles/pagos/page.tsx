@@ -130,7 +130,7 @@ export default async function PagosPage({ searchParams }: { searchParams: Promis
           title={hasFilters ? "Ninguna factura coincide con estos filtros" : `No hay facturas ${period.inLabel}`}
           description={hasFilters
             ? "Prueba con otro período o quita algún filtro para ver más."
-            : "Aquí aparecen las facturas de combustible del período, con su neto, IEC e IVA. Registra una factura o cárgalas desde un Excel con «Agregar datos»."}
+            : "Registra una factura o cárgalas desde un Excel con «Agregar datos»."}
           action={hasFilters
             ? <Button asChild variant="secondary"><Link href={clearFiltersHref}>Quitar filtros</Link></Button>
             : canCreate ? <Button asChild variant="primary"><Link href={FUEL_PATHS.pagosNueva}>Nueva factura</Link></Button> : undefined}

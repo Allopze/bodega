@@ -92,7 +92,7 @@ export async function PlanillaDetail({ session, id }: { session: Session; id: st
         action={rejectionCount > 0 ? <OperationRejectionsExport batchId={batch.id} /> : null}
       >
         {rejectionCount === 0 ? (
-          <p className="text-sm text-[var(--color-text-muted)]">Ninguna fila de este archivo fue rechazada. Las que no cuadran (lectura menor que la anterior, proveedor desconocido) se importaron y quedaron en «Por revisar».</p>
+          <p className="text-sm text-[var(--color-text-muted)]">Ninguna fila de este archivo fue rechazada. Lo que no cuadra queda en «Por revisar».</p>
         ) : (
           <div className="space-y-3">
             <p className="text-sm text-[var(--color-text-muted)]">Estas filas no se convirtieron en carga. Descarga el Excel, corrige el dato indicado y vuelve a subirlas como un archivo nuevo.</p>
@@ -124,7 +124,7 @@ export async function PlanillaDetail({ session, id }: { session: Session; id: st
       </Section>
 
       {unmatchedFaenas.length > 0 ? (
-        <Section title={`Faenas sin asociar (${unmatchedFaenas.length})`} description="Las cargas de estas faenas no llegan a ninguna faena de la plataforma hasta asociarlas.">
+        <Section title={`Faenas sin asociar (${unmatchedFaenas.length})`} description="Sus cargas no se asignan a faena hasta vincularlas.">
           {!canLink ? <p className="mb-2 text-sm text-[var(--color-text-muted)]">No tienes permiso para vincular faenas.</p> : null}
           <ul className="space-y-2">
             {unmatchedFaenas.map((faenaNombre) => (
@@ -151,7 +151,7 @@ export async function PlanillaDetail({ session, id }: { session: Session; id: st
         </Section>
       ) : null}
 
-      <Section title={`Muestra de registros (los primeros ${SAMPLE_LIMIT} por fecha, de ${formatQty(batch.filasValidas)})`}>
+      <Section title="Muestra de registros" description={`Primeros ${SAMPLE_LIMIT} por fecha, de ${formatQty(batch.filasValidas)}.`}>
         <TableRoot framed={false} aria-label="Muestra de registros de la planilla">
           <Table className="min-w-[900px]">
             <TableHeader>

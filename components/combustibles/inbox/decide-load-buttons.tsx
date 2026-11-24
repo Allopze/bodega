@@ -80,7 +80,7 @@ export function DecideLoadButtons({
         label="Nota de la decisión"
         htmlFor={noteId}
         required
-        helper={`Mínimo ${MIN_DECISION_NOTE_LENGTH} caracteres. Queda registrada con tu nombre.`}
+        helper={`Mínimo ${MIN_DECISION_NOTE_LENGTH} caracteres.`}
         error={noteError ?? undefined}
       >
         <Textarea

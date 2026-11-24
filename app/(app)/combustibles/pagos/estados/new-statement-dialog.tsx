@@ -117,7 +117,7 @@ export function NewStatementDialog({ suppliers, defaultMonth, defaultSupplierId,
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Crear estado de cuenta</DialogTitle>
-          <DialogDescription>Revisa las cargas que entran antes de crearlo: lo que ves aquí es lo que se guarda.</DialogDescription>
+          <DialogDescription>Revisa qué cargas entran antes de crear el estado.</DialogDescription>
         </DialogHeader>
         <form action={formAction} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -214,7 +214,7 @@ function PreviewBody({ preview, pending, error, ready, supplierName }: {
             <PreviewFigure label={<FuelTerm term="IVA">IVA</FuelTerm>} value={formatCLP(totals.totalIva)} />
             <PreviewFigure label="Total a pagar" value={formatCLP(totals.totalAmount)} strong />
           </dl>
-          <p className="text-xs text-[var(--color-text-muted)]">Al crearlo queda todo por pagar; los pagos se registran en el detalle del estado de cuenta.</p>
+          <p className="text-xs text-[var(--color-text-muted)]">Al crearlo, todo queda por pagar.</p>
         </>
       )}
       <ExcludedNote excluded={preview.excluded} />

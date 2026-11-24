@@ -73,12 +73,12 @@ export function CaseActions({ item, canReview, canResolve, onDone }: { item: Fue
             onClick={() => call(() => takeAnomalyCaseAction({ caseId: info.id, expectedStatus: info.status, expectedAssigneeId: info.assigneeId }))}>
             Tomar el caso
           </Button>
-          <p className="text-xs text-[var(--color-text-muted)]">Al tomar el caso quedas como responsable y lo ven todos.</p>
+          <p className="text-xs text-[var(--color-text-muted)]">Quedas como responsable.</p>
         </div>
       ) : null}
 
       {info.status === "in_review" && canReview && (item.extras.assignees?.length ?? 0) > 0 ? (
-        <Field label="Responsable" helper="Quien lo tiene en sus manos. Puedes pasárselo a otra persona de la faena.">
+        <Field label="Responsable" helper="Puedes pasárselo a otra persona de la faena.">
           <OptionSelect
             aria-label="Asignar el caso a"
             value={info.assigneeId ?? ""}
@@ -131,7 +131,7 @@ export function CaseActions({ item, canReview, canResolve, onDone }: { item: Fue
       {canReview ? (
         <div className="space-y-2 border-t border-[var(--color-border)] pt-4">
           <Field label="Comentario" htmlFor={commentId}>
-            <Textarea id={commentId} value={comment} onChange={(event) => setComment(event.target.value)} rows={2} placeholder="Añadir un comentario…" disabled={pending} />
+            <Textarea id={commentId} value={comment} onChange={(event) => setComment(event.target.value)} rows={2} disabled={pending} />
           </Field>
           <div className="flex justify-end">
             <Button type="button" variant="secondary" size="sm" loading={pending} disabled={pending || !comment.trim()}

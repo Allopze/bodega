@@ -87,7 +87,7 @@ export default async function CuadraturaTarjetaTerrenoPage({ searchParams }: { s
       ) : (data?.rows.length ?? 0) === 0 ? (
         <EmptyState
           title="No hay cargas de tarjeta ni de terreno en este período"
-          description="Esta vista cruza los totales que informa la tarjeta con las cargas registradas en terreno. Cuando haya de cualquiera de las dos, aparecen aquí por equipo y mes."
+          description="Cruza lo que informa la tarjeta con las cargas de terreno, por equipo y mes."
           action={<Button asChild variant="secondary"><Link href={withFuelContext(FUEL_PATHS.cargas, ctxParams)}>Ver las cargas del período</Link></Button>}
         />
       ) : (

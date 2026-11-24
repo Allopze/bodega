@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { ArrowSquareOut, Lock } from "@phosphor-icons/react"
+import { Lock } from "@phosphor-icons/react"
 import { Callout } from "@/components/ui/callout"
 import { Sheet, SheetBody, SheetCloseButton, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import type { FuelInboxItem } from "@/lib/combustibles/inbox/detail-types"
@@ -24,7 +24,7 @@ const QUESTION: Record<FuelInboxItem["row"]["kind"], string> = {
 }
 
 const EFFECT: Partial<Record<FuelInboxItem["row"]["kind"], string>> = {
-  carga: "Mientras nadie decide, sus litros cuentan, pero no entra a los promedios del equipo. Tu decisión queda registrada con tu nota.",
+  carga: "Mientras nadie decide, sus litros cuentan, pero no entra a los promedios del equipo.",
 }
 
 /**
@@ -83,12 +83,12 @@ export function InboxDetailSheet({ item, canReviewCases, canResolveCases }: { it
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
             {row.href ? (
               <Link href={row.href} className="inline-flex items-center gap-1 font-medium text-[var(--color-primary)] hover:underline">
-                {row.kind === "patente" ? "Abrir el lote" : "Abrir la carga"} <ArrowSquareOut size={14} aria-hidden />
+                {row.kind === "patente" ? "Abrir el lote" : "Abrir la carga"}
               </Link>
             ) : null}
             {row.vehicleId && row.kind !== "patente" ? (
               <Link href={fuelEquipmentHref(row.vehicleId)} className="inline-flex items-center gap-1 font-medium text-[var(--color-primary)] hover:underline">
-                Ficha del equipo <ArrowSquareOut size={14} aria-hidden />
+                Ficha del equipo
               </Link>
             ) : null}
           </div>

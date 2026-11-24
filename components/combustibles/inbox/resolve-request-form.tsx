@@ -37,7 +37,7 @@ export function ResolveRequestForm({ markId, onDone }: { markId: string; onDone?
         label="Nota de la revisión"
         htmlFor={noteId}
         required
-        helper={`Mínimo ${MIN_DECISION_NOTE_LENGTH} caracteres. Quien pidió la revisión recibe el aviso con tu nota.`}
+        helper={`Mínimo ${MIN_DECISION_NOTE_LENGTH} caracteres. Quien lo pidió recibe el aviso.`}
         error={noteError ?? undefined}
       >
         <Textarea id={noteId} value={note} onChange={(event) => setNote(event.target.value)} rows={3} maxLength={MAX_DECISION_NOTE_LENGTH} error={Boolean(noteError)} disabled={pending} />

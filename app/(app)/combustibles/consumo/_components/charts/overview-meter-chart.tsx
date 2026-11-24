@@ -31,7 +31,7 @@ export function OverviewMeterChart({ unit, points }: { unit: PerformanceUnit; po
   const motion = useChartMotion()
   const copy = COPY[unit]
   if (points.length === 0) {
-    return <ChartEmpty label={copy.empty} hint="Aparecen cuando hay cargas consecutivas con lectura del medidor y sin revisión pendiente." className="h-64" />
+    return <ChartEmpty label={copy.empty} hint="Se necesitan cargas consecutivas con lectura de medidor y sin revisión pendiente." className="h-64" />
   }
   const byMonth = new Map(points.map((point) => [point.month, point]))
   const data = fillMonthKeys(points.map((point) => point.month)).map((month) => ({

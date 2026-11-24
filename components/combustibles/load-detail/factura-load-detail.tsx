@@ -66,12 +66,12 @@ export function FacturaLoadDetail({
 
       {/* Esta ficha no tiene el estado de revisión de las otras dos: la sección sólo aparece si hay casos que contar. */}
       {detail.openCases.length > 0 && (
-        <LoadSection title="Revisión de la plataforma" description="Lo que la plataforma no puede juzgar sola queda por decidir.">
+        <LoadSection title="Revisión de la plataforma">
           <OpenCasesNotice cases={detail.openCases} search={search} />
         </LoadSection>
       )}
 
-      <LoadSection bare title="Factura" description="Los montos, la boleta y el registro de la factura. Registrarla la cierra para edición.">
+      <LoadSection bare title="Factura" description="Montos, boleta y registro. Registrarla la cierra para edición.">
         {form}
       </LoadSection>
 

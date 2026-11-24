@@ -68,7 +68,7 @@ export function CoverageTable({ rows }: { rows: TaeCopecReconciliationRow[] }) {
                 <TableCell>
                   <span className="flex flex-wrap gap-1">
                     <MetaBadge meta={badge} />
-                    {row.tctPartial ? <MetaBadge meta={{ label: "Parcial", variant: "outline" }} title="Hay un registro de la tarjeta del período que se extiende más allá del rango; sus litros no se suman para no sobreestimarlo. Amplía el período para verlos completos." /> : null}
+                    {row.tctPartial ? <MetaBadge meta={{ label: "Parcial", variant: "outline" }} title="Registro que se extiende más allá del rango: sus litros no se suman. Amplía el período para verlos completos." /> : null}
                   </span>
                 </TableCell>
               </TableRow>

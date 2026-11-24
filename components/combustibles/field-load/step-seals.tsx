@@ -28,13 +28,13 @@ export function StepSeals(props: StepViewProps) {
             {none ? (
               <StepNotice tone="info">{spec.none}. Cuéntanos por qué más abajo.</StepNotice>
             ) : (
-              <BigField id={`tae-${side === "removed" ? "removed" : "installed"}`} label={spec.label} hint="El número grabado en el sello. No uses 000000 ni números repetidos." error={errors[spec.numberKey]}>
+              <BigField id={`tae-${side === "removed" ? "removed" : "installed"}`} label={spec.label} hint="No uses 000000 ni números repetidos." error={errors[spec.numberKey]}>
                 <BigInput id={`tae-${side === "removed" ? "removed" : "installed"}`} name={spec.numberKey} value={draft[spec.numberKey]} autoComplete="off" autoCapitalize="characters" onChange={(event) => patch({ [spec.numberKey]: event.target.value } as Partial<FieldLoadDraft>)} error={Boolean(errors[spec.numberKey])} />
               </BigField>
             )}
             {hasNumber && <PhotoTile kind={spec.kind} label={spec.photo} file={photos[spec.kind]} compressing={Boolean(compressing[spec.kind])} error={errors[spec.kind]} onSelect={(file) => selectPhoto(spec.kind, file)} optional={photosOptional} />}
             <BigButton type="button" variant="secondary" aria-pressed={none} onClick={() => patch({ [spec.noKey]: !none } as Partial<FieldLoadDraft>)}>
-              {none ? "Sí hay sello: escribir el número" : `No hay sello (${spec.none.toLocaleLowerCase("es-CL")})`}
+              {none ? "Sí hay sello: escribir el número" : "No hay sello"}
             </BigButton>
           </section>
         )

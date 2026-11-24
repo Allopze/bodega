@@ -159,7 +159,7 @@ export function RegistrarForm({
       {phase === "where" && (
         <div className="flex flex-col gap-5">
           <StepHeader position={1} total={FIELD_LOAD_STEPS.length + STEPS_BEFORE} title="Dónde" headingRef={headingRef} />
-          <p className="text-base text-[var(--color-text-muted)]">¿Dónde estás cargando? Si la faena tiene un solo punto de carga, se elige solo.</p>
+          <p className="text-base text-[var(--color-text-muted)]">Elige la faena y el punto de carga.</p>
           <RegistrarPicker
             worksites={worksites}
             points={points}

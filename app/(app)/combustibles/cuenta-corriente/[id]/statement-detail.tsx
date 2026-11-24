@@ -89,7 +89,7 @@ export function StatementDetail({ statement, today }: { statement: StatementData
           <CardContent>
             {statement.payments.length === 0 ? (
               <p className="text-sm text-[var(--color-text-muted)]">
-                Todavía no se registra ningún pago. Cuando pagues, anótalo con «Registrar pago», arriba.
+                Todavía no se registra ningún pago. Anótalo con «Registrar pago», arriba.
               </p>
             ) : (
               <Table>
@@ -136,7 +136,7 @@ export function StatementDetail({ statement, today }: { statement: StatementData
             <EmptyState
               compact
               title="Este estado de cuenta no tiene cargas"
-              description="Se arma con las cargas facturadas del proveedor en el mes. Revisa las facturas del período para ver si falta alguna."
+              description="Se arma con las facturas del proveedor en el mes. Revisa si falta alguna."
               action={<Button asChild variant="secondary" size="sm"><Link href={FUEL_PATHS.pagos}>Ver facturas</Link></Button>}
             />
           ) : (
@@ -212,7 +212,7 @@ export function AddPaymentDialog({ statementId, pendingAmount }: { statementId: 
         <DialogHeader>
           <DialogTitle>Registrar pago</DialogTitle>
           <DialogDescription>
-            Por pagar: <span className="font-mono tabular-nums">{formatCLP(pendingAmount)}</span>. Al registrar el pago, el estado de cuenta se actualiza solo.
+            Por pagar: <span className="font-mono tabular-nums">{formatCLP(pendingAmount)}</span>.
           </DialogDescription>
         </DialogHeader>
         <form action={formAction} className="space-y-4">

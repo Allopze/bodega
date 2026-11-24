@@ -174,7 +174,7 @@ export async function EficienciaSection({ session, period, worksiteId }: { sessi
               <ChartBlock
                 span={idleSpan ?? "one"}
                 title="Litros consumidos en vacío por mes"
-                description={`${caption} · telemetría VisionLink, sólo equipos que la informan`}
+                description={caption}
                 headline={idleTotals ? {
                   value: `${formatQty(idleTotals.litersIdle, undefined, { maximumFractionDigits: 0 })} L`,
                   caption: idleTotals.pct === null ? "con el motor en vacío en la ventana" : `con el motor en vacío en la ventana, el ${formatQty(idleTotals.pct, undefined, { maximumFractionDigits: 1 })} % de los litros informados`,

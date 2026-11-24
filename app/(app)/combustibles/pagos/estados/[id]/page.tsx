@@ -49,7 +49,7 @@ export default async function EstadoCuentaPage({ params }: { params: Promise<{ i
     <PageContainer>
       <PageHeader
         title={`${supplierName} · ${fuelMonthLabel(statement.month).toLowerCase()}`}
-        description={`Estado de cuenta · ${loads.length} ${loads.length === 1 ? "carga" : "cargas"}`}
+        description={`${loads.length} ${loads.length === 1 ? "carga" : "cargas"}`}
         breadcrumb={
           <FuelBreadcrumbs items={[
             { label: "Facturas y pagos", href: FUEL_PATHS.pagos },

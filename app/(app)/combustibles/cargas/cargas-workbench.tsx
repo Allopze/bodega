@@ -101,7 +101,7 @@ export function CargasWorkbench({
     <>
       <PageHeader
         title="Cargas"
-        description="Todas las cargas a equipos, vengan de donde vengan"
+        description="Cargas a equipos de todas las fuentes"
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Cargas" }]} />}
         actions={header}
       />
@@ -136,7 +136,7 @@ export function CargasWorkbench({
           <EmptyState
             compact
             title={`Aún no hay cargas ${period.inLabel}`}
-            description="Aquí aparecen las cargas que se registran en terreno, las que llegan en una planilla y las facturadas. Registra una o agrega datos para llenar esta lista."
+            description="Registra una carga o agrega datos para llenar esta lista."
             action={canRegister ? <Button asChild size="sm"><Link href={FUEL_PATHS.registrar}>Registrar carga</Link></Button> : undefined}
             secondaryAction={<Button asChild size="sm" variant="secondary"><Link href={FUEL_PATHS.fuentes}>Ver fuentes de datos</Link></Button>}
             className="rounded-[var(--radius-2xl)] border border-dashed border-[var(--color-border-strong)]"

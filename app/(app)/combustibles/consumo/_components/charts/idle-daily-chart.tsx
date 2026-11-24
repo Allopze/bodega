@@ -1,6 +1,6 @@
 "use client"
 
-import { Bar, CartesianGrid, ComposedChart, Legend, Line, XAxis, YAxis } from "recharts"
+import { Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { ChartEmpty } from "@/components/ui/chart-empty"
 import { IDLE_COLORS, hoursTick, pctTick, tooltipRow } from "./idle-chart-parts"
@@ -29,7 +29,6 @@ export function IdleDailyChart({ data, ariaLabel = "Horas de funcionamiento por 
         <YAxis yAxisId="hours" tickLine={false} axisLine={false} width={44} tickFormatter={hoursTick} tick={AXIS_TICK} label={{ value: "horas", angle: -90, position: "insideLeft", fontSize: 11, fill: "var(--color-text-muted)" }} />
         <YAxis yAxisId="pct" orientation="right" domain={[0, 100]} tickLine={false} axisLine={false} width={52} tickFormatter={pctTick} tick={AXIS_TICK} label={{ value: "% en vacío", angle: 90, position: "insideRight", fontSize: 11, fill: "var(--color-text-muted)" }} />
         <ChartTooltip content={<ChartTooltipContent formatter={(value, name, item) => tooltipRow(value, name, item, (series) => (series === "% en vacío" ? "%" : "h"))} />} />
-        <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
         <Bar yAxisId="hours" dataKey="operatingHours" name="Horas de funcionamiento" fill={IDLE_COLORS.working} maxBarSize={28} radius={[3, 3, 0, 0]} {...motion} />
         <Line yAxisId="pct" type="monotone" dataKey="idlePct" name="% en vacío" stroke={IDLE_COLORS.pct} strokeWidth={2} dot={false} connectNulls={false} {...motion} />
       </ComposedChart>

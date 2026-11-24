@@ -103,7 +103,7 @@ export async function TarjetaDetail({ session, id }: { session: Session; id: str
       {rejections.length > 0 && (
         <Section
           title={`Filas rechazadas (${rejections.length})`}
-          description="Filas del archivo que no se importaron: patentes sin vehículo, colisiones de catálogo o filas inválidas. Quedan registradas para corregirlas y reprocesar el archivo."
+          description="Filas del archivo que no se importaron: patentes sin vehículo, colisiones de catálogo o filas inválidas. Corrígelas y reprocesa el archivo."
         >
           <TableRoot framed={false} aria-label="Filas rechazadas de la importación">
             <Table className="min-w-[640px]">

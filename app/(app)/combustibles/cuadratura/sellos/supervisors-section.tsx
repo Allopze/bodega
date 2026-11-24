@@ -100,7 +100,7 @@ export function SupervisorsSection({ rows, justifications, cargasHref }: { rows:
             </TableRow>
           </TableFooter>
         </Table>
-        <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">El último sello de cada equipo no cuenta como cadena rota: todavía no hay una carga siguiente que lo retire.</p>
+        <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">El último sello de cada equipo no cuenta como cadena rota: aún no tiene carga siguiente.</p>
       </TableRoot>
 
       {withReasons.length > 0 ? (

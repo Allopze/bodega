@@ -57,7 +57,7 @@ export function ReopenDecisionButton({ loadId, label, onDone }: { loadId: string
         label="¿Por qué se deshace?"
         htmlFor={noteId}
         required
-        helper={`Mínimo ${MIN_DECISION_NOTE_LENGTH} caracteres. La carga vuelve a calcularse con la serie del equipo y puede volver a «Pendientes».`}
+        helper={`Mínimo ${MIN_DECISION_NOTE_LENGTH} caracteres. Puede volver a «Pendientes».`}
         error={noteError ?? undefined}
       >
         <Textarea

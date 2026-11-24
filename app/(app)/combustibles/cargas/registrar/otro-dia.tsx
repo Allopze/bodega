@@ -84,7 +84,7 @@ export function OtroDia({
             />
           </Field>
           <p className="text-sm text-[var(--color-text-muted)]">
-            Las fotos son opcionales. La carga queda con la fecha que indicas, por decidir en «Por revisar», y la plataforma anota además el día en que la ingresas.
+            Las fotos son opcionales.
           </p>
         </div>
       )}

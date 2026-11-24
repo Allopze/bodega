@@ -32,7 +32,7 @@ export function MediumSection({ rows, cargasHref, fuentesHref }: { rows: MediumC
       <EmptyState
         compact
         title="No hay cargas en terreno ni informes del proveedor en este período"
-        description="Cada carga lleva el medio por donde llegó el combustible (tarjeta, surtidor, estanque…); sin él no se puede cruzar con lo que informa el proveedor. Registra las cargas con su medio o importa lo que informó el proveedor."
+        description="Sin el medio por donde llegó (tarjeta, surtidor, estanque…) no se puede cruzar con lo informado por el proveedor."
         action={cargasHref ? <Button asChild variant="secondary" size="sm"><Link href={cargasHref}>Ver las cargas del período</Link></Button> : undefined}
         secondaryAction={fuentesHref ? <Button asChild variant="ghost" size="sm"><Link href={fuentesHref}>Ir a Fuentes de datos</Link></Button> : undefined}
       />

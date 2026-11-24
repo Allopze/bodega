@@ -53,7 +53,7 @@ export function CycleWorkbench({ worksites, products, suppliers, locations, vehi
           <DialogHeader>
             <p className="text-eyebrow">Estanques</p>
             <DialogTitle>Registrar movimiento</DialogTitle>
-            <DialogDescription>El registro queda auditado y entra en la cuadratura del período.</DialogDescription>
+            <DialogDescription>Queda auditado y suma a la cuadratura del período.</DialogDescription>
           </DialogHeader>
           <form action={action} className="space-y-5">
             <input type="hidden" name="clientSubmissionId" value={clientSubmissionId} />

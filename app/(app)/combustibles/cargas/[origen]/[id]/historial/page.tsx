@@ -38,7 +38,6 @@ export default async function HistorialCargaPage({ params, searchParams }: { par
     <PageContainer width="form">
       <PageHeader
         title={`Historial de la carga de ${history.equipmentLabel}`}
-        description="Quién hizo qué con esta carga, y cuándo"
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Cargas", href: withFuelContext(FUEL_PATHS.cargas, search) }, { label: history.equipmentLabel, href: fichaHref }, { label: "Historial" }]} />}
         actions={<FuelHeaderActions />}
       />
@@ -48,13 +47,13 @@ export default async function HistorialCargaPage({ params, searchParams }: { par
           <LoadTimeline events={history.timeline} />
         </LoadSection>
 
-        <LoadSection title="Cambios campo a campo" description="El valor de antes y el de después de cada cambio registrado.">
+        <LoadSection title="Cambios campo a campo">
           {history.audit.length === 0 ? (
             <p className="text-sm text-[var(--color-text-muted)]">Esta carga no tiene cambios registrados en la auditoría.</p>
           ) : (
             <details>
               <summary className="cursor-pointer text-sm font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
-                Ver cambios campo a campo ({history.audit.length})
+                Ver detalle ({history.audit.length})
               </summary>
               <ul className="mt-4 space-y-5">
                 {history.audit.map((row) => {

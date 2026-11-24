@@ -112,11 +112,11 @@ export function ReviewRequestControl({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{hasRequest ? "Esta carga ya tiene un pedido de revisión" : "Pedir que revisen esta carga"}</DialogTitle>
+          <DialogTitle>{hasRequest ? "Ya hay un pedido de revisión" : "Pedir que revisen esta carga"}</DialogTitle>
           <DialogDescription>
             {hasRequest
               ? "Mientras esté abierto, aparece en «Por revisar» con esta nota."
-              : "Escribe qué debe mirarse. La carga llega a «Por revisar» con tu nota; quien decide la ve junto al dato que explica el caso."}
+              : "Escribe qué debe mirarse. La carga llega a «Por revisar» con tu nota."}
           </DialogDescription>
         </DialogHeader>
 

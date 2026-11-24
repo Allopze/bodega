@@ -84,7 +84,7 @@ export function StepReview({
   const sealText = (value: string, none: boolean) => none || !value ? "Sin sello" : value
   return (
     <div className="space-y-5">
-      <p className="text-base text-[var(--color-text-muted)]">Revisa que todo esté bien. Si algo no coincide, toca «Cambiar».</p>
+      <p className="text-base text-[var(--color-text-muted)]">Si algo no coincide, toca «Cambiar».</p>
       <dl>
         {extraRows.map((row) => <EditableRow key={row.label} label={row.label} value={row.value} onEdit={row.onEdit} />)}
         <Row label="Equipo" value={vehicle ? `${vehicle.code ?? vehicle.plate} · ${vehicle.plate}` : "—"} step="vehicle" onEdit={goTo} />

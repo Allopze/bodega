@@ -151,7 +151,7 @@ export function NewFuelLoadForm({ data, rates }: { data: NewFuelLoadData; rates:
           <div className="space-y-2 md:col-span-2 lg:col-span-3">
             <Checkbox name="meterReplaced" value="1" label="El medidor fue reemplazado o reiniciado" />
             <p className="text-xs text-[var(--color-text-muted)]">
-              Márcalo sólo si el equipo estrenó medidor. Sin esto, una lectura menor que la anterior se rechaza como error de tipeo. Queda registrado en la carga con tu explicación.
+              Márcalo sólo si el equipo estrenó medidor. Sin esto, una lectura menor que la anterior se rechaza como error de tipeo.
             </p>
             <Field label="Motivo del reemplazo" htmlFor="meterReplacementReason" error={err("meterReplacementReason")}>
               <Textarea

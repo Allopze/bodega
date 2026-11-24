@@ -289,7 +289,7 @@ export function CargasFilters({ lookups, canViewPersonal }: { lookups: CargasFil
         activeCount={advancedCount}
         overflowFilters={overflowFilters}
         overflowTitle="Más filtros"
-        overflowDescription="Equipo, personas, sellos y fotos, y casos. Cada filtro activo aparece como un chip bajo la barra."
+        overflowDescription="Equipo, personas, sellos y fotos, y casos."
       >
         {/* `sm:w-80` y no `sm:w-64`: con «… o persona…» el placeholder mide ~240 px a 12 px y en 256 px de campo sólo caben ~212. */}
         <FilterSearchInput

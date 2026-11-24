@@ -141,7 +141,7 @@ export function EquipmentStatsTable({ rows: allRows, equipmentHref, clearFilters
       <EmptyState
         compact
         title="Ningún equipo tiene rendimiento calculado"
-        description="Los equipos de esta familia tienen cargas, pero sin las lecturas de medidor que hacen falta para calcular un rendimiento. Se completan con las lecturas de cada carga."
+        description="Tienen cargas, pero sin lecturas de medidor para calcular el rendimiento. Se completan con las lecturas de cada carga."
         action={clearFiltersHref ? <Button asChild variant="secondary" size="sm"><Link href={clearFiltersHref}>Quitar filtros</Link></Button> : undefined}
       />
     )

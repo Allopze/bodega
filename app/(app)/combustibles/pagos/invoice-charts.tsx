@@ -36,7 +36,6 @@ export function InvoiceCharts({ data }: { data: InvoiceChartData }) {
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-medium text-[var(--color-text)] sm:min-h-0 [&::-webkit-details-marker]:hidden">
         <CaretRight size={14} weight="bold" aria-hidden className="transition-transform group-open:rotate-90" />
         Gráficos de facturación
-        <span className="text-xs font-normal text-[var(--color-text-subtle)]">Evolución del gasto, producto, faenas y equipos</span>
       </summary>
       {open && (
         <div className="mt-4 space-y-4">

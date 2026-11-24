@@ -190,7 +190,7 @@ export default async function CuadraturaEstanquesPage({ searchParams }: { search
                 <EmptyState
                   compact
                   title="No hay movimientos de estanque en este período"
-                  description="Aquí se ven las recepciones, los traspasos y las entregas desde un estanque. Las entregas de los formularios en terreno se cuentan en los totales, pero se ven en Cargas."
+                  description="Recepciones, traspasos y entregas desde un estanque."
                   action={canCreate ? undefined : <Button asChild variant="secondary" size="sm"><Link href={withFuelContext(`${FUEL_PATHS.cargas}?como=qr,app,historico`, ctxParams)}>Ver las cargas en terreno</Link></Button>}
                 />
               ) : (

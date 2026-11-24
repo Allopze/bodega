@@ -5,7 +5,7 @@ import { Plus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -61,7 +61,7 @@ export function MandantesTable({ mandantes, worksites, clients, emptyAction }: {
           compact
           align="start"
           title="Aún no hay mandantes"
-          description="Sin mandantes no hay cuadratura por mandante ni el filtro «Mandante» en las pantallas. Crea el primero y asígnale sus faenas."
+          description="Sin mandantes no hay cuadratura por mandante. Crea el primero y asígnale sus faenas."
           action={emptyAction}
         />
       ) : (
@@ -161,10 +161,9 @@ function MandanteDialog({ mandante, worksites, clients, onClose }: { mandante: M
   const nameError = op.fieldError("name")
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-xl" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{mandante ? "Editar mandante" : "Nuevo mandante"}</DialogTitle>
-          <DialogDescription>Define la tolerancia de conciliación y las faenas que pertenecen a este mandante.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} noValidate>
           <FieldGroup>
@@ -172,7 +171,7 @@ function MandanteDialog({ mandante, worksites, clients, onClose }: { mandante: M
               <Input id="mandante-name" value={name} onChange={(event) => setName(event.target.value)} error={!!nameError} autoComplete="off" />
             </Field>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Cliente (opcional)" htmlFor="mandante-client" helper="Vincula el mandante con un cliente de facturación." error={op.fieldError("clientId")}>
+              <Field label="Cliente (opcional)" htmlFor="mandante-client" error={op.fieldError("clientId")}>
                 <Select value={clientId} onValueChange={setClientId}>
                   <SelectTrigger id="mandante-client"><SelectValue /></SelectTrigger>
                   <SelectContent>

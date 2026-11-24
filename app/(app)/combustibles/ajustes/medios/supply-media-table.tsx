@@ -4,7 +4,7 @@ import * as React from "react"
 import { Plus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -54,7 +54,7 @@ export function SupplyMediaTable({ media, suppliers, emptyAction }: { media: Sup
           compact
           align="start"
           title="Aún no hay medios de suministro"
-          description="El formulario en terreno y los importadores necesitan al menos un medio para saber por dónde llegó el combustible. Crea el primero."
+          description="Sin medios no se puede registrar de dónde llegó el combustible. Crea el primero."
           action={emptyAction}
         />
       ) : (
@@ -140,10 +140,9 @@ function SupplyMediumDialog({ medium, suppliers, onClose }: { medium: SupplyMedi
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-xl" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{medium ? "Editar medio de suministro" : "Nuevo medio de suministro"}</DialogTitle>
-          <DialogDescription>Los alias son los textos con que este medio aparece en las planillas; se guardan en mayúsculas.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} noValidate>
           <FieldGroup>
@@ -173,7 +172,7 @@ function SupplyMediumDialog({ medium, suppliers, onClose }: { medium: SupplyMedi
                 <SelectContent>{PROVIDER_MAPPINGS.map((item) => <SelectItem key={item} value={item}>{PROVIDER_MAPPING_LABELS[item]}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
-            <Field label="Alias en planillas" htmlFor="medium-aliases" helper="Separados por coma. Ejemplo: CMPC, SURTIDOR CMPC." error={op.fieldError("aliases")}>
+            <Field label="Alias en planillas" htmlFor="medium-aliases" helper="Separados por coma. Se guardan en mayúsculas. Ejemplo: CMPC, SURTIDOR CMPC." error={op.fieldError("aliases")}>
               <Textarea id="medium-aliases" rows={2} value={aliases} onChange={(event) => setAliases(event.target.value)} error={!!op.fieldError("aliases")} />
             </Field>
             <Field label="Orden" htmlFor="medium-order" helper="Menor número, aparece antes en los selectores." error={op.fieldError("sortOrder")}>

@@ -29,7 +29,7 @@ export default async function AjustesMandantesPage() {
       <div className="space-y-4">
         <DegradedDataBanner degraded={degraded} total={total} />
         <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">
-          Cada faena pertenece a lo más a un mandante. La tolerancia es la diferencia aceptada entre lo que entró y lo que se entregó, en porcentaje de lo que entró.
+          Cada faena pertenece a lo más a un mandante.
         </p>
         {/* Con la lectura caída una lista vacía no significa «no hay mandantes»: el aviso de arriba ya lo dice. */}
         {degraded.length > 0 && mandantes.length === 0 ? null : (

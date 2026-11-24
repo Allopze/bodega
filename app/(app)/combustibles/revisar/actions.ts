@@ -31,7 +31,7 @@ const CASE_STATUSES = new Set<string>(["open", "in_review", "resolved", "dismiss
 function failure(error: unknown, fallback: string): Result {
   logger.error(`[revisar] ${fallback}`, error)
   const message = error instanceof Error && isNetworkError(error)
-    ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente."
+    ? "Sin conexión al servidor. Revisa la conexión y reintenta."
     : safeActionMessage(error, fallback)
   return { ok: false, message }
 }

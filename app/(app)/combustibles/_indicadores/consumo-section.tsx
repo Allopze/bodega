@@ -159,7 +159,7 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
                 title={hasLoadsElsewhere ? `Sin cargas en ${period.inLabel}` : "Todavía no hay datos de combustible para mostrar"}
                 description={hasLoadsElsewhere
                   ? "No hay cargas de equipos en este período con estos filtros. Prueba con otro período o quita la faena."
-                  : "Los indicadores se llenan con las cargas registradas en terreno, la planilla de cargas y los reportes de tarjeta. Agrega alguno para ver litros, costo y rendimiento."}
+                  : "Se llenan con cargas de terreno, la planilla o los reportes de tarjeta. Agrega alguna para ver litros, costo y rendimiento."}
                 action={sourcesHref ? <Button asChild><Link href={withPeriod(sourcesHref)}>Ir a Fuentes de datos</Link></Button> : undefined}
               />
             </ChartSlot>
@@ -239,7 +239,7 @@ export async function ConsumoSection({ session, period, worksiteId }: { session:
         id="consumo"
         title="Consumo"
         links={links}
-        note={canViewCosts && !period.isWholeMonths ? "El costo viene del libro de Copec, que es mensual: se toman los meses completos que toca el período." : undefined}
+        note={canViewCosts && !period.isWholeMonths ? "El costo viene del libro de Copec, que es mensual, así que se toman los meses completos del período." : undefined}
         coverage={<CoverageNotice {...coverageInput} sourcesHref={sourcesHref ? withPeriod(sourcesHref) : undefined} />}
         summary={stats.length > 0 ? <SummaryBar numerals="sans" stats={stats} /> : undefined}
         charts={

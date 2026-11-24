@@ -61,8 +61,7 @@ export function CopecPeriodReview({ state }: { state: CopecSyncStateView }) {
       <div className="mb-3 max-w-3xl">
         <h2 id="copec-revision" className="text-h2 text-[var(--color-text)]">Revisión de Copec</h2>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-          Lo que quedó esperando una decisión humana. Las filas válidas de un mes con observaciones ya se importaron:
-          cerrar el mes no las toca, sólo deja escrito por qué se acepta lo que faltó.
+          Filas que esperan una decisión. Las válidas ya se importaron; cerrar el mes no las toca.
         </p>
       </div>
 
@@ -129,7 +128,7 @@ export function CopecPeriodReview({ state }: { state: CopecSyncStateView }) {
         onOpenChange={(open) => { if (!open && !closeOp.pending) { setClosing(null); closeOp.setMessage("") } }}
         title="¿Cerrar el mes con observaciones?"
         description={closing
-          ? `Se cerrará ${CHANNEL_LABEL[closing.channel]} · ${PRODUCT_LABEL[closing.product]} de ${monthLabel(state.coverageMonth)} como «cerrado con observaciones». Es un cierre terminal: la sincronización no volverá a pedir ese mes. Las ${formatQty(closing.rowsRejected)} filas rechazadas quedan registradas en la bitácora con tu motivo.`
+          ? `Se cerrará ${CHANNEL_LABEL[closing.channel]} · ${PRODUCT_LABEL[closing.product]} de ${monthLabel(state.coverageMonth)} como «cerrado con observaciones». Queda cerrado y la sincronización no volverá a pedir ese mes. Las ${formatQty(closing.rowsRejected)} filas rechazadas quedan registradas en la bitácora con tu motivo.`
           : ""}
         reasonLabel="Evidencia revisada"
         reasonPlaceholder="Ej.: el informe trae una fila con volumen negativo; el resto se importó y se verificó contra el portal de Copec."

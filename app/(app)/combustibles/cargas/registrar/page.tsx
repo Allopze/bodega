@@ -93,7 +93,7 @@ export default async function RegistrarCargaPage({ searchParams }: { searchParam
         <EmptyState
           title="Aún no hay puntos de carga para registrar"
           description={canManagePoints
-            ? "Para registrar una carga hace falta una faena a tu alcance con un punto de carga activo (surtidor, camión surtidor, bidón…). Se crean en Ajustes."
+            ? "Se registra en una faena a tu alcance con un punto de carga activo. Los puntos se crean en Ajustes."
             : "Para registrar una carga hace falta una faena a tu alcance con un punto de carga activo (surtidor, camión surtidor, bidón…). Pídele a quien administra Combustible que cree uno en Ajustes."}
           action={
             <Button asChild variant="secondary" size="sm">

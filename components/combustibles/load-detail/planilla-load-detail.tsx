@@ -84,7 +84,7 @@ export function PlanillaLoadDetail({
         <LoadFacts items={facts} />
       </LoadSection>
 
-      <LoadSection title="Revisión de la plataforma" description="Lo que la plataforma no puede juzgar sola queda por decidir.">
+      <LoadSection title="Revisión de la plataforma">
         <div className="space-y-3">
           <LoadReviewStatus review={detail.review} search={search} canDecide={canDecide} equipmentLabel={detail.equipmentLabel} />
           {detail.openRequest && <OpenRequestNotice request={detail.openRequest} search={search} />}
@@ -121,7 +121,7 @@ export function PlanillaLoadDetail({
             </dl>
             {batch.filasInvalidas > 0 && (
               <p className="mt-2 text-sm text-[var(--color-warning-ink)]">
-                {batch.filasInvalidas === 1 ? "1 fila del archivo se rechazó" : `${batch.filasInvalidas} filas del archivo se rechazaron`} y no entran a la plataforma; esta no es una de ellas.
+                {batch.filasInvalidas === 1 ? "1 fila del archivo se rechazó" : `${batch.filasInvalidas} filas del archivo se rechazaron`} y no entran a la plataforma. Esta no es una de ellas.
               </p>
             )}
             {canOpenBatch ? (

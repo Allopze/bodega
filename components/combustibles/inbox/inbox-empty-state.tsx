@@ -76,7 +76,7 @@ export function InboxEmptyState({
       <EmptyState
         tone="success"
         title={copy.title}
-        description={`${copy.description} Mira también los otros tipos.`}
+        description={copy.description}
         action={<Button asChild variant="secondary" size="sm"><Link href={allHref}>Ver todo lo pendiente</Link></Button>}
       />
     )

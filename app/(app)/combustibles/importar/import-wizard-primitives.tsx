@@ -36,7 +36,7 @@ export function ImportErrorList({
           <p key={importErrorKey(error)} className="text-[var(--color-danger)]">Fila {error.rowIndex}, {error.field}: {error.message}</p>
         ))}
         {errors.length > maxVisible && (
-          <p className="text-xs text-[var(--color-text-muted)]">…y {errors.length - maxVisible} errores más. Usa el botón de arriba para descargar la lista completa.</p>
+          <p className="text-xs text-[var(--color-text-muted)]">…y {errors.length - maxVisible} más. Descárgalos con el botón de arriba.</p>
         )}
       </div>
     </div>

@@ -57,8 +57,8 @@ export function SealHistorySection({ rows, total, pagination, hrefForPage, clear
         compact
         title={clearHref ? "Sin movimientos de sello para estos filtros" : "Sin movimientos de sello en el período"}
         description={clearHref
-          ? "Sólo aparecen las cargas ya validadas que retiraron o instalaron un sello. Prueba con otro período, faena, patente o número de sello."
-          : "Sólo aparecen las cargas ya validadas que retiraron o instalaron un sello. Prueba con otro período o con otra faena."}
+          ? "Cargas validadas que retiraron o instalaron un sello. Prueba con otro período, faena, patente o número de sello."
+          : "Cargas validadas que retiraron o instalaron un sello. Prueba con otro período o con otra faena."}
         action={clearHref ? <Button asChild variant="secondary" size="sm"><Link href={clearHref}>Quitar filtros</Link></Button> : undefined}
       />
     )
@@ -66,9 +66,9 @@ export function SealHistorySection({ rows, total, pagination, hrefForPage, clear
   return (
     <div className="space-y-2">
       <p className="text-xs text-[var(--color-text-muted)]">
-        {formatQty(total)} {total === 1 ? "movimiento" : "movimientos"}. Los sellos repetidos y los que ninguna carga retiró después se marcan en ámbar; el último sello de cada equipo figura como «Vigente».
+        {formatQty(total)} {total === 1 ? "movimiento" : "movimientos"}. Ámbar: sello repetido o sin retiro posterior. «Vigente»: último sello del equipo.
         {/* Los avisos se calculan sobre las filas traídas: con el tope alcanzado el «siguiente» de un sello puede quedar fuera del corte. */}
-        {total >= SEAL_HISTORY_MAX_ROWS ? ` Se alcanzó el tope de ${formatQty(SEAL_HISTORY_MAX_ROWS)} movimientos: acota el período o la faena para que los avisos de continuidad sean completos.` : ""}
+        {total >= SEAL_HISTORY_MAX_ROWS ? ` Se alcanzó el tope de ${formatQty(SEAL_HISTORY_MAX_ROWS)} movimientos: acota el período o la faena para ver todos los avisos.` : ""}
       </p>
       <TableRoot aria-label="Historial de sellos de cargas de combustible">
         <Table className="min-w-[900px]">

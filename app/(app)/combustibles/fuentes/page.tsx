@@ -141,8 +141,8 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
             {problemSources === 0
               ? describeFuelSources(statuses, period)
               : problemSources === 1
-                ? "Una fuente necesita atención; el detalle está en su tarjeta."
-                : `${problemSources} fuentes necesitan atención; el detalle está en cada tarjeta.`}
+                ? "Una fuente necesita atención."
+                : `${problemSources} fuentes necesitan atención.`}
           </p>
           {coverage ? <CoverageMap matrix={coverage} /> : null}
           {/* `grid-cols-1` y no la columna automática: con ella una fila de contenido ancho estira la columna de todas. */}
@@ -172,7 +172,7 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
           <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
             <div className="max-w-2xl">
               <h2 id="archivos-recientes" className="text-h2 text-[var(--color-text)]">Archivos importados</h2>
-              <p className="mt-1 text-sm text-[var(--color-text-muted)]">Todos los importadores en una sola lista. Revertir un archivo borra lo que trajo y recalcula los equipos afectados.</p>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">Revertir un archivo borra lo que trajo y recalcula los equipos afectados.</p>
             </div>
             {files.total > files.rows.length ? ghost(FUEL_PATHS.fuentesArchivos, `Ver los ${files.total} archivos`) : null}
           </div>
@@ -180,7 +180,7 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
             <EmptyState
               compact
               title="Todavía no se ha importado ningún archivo"
-              description="Cuando subas una planilla, un reporte de tarjeta o la telemetría de los equipos con «Agregar datos», arriba, quedará acá con lo que trajo."
+              description="Los archivos que subas con «Agregar datos» aparecerán aquí."
             />
           )}
         </section>

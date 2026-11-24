@@ -138,7 +138,7 @@ export function StatementsTable({
       hideDensityToggle
       pageSize={25}
       emptyTitle="Todavía no hay estados de cuenta"
-      emptyDescription="El estado de cuenta es el resumen mensual de un proveedor, con lo que se debe y lo que ya se pagó. Se crea al cerrar el mes, con las cargas facturadas."
+      emptyDescription="Resume un mes de un proveedor: lo que se debe y lo pagado. Se crea al cerrar el mes."
       emptyAction={canManage ? <NewStatementDialog suppliers={suppliers} /> : undefined}
       renderRow={(row) => {
         const missingRow = row.kind === "missing"

@@ -49,11 +49,11 @@ export function StepVehicle({ config, draft, errors, patch, shellSearch }: StepV
         ) : (
           <>
             {shellSearch ? (
-              <p className="text-sm text-[var(--color-text-muted)]">Para encontrarlo más rápido, escribe parte del código o la patente en el filtro de arriba.</p>
+              <p className="text-sm text-[var(--color-text-muted)]">Escribe parte del código o la patente en el filtro de arriba.</p>
             ) : (
               <div className="relative">
                 <MagnifyingGlass size={22} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
-                <BigInput id="tae-vehicle-search" aria-label="Buscar equipo por código o patente" placeholder="Busca por código o patente" value={localQuery} onChange={(event) => setLocalQuery(event.target.value)} className="pl-11" autoComplete="off" />
+                <BigInput id="tae-vehicle-search" aria-label="Buscar equipo por código o patente" placeholder="Código o patente" value={localQuery} onChange={(event) => setLocalQuery(event.target.value)} className="pl-11" autoComplete="off" />
               </div>
             )}
             <div role="listbox" id="tae-vehicle" aria-label="Equipos de la faena" className="grid gap-2">

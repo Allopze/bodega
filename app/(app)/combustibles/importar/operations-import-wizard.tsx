@@ -192,7 +192,7 @@ export function OperationsImportWizard() {
           {preview.duplicateRows > 0 && (
             <div className="flex items-start gap-2 p-3 rounded-md bg-[var(--color-surface-2)] text-sm">
               <WarningCircle className="h-4 w-4 mt-0.5 shrink-0 text-[var(--color-text-muted)]" />
-              <p>{preview.duplicateRows} de {preview.totales.totalFilas} filas ya están importadas en un archivo vigente y se omitirán automáticamente al confirmar.</p>
+              <p>{preview.duplicateRows} de {preview.totales.totalFilas} filas ya están importadas en un archivo vigente y se omitirán al confirmar.</p>
             </div>
           )}
 
@@ -218,10 +218,7 @@ export function OperationsImportWizard() {
       <CardHeader><CardTitle>Subir la planilla de cargas</CardTitle></CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-[var(--color-text-muted)]">
-          Carga el consolidado de cargas de combustible por transacción (fecha, horómetro,
-          operador, proveedor y rendimiento por carga). A diferencia del reporte de
-          tarjeta por patente, este archivo abarca varias faenas y períodos a la vez:
-          se detectan automáticamente desde las columnas FECHA y FAENA de cada fila.
+          Consolidado de cargas por transacción, con varias faenas y períodos.
         </p>
         <div className="grid gap-3 sm:grid-cols-1 max-w-sm">
           <div className="grid gap-1.5">
@@ -232,7 +229,7 @@ export function OperationsImportWizard() {
 
         <div className="flex flex-wrap items-center gap-3">
           <ExportButton action={downloadOperationsTemplateAction} label="Descargar plantilla" ariaLabel="Descargar la plantilla de la planilla de cargas" />
-          <span className="text-xs text-[var(--color-text-muted)]">Mismas columnas que lee el importador, con una hoja de instrucciones (formatos y unidades).</span>
+          <span className="text-xs text-[var(--color-text-muted)]">Incluye una hoja con formatos y unidades.</span>
         </div>
 
         <ImportFileDropzone

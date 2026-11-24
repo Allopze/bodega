@@ -144,24 +144,22 @@ export default async function MotorEnVacioPage({ searchParams }: { searchParams:
       <div className="mb-10 grid gap-3">
         <Disclosure
           title="Por equipo y mes"
-          description="Todas las cifras: horas, porcentajes diarios, horas por día y litros de cada equipo en cada mes."
           defaultOpen={Boolean(sp.pagina)}
         >
           {equipmentMonths.failed ? <SectionError what="la tabla por equipo y mes" /> : <EquipmentMonthTable rows={pageRows} total={fleet} pagination={pagination} hrefForPage={hrefForPage} />}
         </Disclosure>
         <Disclosure
           title="Día a día de un equipo"
-          description="Horas de motor y porcentaje en vacío por día del equipo que elijas."
           actions={vehicles.failed || vehicles.data.length === 0 ? null : <EquipmentSelect options={vehicles.data} value={selectedVehicle?.id ?? ""} ariaLabel="Equipo del gráfico diario" />}
         >
           {vehicles.failed || daily?.failed ? <SectionError what="la serie diaria" /> : <IdleDailyChartLazy data={idleDailyChartData(daily?.data ?? [])} />}
         </Disclosure>
-        <Disclosure title="Telemetría contra cargas" description="Un punto por equipo y mes: los litros por hora que mide la telemetría contra los que salen de las cargas. Los que se alejan de la diagonal llevan nombre.">
+        <Disclosure title="Telemetría contra cargas" description="L/h de telemetría contra L/h de cargas, por equipo y mes.">
           {/* La telemetría llega por equipo y día; el L/h «desde cargas» sí depende de lo que Copec informó: el aviso va aquí y no sobre las horas de motor. */}
           <CoverageNotice {...coverageInput} className="mb-4" sourcesHref={fuelSourcesHref(session) ? hrefInContext(FUEL_PATHS.fuentes, period) : undefined} />
           {comparison.failed ? <SectionError what="la comparación de litros por hora" /> : <LitersPerHourSection rows={comparison.data} equipmentHref={equipmentHref} cargasHref={hrefInContext(FUEL_PATHS.cargas, period)} excel={canExport ? { permission: "combustibles:export", notes: coverageNote ? [coverageNote] : [] } : undefined} />}
         </Disclosure>
-        <Disclosure title="Los 20 días con más vacío" description="Sólo días con al menos 1 hora de motor: un día de minutos daría 100 % sin significar nada.">
+        <Disclosure title="Los 20 días con más vacío" description="Sólo días con al menos 1 hora de motor.">
           {topDays.failed ? <SectionError what="los días con más motor en vacío" /> : <TopIdleDaysTable rows={topDays.data} />}
         </Disclosure>
       </div>

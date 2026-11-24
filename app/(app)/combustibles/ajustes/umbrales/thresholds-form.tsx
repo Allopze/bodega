@@ -118,10 +118,10 @@ export function ThresholdsForm({ settings }: { settings: PerformanceControlSetti
           <Field label="Máximo posible, en litros por hora" htmlFor="thr-max-lh" helper="Sobre esto, la lectura está mal casi seguro (hasta 2.000)." error={save.fieldError("maxLitersPerHour")}>
             <Input id="thr-max-lh" inputMode="decimal" value={maxLitersPerHour} onChange={(event) => setMaxLitersPerHour(event.target.value)} error={!!save.fieldError("maxLitersPerHour")} className="max-w-36 font-mono tabular-nums" />
           </Field>
-          <Field label="Duplicadas: minutos de diferencia" htmlFor="thr-window" helper="Dos cargas del mismo equipo dentro de este margen… (de 1 a 1.440 minutos)." error={save.fieldError("duplicateWindowMinutes")}>
+          <Field label="Duplicadas: minutos de diferencia" htmlFor="thr-window" helper="Margen para considerar duplicadas dos cargas del mismo equipo (de 1 a 1.440 minutos)." error={save.fieldError("duplicateWindowMinutes")}>
             <Input id="thr-window" inputMode="numeric" value={windowMinutes} onChange={(event) => setWindowMinutes(event.target.value)} error={!!save.fieldError("duplicateWindowMinutes")} className="max-w-36 font-mono tabular-nums" />
           </Field>
-          <Field label="Duplicadas: litros de diferencia" htmlFor="thr-liters" helper="…y con esta diferencia de litros se consideran la misma carga. Admite coma decimal (de 0 a 100)." error={save.fieldError("duplicateLitersTolerance")}>
+          <Field label="Duplicadas: litros de diferencia" htmlFor="thr-liters" helper="Diferencia de litros para considerarlas la misma carga. Admite coma decimal (de 0 a 100)." error={save.fieldError("duplicateLitersTolerance")}>
             <Input id="thr-liters" inputMode="decimal" value={litersTolerance} onChange={(event) => setLitersTolerance(event.target.value)} error={!!save.fieldError("duplicateLitersTolerance")} className="max-w-36 font-mono tabular-nums" />
           </Field>
         </div>
@@ -140,7 +140,7 @@ export function ThresholdsForm({ settings }: { settings: PerformanceControlSetti
         </div>
         <p className="mt-2 max-w-2xl text-xs text-[var(--color-text-subtle)]">
           Al guardar un valor distinto, la plataforma vuelve a revisar las cargas anteriores de tus faenas con los umbrales nuevos y te dice cuántas cambiaron.
-          Se hace por lotes de 25 equipos y puedes detenerlo cuando quieras: lo ya recalculado se conserva.
+          Se hace por lotes de 25 equipos y puedes detenerlo cuando quieras. Lo ya recalculado se conserva.
         </p>
       </form>
 

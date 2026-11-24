@@ -36,7 +36,7 @@ function PersonBlock({
       ) : (
         <>
           {canVerify && (
-            <BigField id={`${inputId}-rut`} label={rutLabel} hint="Con guion, por ejemplo 12345678-9. Es lo más rápido.">
+            <BigField id={`${inputId}-rut`} label={rutLabel} hint="Con guion, por ejemplo 12345678-9.">
               <div className="flex gap-2">
                 <BigInput id={`${inputId}-rut`} value={identity.rut} onChange={(event) => identity.setRut(event.target.value)} placeholder="12345678-9" autoComplete="off" />
                 <BigButton type="button" variant="secondary" onClick={identity.verify} disabled={identity.verifying || !identity.rut}>{identity.verifying ? "Buscando…" : "Verificar"}</BigButton>

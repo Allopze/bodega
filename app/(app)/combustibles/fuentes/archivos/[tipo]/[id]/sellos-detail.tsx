@@ -126,7 +126,7 @@ export async function SellosDetail({ session, id }: { session: Session; id: stri
       />
 
       <SummaryCard
-        title={isGlobal ? "Resumen del archivo" : "Resumen de tus faenas en el archivo"}
+        title={isGlobal ? "Resumen del archivo" : "Tus faenas en el archivo"}
         status={status}
         items={[
           ...(isGlobal ? [{ label: "Filas totales", value: formatQty(batch.totalRows), mono: true }] : []),
@@ -180,7 +180,7 @@ export async function SellosDetail({ session, id }: { session: Session; id: stri
 
       {canManageMappings && ambiguous.size > 0 ? (
         <Section title={`Identidades sin equivalente (${ambiguous.size})`}>
-          <p className="mb-4 text-sm text-[var(--color-text-muted)]">Asigna el equipo o persona real del catálogo. La decisión se guarda por faena y se aplica sola desde la próxima importación del mismo histórico: no corrige las cargas ya importadas en este archivo.</p>
+          <p className="mb-4 text-sm text-[var(--color-text-muted)]">Asigna el equipo o persona real del catálogo. Se aplica desde la próxima importación; no corrige las cargas ya importadas.</p>
           <TaeMappingReview items={[...ambiguous.values()]} vehicleOptions={vehicleOptions} workerOptions={workerOptions} />
         </Section>
       ) : null}

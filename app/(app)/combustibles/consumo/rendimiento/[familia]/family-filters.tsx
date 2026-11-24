@@ -72,7 +72,7 @@ export function FamilyFilters({ worksites, mandantes, media, vehicles, allWorksi
         hasActiveFilters={chips.length > 0}
         activeCount={secondaryActive}
         overflowTitle="Más filtros de rendimiento"
-        overflowDescription="Tipo de rendimiento, medio de suministro y equipo. Se suman a la faena y al mandante."
+        overflowDescription="Se suman a la faena y al mandante."
         overflowFilters={
           <>
             <div className="flex flex-col gap-1.5">
@@ -87,7 +87,7 @@ export function FamilyFilters({ worksites, mandantes, media, vehicles, allWorksi
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label className="text-xs" id="rend-medio-label">¿Por dónde llegó el combustible?</Label>
+              <Label className="text-xs" id="rend-medio-label">Medio de suministro</Label>
               <Select value={medium || ALL} onValueChange={(value) => setFilter("medio", value === ALL ? null : value)}>
                 <SelectTrigger aria-labelledby="rend-medio-label"><SelectValue placeholder="Todos los medios" /></SelectTrigger>
                 <SelectContent>
