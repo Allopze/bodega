@@ -351,7 +351,7 @@ test("detalle: datos, alertas, firmas y visor de fotos a pantalla completa", asy
   await expectPageTitle(page, /^Preventiva 40\.000 km · /)
 
   await expect(page.getByRole("heading", { level: 2, name: "Resultado de la pauta", exact: true })).toBeVisible()
-  await expect(page.getByText(/Pastillas de freno — Falta repuesto/)).toBeVisible()
+  await expect(page.getByText(/Pastillas de freno \(Falta repuesto\)/)).toBeVisible()
   await expect(page.getByText(/Confirmar con la pauta del fabricante/)).toBeVisible()
   // Regla 8: sello y recepción separados más de 72 h sin período sin señal. El aviso nombra la foto,
   // dice qué hacer y enlaza a ella: nada vive sólo en un `title`.
