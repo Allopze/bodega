@@ -50,7 +50,7 @@ function monthInSentence(month: string): string {
 export function EquipmentLitersChart({ months, periodMonths, vehicleLabel }: { months: EquipmentFileLitersMonth[]; periodMonths: string[]; vehicleLabel: string }) {
   const motion = useChartMotion()
   if (months.every((point) => point.liters === 0)) {
-    return <ChartEmpty label="Sin cargas en los últimos 12 meses" hint="Aparecen cuando el equipo tiene cargas que cuenten en alguno de esos meses." className="h-56" />
+    return <ChartEmpty label="Sin cargas en los últimos 12 meses" hint="Requiere cargas en alguno de esos meses." className="h-56" />
   }
 
   const inPeriod = new Set(periodMonths)

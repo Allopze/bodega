@@ -100,7 +100,7 @@ export default async function FleetGpsMonitoringPage() {
               <EmptyState
                 title="No hay posiciones GPS para mostrar"
                 description={onwayIsConfigured || wialonIsConfigured
-                  ? "Las posiciones se actualizan solas; también puedes pedirlo con «Actualizar ahora». Si los vehículos ya están en Flota y las unidades de Wialon están vinculadas, aparecerán en la próxima actualización."
+                  ? "Si los vehículos ya están en Flota y las unidades de Wialon están vinculadas, aparecerán en la próxima actualización."
                   : monitoring.canManage
                     ? "Configura OnWay o Wialon en la pestaña «Configuración» y vincula las patentes de los vehículos de Flota. La primera captura demora unos minutos."
                     : "Todavía no hay una fuente GPS conectada. Pide a quien administra el monitoreo que la configure."}

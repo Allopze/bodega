@@ -136,7 +136,6 @@ export function OnwayControls({ status, namedActions = false, onVerifyOnway }: {
             <div className="flex items-center justify-between gap-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5">
               <div>
                 <p className="text-sm font-medium text-[var(--color-text)]">Actualización automática</p>
-                <p className="text-xs text-[var(--color-text-muted)]">Permite que el cron consulte OnWay sin intervención manual.</p>
               </div>
               <Switch
                 id="onway-sync-enabled"

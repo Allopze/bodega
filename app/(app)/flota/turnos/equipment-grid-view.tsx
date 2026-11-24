@@ -111,7 +111,7 @@ export function EquipmentGridView({ grid, canManage, dayHref }: { grid: GridView
         <div className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
           <EmptyState
             title="No hay equipos que mostrar en este período"
-            description="Aquí aparecen los equipos con VisionLink de tus faenas y los que tengan turnos o marcas en el período."
+            description="Aparecen los equipos con VisionLink de tus faenas y los que tengan turnos o marcas en el período."
             action={<Button asChild variant="secondary"><Link href={dayHref}>Ir a los turnos del día</Link></Button>}
           />
         </div>

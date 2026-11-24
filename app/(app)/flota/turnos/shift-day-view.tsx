@@ -188,7 +188,7 @@ export function ShiftDayView({ day, target, vehicles, shifts, formVehicles, form
             <EmptyState
               compact
               title="No hay equipos que mostrar este día"
-              description="Aquí aparecen los equipos con VisionLink de tus faenas y los que tengan turnos o marcas ese día."
+              description="Aparecen los equipos con VisionLink de tus faenas y los que tengan turnos o marcas ese día."
               action={canManage ? <Button type="button" onClick={() => openForm(null)}>Registrar turno</Button> : undefined}
             />
           </div>

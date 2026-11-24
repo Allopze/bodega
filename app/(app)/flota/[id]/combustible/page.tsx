@@ -111,7 +111,7 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
             <CardTitle className="text-base">Rendimiento carga a carga</CardTitle>
             <CardDescription>
               {performance?.normalRange && vehicle.unit
-                ? <>La franja verde es su rango normal ({formatQty(performance.normalRange.low, undefined, { maximumFractionDigits: 1 })} a {formatQty(performance.normalRange.high, undefined, { maximumFractionDigits: 1 })} {unitLabel}), calculado con su historial.</>
+                ? <>Rango normal: {formatQty(performance.normalRange.low, undefined, { maximumFractionDigits: 1 })} a {formatQty(performance.normalRange.high, undefined, { maximumFractionDigits: 1 })} {unitLabel}, según su historial.</>
                 : "Las últimas cargas del equipo con su rendimiento calculado."}
               {performance?.outOfRangeSince && vehicle.unit ? (
                 <> Desde el {formatDate(performance.outOfRangeSince.at)} rinde {vehicle.unit === "km_per_liter" ? "bajo" : "sobre"} ese rango.</>
@@ -120,14 +120,14 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
           </CardHeader>
           <CardContent className="p-0">
             {!vehicle.unit ? (
-              <EmptyState compact title="Este equipo no mide rendimiento" description="No tiene odómetro ni horómetro configurado, así que no hay km/L ni L/h que calcular. Se configura en la ficha del equipo, en Flota." />
+              <EmptyState compact title="Este equipo no mide rendimiento" description="Falta odómetro u horómetro. Configúralo en la ficha del equipo, en Flota." />
             ) : performance ? (
               <div className="grid gap-5">
                 <EquipmentPerformanceChart unit={vehicle.unit} points={performance.series} range={performance.normalRange} vehicleLabel={vehicle.label} />
                 <PerformanceFacts performance={performance} periodLabel={period.inLabel} />
               </div>
             ) : (
-              <EmptyState compact title="Sin cargas con rendimiento en este período" description="El equipo no tiene cargas que cuenten en el período ni historial con rendimiento calculado. Cambia el período o revisa sus cargas." />
+              <EmptyState compact title="Sin cargas con rendimiento en este período" description="No hay cargas con rendimiento en el período. Cambia el período o revisa sus cargas." />
             )}
           </CardContent>
         </Card>
@@ -182,7 +182,7 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
       {hasLitersHistory ? (
         <section id="litros" aria-labelledby="litros-title" className="mb-10 scroll-mt-4">
           <h2 id="litros-title" className="text-h2 text-[var(--color-text)]">Litros por mes</h2>
-          <p className="mb-3 mt-0.5 text-sub">{litersWindowLabel(period.to.slice(0, 7), period.status)}; el período elegido en tono más fuerte.</p>
+          <p className="mb-3 mt-0.5 text-sub">{litersWindowLabel(period.to.slice(0, 7), period.status)}.</p>
           {coverage && (
             <CoverageNotice
               className="mb-3"
@@ -201,7 +201,7 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
           <div>
             <h2 id="cargas-title" className="text-h2 text-[var(--color-text)]">Últimas cargas</h2>
             <p className="mt-0.5 text-sub">
-              {loads.count === 0 ? `Sin cargas en ${period.inLabel}.` : `${formatQty(loads.count)} ${loads.count === 1 ? "carga" : "cargas"} y ${formatQty(Math.round(loads.liters))} L en ${period.inLabel}. La fecha abre la ficha de la carga.${loads.keptCount < loads.count ? " Las marcadas «Uso personal» no suman en las cifras de la ficha." : ""}`}
+              {loads.count === 0 ? `Sin cargas en ${period.inLabel}.` : `${formatQty(loads.count)} ${loads.count === 1 ? "carga" : "cargas"} y ${formatQty(Math.round(loads.liters))} L en ${period.inLabel}.${loads.keptCount < loads.count ? " Las de «Uso personal» no suman." : ""}`}
             </p>
           </div>
           <Link href={inContext(`${FUEL_PATHS.cargas}?q=${encodeURIComponent(vehicle.plate)}`)} className="text-sm font-medium text-[var(--color-primary-ink)] underline-offset-2 hover:underline">
@@ -209,7 +209,7 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
           </Link>
         </div>
         <EquipmentLoadsTable rows={loads.rows} unit={vehicle.unit} />
-        {loads.hiddenCount > 0 ? <p className="mt-2 text-xs text-[var(--color-text-muted)]">Hay {formatQty(loads.hiddenCount)} {loads.hiddenCount === 1 ? "carga más" : "cargas más"} en el período; «Ver todas las cargas del equipo» las trae.</p> : null}
+        {loads.hiddenCount > 0 ? <p className="mt-2 text-xs text-[var(--color-text-muted)]">Hay {formatQty(loads.hiddenCount)} {loads.hiddenCount === 1 ? "carga más" : "cargas más"} en el período.</p> : null}
       </section>
 
       {idle ? (
@@ -237,7 +237,7 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
             // vacíos se leían como un gráfico roto (recorrido del 2026-11-04).
             empty={idle.daily.some((day) => day.operatingHours > 0) ? null : {
               label: "Sin horas de motor en este período",
-              hint: "La telemetría no registró funcionamiento en estos días. Elige un período anterior para ver el detalle por día.",
+              hint: "Sin horas de motor registradas en estos días. Elige otro período.",
             }}
           >
             <IdleDailyChartLazy data={idleDailyChartData(idle.daily)} ariaLabel={`Horas de motor por día y porcentaje en vacío de ${vehicle.label}`} />
@@ -248,7 +248,7 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
       {seals ? (
         <section id="sellos" aria-labelledby="sellos-title" className="mb-10 scroll-mt-4">
           <h2 id="sellos-title" className="text-h2 text-[var(--color-text)]">Cadena de sellos</h2>
-          <p className="mb-3 mt-0.5 text-sub">El sello que se retira debe ser el que se puso en la carga anterior del mismo equipo.</p>
+          <p className="mb-3 mt-0.5 text-sub">El sello retirado debe ser el puesto en la carga anterior del equipo.</p>
           <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
             {seals.loads === 0 ? (
               <Badge variant="neutral" size="sm">Sin cargas con sello en el período</Badge>

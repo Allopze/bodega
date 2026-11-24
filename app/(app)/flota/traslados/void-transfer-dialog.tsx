@@ -47,7 +47,7 @@ export function VoidTransferDialog({ transfer, open, onOpenChange }: {
         <DialogHeader>
           <DialogTitle>Anular traslado {transfer.folio}</DialogTitle>
           <DialogDescription>
-            Los equipos vuelven a la faena de la que salieron. El traslado queda en el historial como anulado, con el motivo que escribas.
+            Los equipos vuelven a la faena de la que salieron. El traslado queda anulado en el historial, con el motivo.
           </DialogDescription>
         </DialogHeader>
         <Field

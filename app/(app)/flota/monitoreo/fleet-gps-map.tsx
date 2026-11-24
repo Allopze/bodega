@@ -14,8 +14,8 @@ import { FleetGpsVehiclePopup } from "./fleet-gps-vehicle-popup"
  * siempre emite `error`, y sin aviso quedaba un rectángulo en blanco.
  */
 const MAP_LOAD_TIMEOUT_MS = 20_000
-const MAP_UNAVAILABLE = "No se pudo cargar el mapa. La tabla de abajo mantiene el monitoreo disponible."
-const MAP_NOT_CONFIGURED = "El mapa no está disponible por ahora. La tabla de abajo mantiene el monitoreo disponible."
+const MAP_UNAVAILABLE = "No se pudo cargar el mapa. La tabla de abajo sigue disponible."
+const MAP_NOT_CONFIGURED = "El mapa no está disponible por ahora. La tabla de abajo sigue disponible."
 
 /**
  * Colores de los puntos. MapLibre no lee variables CSS, así que son literales
@@ -72,7 +72,7 @@ function MapLegend() {
       <li className="flex items-center gap-1.5"><span aria-hidden className={dot} style={{ backgroundColor: POINT_ON }} />Motor encendido</li>
       <li className="flex items-center gap-1.5"><span aria-hidden className={dot} style={{ backgroundColor: POINT_OFF }} />Motor apagado</li>
       <li className="flex items-center gap-1.5"><span aria-hidden className={dot} style={{ border: `2px solid ${POINT_UNKNOWN_STROKE}`, backgroundColor: POINT_FILL_UNKNOWN }} />Sin dato de encendido</li>
-      <li className="flex items-center gap-1.5"><span aria-hidden className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-2xs font-semibold text-white" style={{ backgroundColor: POINT_ON }}>3</span>Varios vehículos juntos: acércate para separarlos</li>
+      <li className="flex items-center gap-1.5"><span aria-hidden className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-2xs font-semibold text-white" style={{ backgroundColor: POINT_ON }}>3</span>Varios vehículos en el mismo punto: acércate para separarlos</li>
     </ul>
   )
 }

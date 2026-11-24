@@ -69,7 +69,7 @@ function PersonalUseForm({ onClose, vehicleId, period, today }: Omit<PersonalUse
         <div>
           <SheetTitle>{title}</SheetTitle>
           <SheetDescription>
-            En esos días el equipo no suma costos, litros, km ni horas en las cifras de gestión. Los pagos y los registros no cambian.
+            En esos días el equipo no suma costos ni consumo en las cifras de gestión.
           </SheetDescription>
         </div>
         <SheetCloseButton />

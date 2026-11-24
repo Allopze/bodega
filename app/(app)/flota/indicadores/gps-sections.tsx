@@ -198,8 +198,8 @@ export function UsageSection({ usage, period, excel }: { usage: GpsUsageIndicato
         title="Uso de la flota"
         links={links}
         charts={usage.linkedVehicles > 0
-          ? <EmptyBlock title="Los equipos vinculados no informaron medidor en este período" description="Los km y las horas salen de los medidores que informan Entel OnWay, Wialon y VisionLink. Revisa el estado de las fuentes en Monitoreo GPS o amplía el período." ctaLabel="Ver Monitoreo GPS" ctaHref={MONITORING} />
-          : <EmptyBlock title="Aún no hay equipos con GPS vinculado" description="Vincula los dispositivos de Entel OnWay o Wialon a los vehículos de la flota para ver su recorrido y sus horas de motor." ctaLabel="Vincular dispositivos" ctaHref={MONITORING} />}
+          ? <EmptyBlock title="Los equipos vinculados no informaron medidor en este período" description="Km y horas salen de los medidores de Entel OnWay, Wialon y VisionLink. Amplía el período o revisa las fuentes en Monitoreo GPS." ctaLabel="Ver Monitoreo GPS" ctaHref={MONITORING} />
+          : <EmptyBlock title="Aún no hay equipos con GPS vinculado" description="Vincula los equipos de OnWay o Wialon a sus vehículos para ver recorrido y horas de motor." ctaLabel="Vincular dispositivos" ctaHref={MONITORING} />}
       />
     )
   }
@@ -353,7 +353,7 @@ export function DrivingSection({ idle, driving, period, canViewIdle, excel }: {
         links={links}
         charts={<EmptyBlock
           title="Sin viajes, alertas ni horas de motor en este período"
-          description="Los viajes y las alertas llegan de Entel OnWay y las horas de motor en vacío, de la telemetría VisionLink. Amplía el período o revisa que las fuentes estén al día en Monitoreo GPS."
+          description="Viajes y alertas vienen de Entel OnWay; horas en vacío, de VisionLink. Amplía el período o revisa las fuentes en Monitoreo GPS."
           ctaLabel="Ver Monitoreo GPS"
           ctaHref={MONITORING}
         />}

@@ -174,7 +174,6 @@ export function GpsDeviceLinks({ devices, excluded, vehicles }: {
           <div className="mt-3 space-y-3">
             <p className="text-xs text-[var(--color-text-muted)]">
               Dispositivos que no son de la flota. No se cruzan con ningún vehículo ni cuentan como pendientes.
-              Restaurar uno lo devuelve al cruce automático en la próxima lectura.
             </p>
             <TableRoot>
               <Table>
@@ -234,7 +233,7 @@ export function GpsDeviceLinks({ devices, excluded, vehicles }: {
           <DialogHeader>
             <DialogTitle>Vincular dispositivo {active ? PROVIDER_LABEL[active.provider] : "GPS"}</DialogTitle>
             <DialogDescription>
-              {active ? `«${active.unitName}» se asociará al vehículo elegido y el vínculo se mantendrá en las próximas lecturas.` : ""}
+              {active ? `«${active.unitName}» se asociará al vehículo elegido.` : ""}
             </DialogDescription>
           </DialogHeader>
           <Field label="Vehículo" htmlFor="gps-link-vehicle">
@@ -272,7 +271,7 @@ export function GpsDeviceLinks({ devices, excluded, vehicles }: {
         onOpenChange={(open) => { if (!open) setPendingUnlink(null) }}
         title="¿Desvincular el dispositivo?"
         description={pendingUnlink
-          ? `«${pendingUnlink.unitName}» dejará de apuntar a su vehículo. La próxima lectura lo volverá a intentar por patente, VIN o código; si no calza, quedará pendiente.`
+          ? `«${pendingUnlink.unitName}» dejará de apuntar a su vehículo. La próxima lectura volverá a intentar el cruce; si no calza, queda pendiente.`
           : ""}
         confirmLabel="Desvincular"
         cancelLabel="Cancelar"
@@ -287,7 +286,7 @@ export function GpsDeviceLinks({ devices, excluded, vehicles }: {
         onOpenChange={(open) => { if (!open) setPendingExclude(null) }}
         title="¿Excluir el dispositivo de la flota?"
         description={pendingExclude
-          ? `«${pendingExclude.unitName}» (${PROVIDER_LABEL[pendingExclude.provider]}) dejará de cruzarse con vehículos y de contar como pendiente. Queda registrado y se puede restaurar desde «Excluidas».`
+          ? `«${pendingExclude.unitName}» (${PROVIDER_LABEL[pendingExclude.provider]}) dejará de cruzarse con vehículos y de contar como pendiente. Se puede restaurar desde «Excluidas».`
           : ""}
         variant="warning"
         confirmLabel="Excluir"

@@ -31,7 +31,7 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
     return (
       <EmptyState
         title="Todavía no hay vehículos vinculados"
-        description="Configura OnWay o Wialon, revisa que las patentes o unidades coincidan con los vehículos de Flota y actualiza."
+        description="Configura OnWay o Wialon y actualiza; las patentes deben coincidir con Flota."
         action={<Button asChild variant="secondary" size="sm"><Link href="/flota">Revisar vehículos</Link></Button>}
       />
     )

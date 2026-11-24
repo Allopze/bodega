@@ -45,7 +45,7 @@ export function ChartEmpty({ label, hint, ctaLabel, ctaHref, icon, className }: 
         {hint && <p className="max-w-sm text-xs text-[var(--color-text-muted)]">{hint}</p>}
         {ctaLabel && ctaHref && (
           <Link href={ctaHref} className="mt-1 text-xs font-medium text-[var(--color-primary-ink)] hover:underline">
-            {ctaLabel} →
+            {ctaLabel}
           </Link>
         )}
       </div>

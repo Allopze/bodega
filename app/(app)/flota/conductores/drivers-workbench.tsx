@@ -288,7 +288,7 @@ export function DriversWorkbench({
             <div className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
               <EmptyState
                 title="Aún no hay licencias registradas en tus faenas"
-                description="Registra la licencia de quienes conducen para ver aquí qué vence y a quién le falta."
+                description="Registra la licencia de quienes conducen para ver qué vence y a quién le falta."
                 action={
                   <Button type="button" onClick={openRegister}>
                     <Plus size={14} weight="bold" aria-hidden />
@@ -309,7 +309,7 @@ export function DriversWorkbench({
               ) : (
                 <EmptyState
                   title="Ninguna licencia vigente por ahora"
-                  description="Cuando se renueven o se registren, aparecerán en esta vista."
+                  description="Aparecerán cuando se renueven o registren."
                   action={<Button type="button" variant="secondary" onClick={() => changeEstado("todos")}>Ver todos</Button>}
                 />
               )}

@@ -24,7 +24,7 @@ export default function GpsIndicatorsError({
       <EmptyState
         as="h1"
         title="No se pudieron cargar los indicadores GPS"
-        description="Ocurrió un error al armar los gráficos del período. Intenta nuevamente o reporta el error para que el equipo lo revise."
+        description="Ocurrió un error al armar los gráficos del período. Intenta de nuevo o repórtalo al equipo."
         action={
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={reset}>

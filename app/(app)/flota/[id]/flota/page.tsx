@@ -257,7 +257,7 @@ export default async function FlotaVehiclePage({
 
       {detail.recentWorkOrders && (
         <Card>
-          <CardHeader><CardTitle as="h2" className="text-base">Órdenes de trabajo y su efecto en el rendimiento</CardTitle></CardHeader>
+          <CardHeader><CardTitle as="h2" className="text-base">Órdenes y rendimiento</CardTitle></CardHeader>
           <CardContent>
             {detail.recentWorkOrders.length === 0 ? (
               <p className="text-sm text-[var(--color-text-muted)]">
@@ -268,7 +268,7 @@ export default async function FlotaVehiclePage({
               <>
                 {detail.workOrderConsumptionImpact.length > 0 && (
                   <p className="mb-3 text-xs text-[var(--color-text-muted)]">
-                    En las órdenes cerradas: rendimiento promedio del log operacional 30 días antes vs. 30 días después de la salida de taller.
+                    Rendimiento 30 días antes y 30 días después de la salida de taller.
                   </p>
                 )}
                 <ol className="divide-y divide-[var(--color-border)]">

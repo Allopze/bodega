@@ -106,7 +106,7 @@ export function FleetDocumentsPanel({
         title="Anular documento"
         // FLO-003: se anula, no se borra. El archivo se conserva porque es el
         // respaldo que puede pedirse en una fiscalización.
-        description={pendingDelete ? `«${pendingDelete.fileName}» dejará de regir para este vehículo. El archivo se conserva y la anulación queda registrada con tu nombre.` : ""}
+        description={pendingDelete ? `«${pendingDelete.fileName}» dejará de regir. El archivo se conserva.` : ""}
         confirmLabel="Anular"
         variant="destructive"
         loading={deletePending}
@@ -177,7 +177,7 @@ function UploadForm({ vehicleId, onDone, onCancel }: { vehicleId: string; onDone
       <SheetHeader>
         <div>
           <SheetTitle>Subir documento</SheetTitle>
-          <SheetDescription>El archivo queda como respaldo del vehículo; si indicas un vencimiento, rige hasta que lo reemplaces.</SheetDescription>
+          <SheetDescription>Con vencimiento, rige hasta que lo reemplaces.</SheetDescription>
         </div>
         <SheetCloseButton />
       </SheetHeader>

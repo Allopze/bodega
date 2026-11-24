@@ -93,7 +93,7 @@ export function OperatorRankingView({ ranking, target, vehicleId, vehicles, dayH
         getRowKey={(row) => row.id}
         tableClassName="min-w-[900px]"
         emptyTitle="No hay turnos en este período"
-        emptyDescription="Cuando se registren turnos de operación, aquí verás el ranking de operadores por % de ralentí."
+        emptyDescription="Se llena cuando se registren turnos de operación."
         emptyAction={<Button asChild variant="secondary"><Link href={dayHref}>Ir a los turnos del día</Link></Button>}
         renderMobileCard={(row) => (
           <article className={cn(

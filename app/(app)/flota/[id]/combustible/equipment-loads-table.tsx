@@ -28,7 +28,7 @@ function meterText(load: EquipmentFileLoad) {
  */
 export function EquipmentLoadsTable({ rows, unit }: { rows: EquipmentFileLoad[]; unit: PerformanceUnit | null }) {
   if (rows.length === 0) {
-    return <EmptyState compact title="Sin cargas en este período" description="El equipo no tiene cargas registradas entre estas fechas. Cambia el período para ver otras, o registra una carga." />
+    return <EmptyState compact title="Sin cargas en este período" description="No hay cargas entre estas fechas. Cambia el período o registra una carga." />
   }
   return (
     <TableRoot aria-label="Últimas cargas del equipo">

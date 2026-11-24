@@ -38,7 +38,7 @@ export function IdleTargetForm({ target }: { target: number }) {
         />
       </Field>
       <Button type="submit" variant="secondary" loading={pending} disabled={!valid || pct === current}>Guardar meta</Button>
-      <p id="turnos-meta-ayuda" className="basis-full text-xs text-[var(--color-text-muted)]">Entero de 1 a 99. Es la misma para todos los equipos.</p>
+      <p id="turnos-meta-ayuda" className="basis-full text-xs text-[var(--color-text-muted)]">Es la misma para todos los equipos.</p>
       {value !== "" && !valid && <p role="alert" className="basis-full text-sm text-[var(--color-danger-ink)]">Escribe un entero entre 1 y 99.</p>}
       {message && <p role="alert" className="basis-full text-sm text-[var(--color-danger-ink)]">{message}</p>}
     </form>

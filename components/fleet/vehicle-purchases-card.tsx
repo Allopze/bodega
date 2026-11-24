@@ -102,7 +102,7 @@ export function VehiclePurchasesCard({
             align="start"
             title="Sin compras vinculadas"
             description={requestButton
-              ? "Aquí aparecerán los repuestos y servicios que se pidan para este equipo, con su orden de compra y su costo."
+              ? "Se llena cuando se pidan repuestos o servicios para este equipo, con su orden de compra y costo."
               : "Nadie ha pedido repuestos ni servicios para este equipo."}
             action={requestButton}
           />

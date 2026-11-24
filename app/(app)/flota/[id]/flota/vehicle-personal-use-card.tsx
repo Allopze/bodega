@@ -72,7 +72,7 @@ export function VehiclePersonalUseCard({ vehicleId, periods, canMark, today }: V
             align="start"
             title="Este equipo no tiene uso personal marcado"
             description={canMark
-              ? "Si el dueño se lleva el equipo, márcalo para que esos días no cuenten en los costos ni en el consumo."
+              ? "Márcalo cuando el dueño se lleve el equipo; esos días no cuentan en costos ni consumo."
               : "Quien administra equipos puede marcar los días en que el dueño se lleva el equipo."}
             action={canMark ? (
               <Button type="button" variant="secondary" size="sm" onClick={() => setSheet({ period: null })}>Marcar uso personal</Button>
@@ -118,7 +118,7 @@ export function VehiclePersonalUseCard({ vehicleId, periods, canMark, today }: V
             onOpenChange={(open) => { if (!open) setRemoving(null) }}
             title="Quitar uso personal"
             description={removing
-              ? `Vas a quitar el uso personal del ${rangeLabel(removing)}. Las cifras de costos y consumo de esos días vuelven a contar en las cifras de gestión del equipo.`
+              ? `Vas a quitar el uso personal del ${rangeLabel(removing)}. Esos días vuelven a contar en costos y consumo.`
               : ""}
             confirmLabel="Quitar"
             variant="destructive"

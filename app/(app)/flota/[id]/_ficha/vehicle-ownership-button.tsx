@@ -129,7 +129,7 @@ function OwnershipDialog({ vehicleId, payload, open, onClose }: {
             label="Ubicación por confirmar"
           />
           <p className="-mt-2 pl-6 text-xs text-[var(--color-text-muted)]">
-            Marca que la faena de origen está registrada, pero falta confirmar dónde está el equipo hoy.
+            Faena registrada; falta confirmar dónde está el equipo hoy.
           </p>
 
           {message ? <p role="alert" className="text-sm text-[var(--color-danger)]">{message}</p> : null}

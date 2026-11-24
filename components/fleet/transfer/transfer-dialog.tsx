@@ -117,7 +117,7 @@ export function TransferDialog({ open, onOpenChange, candidates, worksites, wind
         <DialogHeader className="mb-0 px-6 pt-6">
           <DialogTitle>Trasladar equipos</DialogTitle>
           <DialogDescription>
-            Elige a qué faena pasan, desde qué día cuentan allí y marca los equipos. Queda registrado quién lo autorizó.
+            Elige la faena de destino y marca los equipos. Queda registrado quién lo autorizó.
           </DialogDescription>
         </DialogHeader>
         {/* Cuerpo: en teléfono campos y lista scrollean juntos (la lista no tiene scroll propio, que la

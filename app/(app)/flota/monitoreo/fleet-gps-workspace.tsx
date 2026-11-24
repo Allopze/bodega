@@ -118,7 +118,7 @@ export function FleetGpsWorkspace({ positions, alerts, adminStatus, wialonStatus
               <EmptyState
                 compact
                 title="No hay alertas GPS vinculadas en esta faena"
-                description="Cuando un dispositivo reporte una alerta de un vehículo vinculado, aparecerá aquí."
+                description="Llega cuando un equipo vinculado reporte una alerta."
               />
             ) : (
               <ul className="divide-y divide-[var(--color-border)]">
@@ -159,7 +159,7 @@ export function FleetGpsWorkspace({ positions, alerts, adminStatus, wialonStatus
               <Card>
                 <CardHeader>
                   <CardTitle as="h2" className="text-base">Configuración de Wialon</CardTitle>
-                  <CardDescription>Token, URL y parámetros de sensores. Los medidores se leen cada 5 minutos y la posición cada 10 segundos con esta página abierta; no reemplaza a OnWay: suma los equipos que OnWay no cubre.</CardDescription>
+                  <CardDescription>Token, URL y parámetros de sensores. Los medidores se leen cada 5 minutos y la posición cada 10 segundos con esta página abierta. No reemplaza a OnWay; suma los equipos que OnWay no cubre.</CardDescription>
                 </CardHeader>
                 <div className="px-6 pb-6"><WialonControls status={wialonStatus} /></div>
               </Card>
@@ -167,7 +167,7 @@ export function FleetGpsWorkspace({ positions, alerts, adminStatus, wialonStatus
             <Card>
               <CardHeader>
                 <CardTitle as="h2" className="text-base">Dispositivos GPS y vínculo</CardTitle>
-                <CardDescription>Los equipos de OnWay y las unidades de Wialon que no calzan por patente, VIN o código se vinculan a un vehículo; los que no son de la flota se excluyen con su motivo. El vínculo se conserva entre lecturas y no crea equipos nuevos.</CardDescription>
+                <CardDescription>Los equipos de OnWay y las unidades de Wialon que no calzan por patente, VIN o código se vinculan a un vehículo; los que no son de la flota se excluyen con su motivo. No crea equipos nuevos.</CardDescription>
               </CardHeader>
               <div className="px-6 pb-6">
                 <GpsDeviceLinks devices={gpsDevices} excluded={excludedDevices} vehicles={linkableVehicles} />

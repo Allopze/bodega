@@ -68,9 +68,8 @@ export function WialonControls({ status, namedActions = false }: { status: Wialo
           </summary>
           <div className="mt-3 space-y-3">
             <p className="text-xs text-[var(--color-text-muted)]">
-              El odómetro y el horómetro salen de los contadores que mantiene Wialon. Sólo si la cuenta los
-              lleva en un sensor propio, escribe aquí el nombre de su parámetro en el mensaje; un valor
-              ausente se muestra como «sin dato», no como 0.
+              Sólo si la cuenta lleva el odómetro o el horómetro en un sensor propio, escribe aquí el nombre
+              de su parámetro en el mensaje; un valor ausente se muestra como «sin dato», no como 0.
             </p>
             <SettingTextField
               id="wialon-odometer-param"
@@ -78,7 +77,6 @@ export function WialonControls({ status, namedActions = false }: { status: Wialo
               label="Odómetro"
               status={fields.odometerParam}
               placeholder="Contador de Wialon"
-              hint="Vacío = contador de Wialon."
             />
             <SettingTextField
               id="wialon-hour-meter-param"
@@ -86,7 +84,6 @@ export function WialonControls({ status, namedActions = false }: { status: Wialo
               label="Horómetro"
               status={fields.hourMeterParam}
               placeholder="Contador de Wialon"
-              hint="Vacío = contador de Wialon."
             />
             <SettingTextField
               id="wialon-fuel-level-param"

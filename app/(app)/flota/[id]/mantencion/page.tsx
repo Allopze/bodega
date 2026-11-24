@@ -65,7 +65,7 @@ export default async function EquipmentDetailPage({
         {tabs}
         <EmptyState
           title="Este vehículo no está en el plan de mantención"
-          description="Mientras no se incorpore, no tiene pauta, hoja de vida ni aparece en la app del mecánico. Al incorporarlo se elige su pauta y su lectura inicial."
+          description="Sin pauta ni hoja de vida, y no aparece en la app del mecánico. Al incorporarlo se elige su pauta y su lectura inicial."
           action={can(session, "mant:equipment:manage")
             ? <Button asChild variant="primary" size="sm"><Link href="/mantencion/equipos/incorporar">Incorporar a Mantención</Link></Button>
             : undefined}

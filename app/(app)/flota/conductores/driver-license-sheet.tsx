@@ -333,7 +333,7 @@ function DriverLicenseForm({
             setConfirmOpen(next)
           }}
           title="Quitar licencia"
-          description={`Se borrará la licencia registrada de ${subject.name}. Quedará anotado en la auditoría quién lo hizo.`}
+          description={`Se borrará la licencia de ${subject.name}. Queda anotado en la auditoría quién lo hizo.`}
           confirmLabel="Quitar licencia"
           variant="destructive"
           loading={removal.pending}

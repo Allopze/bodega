@@ -25,7 +25,7 @@ export function EquipmentPerformanceChart({ unit, points, range, vehicleLabel }:
   const motion = useChartMotion()
   const unitLabel = PERFORMANCE_UNIT_LABELS[unit]
   if (points.length === 0) {
-    return <ChartEmpty label="Aún no hay cargas con rendimiento calculado" hint="Aparecen cuando el equipo tiene cargas consecutivas con lectura del medidor y sin decisión pendiente." className="h-56" />
+    return <ChartEmpty label="Aún no hay cargas con rendimiento calculado" hint="Requiere cargas consecutivas con lectura del medidor y sin decisión pendiente." className="h-56" />
   }
   const data = points.map((point) => ({ ...point, label: formatDate(point.occurredAt).slice(0, 5) }))
   const values = data.map((point) => point.value)
