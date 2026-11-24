@@ -59,12 +59,9 @@ describe("KpiCard", () => {
     expect(screen.getByText("Ninguno")).toHaveClass("font-mono", "text-2xl")
   })
 
-  it("el ícono del tile es neutro aunque quien llama lo pinte de un color de estado", () => {
-    const { container } = render(
-      <KpiCard {...base} icon={<svg data-testid="ico" className="text-[var(--color-success)]" />} />,
-    )
-    const wrapper = container.querySelector('[data-testid="ico"]')!.parentElement as HTMLElement
-    expect(wrapper.className).toContain("[&_svg]:text-[var(--color-text-subtle)]")
+  it("no pinta el ícono aunque quien llama lo pase: el tile no lleva caja tintada", () => {
+    render(<KpiCard {...base} icon={<svg data-testid="ico" />} />)
+    expect(screen.queryByTestId("ico")).toBeNull()
   })
 
   it("`numerals=\"sans\"` saca la cifra de la mono", () => {

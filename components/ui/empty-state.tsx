@@ -2,6 +2,10 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 interface EmptyStateProps {
+  /**
+   * @deprecated Ya no se pinta: un estado vacío se dice con palabras, sin ícono en una caja
+   * tintada (decisión 2026-11-23). La prop se acepta para no romper llamadores; quítala.
+   */
   icon?:        React.ReactNode
   title:        string
   description?: string
@@ -16,11 +20,16 @@ interface EmptyStateProps {
   as?:          "h1" | "h2" | "p"
 }
 
-const EMPTY_STATE_TONE_CLASSES = {
-  neutral: "bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]",
-  warning: "bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]",
-  danger: "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]",
-  success: "bg-[var(--color-success-tint)] text-[var(--color-success-ink)]",
+/**
+ * El tono colorea el título, con la variante `-ink` (la única que pasa AA como texto, regla 8 de
+ * AGENTS.md). `neutral` y `success` no cambian el color: `--color-success-ink` casi no se distingue
+ * del texto normal, así que el estado de «todo en orden» lo dice la frase, no el color.
+ */
+const EMPTY_STATE_TITLE_TONE: Record<NonNullable<EmptyStateProps["tone"]>, string> = {
+  neutral: "text-[var(--color-text)]",
+  success: "text-[var(--color-text)]",
+  warning: "text-[var(--color-warning-ink)]",
+  danger: "text-[var(--color-danger-ink)]",
 }
 
 /**
@@ -28,7 +37,7 @@ const EMPTY_STATE_TONE_CLASSES = {
  * Explains the context and provides a clear path forward.
  */
 export function EmptyState({
-  icon,
+  icon: _icon,
   title,
   description,
   action,
@@ -49,17 +58,9 @@ export function EmptyState({
         className,
       )}
     >
-      {icon && (
-        <div className={cn(
-          "flex items-center justify-center rounded-xl",
-          EMPTY_STATE_TONE_CLASSES[tone],
-          compact ? "h-10 w-10 mb-3" : "h-14 w-14 mb-4",
-        )}>
-          {icon}
-        </div>
-      )}
       <TitleTag className={cn(
-        "font-sans font-semibold text-[var(--color-text)]",
+        "font-sans font-semibold",
+        EMPTY_STATE_TITLE_TONE[tone],
         compact ? "text-sm" : "text-base",
       )}>
         {title}

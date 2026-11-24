@@ -19,7 +19,7 @@ import { KpiCardGlossary } from "./kpi-card-glossary"
  * regla 7 de AGENTS.md). También opcionales: sin ellas el tile es el de siempre.
  */
 export function KpiCard({
-  icon,
+  icon: _icon,
   label,
   value,
   detail,
@@ -37,7 +37,11 @@ export function KpiCard({
   empty,
   valueKind = "number",
 }: {
-  icon: ReactNode
+  /**
+   * @deprecated Ya no se pinta: el tile no lleva ícono en una caja tintada (decisión 2026-11-23).
+   * La prop se acepta para no romper llamadores; quítala.
+   */
+  icon?: ReactNode
   label: string
   /**
    * Un `number` se formatea aquí (es-CL, separador de miles: 2246 → «2.246»), así
@@ -104,19 +108,6 @@ export function KpiCard({
         <p className="min-w-0 break-words text-xs font-medium text-[var(--color-text-subtle)] line-clamp-2">{label}</p>
         <div className="flex items-center gap-1.5 shrink-0">
           {hasSparkline && <MiniSparkline data={sparkline!} color={CHART_COLORS.signal} />}
-          {icon && (
-            <span className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
-              // El ícono es neutro aunque quien llama le pase `text-success` o
-              // `text-warning`: en Programa de trabajo cada tile lo pintaba verde
-              // o naranja como decoración, con los colores de estado para nada
-              // (auditoría UX-06). Sólo el hover del tablero lo tiñe.
-              "[&_svg]:text-[var(--color-text-subtle)]",
-              flat && "transition-colors duration-[var(--duration-fast)] group-hover/kpi:bg-[var(--color-primary-tint)] group-hover/kpi:text-[var(--color-primary-ink)] group-hover/kpi:[&_svg]:text-[var(--color-primary-ink)]",
-            )}>
-              {icon}
-            </span>
-          )}
           {glossary && <KpiCardGlossary content={glossary} />}
         </div>
       </div>
@@ -177,7 +168,7 @@ export function KpiCard({
     // Ancla estable para el conteo automatizado que TASK-UI-006 exige como
     // evidencia: el criterio es "máximo cuatro tiles por pantalla".
     <div data-kpi-card="" className={cn(
-      "group/kpi relative flex h-full flex-col border-l border-t border-[var(--color-border)] bg-[var(--color-surface)] p-4",
+      "relative flex h-full flex-col border-l border-t border-[var(--color-border)] bg-[var(--color-surface)] p-4",
       "transition-colors duration-[var(--duration-fast)]",
       href && "hover:bg-[var(--color-surface-2)]",
       // En el panel no hay anillo: la señal es una franja a la izquierda.
@@ -194,7 +185,7 @@ export function KpiCard({
     <Card data-kpi-card="" className={cn(
       // `h-full`: en una fila de la grilla los tiles miden lo mismo aunque un
       // rótulo ocupe dos líneas (en móvil van de a dos).
-      "group/kpi h-full transition-[background-color,border-color,box-shadow] duration-(--duration-fast)",
+      "h-full transition-[background-color,border-color,box-shadow] duration-(--duration-fast)",
       secondaryAction && "relative",
       tone === "signal" && "ring-1 ring-[var(--color-signal-line)]",
       tone === "danger" && "ring-1 ring-[var(--color-danger-line)]",

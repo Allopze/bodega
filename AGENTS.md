@@ -865,7 +865,9 @@ cierra en ese orden y partir la tira en dos rompía la lectura de la secuencia.
 
 Todo empty-state tiene tres partes: *qué significa* (sin jerga de modelo de
 datos) + *qué hacer para llenarlo* + *CTA real* (botón/Link, no una ruta
-pegada como texto). Usa `EmptyState` (`components/ui/empty-state.tsx`).
+pegada como texto). Usa `EmptyState` (`components/ui/empty-state.tsx`). No lleva
+ícono en una caja tintada (decisión 2026-11-23): el estado se dice con palabras
+y, con `tone` `warning` o `danger`, con el color del título.
 
 ## A5 — Una dimensión = una representación interactiva
 

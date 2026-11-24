@@ -378,7 +378,10 @@ queda como única superficie con el título como encabezado de sección.
   propio. No hay `ScrollArea`: no es una dependencia del proyecto — el scroll
   nativo se estiliza con `scrollbar-width`/`scrollbar-color` en `globals.css`.
 - **EmptyState / ErrorState**: usados consistentemente; empty en lenguaje de
-  usuario + CTA real. **Skeleton**: shimmer en cargas. **Avatar**: iniciales con
+  usuario + CTA real. **Sin ícono en caja tintada** (decisión 2026-11-23): el
+  estado vacío y el `KpiCard` se dicen con palabras; la prop `icon` de ambos
+  sigue aceptándose pero no se pinta. `EmptyState tone` (`warning`, `danger`)
+  colorea el título con la variante `-ink`. **Skeleton**: shimmer en cargas. **Avatar**: iniciales con
   color por hash del nombre (OKLCH). **Pagination**: componente compartido único.
 
 ### Período: tres patrones
