@@ -68,8 +68,8 @@ export function ReporteEquiposSection({
             <EmptyState
               compact
               title="No hay reportes de equipos en este período"
-              description="Cuando se transcriban los reportes diarios de los equipos, aquí verás cuántos llegan, cuántas horas se operaron y qué fallas quedan abiertas."
-              action={reportsHref ? <Link href={reportsHref} className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">Ver reportes en Inspecciones →</Link> : undefined}
+              description="Aparecerán cuando se transcriban los reportes diarios de los equipos."
+              action={reportsHref ? <Link href={reportsHref} className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">Ver reportes en Inspecciones</Link> : undefined}
             />
           </ChartSlot>
         }

@@ -101,7 +101,7 @@ export function FleetGpsWorkspace({ positions, alerts, adminStatus, wialonStatus
               <Card id="vehiculos-gps" className="overflow-hidden">
                 <CardHeader>
                   <CardTitle as="h2" className="text-base">Vehículos monitoreados</CardTitle>
-                  <CardDescription>La hora de captura indica cuándo la plataforma consultó la fuente; la hora GPS indica cuándo el dispositivo reportó la ubicación.</CardDescription>
+                  <CardDescription>Hora de captura: consulta a la fuente. Hora GPS: reporte del dispositivo.</CardDescription>
                 </CardHeader>
                 <FleetGpsTable positions={positions} />
               </Card>
@@ -112,7 +112,7 @@ export function FleetGpsWorkspace({ positions, alerts, adminStatus, wialonStatus
           <Card className="overflow-hidden">
             <CardHeader>
               <CardTitle as="h2" className="text-base">Alertas observadas</CardTitle>
-              <CardDescription>Los tipos recién detectados sólo se catalogan; una regla habilitada y con propietario autorizado es necesaria para crear una OT o CAPA.</CardDescription>
+              <CardDescription>Los tipos nuevos sólo se catalogan. Crear una OT o CAPA requiere una regla habilitada y con propietario autorizado.</CardDescription>
             </CardHeader>
             {!hasAlerts ? (
               <EmptyState

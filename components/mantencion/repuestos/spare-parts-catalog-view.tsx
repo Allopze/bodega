@@ -91,14 +91,14 @@ function emptyCopy(tab: SparePartTab, hasInactive: boolean) {
   if (tab === "inactivos") {
     return {
       title: "No hay repuestos inactivos",
-      description: "Un repuesto que ya no se usa se desactiva desde su ficha: deja de ofrecerse al pedir, pero conserva su historial.",
+      description: "Se desactivan desde su ficha. Conservan su historial.",
       cta: false,
     }
   }
   if (hasInactive) {
     return {
       title: "No hay repuestos activos",
-      description: "Los desactivados están en la pestaña Inactivos, donde se pueden reactivar. También puedes crear uno nuevo.",
+      description: "Los desactivados están en la pestaña Inactivos.",
       cta: true,
     }
   }
@@ -171,7 +171,7 @@ export function SparePartsCatalogView({ rows, counts, tab, units }: SparePartsCa
     <>
       <PageHeader
         title="Catálogo de repuestos"
-        description="Repuestos con su N° de parte, proveedor, último precio y los equipos para los que se compraron."
+        description="Repuestos con su proveedor y último precio."
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Catálogo de repuestos" }]}
         actions={(
           <div className="flex flex-wrap items-center gap-2">

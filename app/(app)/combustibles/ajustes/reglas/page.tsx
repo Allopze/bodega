@@ -45,7 +45,7 @@ export default async function AjustesReglasPage() {
       <div className="space-y-4">
         <DegradedDataBanner degraded={degraded} total={2} />
         <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">
-          Cada regla abre un caso cuando se cumple. La gravedad nueva se aplica a los casos nuevos; los que ya están abiertos no cambian.
+          La gravedad nueva se aplica a los casos nuevos. Los que ya están abiertos no cambian.
         </p>
         {rules === failed ? null : (
           <AnomalyRuleCatalog

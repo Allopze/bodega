@@ -2,7 +2,7 @@
 
 import type { MouseEvent } from "react"
 import { useRouter } from "next/navigation"
-import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts"
+import { Bar, BarChart, Cell, LabelList, XAxis, YAxis } from "recharts"
 import { DenseChart } from "@/components/charts/dense-chart"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { useChartMotion } from "@/components/ui/chart-interactions"
@@ -114,7 +114,6 @@ export function BarRankingChart({
         aria-label={clickable ? ariaLabel : `${ariaLabel}; «Ver datos» trae las cifras exactas`}
       >
         <BarChart data={data} layout="vertical" margin={{ top: 0, right: 88, left: 0, bottom: 0 }}>
-          <CartesianGrid horizontal={false} strokeDasharray="2 5" />
           <XAxis type="number" hide domain={[0, "dataMax"]} tickFormatter={formatCompactQty} />
           <YAxis
             type="category"

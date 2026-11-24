@@ -1,6 +1,6 @@
 import * as React from "react"
 import Link from "next/link"
-import { ArrowRight, Lock, Warning } from "@phosphor-icons/react/dist/ssr"
+import { Lock, Warning } from "@phosphor-icons/react/dist/ssr"
 import { Badge } from "@/components/ui/badge"
 import { Callout } from "@/components/ui/callout"
 import { Card } from "@/components/ui/card"
@@ -165,8 +165,8 @@ export function LoadReviewStatus({
           </div>
         ) : null}
         <p className="mt-2">
-          <Link href={href} className="inline-flex items-center gap-1 font-medium underline underline-offset-2">
-            {canDecide ? "Verla en «Por revisar»" : "Decidir en «Por revisar»"} <ArrowRight size={12} aria-hidden />
+          <Link href={href} className="font-medium underline underline-offset-2">
+            {canDecide ? "Verla en «Por revisar»" : "Decidir en «Por revisar»"}
           </Link>
         </p>
       </Callout>
@@ -206,8 +206,8 @@ export function OpenRequestNotice({
         {request.note ? <>: «{request.note}»</> : "."}
       </p>
       <p className="mt-1">
-        <Link href={withFuelContext(fuelInboxHref({ tipo: "pedido" }), search ?? {})} className="inline-flex items-center gap-1 font-medium underline underline-offset-2">
-          Verlo en «Por revisar» <ArrowRight size={12} aria-hidden />
+        <Link href={withFuelContext(fuelInboxHref({ tipo: "pedido" }), search ?? {})} className="font-medium underline underline-offset-2">
+          Verlo en «Por revisar»
         </Link>
       </p>
     </Callout>
@@ -239,9 +239,9 @@ export function OpenCasesNotice({
           <li key={item.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Link
               href={withFuelContext(fuelInboxHref({ tipo: "caso", item: inboxRowKey("caso", item.id) }), search ?? {})}
-              className="inline-flex items-center gap-1 font-medium underline underline-offset-2"
+              className="font-medium underline underline-offset-2"
             >
-              {item.ruleName} <ArrowRight size={12} aria-hidden />
+              {item.ruleName}
             </Link>
             <MetaBadge meta={{ label: ANOMALY_SEVERITY_LABELS[item.severity], variant: anomalySeverityVariant(item.severity) }} size="sm" />
             <MetaBadge meta={{ label: ANOMALY_STATUS_LABELS[item.status], variant: "outline" }} size="sm" />

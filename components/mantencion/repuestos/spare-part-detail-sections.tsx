@@ -101,7 +101,7 @@ export function NoActivityNotice({ access }: { access: SparePartLinkAccess }) {
   return (
     <EmptyCard
       title="Todavía no se ha comprado"
-      description="Cuando alguien pida este repuesto y se emita una orden de compra, aquí aparecen sus proveedores y precios, el historial de precio, los equipos para los que se compró y las últimas solicitudes."
+      description="Aparecerá aquí cuando se emita una orden de compra que lo incluya."
       action={access.requestPartsHref ? <RequestPartsButton access={access} /> : undefined}
     />
   )
@@ -146,11 +146,11 @@ export function SparePartDataCard({ part, unitLabel }: { part: SparePartRecord; 
 
 export function SupplierPricesSection({ suppliers, ordersHref }: { suppliers: SparePartSupplierPrice[]; ordersHref: string | null }) {
   return (
-    <Section id="rp-suppliers" title="Proveedores y precio vigente" description="Lo que cada proveedor cobró por última vez. El preferido va primero.">
+    <Section id="rp-suppliers" title="Proveedores y precio vigente">
       {suppliers.length === 0 ? (
         <EmptyCard
           title="Todavía no hay precios registrados"
-          description="El precio de cada proveedor queda aquí cuando se emite una orden de compra que incluye este repuesto."
+          description="Se llena al emitir una orden de compra."
           action={ordersHref ? <Button asChild size="sm" variant="secondary"><Link href={ordersHref}>Ver órdenes de compra</Link></Button> : undefined}
         />
       ) : (
@@ -208,11 +208,11 @@ export function SupplierPricesSection({ suppliers, ordersHref }: { suppliers: Sp
  */
 export function PriceHistorySection({ history }: { history: SparePartPriceHistoryEntry[] }) {
   return (
-    <Section id="rp-history" title="Historial de precio" description="Cada cambio de precio con su proveedor, del más reciente al más antiguo.">
+    <Section id="rp-history" title="Historial de precio">
       {history.length === 0 ? (
         <EmptyCard
           title="Sin cambios de precio"
-          description="Cuando un proveedor cobre un precio distinto —al emitir una orden de compra o al conciliar una factura— queda anotado aquí."
+          description="Se anota cuando un proveedor cobra un precio distinto, al emitir una orden de compra o al conciliar una factura."
         />
       ) : (
         <Responsive
@@ -286,11 +286,11 @@ function VehicleName({ label, href }: { label: string; href: string | null }) {
 
 export function PurchasedForSection({ usage, access }: { usage: SparePartVehicleUsage[]; access: SparePartLinkAccess }) {
   return (
-    <Section id="rp-vehicles" title="Comprado para" description="Los equipos para los que se compró este repuesto con orden de compra emitida. Sirve para saber a qué máquinas les calza.">
+    <Section id="rp-vehicles" title="Comprado para" description="Equipos con orden de compra emitida para este repuesto.">
       {usage.length === 0 ? (
         <EmptyCard
           title="Todavía no se compró para ningún equipo"
-          description="Cuando se emita una orden de compra con este repuesto pedido para un equipo, el equipo aparece aquí."
+          description="Aparece al emitir una orden de compra para un equipo."
           action={access.requestPartsHref ? <RequestPartsButton access={access} /> : undefined}
         />
       ) : (
@@ -368,11 +368,11 @@ function LineVehicle({ line, access }: { line: SparePartPurchaseLine; access: Sp
 
 export function RecentLinesSection({ lines, access }: { lines: SparePartPurchaseLine[]; access: SparePartLinkAccess }) {
   return (
-    <Section id="rp-lines" title="Últimas solicitudes y órdenes de compra" description="Las compras más recientes que incluyen este repuesto.">
+    <Section id="rp-lines" title="Últimas solicitudes y órdenes de compra">
       {lines.length === 0 ? (
         <EmptyCard
           title="Todavía no hay solicitudes ni órdenes con este repuesto"
-          description="Aparecen aquí cuando alguien lo pide o Compras lo incluye en una orden de compra."
+          description="Se llena al pedirlo o cuando Compras lo incluye en una orden de compra."
           action={access.requestPartsHref ? <RequestPartsButton access={access} /> : undefined}
         />
       ) : (

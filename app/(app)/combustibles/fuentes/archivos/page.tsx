@@ -52,7 +52,7 @@ export default async function ArchivosImportadosPage({ searchParams }: { searchP
     <PageContainer>
       <PageHeader
         title="Archivos importados"
-        description="Cada archivo que se subió, con lo que trajo y la opción de revertirlo"
+        description="Lo que trajo cada archivo y la opción de revertirlo"
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Fuentes de datos", href: FUEL_PATHS.fuentes }, { label: "Archivos importados" }]} />}
         actions={<FuelHeaderActions><AddFuelDataButton options={fuelAddDataOptions(session)} /></FuelHeaderActions>}
       />

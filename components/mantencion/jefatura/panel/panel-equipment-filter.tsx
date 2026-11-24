@@ -47,7 +47,7 @@ export function PanelEquipmentFilter({ options, value }: {
       />
       {value ? (
         <Link href={vehicleFichaHref(value, "mantencion")} className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">
-          Ver hoja de vida →
+          Ver hoja de vida
         </Link>
       ) : null}
     </div>

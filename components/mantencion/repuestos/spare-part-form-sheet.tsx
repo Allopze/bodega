@@ -164,7 +164,7 @@ export function SparePartFormSheet({ open, onClose, part = null, units }: SpareP
       entityId={part?.id}
       title={isEdit ? "Editar repuesto" : "Nuevo repuesto"}
       description={isEdit
-        ? `${part.sku}. Cambia los datos; el historial de compras y de precios se conserva.`
+        ? `${part.sku}. El historial de compras y de precios se conserva.`
         : "Se le asigna un código RPT al guardar. También se puede crear al armar una orden de compra."}
       create={createSparePartAction}
       update={updateSparePartAction}

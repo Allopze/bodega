@@ -5,7 +5,7 @@ import { redirect } from "next/navigation"
 import { Gear } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
@@ -130,7 +130,6 @@ export default async function CuadraturaMandantePage({ searchParams }: { searchP
                   <Card>
                     <CardHeader>
                       <CardTitle className="text-base">Qué mirar si no cuadra</CardTitle>
-                      <CardDescription>Lugares donde suele estar la diferencia.</CardDescription>
                     </CardHeader>
                     <CardContent>
                       <WhatToCheck

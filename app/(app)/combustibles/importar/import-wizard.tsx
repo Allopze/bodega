@@ -209,7 +209,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
     <Card>
       <CardHeader>
         <CardTitle>Subir un archivo</CardTitle>
-        <CardDescription>Ya tienes un reporte de tarjetas de combustible (.xlsx) en tu equipo y quieres importarlo directamente.</CardDescription>
+        <CardDescription>Reporte de tarjetas de combustible (.xlsx) que ya tienes en tu equipo.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {worksites.length === 0 && !canImportAllWorksites ? (

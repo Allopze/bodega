@@ -143,8 +143,8 @@ export function WorkOrdersSection({
             <EmptyState
               compact
               title="Todavía no hay órdenes de trabajo en este período"
-              description="Cuando se pida una reparación o una mantención para un equipo, aquí verás cuántas se crean, cuántas se cierran y cuánto trabajo queda en cola."
-              action={<Link href="/mantencion/ot" className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">Ver órdenes de trabajo →</Link>}
+              description="Aparecerán cuando se pida una reparación o una mantención para un equipo."
+              action={<Link href="/mantencion/ot" className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">Ver órdenes de trabajo</Link>}
             />
           </ChartSlot>
         }
@@ -333,8 +333,8 @@ export function PautasSection({
             <EmptyState
               compact
               title="Aún no hay equipos con pauta en el módulo"
-              description="Registra o importa los equipos y asígnales su pauta: con eso verás cuántos están al día, cuántos registros se firman y cuántos días pasan detenidos."
-              action={<Link href="/mantencion/equipos" className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">Ir a Equipos →</Link>}
+              description="Registra o importa los equipos y asígnales su pauta."
+              action={<Link href="/mantencion/equipos" className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">Ir a Equipos</Link>}
             />
           </ChartSlot>
         }

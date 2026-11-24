@@ -1,6 +1,5 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { ArrowRight } from "@phosphor-icons/react/dist/ssr"
 import { cn, formatQty } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
 import { Delta } from "@/components/ui/delta"
@@ -142,10 +141,7 @@ export function KpiCard({
       )}
 
       {empty?.actionLabel ? (
-        <span className="mt-2.5 inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-primary)]">
-          {empty.actionLabel}
-          <ArrowRight size={12} weight="bold" aria-hidden className="transition-transform duration-[var(--duration-fast)] group-hover/kpi:translate-x-0.5" />
-        </span>
+        <span className="mt-2.5 inline-flex text-xs font-semibold text-[var(--color-primary)]">{empty.actionLabel}</span>
       ) : (showTrend || detail) && (
         // `items-start gap-2` es la fila histórica (los usos fuera del tablero no
         // cambian); en el panel del tablero la variación y su rótulo pueden saltar

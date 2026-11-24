@@ -423,7 +423,7 @@ export function CopecSyncStatus({ source, initialStatus, initialStartOptions, qu
             </Button>
           </div>
           <p className="text-xs text-[var(--color-text-muted)] sm:col-span-2">
-            Se consulta un mes por vez, hasta el mes actual incluido. El mes en curso se recalcula en cada corrida; los meses cerrados también se comparan y sólo se reconstruyen si cambia su composición. Puedes retroceder para recuperar meses pendientes{startOptions.latestImportedUntil ? `: la última importación activa termina el ${startOptions.latestImportedUntil}, y las faenas que ya tengan una importación manual de esos meses se saltan para no duplicar consumo` : ""}.
+            Puedes retroceder para recuperar meses pendientes.{startOptions.latestImportedUntil ? ` La última importación activa termina el ${startOptions.latestImportedUntil}, y las faenas que ya tengan una importación manual de esos meses se saltan para no duplicar consumo.` : ""}
           </p>
         </div>
       )}

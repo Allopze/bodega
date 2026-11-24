@@ -220,7 +220,7 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
       ) : anyLoads.data === false ? (
         <EmptyState
           title="Todavía no hay cargas de equipos para analizar"
-          description="Esta pantalla se llena con la planilla de cargas, con las cargas registradas en terreno y con los reportes de tarjeta. Agrega alguno para ver litros, rendimientos y comparaciones."
+          description="Agrega una planilla de cargas, una carga en terreno o un reporte de tarjeta."
           action={originEmptyAction}
         />
       ) : (

@@ -114,7 +114,7 @@ export function buildSourceStatusRow(input: SourceStatusInput, now: number = Dat
       : { label: provider === "onway" ? "Revisar credenciales" : "Revisar token", kind: "settings" })
   }
   if (stale && latestAt) {
-    messages.push(`Sin posiciones nuevas desde hace ${staleSinceLabel(latestAt, now)}: lo que se ve es el último reporte recibido, no una lectura en tiempo real.`)
+    messages.push(`Sin posiciones nuevas desde hace ${staleSinceLabel(latestAt, now)}. Se muestra el último reporte recibido.`)
     if (canManage && !failed) actions.push({ label: "Ver configuración", kind: "settings" })
   }
   if (partial) {

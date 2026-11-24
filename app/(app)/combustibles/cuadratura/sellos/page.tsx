@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import type { ReactNode } from "react"
 import { redirect } from "next/navigation"
 import { Callout } from "@/components/ui/callout"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { FilterSearchInput } from "@/components/ui/filter-search-input"
@@ -118,11 +118,11 @@ export default async function CuadraturaSellosPage({ searchParams }: { searchPar
         <LazyDetails summary="Más análisis: litros por supervisor y por conductor" hint="Cada barra abre las cargas de esa persona en el período. Sin el permiso para ver datos personales, las personas salen numeradas por volumen.">
           <div className="grid gap-5 lg:grid-cols-2">
             <Card>
-              <CardHeader><CardTitle className="text-base">Litros por supervisor</CardTitle><CardDescription>¿Qué supervisor concentra el volumen repartido?</CardDescription></CardHeader>
+              <CardHeader><CardTitle className="text-base">Litros por supervisor</CardTitle></CardHeader>
               <CardContent>{supervisorLiters.failed ? <SectionError what="los litros por supervisor" /> : <TaeGroupChart data={supervisorLiters.data} drilldownBaseHref={drilldownBaseHref} />}</CardContent>
             </Card>
             <Card>
-              <CardHeader><CardTitle className="text-base">Litros por conductor</CardTitle><CardDescription>¿Qué conductor recibió más litros en el período?</CardDescription></CardHeader>
+              <CardHeader><CardTitle className="text-base">Litros por conductor</CardTitle></CardHeader>
               <CardContent>{drivers.failed ? <SectionError what="los litros por conductor" /> : <TaeGroupChart data={drivers.data} drilldownBaseHref={drilldownBaseHref} />}</CardContent>
             </Card>
           </div>

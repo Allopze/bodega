@@ -110,7 +110,7 @@ export function HistoricalImportPanel() {
               <ul className="space-y-1 text-xs">
                 {stage.preview.pending.map((row) => (
                   <li key={`${row.sheet}-${row.rowNumber}`}>
-                    Fila {row.rowNumber} de «{row.sheet}»: {row.equipment || "sin equipo"} · {row.worksite || "sin faena"} — {row.issue}
+                    Fila {row.rowNumber} de «{row.sheet}» ({row.equipment || "sin equipo"} · {row.worksite || "sin faena"}): {row.issue}
                   </li>
                 ))}
               </ul>

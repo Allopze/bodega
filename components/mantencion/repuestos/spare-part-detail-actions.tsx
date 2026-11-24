@@ -60,7 +60,7 @@ export function SparePartDetailActions({ part, units }: SparePartDetailActionsPr
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title={`Desactivar ${part.name}`}
-        description="Deja de ofrecerse al pedir repuestos y al armar órdenes de compra. Su historial de compras y de precios se conserva y puedes activarlo de nuevo cuando quieras."
+        description="Deja de ofrecerse al pedir repuestos y al armar órdenes de compra. Su historial de compras y de precios se conserva y puedes activarlo de nuevo."
         confirmLabel="Desactivar"
         variant="warning"
         loading={operation.pending}

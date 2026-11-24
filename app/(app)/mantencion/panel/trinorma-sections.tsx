@@ -100,8 +100,8 @@ export function MaintenanceWorkSection({
             <EmptyState
               compact
               title="No hay trabajos de mantención en este período"
-              description="Aquí se suman el historial de formularios, las órdenes de trabajo que entraron a taller y los registros de la plataforma. Prueba con otro período."
-              action={<Link href="/mantencion/registros/historicos" className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">Ver historial de formularios →</Link>}
+              description="Prueba con otro período."
+              action={<Link href="/mantencion/registros/historicos" className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">Ver historial de formularios</Link>}
             />
           </ChartSlot>
         }

@@ -98,7 +98,6 @@ export function WorksiteEquipmentHeatmap({ cells }: { cells: HeatmapCell[] }) {
           <span key={step.mix} className="inline-block h-3 w-6 rounded-sm border border-(--color-border)" style={{ backgroundColor: stepColor(step.mix) }} title={step.label} />
         ))}
         <span>Más litros</span>
-        <span className="ml-3">→ Pasa el cursor para ver el detalle</span>
       </div>
     </div>
   )

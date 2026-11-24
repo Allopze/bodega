@@ -333,7 +333,7 @@ describe("PautasSection", () => {
     expect(container.querySelectorAll("[data-kpi-card]")).toHaveLength(0)
     expect(screen.queryByRole("link", { name: /Equipos con la pauta al día/ })).toBeNull()
     expect(screen.getByRole("heading", { name: "Aún no hay equipos con pauta en el módulo" })).toBeTruthy()
-    expect(within(screen.getByRole("region", { name: "Pautas y disponibilidad" })).getByRole("link", { name: /Ir a Equipos →/ }).getAttribute("href")).toBe("/mantencion/equipos")
+    expect(within(screen.getByRole("region", { name: "Pautas y disponibilidad" })).getByRole("link", { name: /Ir a Equipos/ }).getAttribute("href")).toBe("/mantencion/equipos")
   })
 
   it("sin equipos con pauta el porcentaje no se inventa: la cifra dice qué falta", () => {

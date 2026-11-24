@@ -112,7 +112,7 @@ export function CardsAnalysis({ dashboard, byEquipmentType, scatter, evolution, 
       ) : null}
 
       {scatterKm.length > 0 || scatterHora.length > 0 ? (
-        <FoldBlock id="dispersion" title="Litros contra odómetro y horómetro" hint="Cada punto es una carga de la planilla con lectura de medidor y litros mayores a cero.">
+        <FoldBlock id="dispersion" title="Litros contra odómetro y horómetro" hint="Sólo cargas de la planilla con lectura de medidor y litros mayores a cero.">
           <div className="grid gap-6 lg:grid-cols-2">
             <div>
               <h4 className="mb-1 text-sm font-semibold text-[var(--color-text)]">Litros contra kilometraje <span className="font-normal text-[var(--color-text-muted)]">· {scatterKm.length} cargas con odómetro</span></h4>

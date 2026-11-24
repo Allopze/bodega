@@ -236,7 +236,7 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
   // El conteo vive en la pestaña («Por decidir N», «En seguimiento N»): la frase no lo repite. Habla cuando el
   // conteo falló o para decir lo más antiguo; en cero calla, porque el estado vacío ya lo dice.
   const answer = tab === "decididas"
-    ? `Lo que se decidió ${period.inLabel}. Desde aquí se puede deshacer una decisión.`
+    ? `Lo que se decidió ${period.inLabel}.`
     : tab === "seguimiento"
       ? followUpCount === null
         ? "No se pudo contar los casos abiertos. Reintenta en unos minutos."
@@ -330,7 +330,7 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
                 data={caseWeeksSummary ? { ...anomalyWeekTable(caseWeeks, ruleChanges), ...(can(session, "combustibles:export") ? { excel: { permission: "combustibles:export" as const } } : {}) } : undefined}
                 empty={caseWeeksSummary ? null : {
                   label: `Ningún caso en las últimas ${caseWeeks.length} semanas`,
-                  hint: "Cada semana que la revisión automática detecte casos aparecerá aquí, por gravedad.",
+                  hint: "Los casos aparecerán aquí por semana y gravedad.",
                   ...(canManageRules ? { ctaLabel: "Cómo se detecta cada cosa", ctaHref: FUEL_PATHS.ajustesReglas } : {}),
                 }}
               >

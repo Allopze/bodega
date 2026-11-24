@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { useId, type ReactNode } from "react"
-import { ArrowRight, CaretDown } from "@phosphor-icons/react/dist/ssr"
+import { CaretDown } from "@phosphor-icons/react/dist/ssr"
 import { Card } from "@/components/ui/card"
 import { ChartEmpty } from "@/components/ui/chart-empty"
 import { ChartDataTable, type ChartDataExcel } from "@/components/charts/chart-data-table"
@@ -85,10 +85,9 @@ export function ChartSection({
           {drillHref && (
             <Link
               href={drillHref}
-              className="mt-3 inline-flex min-h-11 items-center gap-1 text-xs font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-8"
+              className="mt-3 inline-flex min-h-11 items-center text-xs font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-8"
             >
               {drillLabel}
-              <ArrowRight className="size-3.5" aria-hidden />
             </Link>
           )}
         </div>

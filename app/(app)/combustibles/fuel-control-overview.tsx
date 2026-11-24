@@ -1,6 +1,6 @@
 import type * as React from "react"
 import Link from "next/link"
-import { ArrowRight, Drop, FileText, GasPump } from "@phosphor-icons/react/dist/ssr"
+import { Drop, FileText, GasPump } from "@phosphor-icons/react/dist/ssr"
 import type { FuelControlOverview } from "@/lib/combustibles/fuel-control-overview"
 import { formatCLP, formatQty } from "@/lib/utils"
 import { Delta } from "@/components/ui/delta"
@@ -58,8 +58,8 @@ export function FuelOriginSummary({ data, canViewCosts, tct, hrefs, worksiteHref
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">No se suman: cada origen mide algo distinto.</p>
         </div>
         {hrefs.cuadratura ? (
-          <Link href={hrefs.cuadratura} className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary-ink)] underline-offset-2 hover:underline">
-            Ver la cuadratura <ArrowRight size={14} aria-hidden />
+          <Link href={hrefs.cuadratura} className="text-sm font-medium text-[var(--color-primary-ink)] underline-offset-2 hover:underline">
+            Ver la cuadratura
           </Link>
         ) : null}
       </div>
