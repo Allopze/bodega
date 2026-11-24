@@ -224,9 +224,13 @@ const TopBarInner = React.memo(function TopBarInner({
                     línea para que no se estire en pantallas anchas.
                     Estaba en `2xl:block`, así que en un laptop de 1440 se perdían
                     los conteos de contexto ("N ítems en M solicitudes") y pistas
-                    como "…y fija los precios" en compras/nueva (A-11). */}
+                    como "…y fija los precios" en compras/nueva (A-11).
+                    `lg:line-clamp-2` y NO `line-clamp-2 … lg:block`: `block` pisa el
+                    `display:-webkit-box` del recorte y la descripción crecía sin tope
+                    (a 1024 px, con el título en 128–175 px, medía 3–4 líneas y el
+                    TopBar pasaba de 72 a 89–105 px; reflow-anchos.spec.ts:158). */}
                 {header.description && (
-                  <p title={header.description} className="hidden min-w-0 max-w-[72ch] line-clamp-2 text-xs leading-snug text-(--color-text-muted) lg:block">
+                  <p title={header.description} className="hidden min-w-0 max-w-[72ch] text-xs leading-snug text-(--color-text-muted) lg:line-clamp-2">
                     {header.description}
                   </p>
                 )}
