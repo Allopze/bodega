@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
-import type { Browser, BrowserServer, Page, Response, Route } from "playwright"
+import type { Browser, BrowserContext, BrowserServer, Page, Response, Route } from "playwright"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import {
@@ -69,6 +69,8 @@ interface OnwayBrowserSession {
   server: BrowserServer
   browser: Browser
   page: Page
+  /** El contexto es dueño de las cookies de Auth0; sobrevive al reemplazo de página. */
+  context: BrowserContext
   /** Huella (sólo en memoria) de la cuenta con la que se autenticó la página. */
   account: string
   /**
@@ -84,6 +86,13 @@ interface OnwayBrowserSession {
    * un censo único al abrir se quedaba corto y esos procesos sobrevivían.
    */
   groupsBefore: number[]
+  /**
+   * El portal confirmó una sesión válida (se llegó a la app de seguimiento o se
+   * leyó un snapshot). Es lo que decide si un fallo de lectura debe CONSERVAR el
+   * navegador —para no perder las cookies que una persona consiguió con el
+   * CAPTCHA— o descartarlo, como exige la regresión del lock colgado.
+   */
+  authenticated: boolean
 }
 
 interface OnwayPortalDeviceRef {
@@ -425,7 +434,9 @@ async function getBrowserSession(account: string): Promise<OnwayBrowserSession> 
     // que los procesos siguen vivos y con su `pgid` intacto: después del cierre
     // del driver quedan huérfanos y ya no se distingue a quién pertenecían.
     const groups = processGroups(listChromiumProcesses()).filter((group) => !groupsBefore.has(group))
-    state.browserSession = { server, browser, page, account, groups, groupsBefore: [...groupsBefore] }
+    state.browserSession = {
+      server, browser, page, context, account, groups, groupsBefore: [...groupsBefore], authenticated: false,
+    }
     return state.browserSession
   } catch (error) {
     await withOnwayDeadline(server.kill(), BROWSER_CLOSE_TIMEOUT_MS).catch(() => undefined)
@@ -641,11 +652,75 @@ async function scrapeWithSession(
       }
       throw new OnwayClientError("ONWAY_PORTAL_TIMEOUT")
     }
-    return await readSnapshotResponse(response)
+    const snapshot = await readSnapshotResponse(response)
+    // El portal devolvió el snapshot: la sesión es válida y hay que protegerla
+    // de un cierre por un fallo posterior (ver `shouldKeepBrowserAfterFailure`).
+    if (state.browserSession) state.browserSession.authenticated = true
+    return snapshot
   } catch (error) {
-    await closeBrowserSession()
+    // Un fallo de la LECTURA no invalida la SESIÓN. Cerrar el navegador acá
+    // borraba las cookies de Auth0 que la persona acababa de conseguir con el
+    // CAPTCHA, y el intento siguiente volvía a pedirlo: por eso resolver el
+    // desafío no servía de nada y el ciclo no terminaba nunca (2026-11-24).
+    if (!shouldKeepBrowserAfterFailure()) await closeBrowserSession()
+    else await replaceHungPage()
     if (error instanceof OnwayClientError) throw error
     throw new OnwayClientError("ONWAY_SYNC_FAILED")
+  }
+}
+
+/**
+ * ¿Vale la pena conservar el navegador tras un fallo de lectura?
+ *
+ * Concilia dos regresiones que se contradicen:
+ *
+ * - 2026-10-29: una lectura que nunca contesta no puede dejar el navegador
+ *   colgado con el lock tomado; hay que cerrarlo para que la corrida siguiente
+ *   abra uno nuevo (`onway-client-deadline.test.ts`).
+ * - 2026-11-24: cerrarlo después de que una persona resolvió el CAPTCHA borra
+ *   las cookies de Auth0 y el portal vuelve a pedir el desafío, para siempre.
+ *   Ése era el «me tiene una y otra vez».
+ *
+ * La distinción es si el portal YA aceptó la sesión. Con sesión confirmada se
+ * conserva (se pierde el plazo, no la cookie que costó un CAPTCHA); sin ella no
+ * hay nada que salvar y se descarta.
+ *
+ * Un navegador cerrado o desconectado no se conserva nunca: no sirve para el
+ * reintento y ocuparía memoria.
+ */
+function shouldKeepBrowserAfterFailure(): boolean {
+  const current = state.browserSession
+  if (!current) return false
+  if (!current.browser.isConnected() || current.page.isClosed()) return false
+  return current.authenticated
+}
+
+/**
+ * Reemplaza la página colgada conservando el contexto —y con él las cookies de
+ * Auth0— para que la corrida siguiente no vuelva a pedir el CAPTCHA.
+ *
+ * Es la pieza que faltaba para satisfacer las dos regresiones a la vez: una
+ * lectura que no contesta no puede dejar el navegador inservible (2026-10-29),
+ * pero cerrarlo entero pierde la sesión que costó un CAPTCHA (2026-11-24).
+ * Cambiar sólo la página resuelve ambas: la siguiente corrida navega con la
+ * misma sesión y sin el `evaluate` colgado.
+ *
+ * Si no se puede reemplazar, se descarta todo: más vale un CAPTCHA nuevo que un
+ * navegador inutilizable.
+ */
+async function replaceHungPage(): Promise<boolean> {
+  const current = state.browserSession
+  if (!current) return false
+  try {
+    const page = await current.context.newPage()
+    // Las cookies viven en el contexto: la página nueva ya está autenticada.
+    const previous = current.page
+    current.page = page
+    if (!previous.isClosed()) await previous.close({ runBeforeUnload: false }).catch(() => undefined)
+    return true
+  } catch {
+    await closeBrowserSession()
+    return false
   }
 }
 
@@ -881,7 +956,10 @@ async function markChallengeSolved(challenge: OnwayChallenge): Promise<void> {
   await unrouteChallenge(challenge)
   scheduleChallengeCleanup(challenge)
   // La sesión autenticada se conserva: la sincronización que sigue reutiliza
-  // este mismo navegador en vez de volver a pedir credenciales.
+  // este mismo navegador en vez de volver a pedir credenciales. Marcarla evita
+  // que un fallo de lectura posterior la descarte (ver
+  // `shouldKeepBrowserAfterFailure`): perder estas cookies significa otro CAPTCHA.
+  if (state.browserSession) state.browserSession.authenticated = true
   logger.info("[flota/onway] verificación interactiva completada", { challengeId: challenge.id })
 }
 
@@ -1178,9 +1256,19 @@ export async function fetchOnwayTelemetry(input: OnwayCredentials, options: Onwa
   try {
     return await withOnwayDeadline(collectTelemetry(input, options, Date.now() + deadlineMs), deadlineMs)
   } catch (error) {
-    // No basta con cerrar el navegador para liberar `inFlight`: si el cierre
-    // también se cuelga, la próxima corrida reusaría la misma promesa colgada.
-    if (error instanceof OnwayClientError && error.code === "ONWAY_PORTAL_TIMEOUT") abandonBrowserSession()
+    // `inFlight` se suelta siempre. El NAVEGADOR sólo se descarta si no había
+    // sesión confirmada: si la persona ya resolvió el CAPTCHA, tirarlo borra sus
+    // cookies y el portal vuelve a pedir el desafío — el «me tiene una y otra
+    // vez» del 2026-11-24. Un navegador sin sesión, en cambio, no tiene nada que
+    // salvar y debe cerrarse para que la corrida siguiente abra uno limpio.
+    if (error instanceof OnwayClientError && error.code === "ONWAY_PORTAL_TIMEOUT") {
+      if (shouldKeepBrowserAfterFailure()) {
+        state.inFlight = null
+        await replaceHungPage()
+      } else {
+        abandonBrowserSession()
+      }
+    }
     throw error
   }
 }
