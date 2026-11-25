@@ -75,6 +75,11 @@ export async function listMantCatalogs(opts: { includeInactive?: boolean } = {})
  * Tipos de equipo de la flota que se miden en km (odómetro) o en h
  * (horómetro). Los que no llevan medidor (estanques, hidrolavadoras) no pueden
  * entrar a la mantención: sin lectura no hay estado.
+ *
+ * La unidad que devuelve es la DEL TIPO (su default), no la de un equipo: un
+ * equipo puede medir distinto con `mant_equipment_profiles.unit`. Por eso este
+ * catálogo sirve al formulario para elegir el tipo, no para decidir la unidad de
+ * un equipo existente (eso va por `effectiveMeterSql`).
  */
 export async function listEquipmentTypes(): Promise<Array<{ id: string; name: string; unit: MantUnit }>> {
   const rows = await db

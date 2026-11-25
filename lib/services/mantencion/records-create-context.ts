@@ -6,7 +6,8 @@ import {
 } from "@/db/schema"
 import type { PreventiveRef } from "@/lib/mantencion/status"
 import type { MantReading, MantUnit } from "@/lib/mantencion/types"
-import { unitFromMeter } from "./fleet"
+import { effectiveUnitSql, unitFromMeter } from "./fleet"
+import { effectiveMeterSql } from "./unit-sql"
 
 /**
  * Lecturas de contexto que la validación de un registro necesita. TODAS van por
@@ -59,7 +60,8 @@ export async function lockAndLoadVehicle(tx: Tx, vehicleId: string): Promise<Veh
       worksiteId: fuelVehicles.worksiteId,
       worksiteName: worksites.name,
       typeName: fuelEquipmentTypes.name,
-      meterType: fuelEquipmentTypes.defaultMeterType,
+      // Unidad efectiva (perfil o tipo): el registro nuevo se valida y se guarda en la unidad del equipo.
+      meterType: effectiveMeterSql,
       brandId: mantBrands.id,
       brandName: mantBrands.name,
       scheduleId: mantEquipmentProfiles.scheduleId,
@@ -110,6 +112,10 @@ export interface VehicleHistory {
   preventives: PreventiveRef[]
 }
 
+/**
+ * Historia vigente del equipo EN SU UNIDAD ACTUAL: un registro de otra unidad (p. ej. en km de antes
+ * de fijar el equipo en horas) no valida la lectura nueva ni cuenta como preventiva de la pauta.
+ */
 export async function loadVehicleHistory(tx: Tx, vehicleId: string): Promise<VehicleHistory> {
   const rows = await tx
     .select({
@@ -121,7 +127,14 @@ export async function loadVehicleHistory(tx: Tx, vehicleId: string): Promise<Veh
       intervalValue: mantRecords.intervalValue,
     })
     .from(mantRecords)
-    .where(and(eq(mantRecords.vehicleId, vehicleId), eq(mantRecords.status, "vigente")))
+    .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantRecords.vehicleId))
+    .innerJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
+    .leftJoin(mantEquipmentProfiles, eq(mantEquipmentProfiles.vehicleId, mantRecords.vehicleId))
+    .where(and(
+      eq(mantRecords.vehicleId, vehicleId),
+      eq(mantRecords.status, "vigente"),
+      eq(mantRecords.unit, effectiveUnitSql),
+    ))
   return {
     readings: rows.map((row) => ({ value: row.reading, date: row.workDate, source: row.folio ?? "Registro sin folio" })),
     preventives: rows

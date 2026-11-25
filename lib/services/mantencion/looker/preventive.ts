@@ -1,7 +1,7 @@
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
-  fuelEquipmentTypes, fuelVehicles, mantHistoricalScheduleChecks, mantHistoricalScheduleItems,
+  fuelEquipmentTypes, fuelVehicles, mantEquipmentProfiles, mantHistoricalScheduleChecks, mantHistoricalScheduleItems,
   mantRecordItems, mantRecordPhotos, mantRecords, worksites,
 } from "@/db/schema"
 import { worksiteScopeSqlFor } from "@/lib/auth/scope"
@@ -9,8 +9,9 @@ import { driveLink } from "@/lib/mantencion/drive-link"
 import { FORMS_CUTOVER_DATE } from "@/lib/mantencion/forms-cutover"
 import { recordVisibility, recordVisibilitySql, type MantViewer } from "../access"
 import { unitFromMeter } from "../fleet"
+import { effectiveMeterSql } from "../unit-sql"
 import { queryFilters } from "./filters"
-import { effectiveWorksiteIds } from "./resolve"
+import { effectiveWorksiteIds, recordInEquipmentUnitSql } from "./resolve"
 import {
   levelLabel, matrixRows, mechanicKeyOf, parseLevelValue, percentFromCounts, summarizeCompliance,
 } from "./preventive-summary"
@@ -120,7 +121,7 @@ export async function loadComplianceChecks(
     notDone: sql<number>`${mantHistoricalScheduleChecks.notDoneCount}`.as("notDone"),
     notApplicable: sql<number>`${mantHistoricalScheduleChecks.notApplicableCount}`.as("notApplicable"),
     declared: sql<number | null>`${mantHistoricalScheduleChecks.compliance}`.as("declared"),
-    unit: sql<string | null>`${fuelEquipmentTypes.defaultMeterType}`.as("unit"),
+    unit: effectiveMeterSql.as("unit"),
     observations: HISTORICAL_OBSERVATIONS.as("observations"),
     filtersPhotoUrl: sql<string | null>`${mantHistoricalScheduleChecks.filtersPhotoUrl}`.as("filtersPhotoUrl"),
     stickerPhotoUrl: sql<string | null>`${mantHistoricalScheduleChecks.stickerPhotoUrl}`.as("stickerPhotoUrl"),
@@ -128,6 +129,7 @@ export async function loadComplianceChecks(
     .from(mantHistoricalScheduleChecks)
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantHistoricalScheduleChecks.vehicleId))
     .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
+    .leftJoin(mantEquipmentProfiles, eq(mantEquipmentProfiles.vehicleId, fuelVehicles.id))
     .leftJoin(worksites, eq(worksites.id, mantHistoricalScheduleChecks.worksiteId))
     .where(and(
       eq(mantHistoricalScheduleChecks.isTest, false),
@@ -135,7 +137,7 @@ export async function loadComplianceChecks(
       sql`${HISTORICAL_DATE} < ${FORMS_CUTOVER_DATE}`,
       worksiteScopeSqlFor(scope, mantHistoricalScheduleChecks.worksiteId),
       vehicleIds.length ? inArray(mantHistoricalScheduleChecks.vehicleId, vehicleIds) : undefined,
-      meterType ? eq(fuelEquipmentTypes.defaultMeterType, meterType) : undefined,
+      meterType ? eq(effectiveMeterSql, meterType) : undefined,
       query.month ? sql`left(${HISTORICAL_DATE}, 7) = ${query.month}` : undefined,
       historicalCheckFilter,
     ))
@@ -156,7 +158,7 @@ export async function loadComplianceChecks(
     notDone: sql<number>`(select count(*)::int from mant_record_items i where i.record_id = ${mantRecords.id} and i.value = 'NR')`.as("notDone"),
     notApplicable: sql<number>`(select count(*)::int from mant_record_items i where i.record_id = ${mantRecords.id} and i.value = 'NA')`.as("notApplicable"),
     declared: sql<number | null>`NULL::numeric`.as("declared"),
-    unit: sql<string | null>`${fuelEquipmentTypes.defaultMeterType}`.as("unit"),
+    unit: effectiveMeterSql.as("unit"),
     observations: sql<string | null>`${mantRecords.notes}`.as("observations"),
     filtersPhotoUrl: sql<string | null>`NULL::text`.as("filtersPhotoUrl"),
     stickerPhotoUrl: sql<string | null>`NULL::text`.as("stickerPhotoUrl"),
@@ -164,6 +166,7 @@ export async function loadComplianceChecks(
     .from(mantRecords)
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantRecords.vehicleId))
     .innerJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
+    .leftJoin(mantEquipmentProfiles, eq(mantEquipmentProfiles.vehicleId, fuelVehicles.id))
     .innerJoin(worksites, eq(worksites.id, mantRecords.worksiteId))
     .where(and(
       eq(mantRecords.kind, "P"),
@@ -174,7 +177,9 @@ export async function loadComplianceChecks(
       recordVisibilitySql(recordVisibility(viewer)),
       worksiteScopeSqlFor(scope, mantRecords.worksiteId),
       vehicleIds.length ? inArray(mantRecords.vehicleId, vehicleIds) : undefined,
-      meterType ? eq(fuelEquipmentTypes.defaultMeterType, meterType) : undefined,
+      // Una pauta en la unidad anterior no se rotula con la actual: queda fuera de la unidad activa.
+      recordInEquipmentUnitSql,
+      meterType ? eq(effectiveMeterSql, meterType) : undefined,
       query.month ? sql`left(${mantRecords.workDate}, 7) = ${query.month}` : undefined,
       nativeCheckFilter,
     ))

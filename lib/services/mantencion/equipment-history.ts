@@ -30,6 +30,11 @@ export interface EquipmentFields {
   plate: string
   noPlate: boolean
   type: string
+  /**
+   * Unidad de medida de Mantención («kilómetros» u «horas»): la del perfil del equipo o, si no tiene, la de su
+   * tipo. Opcional: los caminos que no la conocen (una incorporación antes del alta) no la comparan.
+   */
+  unit?: string | null
   brand: string
   model: string | null
   year: number | null
@@ -50,6 +55,7 @@ export const EQUIPMENT_FIELD_LABELS: Record<keyof EquipmentFields, string> = {
   plate: "Patente",
   noPlate: "Sin patente",
   type: "Tipo",
+  unit: "Unidad de medida",
   brand: "Marca",
   model: "Modelo",
   year: "Año",

@@ -6,11 +6,13 @@ import {
 } from "@/db/schema"
 import { worksiteScopeSqlFor } from "@/lib/auth/scope"
 import { nameKey } from "@/lib/mantencion/normalize"
+import type { MantUnit } from "@/lib/mantencion/types"
 import { formatDate, formatQty, todayInChile } from "@/lib/utils"
 import { equipmentScope, recordVisibility, recordVisibilitySql, type MantViewer } from "../access"
 import { unitFromMeter } from "../fleet"
 import { loadPanelWorksites } from "../panel"
 import { getCurrentScheduleSnapshots } from "../schedule-versions"
+import { effectiveMeterSql } from "../unit-sql"
 import { workOrderVisibility, workOrderVisibilitySql } from "../work-orders/access"
 import { monthLabel, parseLookerFilters } from "./filters"
 import { scopeLookerToTab } from "./tab-scope"
@@ -42,6 +44,20 @@ function scopeFilter(viewer: MantViewer) {
   return inArray(fuelVehicles.worksiteId, scope)
 }
 
+/**
+ * Unidad efectiva del equipo como `km` / `h` (null si su tipo no mide, `none`). Es la del perfil de
+ * Mantención cuando está fijada y, si no, la del tipo (`effectiveMeterSql`). La consulta tiene que
+ * unir `fuel_equipment_types` y `mant_equipment_profiles`.
+ */
+const equipmentUnitSql = sql<MantUnit | null>`case ${effectiveMeterSql} when 'odometer' then 'km' when 'hour_meter' then 'h' end`
+
+/**
+ * `mant_records.unit` tiene que coincidir con la unidad efectiva del equipo para alimentar una pauta o
+ * una lectura del tablero: un registro de la unidad anterior (p. ej. km de un camión que ya mide en
+ * horas) queda como historia. Un equipo sin unidad (tipo `none`) no filtra.
+ */
+export const recordInEquipmentUnitSql = sql<boolean>`(${equipmentUnitSql} is null or ${mantRecords.unit} = ${equipmentUnitSql})`
+
 /** Opciones de la barra: faenas activas del alcance, equipos activos con ficha y frecuencias en uso. */
 export async function loadLookerOptions(viewer: MantViewer): Promise<LookerOptions> {
   const worksitesList = await loadPanelWorksites(viewer)
@@ -52,7 +68,7 @@ export async function loadLookerOptions(viewer: MantViewer): Promise<LookerOptio
     worksiteId: fuelVehicles.worksiteId,
     worksiteName: worksites.name,
     typeName: fuelEquipmentTypes.name,
-    meterType: fuelEquipmentTypes.defaultMeterType,
+    meterType: effectiveMeterSql.as("meterType"),
     scheduleId: mantEquipmentProfiles.scheduleId,
     scheduleName: mantSchedules.name,
     priorPreventiveDate: mantEquipmentProfiles.priorPreventiveDate,
@@ -70,6 +86,8 @@ export async function loadLookerOptions(viewer: MantViewer): Promise<LookerOptio
   const scheduleIds = [...new Set(rows.map((row) => row.scheduleId).filter((id): id is string => !!id))]
   const [snapshots, lastPreventives] = await Promise.all([
     scheduleIds.length ? getCurrentScheduleSnapshots(scheduleIds) : Promise.resolve([]),
+    // La última preventiva es la de la unidad actual del equipo: una pauta en km no fija la
+    // frecuencia de un camión que ya mide en horas.
     ids.length
       ? db.selectDistinctOn([mantRecords.vehicleId], {
         vehicleId: mantRecords.vehicleId,
@@ -77,7 +95,15 @@ export async function loadLookerOptions(viewer: MantViewer): Promise<LookerOptio
         intervalValue: mantRecords.intervalValue,
       })
         .from(mantRecords)
-        .where(and(eq(mantRecords.kind, "P"), eq(mantRecords.status, "vigente"), inArray(mantRecords.vehicleId, ids)))
+        .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantRecords.vehicleId))
+        .innerJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
+        .leftJoin(mantEquipmentProfiles, eq(mantEquipmentProfiles.vehicleId, fuelVehicles.id))
+        .where(and(
+          eq(mantRecords.kind, "P"),
+          eq(mantRecords.status, "vigente"),
+          inArray(mantRecords.vehicleId, ids),
+          recordInEquipmentUnitSql,
+        ))
         .orderBy(mantRecords.vehicleId, desc(mantRecords.workDate), desc(mantRecords.reading))
       : Promise.resolve([]),
   ])

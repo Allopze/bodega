@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelEquipmentTypes, fuelVehicles, mantEquipmentProfiles, worksites } from "@/db/schema"
 import { cleanName, findByNameKey, isValidPlate, normalizeCode, normalizePlate } from "@/lib/mantencion/normalize"
+import { defaultMaintenanceUnit } from "@/lib/mantencion/equipment-unit"
 import type { MantUnit } from "@/lib/mantencion/types"
 import { isUniqueViolation } from "@/lib/action-error"
 import { actorEquipmentScope, isWorksiteInScope } from "./access"
@@ -9,7 +10,7 @@ import { ensureCatalogEntry } from "./catalogs"
 import { applyCreate } from "./equipment"
 import type { MantActor } from "./equipment-history"
 import { loadEquipmentCatalogs, resolveEquipment, type EquipmentCatalogs, type EquipmentInput } from "./equipment-resolve"
-import { unitFromMeter, type MantWorksiteScope } from "./fleet"
+import type { MantWorksiteScope } from "./fleet"
 
 /**
  * «Incorporar desde la flota» (auditoría 2026-11-11). Los vehículos ya están en
@@ -57,14 +58,19 @@ function blockerFor(row: { code: string | null; plate: string }): string | null 
   return null
 }
 
-/** Vehículos activos de la flota, con odómetro u horómetro, en las faenas de `scope`, que aún no están en Mantención. */
+/**
+ * Vehículos activos de la flota, con odómetro u horómetro, en las faenas de `scope`, que aún no están en Mantención.
+ * La unidad de cada candidato es la con que nacería el equipo al incorporarlo (regla de alta de
+ * `lib/mantencion/equipment-unit.ts`): aún no tiene perfil, así que no hay unidad fijada que leer.
+ */
 export async function listIncorporationCandidates(scope: MantWorksiteScope, catalogs?: EquipmentCatalogs): Promise<IncorporationCandidate[]> {
   if (Array.isArray(scope) && scope.length === 0) return []
   const rows = await db
     .select({
       vehicleId: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, brand: fuelVehicles.brand,
       model: fuelVehicles.model, year: fuelVehicles.year, worksiteId: fuelVehicles.worksiteId, worksiteName: worksites.name,
-      typeName: fuelEquipmentTypes.name, meterType: fuelEquipmentTypes.defaultMeterType,
+      worksiteCode: worksites.code,
+      typeName: fuelEquipmentTypes.name, meterType: fuelEquipmentTypes.defaultMeterType, typeFamily: fuelEquipmentTypes.performanceFamily,
     })
     .from(fuelVehicles)
     .innerJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
@@ -80,7 +86,7 @@ export async function listIncorporationCandidates(scope: MantWorksiteScope, cata
   const activeBrands = lists.brands.filter((brand) => brand.isActive)
   const candidates: IncorporationCandidate[] = []
   for (const row of rows) {
-    const unit = unitFromMeter(row.meterType)
+    const unit = defaultMaintenanceUnit({ typeMeterType: row.meterType, typeFamily: row.typeFamily, worksiteCode: row.worksiteCode })
     if (!unit) continue
     const schedules = lists.schedules.filter((schedule) => schedule.unit === unit)
     candidates.push({

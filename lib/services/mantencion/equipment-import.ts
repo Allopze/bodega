@@ -588,7 +588,7 @@ export async function buildEquipmentTemplate(scope: MantWorksiteScope = "all"): 
   const lastRow = (count: number) => Math.max(2, count + 1)
   const unitLabel = (unit: string | null | undefined) => (unit ? (unit === "km" ? "kilómetros" : "horas") : undefined)
   lists.columns = [
-    { header: "Tipo de equipo", key: "type", width: 24 }, { header: "Se mide en", key: "unit", width: 12 },
+    { header: "Tipo de equipo", key: "type", width: 24 }, { header: "Se mide en (por defecto)", key: "unit", width: 24 },
     { header: "Marca", key: "brand", width: 18 }, { header: "Faena", key: "site", width: 22 },
     { header: "Pauta", key: "schedule", width: 26 }, { header: "Pauta se mide en", key: "scheduleUnit", width: 16 },
   ]
@@ -621,7 +621,7 @@ export async function buildEquipmentTemplate(scope: MantWorksiteScope = "all"): 
     "Cómo llenar la planilla",
     "• Una fila por equipo, bajo los encabezados de la hoja «Equipos». Obligatorios: Código, Patente, Tipo de equipo, Marca y Faena.",
     "• Patente: formato ABCD-12 o AB-1234. Si el equipo no tiene, escribe «Sin patente»; su patente será igual a su código.",
-    "• Tipo de equipo, Marca y Pauta deben ser los de la hoja «Listas». La Marca es de lista cerrada. La pauta debe medirse en la misma unidad que el tipo.",
+    "• Tipo de equipo, Marca y Pauta deben ser los de la hoja «Listas». La Marca es de lista cerrada. La pauta debe medirse en la misma unidad que el equipo: la de su tipo, salvo los camiones y tractocamiones, que miden en horas (los de la faena Biodiversa, en kilómetros).",
     "• Faena: usa una de la hoja «Listas» (si ya existe con otro acento o mayúsculas, se usa la existente). Una faena que no existe no se crea sola: sólo quien ve todas las faenas puede crearla, marcando «Crear estas faenas» en la vista previa, y sólo para un equipo nuevo; si no, la fila queda con error. Las faenas nuevas también se crean en Administración › Faenas.",
     "• Lectura inicial: kilómetros u horas del equipo; es opcional. Con la lectura inicial y una preventiva (firmada o declarada) se calcula la próxima mantención; sin preventiva el equipo queda «Sin información de preventiva». Fecha de la lectura: dd-mm-aaaa (si la dejas vacía, hoy).",
     "• Las primeras filas ya traen los vehículos de la flota que aún no están en Mantención: completa su Marca, Pauta y Lectura. Su código, patente, tipo y faena vienen de la flota y no se pueden cambiar aquí.",

@@ -1,0 +1,2 @@
+ALTER TABLE "mant_equipment_profiles" ADD COLUMN "unit" text;--> statement-breakpoint
+ALTER TABLE "mant_equipment_profiles" ADD CONSTRAINT "mant_equipment_profiles_unit_valid" CHECK ("mant_equipment_profiles"."unit" IS NULL OR "mant_equipment_profiles"."unit" IN ('km', 'h'));

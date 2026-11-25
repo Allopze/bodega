@@ -152,3 +152,52 @@ describe("padrón: la faena es de sólo lectura al editar", () => {
     })
   }
 })
+
+/**
+ * Decisión del usuario (2026-11-25): un camión de producción mide en horas y uno de Biodiversa en km,
+ * aunque compartan tipo. El selector de tipo bloquea sólo lo que el servidor rechazaría: un tipo que
+ * en la faena del equipo mediría distinto, con registros o pauta.
+ */
+describe("tipo de equipo según la faena del camión", () => {
+  const WORKSITES = [{ id: "ws-1", name: "Arauco", code: "FN-ARA" }, { id: "ws-bio", name: "Biodiversa", code: "BIODIVERSA" }]
+  const TYPES = [
+    { id: "t-camion", name: "Camión", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter", performanceFamily: "camiones", isActive: true },
+    { id: "t-tracto", name: "Tractocamión", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter", performanceFamily: "camiones", isActive: true },
+    { id: "t-excavadora", name: "Excavadora", category: "heavy", defaultMeterType: "hour_meter", defaultPerformanceUnit: "liters_per_hour", performanceFamily: null, isActive: true },
+  ]
+  const camion = (worksiteId: string, code: string): VehicleForEdit => ({ ...VEHICLE, id: `veh-${code}`, code, plate: `${code}-P`, equipmentTypeId: "t-camion", worksiteId })
+
+  function renderCamion(vehicle: VehicleForEdit, maintenance: PadronMaintenance) {
+    return render(
+      <VehicleForm
+        open
+        onClose={vi.fn()}
+        worksites={WORKSITES}
+        users={[]}
+        equipmentTypes={TYPES}
+        suppliers={[]}
+        products={[{ id: "fuel-diesel", name: "Diésel", unit: "L", isActive: true }]}
+        editVehicle={{ ...vehicle, maintenance }}
+        maintenanceBrands={[{ id: "b-volvo", name: "Volvo", isActive: true }]}
+      />,
+    )
+  }
+
+  function openTypes() {
+    fireEvent.click(screen.getByRole("combobox", { name: /Tipo de equipo/ }))
+  }
+
+  it("un camión en horas de Arauco puede pasar a Tractocamión con registros: el tipo no aparece bloqueado", () => {
+    renderCamion({ ...camion("ws-1", "KA-910") }, { brandId: "b-volvo", noPlate: false, unit: "h", unitFixedBy: { kind: "registros" }, canChangeProfile: true })
+    expect(screen.getByText(/sólo puede pasar a un tipo que en su faena también se mida así/)).toBeDefined()
+    openTypes()
+    expect(screen.getByRole("option", { name: /Tractocamión/ }).getAttribute("aria-disabled")).not.toBe("true")
+  })
+
+  it("un camión de Biodiversa (km) con registros: Tractocamión sigue disponible y una excavadora (horas) queda bloqueada", () => {
+    renderCamion(camion("ws-bio", "KA-911"), { brandId: "b-volvo", noPlate: false, unit: "km", unitFixedBy: { kind: "registros" }, canChangeProfile: true })
+    openTypes()
+    expect(screen.getByRole("option", { name: /Tractocamión/ }).getAttribute("aria-disabled")).not.toBe("true")
+    expect(screen.getByRole("option", { name: /Excavadora.*se mide en horas/ }).getAttribute("aria-disabled")).toBe("true")
+  })
+})

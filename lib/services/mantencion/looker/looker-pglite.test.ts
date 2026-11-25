@@ -281,3 +281,106 @@ describe("Preventivo · cumplimiento y matriz", () => {
     expect(matrix.checks[0]!.items["Revisión ABS"]).toBe("no_aplica")
   })
 })
+
+/**
+ * Unidad efectiva: la fija el perfil de Mantención (`mant_equipment_profiles.unit`) y, si es nula, vale
+ * la del tipo. Dos camiones del mismo tipo (odómetro) miden distinto: uno en horas (fijado en su perfil)
+ * y otro en km (sin fijar).
+ *
+ * Va al final del archivo a propósito: siembra equipos y registros que cambiarían las cifras de las
+ * pruebas de arriba, y Vitest corre los `describe` en orden.
+ */
+describe("Unidad efectiva · el perfil de Mantención antes que el tipo", () => {
+  const T = { hours: "v-looker-camion-h", km: "v-looker-camion-km" } as const
+  const OWN: readonly string[] = [T.hours, T.km]
+  const DESDE = "2026-12-01"
+  const HASTA = "2026-12-31"
+  const snap = (code: string, plate: string, unit: "km" | "h") => ({
+    code, plate, noPlate: false, type: "Camión", brand: "Scania", model: "R450", year: 2021, worksite: "Faena Looker", unit,
+  })
+  const recordBase = {
+    worksiteId: WS, registeredBy: U, executorKind: "yo", executorUserId: U, executorName: "Mecánico Unidad",
+    signedAt: "2026-12-10T15:00:00Z", receivedAt: "2026-12-10T15:00:00Z", status: "vigente", review: "pendiente",
+  }
+
+  beforeAll(async () => {
+    await testDb.insert(schema.fuelVehicles).values([
+      { id: T.hours, code: "KA-HOR", plate: "HOR-01", type: "Camión", equipmentTypeId: "fet-looker", worksiteId: WS, model: "R450", year: 2021, brand: "Scania" },
+      { id: T.km, code: "KA-KM", plate: "KMS-01", type: "Camión", equipmentTypeId: "fet-looker", worksiteId: WS, model: "R450", year: 2021, brand: "Scania" },
+    ])
+    await testDb.insert(schema.mantEquipmentProfiles).values([
+      { vehicleId: T.hours, brandId: "b-looker", unit: "h" },
+      { vehicleId: T.km, brandId: "b-looker" },
+    ])
+
+    await testDb.insert(schema.mantRecords).values([
+      // Correctiva firmada en km antes del cambio: el trabajo cuenta; su lectura no sale en horas.
+      { ...recordBase, id: "rec-h-c-km", folio: "MU-C-1", kind: "C", vehicleId: T.hours, equipmentSnapshot: snap("KA-HOR", "HOR-01", "km"), reading: 100_000, unit: "km", workDate: "2026-12-03" },
+      // Preventiva en km de la pauta anterior, más reciente que la de horas: no fija la frecuencia ni rotula el check.
+      { ...recordBase, id: "rec-h-p-km", folio: "MU-P-1", kind: "P", vehicleId: T.hours, equipmentSnapshot: snap("KA-HOR", "HOR-01", "km"), reading: 99_000, unit: "km", workDate: "2026-12-20", scheduleVersion: 1, scheduleNameSnapshot: "Camiones", intervalValue: 40_000, suggestedIntervalValue: 40_000, notes: "Pauta vieja en km" },
+      // Preventiva en horas: la última de la unidad activa.
+      { ...recordBase, id: "rec-h-p-h", folio: "MU-P-2", kind: "P", vehicleId: T.hours, equipmentSnapshot: snap("KA-HOR", "HOR-01", "h"), reading: 2_100, unit: "h", workDate: "2026-12-12", scheduleVersion: 1, scheduleNameSnapshot: "Maquinaria", intervalValue: 300, suggestedIntervalValue: 300, notes: "Pauta de horas" },
+      // Camión sin unidad fijada: mide en km como su tipo.
+      { ...recordBase, id: "rec-k-c", folio: "MU-C-2", kind: "C", vehicleId: T.km, equipmentSnapshot: snap("KA-KM", "KMS-01", "km"), reading: 90_000, unit: "km", workDate: "2026-12-08" },
+      { ...recordBase, id: "rec-k-p", folio: "MU-P-3", kind: "P", vehicleId: T.km, equipmentSnapshot: snap("KA-KM", "KMS-01", "km"), reading: 91_000, unit: "km", workDate: "2026-12-15", scheduleVersion: 1, scheduleNameSnapshot: "Camiones", intervalValue: 10_000, suggestedIntervalValue: 10_000, notes: "Pauta de km" },
+    ])
+    await testDb.insert(schema.mantRecordCorrectives).values([
+      { recordId: "rec-h-c-km", workTypes: ["Mecánico"], oils: [], description: "Cambio de correa", noParts: true, hours: 2, inWorkshop: false },
+      { recordId: "rec-k-c", workTypes: ["Mecánico"], oils: [], description: "Cambio de filtro", noParts: true, hours: 1, inWorkshop: false },
+    ])
+
+    // OT con ingreso en diciembre: el camión de horas lleva el horómetro (2.300) además de un odómetro viejo.
+    const orderBase = {
+      worksiteId: WS, requestDate: "2026-12-07", requestedByUserId: U, requesterName: "Solicitante Unidad", repair: true, maintenance: false,
+      repairDescription: "Reparación de prueba", status: "en_ejecucion", assignedToUserId: U, assignedByUserId: U, assignedAt: "2026-12-07T12:00:00Z",
+      workshopKind: "interno", estimatedDeliveryDate: "2026-12-15", startedByUserId: U, actionType: "correctiva", laborHours: 3, workPerformed: "Cambio de embrague",
+    }
+    await testDb.insert(schema.mantWorkOrders).values([
+      { ...orderBase, id: "ot-h", folio: "OT-UNIDAD-H", vehicleId: T.hours, equipmentSnapshot: snap("KA-HOR", "HOR-01", "h"), workshopEntryAt: "2026-12-09T12:00:00Z", startedAt: "2026-12-09T12:00:00Z", entryOdometer: 150_000, entryHourmeter: 2_300 },
+      { ...orderBase, id: "ot-k", folio: "OT-UNIDAD-K", vehicleId: T.km, equipmentSnapshot: snap("KA-KM", "KMS-01", "km"), workshopEntryAt: "2026-12-10T12:00:00Z", startedAt: "2026-12-10T12:00:00Z", entryOdometer: 88_000, entryHourmeter: null },
+    ])
+  })
+
+  it("la unidad efectiva sale del perfil fijado y, sin él, del tipo; la frecuencia es la de su unidad", async () => {
+    const options = await loadLookerOptions(GLOBAL)
+    expect(options.equipment.find((item) => item.id === T.hours)).toMatchObject({ unit: "h", frequency: 300 })
+    expect(options.equipment.find((item) => item.id === T.km)).toMatchObject({ unit: "km", frequency: 10_000 })
+  })
+
+  it("Camiones y Máquinas separan a los dos, y una URL con el otro no lo cruza", async () => {
+    const both = `${T.km},${T.hours}`
+    const trucks = await loadLookerContext(GLOBAL, { desde: DESDE, hasta: HASTA, pestana: "camiones", equipo: both }, HASTA)
+    expect(trucks.options.equipment.map((item) => item.id)).toContain(T.km)
+    expect(trucks.options.equipment.map((item) => item.id)).not.toContain(T.hours)
+    expect(trucks.filters.equipmentIds).toEqual([T.km])
+
+    const machines = await loadLookerContext(GLOBAL, { desde: DESDE, hasta: HASTA, pestana: "maquinas", equipo: both }, HASTA)
+    expect(machines.options.equipment.map((item) => item.id)).toContain(T.hours)
+    expect(machines.options.equipment.map((item) => item.id)).not.toContain(T.km)
+    expect(machines.filters.equipmentIds).toEqual([T.hours])
+  })
+
+  it("el correctivo toma el odómetro en Camiones y el horómetro de la OT en Máquinas", async () => {
+    const trucks = await loadCorrectivePage(GLOBAL, filters(DESDE, HASTA, "camiones"), {})
+    expect(trucks.rows.filter((row) => OWN.includes(row.vehicleId!)).map((row) => [row.id, row.unit, row.reading])).toEqual([
+      ["ot:ot-k", "km", 88_000],
+      ["r:rec-k-c", "km", 90_000],
+    ])
+
+    // La correctiva en km de un camión que ya mide en horas sigue contando, sin lectura en la unidad activa.
+    const machines = await loadCorrectivePage(GLOBAL, filters(DESDE, HASTA, "maquinas"), {})
+    expect(machines.rows.filter((row) => OWN.includes(row.vehicleId!)).map((row) => [row.id, row.unit, row.reading])).toEqual([
+      ["ot:ot-h", "h", 2_300],
+      ["r:rec-h-c-km", "h", null],
+    ])
+  })
+
+  it("el cumplimiento cuenta sólo las pautas de la unidad efectiva del equipo", async () => {
+    const machines = await loadComplianceChecks(GLOBAL, filters(DESDE, HASTA, "maquinas"), {})
+    expect(machines.filter((check) => OWN.includes(check.vehicleId!)).map((check) => [check.id, check.level])).toEqual([["r:rec-h-p-h", "300 h"]])
+
+    const trucks = await loadComplianceChecks(GLOBAL, filters(DESDE, HASTA, "camiones"), {})
+    expect(trucks.filter((check) => check.vehicleId === T.hours)).toEqual([])
+    expect(trucks.filter((check) => check.vehicleId === T.km).map((check) => [check.id, check.level])).toEqual([["r:rec-k-p", "10.000 km"]])
+  })
+})

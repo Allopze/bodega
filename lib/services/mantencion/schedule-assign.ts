@@ -8,14 +8,15 @@ import type { MantUnit } from "@/lib/mantencion/types"
 import { actorEquipmentScope, isWorksiteInScope } from "./access"
 import { scheduleChangeSummary } from "./equipment"
 import { writeEquipmentHistory, type MantActor } from "./equipment-history"
+import { effectiveMeterSql } from "./unit-sql"
 
 /**
- * Asignación de equipos a una pauta (§10). Sólo participan equipos ACTIVOS que
- * se miden en la unidad de la pauta: los marcados quedan con ella (los que
- * tenían otra, la cambian) y los desmarcados que la tenían quedan sin pauta. La
- * asignación no cambia la pauta, así que no publica una versión (el catálogo de
- * la app cambia por el equipo, no por la pauta). Escribe `schedule_change` en
- * el historial de cada equipo y una fila de auditoría.
+ * Asignación de equipos a una pauta (§10). Sólo participan equipos ACTIVOS cuya
+ * unidad EFECTIVA (la de su perfil o, si no, la de su tipo) es la de la pauta: los
+ * marcados quedan con ella (los que tenían otra, la cambian) y los desmarcados que
+ * la tenían quedan sin pauta. La asignación no cambia la pauta, así que no publica
+ * una versión (el catálogo de la app cambia por el equipo, no por la pauta).
+ * Escribe `schedule_change` en el historial de cada equipo y una fila de auditoría.
  */
 
 export interface AssignCandidate {
@@ -51,7 +52,7 @@ async function candidatesFor(client: Pick<Tx, "select">, unit: MantUnit): Promis
     .innerJoin(mantBrands, eq(mantBrands.id, mantEquipmentProfiles.brandId))
     .innerJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId))
     .leftJoin(mantSchedules, and(eq(mantSchedules.id, mantEquipmentProfiles.scheduleId), isNull(mantSchedules.deletedAt)))
-    .where(and(eq(fuelVehicles.isActive, true), eq(fuelEquipmentTypes.defaultMeterType, METER_OF_UNIT[unit])))
+    .where(and(eq(fuelVehicles.isActive, true), eq(effectiveMeterSql, METER_OF_UNIT[unit])))
     .orderBy(asc(worksites.name), asc(fuelVehicles.code))
   return rows.map((row) => ({ ...row, code: row.code ?? row.plate }))
 }

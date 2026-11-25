@@ -84,8 +84,11 @@ export const mantDrivers = pgTable("mant_drivers", {
  * Lo que la mantención necesita de un equipo de la flota y `fuel_vehicles` no
  * tiene. Un equipo entra al módulo cuando tiene esta fila.
  *
- * - La unidad (km/h) NO se guarda: se deriva del tipo
- *   (`fuel_equipment_types.default_meter_type`).
+ * - La unidad (km/h) del equipo es `unit` cuando está fijada; si es nula se deriva del tipo
+ *   (`fuel_equipment_types.default_meter_type`). Se guarda aquí, y no en `fuel_vehicles.meter_type`,
+ *   porque ese medidor es de Combustible (cambiarlo recalcula el rendimiento y reabre decisiones de
+ *   anomalías) y los camiones de producción miden en horas aunque su tipo sea de odómetro
+ *   (decisión del usuario, 2026-11-25). Ver `lib/mantencion/equipment-unit.ts`.
  * - La baja es `fuel_vehicles.is_active = false`; aquí sólo queda el motivo.
  * - `no_plate`: equipo sin patente; `fuel_vehicles.plate` guarda el código.
  * - `prior_preventive_*`: la última preventiva ANTERIOR a la plataforma, DECLARADA por
@@ -98,6 +101,8 @@ export const mantEquipmentProfiles = pgTable("mant_equipment_profiles", {
   vehicleId:          text("vehicle_id").primaryKey().references(() => fuelVehicles.id, { onDelete: "restrict" }),
   brandId:            text("brand_id").notNull().references(() => mantBrands.id, { onDelete: "restrict" }),
   scheduleId:         text("schedule_id").references(() => mantSchedules.id, { onDelete: "set null" }),
+  /** `km` u `h`; nulo = la del tipo del equipo. Las lecturas, la pauta y la lectura inicial van en esta unidad. */
+  unit:               text("unit"),
   initialReading:     numeric("initial_reading", { precision: 14, scale: 1, mode: "number" }),
   initialReadingDate: text("initial_reading_date"),
   noPlate:            boolean("no_plate").notNull().default(false),
@@ -119,6 +124,7 @@ export const mantEquipmentProfiles = pgTable("mant_equipment_profiles", {
 }, (table) => [
   index("mant_equipment_profiles_schedule_idx").on(table.scheduleId),
   index("mant_equipment_profiles_brand_idx").on(table.brandId),
+  check("mant_equipment_profiles_unit_valid", sql`${table.unit} IS NULL OR ${table.unit} IN ('km', 'h')`),
   check("mant_equipment_profiles_initial_reading_valid", sql`${table.initialReading} IS NULL OR ${table.initialReading} >= 0`),
   check("mant_equipment_profiles_initial_reading_date", sql`(${table.initialReading} IS NULL) = (${table.initialReadingDate} IS NULL)`),
   // Nombre explícito: el automático (`…_prior_preventive_declared_by_users_id_fk`) pasa de los 63 bytes.

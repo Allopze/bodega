@@ -21,6 +21,7 @@ import {
   type VehicleIdentity,
 } from "./equipment-resolve"
 import { unitName } from "@/lib/mantencion/format"
+import { maintenanceUnitOfMeter } from "@/lib/mantencion/padron-identity"
 import { getCurrentScheduleSnapshots } from "./schedule-versions"
 import { todayInChile } from "@/lib/utils"
 import { FUEL_VEHICLE_CODE_UNIQUE, duplicateEquipmentCodeMessage } from "@/lib/services/fleet-vehicle-code"
@@ -134,7 +135,7 @@ export async function applyCreate(
       .limit(1)
     if (row) {
       before = {
-        code: row.code ?? "", plate: row.plate, noPlate: false, type: row.typeName, brand: row.brand ?? "",
+        code: row.code ?? "", plate: row.plate, noPlate: false, type: row.typeName, unit: null, brand: row.brand ?? "",
         model: row.model, year: row.year, worksite: row.worksiteName, schedule: null, initialReading: null, initialReadingDate: null,
       }
     }
@@ -179,6 +180,8 @@ export async function applyCreate(
   await tx.insert(mantEquipmentProfiles).values({
     vehicleId,
     brandId: resolved.brand.id,
+    // La unidad de Mantención se fija en el alta (camión de Biodiversa en km; los demás camiones, en horas).
+    unit: resolved.unit,
     scheduleId: resolved.schedule?.id ?? null,
     initialReading: resolved.initialReading,
     initialReadingDate: resolved.initialReadingDate,
@@ -275,7 +278,13 @@ export async function applyUpdate(
   // Red de seguridad: la validación de filas ya rechaza un cambio de faena; si uno llegara hasta aquí, no se escribe.
   if (EQUIPMENT_FIELD_LABELS.worksite in changes) throw new Error(USE_TRANSFER_MESSAGE)
   const now = new Date().toISOString()
-  const unitChanged = resolved.type.unit !== current.unit
+  // El medidor de Combustible sólo se reescribe si cambia la unidad DEL TIPO (tipo anterior frente al nuevo), como antes.
+  // La unidad de Mantención del equipo va en su perfil y esto no la toca: un camión en horas con tipo de odómetro
+  // no debe disparar aquí una escritura de Combustible en cada importación.
+  const [previousType] = await tx.select({ meterType: fuelEquipmentTypes.defaultMeterType }).from(fuelEquipmentTypes)
+    .where(eq(fuelEquipmentTypes.id, current.equipmentTypeId)).limit(1)
+  const typeUnitChanged = maintenanceUnitOfMeter(previousType?.meterType ?? "none") !== resolved.type.unit
+  const unitChanged = resolved.unit !== current.unit
   await tx.update(fuelVehicles).set({
     code: resolved.code,
     plate: resolved.plate,
@@ -286,7 +295,7 @@ export async function applyUpdate(
     year: resolved.year,
     // La faena no se escribe: sólo cambia por traslado (la planilla ya rechaza la fila que la cambia).
     // Cambiar a un tipo de otra unidad (sólo posible sin registros) lleva sus defaults de medidor.
-    ...(unitChanged ? { meterType: resolved.type.meterType, performanceUnit: resolved.type.performanceUnit } : {}),
+    ...(typeUnitChanged ? { meterType: resolved.type.meterType, performanceUnit: resolved.type.performanceUnit } : {}),
     updatedAt: now,
   }).where(eq(fuelVehicles.id, current.vehicleId))
   await tx.update(mantEquipmentProfiles).set({
@@ -295,6 +304,8 @@ export async function applyUpdate(
     initialReading: resolved.initialReading,
     initialReadingDate: resolved.initialReadingDate,
     noPlate: resolved.noPlate,
+    // Con un cambio de unidad, el perfil sube su `updated_at` (la ETag del historial de la app del mecánico lo usa).
+    ...(unitChanged ? { unit: resolved.unit } : {}),
     updatedAt: now,
     updatedBy: actor.userId,
   }).where(eq(mantEquipmentProfiles.vehicleId, current.vehicleId))
@@ -580,10 +591,13 @@ export async function applyFleetIdentity(
 ): Promise<boolean> {
   const changes = diffEquipmentFields(current.fields, resolved.fields)
   if (Object.keys(changes).length === 0) return false
-  if (resolved.brand.id !== current.brandId || resolved.noPlate !== current.fields.noPlate) {
+  // La unidad de Mantención también es del perfil: cambia sólo si el equipo no está fijado a la suya y cambia el tipo.
+  const unitChanged = resolved.unit !== current.unit
+  if (resolved.brand.id !== current.brandId || resolved.noPlate !== current.fields.noPlate || unitChanged) {
     await tx.update(mantEquipmentProfiles).set({
       brandId: resolved.brand.id,
       noPlate: resolved.noPlate,
+      ...(unitChanged ? { unit: resolved.unit } : {}),
       updatedAt: new Date().toISOString(),
       updatedBy: actor.userId,
     }).where(eq(mantEquipmentProfiles.vehicleId, current.vehicleId))

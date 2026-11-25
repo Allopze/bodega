@@ -6,9 +6,11 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 
 /** Las listas del formulario del padrón, ya en la forma que pide `VehicleForm`. */
 export interface VehicleFormCatalogs {
-  worksites: Array<{ id: string; name: string }>
+  /** `code` (p. ej. `BIODIVERSA`) decide la unidad de un camión según su faena (`equipment-unit.ts`). */
+  worksites: Array<{ id: string; name: string; code: string }>
   users: Array<{ id: string; name: string }>
-  equipmentTypes: Array<{ id: string; name: string; category: string; defaultMeterType: string; defaultPerformanceUnit: string; isActive: boolean }>
+  /** `performanceFamily` (`camiones`) decide con la faena la unidad de Mantención del tipo. */
+  equipmentTypes: Array<{ id: string; name: string; category: string; defaultMeterType: string; defaultPerformanceUnit: string; performanceFamily: string | null; isActive: boolean }>
   suppliers: Array<{ id: string; name: string }>
   products: Array<{ id: string; name: string; unit: string; isActive: boolean }>
 }
@@ -33,7 +35,7 @@ export async function loadVehicleFormCatalogs(session: Session): Promise<Vehicle
     db.query.fuelProducts.findMany({ orderBy: [fuelProducts.name] }),
   ])
   return {
-    worksites: worksitesList.map((item) => ({ id: item.id, name: item.name })),
+    worksites: worksitesList.map((item) => ({ id: item.id, name: item.name, code: item.code })),
     users: usersList.map((item) => ({ id: item.id, name: item.name })),
     equipmentTypes: equipmentTypes.map((item) => ({
       id: item.id,
@@ -41,6 +43,7 @@ export async function loadVehicleFormCatalogs(session: Session): Promise<Vehicle
       category: item.category,
       defaultMeterType: item.defaultMeterType,
       defaultPerformanceUnit: item.defaultPerformanceUnit,
+      performanceFamily: item.performanceFamily ?? null,
       isActive: item.isActive,
     })),
     suppliers: suppliers.map((item) => ({ id: item.id, name: item.name })),

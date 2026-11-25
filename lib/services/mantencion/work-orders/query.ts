@@ -14,6 +14,7 @@ import { todayInChile } from "@/lib/utils"
 import { canSeeRecord, recordVisibility, type MantViewer } from "../access"
 import { listMantCatalogs } from "../catalogs"
 import { unitFromMeter } from "../fleet"
+import { effectiveMeterSql } from "../unit-sql"
 import {
   allowedTransitions, canEditExecution, canEditRequest, canReclassifyWorkOrder, canRegisterWorkOrderRecord, canSeeWorkOrder,
   vehicleNowInWorksitesSql, workOrderVisibility, workOrderVisibilitySql,
@@ -306,7 +307,8 @@ export async function listWorkOrderEquipmentOptions(viewer: MantViewer): Promise
       code: fuelVehicles.code,
       plate: fuelVehicles.plate,
       typeName: fuelEquipmentTypes.name,
-      meterType: fuelEquipmentTypes.defaultMeterType,
+      // Unidad efectiva (perfil o tipo): la OT pide la lectura en la unidad del equipo.
+      meterType: effectiveMeterSql,
       worksiteId: fuelVehicles.worksiteId,
       worksiteName: worksites.name,
     })

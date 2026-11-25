@@ -1,14 +1,15 @@
 import { and, eq, isNull } from "drizzle-orm"
 import {
   fuelEquipmentTypes, fuelVehicles, mantEquipmentHistory, mantEquipmentProfiles, roles, userInvitations, userRoles,
-  users, worksiteUsers, type MantFieldChanges,
+  users, worksiteUsers, worksites, type MantFieldChanges,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
+import { defaultMaintenanceUnit } from "@/lib/mantencion/equipment-unit"
+import { unitName } from "@/lib/mantencion/format"
 import { cleanName, nameKey, normalizeCode, resolvePlate } from "@/lib/mantencion/normalize"
 import type { SeedContext, SeededType, WorksiteMap } from "./seed"
 import type { SeededSchedule } from "./seed-schedules"
-import { unitFromMeter } from "./fleet"
 
 /**
  * Carga de los 120 equipos y de los mecánicos (§13).
@@ -39,6 +40,8 @@ export async function seedEquipment(
   const fleetTypes = await tx.select().from(fuelEquipmentTypes)
   const typeById = new Map(fleetTypes.map((type) => [type.id, type]))
   const worksiteName = new Map([...lookups.worksites.values()].map((worksite) => [worksite.id, worksite.name]))
+  // Código de cada faena: con él se sabe si un camión mide en kilómetros (Biodiversa) o en horas (decisión 2026-11-25).
+  const worksiteCode = new Map((await tx.select({ id: worksites.id, code: worksites.code }).from(worksites)).map((row) => [row.id, row.code]))
 
   const vehicles = await tx.select().from(fuelVehicles)
   const byCode = new Map<string, Vehicle[]>()
@@ -83,7 +86,10 @@ export async function seedEquipment(
       vehicleId = found.id
       stats.existing++
       const foundType = typeById.get(found.equipmentTypeId)
-      vehicleUnit = unitFromMeter(foundType?.defaultMeterType ?? "none") ?? type.unit
+      // Si el equipo aún no tiene perfil, éste nace con la unidad de alta: la de su tipo en su faena (equipment-unit.ts).
+      vehicleUnit = defaultMaintenanceUnit({
+        typeMeterType: foundType?.defaultMeterType ?? "none", typeFamily: foundType?.performanceFamily ?? null, worksiteCode: worksiteCode.get(found.worksiteId) ?? null,
+      }) ?? type.unit
       const fill: Partial<VehicleInsert> = {}
       const changes: MantFieldChanges = {}
       const diff = (field: string, fleet: string, seed: string) => stats.differences.push({ code, field, fleet, seed })
@@ -119,6 +125,9 @@ export async function seedEquipment(
     } else {
       vehicleId = nanoid()
       stats.created++
+      vehicleUnit = defaultMaintenanceUnit({
+        typeMeterType: type.meterType, typeFamily: typeById.get(type.id)?.performanceFamily ?? null, worksiteCode: worksiteCode.get(worksite.id) ?? null,
+      }) ?? type.unit
       const row: VehicleInsert = {
         id: vehicleId, plate: plate.plate, code, type: type.name, equipmentTypeId: type.id,
         meterType: type.meterType, performanceUnit: type.performanceUnit,
@@ -133,8 +142,8 @@ export async function seedEquipment(
     withProfile.add(vehicleId)
     // Una pauta en km sobre un equipo cuyo tipo en flota se mide en h rompería el estado: se deja sin pauta y se avisa.
     const scheduleFits = schedule.unit === vehicleUnit
-    if (!scheduleFits) stats.differences.push({ code, field: "pauta", fleet: `su tipo en flota se mide en ${vehicleUnit}`, seed: `${schedule.name} (${schedule.unit}); queda sin pauta` })
-    newProfiles.push({ vehicleId, brandId: brand.id, scheduleId: scheduleFits ? schedule.id : null, noPlate: plate.noPlate, updatedBy: actorUserId })
+    if (!scheduleFits) stats.differences.push({ code, field: "pauta", fleet: `su unidad de medida es ${unitName(vehicleUnit)}`, seed: `${schedule.name} (${unitName(schedule.unit)}); queda sin pauta` })
+    newProfiles.push({ vehicleId, brandId: brand.id, unit: vehicleUnit, scheduleId: scheduleFits ? schedule.id : null, noPlate: plate.noPlate, updatedBy: actorUserId })
     stats.profilesCreated++
     history.push({
       id: nanoid(), vehicleId, action: "import", userId: actorUserId, changes: {},

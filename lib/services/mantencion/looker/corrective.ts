@@ -3,7 +3,8 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from
 import { unionAll } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
-  fuelEquipmentTypes, fuelVehicles, mantHistoricalRecords, mantRecordCorrectives, mantRecordPhotos, mantRecords, mantWorkOrders, worksites,
+  fuelEquipmentTypes, fuelVehicles, mantEquipmentProfiles, mantHistoricalRecords, mantRecordCorrectives, mantRecordPhotos, mantRecords,
+  mantWorkOrders, worksites,
 } from "@/db/schema"
 import { resolveMantencionFile } from "@/lib/storage/config"
 import { worksiteScopeSqlFor } from "@/lib/auth/scope"
@@ -12,9 +13,10 @@ import { nameKey } from "@/lib/mantencion/normalize"
 import type { MantUnit } from "@/lib/mantencion/types"
 import { recordVisibility, recordVisibilitySql, type MantViewer } from "../access"
 import { unitFromMeter } from "../fleet"
+import { effectiveMeterSql } from "../unit-sql"
 import { workOrderVisibility, workOrderVisibilitySql } from "../work-orders/access"
 import { queryFilters } from "./filters"
-import { effectiveWorksiteIds } from "./resolve"
+import { effectiveWorksiteIds, recordInEquipmentUnitSql } from "./resolve"
 import type {
   CorrectivePage, CorrectiveSummary, CorrectiveWorkRow, CrossDimension, DriverRow, EquipmentSeriesRow,
   LookerFilters, ResolvedCrossFilters,
@@ -28,9 +30,11 @@ import type {
  * - `ot`: órdenes no anuladas que ya entraron a taller (una OT sin ingreso todavía no es trabajo).
  * - `registro`: correctivas firmadas en la plataforma sin OT, desde el corte.
  *
- * La pestaña Camiones filtra `unit = km` y Máquinas `unit = h`: el correctivo de máquinas no se
- * duplica con el de camiones. El alcance por faena y la visibilidad de OT/registros se aplican en
- * cada rama; los filtros de la barra se aplican además sobre la unión.
+ * La pestaña Camiones filtra `unit = km` y Máquinas `unit = h`, con la unidad EFECTIVA del equipo
+ * (la de su perfil de Mantención o, si no, la de su tipo): el correctivo de máquinas no se duplica
+ * con el de camiones. Un registro nativo de otra unidad conserva el trabajo, pero su lectura no sale
+ * en la unidad activa. El alcance por faena y la visibilidad de OT/registros se aplican en cada
+ * rama; los filtros de la barra se aplican además sobre la unión.
  */
 
 const PAGE_SIZE = 25
@@ -82,7 +86,7 @@ function buildBranches(viewer: MantViewer, filters: LookerFilters, query: Return
     code: sql<string>`coalesce(${fuelVehicles.code}, ${mantHistoricalRecords.equipmentText}, '')`.as("code"),
     plate: sql<string>`coalesce(${fuelVehicles.plate}, '')`.as("plate"),
     typeName: sql<string | null>`${fuelEquipmentTypes.name}`.as("typeName"),
-    unit: sql<string | null>`${fuelEquipmentTypes.defaultMeterType}`.as("unit"),
+    unit: effectiveMeterSql.as("unit"),
     reading: sql<number | null>`NULL::numeric`.as("reading"),
     readingText: sql<string | null>`nullif(btrim(${mantHistoricalRecords.readingText}), '')`.as("readingText"),
     reference: sql<string>`coalesce(${mantHistoricalRecords.orderText}, '')`.as("reference"),
@@ -97,6 +101,7 @@ function buildBranches(viewer: MantViewer, filters: LookerFilters, query: Return
     .from(mantHistoricalRecords)
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantHistoricalRecords.vehicleId))
     .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
+    .leftJoin(mantEquipmentProfiles, eq(mantEquipmentProfiles.vehicleId, fuelVehicles.id))
     .leftJoin(worksites, eq(worksites.id, mantHistoricalRecords.worksiteId))
     .where(and(
       eq(mantHistoricalRecords.isTest, false),
@@ -105,7 +110,7 @@ function buildBranches(viewer: MantViewer, filters: LookerFilters, query: Return
       sql`${HISTORICAL_DATE} < ${FORMS_CUTOVER_DATE}`,
       worksiteScopeSqlFor(scope, mantHistoricalRecords.worksiteId),
       vehicleIds.length ? inArray(mantHistoricalRecords.vehicleId, vehicleIds) : undefined,
-      meterType ? eq(fuelEquipmentTypes.defaultMeterType, meterType) : undefined,
+      meterType ? eq(effectiveMeterSql, meterType) : undefined,
     ))
 
   const orders = db.select({
@@ -117,8 +122,8 @@ function buildBranches(viewer: MantViewer, filters: LookerFilters, query: Return
     code: sql<string>`coalesce(${fuelVehicles.code}, '')`.as("code"),
     plate: sql<string>`coalesce(${fuelVehicles.plate}, '')`.as("plate"),
     typeName: sql<string | null>`${fuelEquipmentTypes.name}`.as("typeName"),
-    unit: sql<string | null>`${fuelEquipmentTypes.defaultMeterType}`.as("unit"),
-    reading: sql<number | null>`case when ${fuelEquipmentTypes.defaultMeterType} = 'odometer' then ${mantWorkOrders.entryOdometer} else ${mantWorkOrders.entryHourmeter} end`.as("reading"),
+    unit: effectiveMeterSql.as("unit"),
+    reading: sql<number | null>`case when ${effectiveMeterSql} = 'odometer' then ${mantWorkOrders.entryOdometer} else ${mantWorkOrders.entryHourmeter} end`.as("reading"),
     readingText: sql<string | null>`NULL::text`.as("readingText"),
     reference: sql<string>`${mantWorkOrders.folio}`.as("reference"),
     workPerformed: sql<string>`coalesce(${mantWorkOrders.workPerformed}, ${mantWorkOrders.repairDescription}, ${mantWorkOrders.observations}, '')`.as("workPerformed"),
@@ -133,6 +138,7 @@ function buildBranches(viewer: MantViewer, filters: LookerFilters, query: Return
     .from(mantWorkOrders)
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantWorkOrders.vehicleId))
     .innerJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
+    .leftJoin(mantEquipmentProfiles, eq(mantEquipmentProfiles.vehicleId, fuelVehicles.id))
     .innerJoin(worksites, eq(worksites.id, mantWorkOrders.worksiteId))
     .where(and(
       ne(mantWorkOrders.status, "anulada"),
@@ -142,7 +148,7 @@ function buildBranches(viewer: MantViewer, filters: LookerFilters, query: Return
       workOrderVisibilitySql(workOrderVisibility(viewer)),
       worksiteScopeSqlFor(scope, mantWorkOrders.worksiteId),
       vehicleIds.length ? inArray(mantWorkOrders.vehicleId, vehicleIds) : undefined,
-      meterType ? eq(fuelEquipmentTypes.defaultMeterType, meterType) : undefined,
+      meterType ? eq(effectiveMeterSql, meterType) : undefined,
     ))
 
   const records = db.select({
@@ -154,8 +160,9 @@ function buildBranches(viewer: MantViewer, filters: LookerFilters, query: Return
     code: sql<string>`coalesce(${fuelVehicles.code}, '')`.as("code"),
     plate: sql<string>`coalesce(${fuelVehicles.plate}, '')`.as("plate"),
     typeName: sql<string | null>`${fuelEquipmentTypes.name}`.as("typeName"),
-    unit: sql<string | null>`${fuelEquipmentTypes.defaultMeterType}`.as("unit"),
-    reading: sql<number | null>`${mantRecords.reading}`.as("reading"),
+    unit: effectiveMeterSql.as("unit"),
+    // El trabajo cuenta aunque el registro sea de la unidad anterior; su lectura sólo sale si va en la activa.
+    reading: sql<number | null>`case when ${recordInEquipmentUnitSql} then ${mantRecords.reading} end`.as("reading"),
     readingText: sql<string | null>`NULL::text`.as("readingText"),
     reference: sql<string>`coalesce(${mantRecords.folio}, '')`.as("reference"),
     workPerformed: sql<string>`coalesce(${mantRecordCorrectives.description}, '')`.as("workPerformed"),
@@ -170,6 +177,7 @@ function buildBranches(viewer: MantViewer, filters: LookerFilters, query: Return
     .innerJoin(mantRecordCorrectives, eq(mantRecordCorrectives.recordId, mantRecords.id))
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantRecords.vehicleId))
     .innerJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
+    .leftJoin(mantEquipmentProfiles, eq(mantEquipmentProfiles.vehicleId, fuelVehicles.id))
     .innerJoin(worksites, eq(worksites.id, mantRecords.worksiteId))
     .where(and(
       eq(mantRecords.kind, "C"),
@@ -181,7 +189,7 @@ function buildBranches(viewer: MantViewer, filters: LookerFilters, query: Return
       recordVisibilitySql(recordVisibility(viewer)),
       worksiteScopeSqlFor(scope, mantRecords.worksiteId),
       vehicleIds.length ? inArray(mantRecords.vehicleId, vehicleIds) : undefined,
-      meterType ? eq(fuelEquipmentTypes.defaultMeterType, meterType) : undefined,
+      meterType ? eq(effectiveMeterSql, meterType) : undefined,
     ))
 
   return { historical, orders, records, scope, meterType }

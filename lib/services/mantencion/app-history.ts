@@ -11,6 +11,7 @@ import { workshopState } from "@/lib/mantencion/status"
 import type { MantExecutorKind, MantItemValue, MantPhotoKind, MantRecordKind, MantUnit } from "@/lib/mantencion/types"
 import { todayInChile } from "@/lib/utils"
 import type { MantViewer } from "./access"
+import { effectiveUnitSql } from "./fleet"
 import { groupJobs } from "./records-jobs"
 
 /**
@@ -46,8 +47,10 @@ type RankedRow = {
 /**
  * Los registros a enviar: ventana por equipo sobre los vigentes de los equipos
  * ACTIVOS de la flota (mismo criterio que `loadFleet`: con ficha de mantención,
- * `fuel_vehicles.is_active` y un medidor que la app sepa leer). Desempate
- * estable: fecha del trabajo, recepción, id.
+ * `fuel_vehicles.is_active` y una unidad que la app sepa leer). Sólo cuentan los
+ * registros de la unidad EFECTIVA del equipo (la de su perfil o, si no, la de su
+ * tipo): un registro en km de un camión que hoy mide en horas no se mezcla en su
+ * historial. Desempate estable: fecha del trabajo, recepción, id.
  */
 async function selectRecords(): Promise<RankedRow[]> {
   const ranked = db
@@ -62,7 +65,8 @@ async function selectRecords(): Promise<RankedRow[]> {
     .where(and(
       eq(mantRecords.status, "vigente"),
       eq(fuelVehicles.isActive, true),
-      inArray(fuelEquipmentTypes.defaultMeterType, ["odometer", "hour_meter"]),
+      // Sólo los registros de la unidad efectiva del equipo (nulo si su medidor no es odómetro ni horómetro).
+      eq(mantRecords.unit, effectiveUnitSql),
     ))
     .as("ranked")
 

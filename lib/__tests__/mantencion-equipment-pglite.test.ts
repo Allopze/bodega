@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import ExcelJS from "exceljs"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import path from "node:path"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
@@ -34,12 +34,14 @@ const {
 type EquipmentInput = import("@/lib/services/mantencion/equipment").EquipmentInput
 type FleetIdentityInput = import("@/lib/services/mantencion/equipment").FleetIdentityInput
 const { listEquipmentHistory } = await import("@/lib/services/mantencion/equipment-history")
+const { setEquipmentUnit } = await import("@/lib/services/mantencion/equipment-unit-change")
 const { previewEquipmentImport, commitEquipmentImport, buildEquipmentTemplate, similarName } = await import("@/lib/services/mantencion/equipment-import")
 
 const actor = { userId: "u-jefe-eq", email: "jefe@example.test" }
-const T = { km: "t-camion", h: "t-excavadora", none: "t-estanque" } as const
+// `camion` y `tracto` son de la familia camiones: su unidad depende de la faena (Biodiversa, km; las demás, horas).
+const T = { km: "t-camion", h: "t-excavadora", none: "t-estanque", camion: "t-camion-prod", tracto: "t-tracto-prod" } as const
 const B = { scania: "b-scania", volvo: "b-volvo" } as const
-const WS = { arauco: "ws-arauco", cholguan: "ws-cholguan", teno: "ws-teno" } as const
+const WS = { arauco: "ws-arauco", cholguan: "ws-cholguan", teno: "ws-teno", bio: "ws-biodiversa" } as const
 
 function input(overrides: Partial<EquipmentInput> = {}): EquipmentInput {
   return {
@@ -109,11 +111,14 @@ beforeAll(async () => {
     { id: WS.arauco, name: "Arauco", code: "FN-ARA", isActive: true },
     { id: WS.cholguan, name: "Cholguan", code: "FN-CHO", isActive: true },
     { id: WS.teno, name: "Teno", code: "FN-TEN", isActive: false },
+    { id: WS.bio, name: "Biodiversa", code: "BIODIVERSA", isActive: true },
   ])
   await testDb.insert(schema.fuelEquipmentTypes).values([
     { id: T.km, slug: "test-camion", name: "Camión (prueba)", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter" },
     { id: T.h, slug: "test-excavadora", name: "Excavadora (prueba)", category: "heavy", defaultMeterType: "hour_meter", defaultPerformanceUnit: "liters_per_hour" },
     { id: T.none, slug: "test-estanque", name: "Estanque (prueba)", category: "storage", defaultMeterType: "none", defaultPerformanceUnit: "not_applicable" },
+    { id: T.camion, slug: "test-camion-prod", name: "Camión producción (prueba)", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter", performanceFamily: "camiones" },
+    { id: T.tracto, slug: "test-tracto-prod", name: "Tractocamión (prueba)", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter", performanceFamily: "camiones" },
   ])
   await testDb.insert(schema.mantBrands).values([
     { id: B.scania, name: "Scania", nameKey: "scania" },
@@ -672,5 +677,186 @@ describe("EQN-1: preventiva declarada en un equipo con registros y sin lectura i
     expect(currents.get("KA-703")).toMatchObject({ recordCount: 3, activeRecordCount: 2, firstActiveRecord: { date: "2026-10-05", reading: 4_500 } })
     expect(currents.get("KA-705")).toMatchObject({ recordCount: 1, activeRecordCount: 0, firstActiveRecord: null })
     expect(currents.get("KA-610")).toMatchObject({ recordCount: 1, activeRecordCount: 1 })
+  })
+})
+
+// Decisión del usuario (2026-11-25): la unidad de un equipo de Mantención es la de su perfil. Un camión de producción
+// mide en horas aunque su tipo sea de odómetro, y uno de Biodiversa en km. Combustible no cambia: su medidor es otro.
+describe("unidad de medida del equipo: camiones de producción en horas, Biodiversa en km", () => {
+  async function fuelRow(vehicleId: string) {
+    const [row] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, vehicleId))
+    return row!
+  }
+  /** Compara `updated_at` del perfil en la base: su texto no es ISO, así que no se compara en JS. */
+  async function profileUpdatedAfter(vehicleId: string, instant: string): Promise<boolean> {
+    const [row] = await testDb
+      .select({ after: sql<boolean>`${schema.mantEquipmentProfiles.updatedAt} > ${instant}::timestamptz` })
+      .from(schema.mantEquipmentProfiles)
+      .where(eq(schema.mantEquipmentProfiles.vehicleId, vehicleId))
+    return row?.after === true
+  }
+  async function setOldUpdatedAt(vehicleId: string) {
+    await testDb.update(schema.mantEquipmentProfiles).set({ updatedAt: "2020-01-01T00:00:00.000Z" }).where(eq(schema.mantEquipmentProfiles.vehicleId, vehicleId))
+  }
+
+  it("(a) el alta de un camión: en una faena que no es Biodiversa mide en horas; en Biodiversa, en km; el medidor de Combustible queda como el del tipo", async () => {
+    const otra = await createdId(await createEquipment(actor, input({ code: "CM-100", plate: "BCDG-10", equipmentTypeId: T.camion, worksiteId: WS.arauco })))
+    const bio = await createdId(await createEquipment(actor, input({ code: "CM-101", plate: "BCDG-11", equipmentTypeId: T.tracto, worksiteId: WS.bio })))
+    expect(await profileOf(otra)).toMatchObject({ unit: "h" })
+    expect(await profileOf(bio)).toMatchObject({ unit: "km" })
+    expect(await fuelRow(otra)).toMatchObject({ meterType: "odometer", performanceUnit: "km_per_liter" })
+    expect(await fuelRow(bio)).toMatchObject({ meterType: "odometer", performanceUnit: "km_per_liter" })
+  })
+
+  it("(b) editar otros campos de un camión en horas no lo devuelve a km ni toca el medidor de Combustible", async () => {
+    const id = await createdId(await createEquipment(actor, input({ code: "CM-102", plate: "BCDG-18", equipmentTypeId: T.camion, worksiteId: WS.arauco })))
+    const fuelBefore = await fuelRow(id)
+    expect(await editIdentity(id, { model: "FH 540", year: 2023 })).toMatchObject({ ok: true })
+    expect(await updateEquipmentPlan(actor, id, { scheduleId: null, initialReading: 2_000, initialReadingDate: "2026-10-01" }, { active: true, retiredReason: "" })).toMatchObject({ ok: true })
+    expect(await profileOf(id)).toMatchObject({ unit: "h", initialReading: 2_000 })
+    expect(await fuelRow(id)).toMatchObject({ equipmentTypeId: T.camion, meterType: fuelBefore.meterType, performanceUnit: fuelBefore.performanceUnit })
+  })
+
+  it("(c) un camión en horas con registros puede pasar de «Camión» a «Tractocamión»: sigue en horas", async () => {
+    const id = await createdId(await createEquipment(actor, input({ code: "CM-103", plate: "BCDG-13", equipmentTypeId: T.camion, worksiteId: WS.arauco })))
+    await testDb.insert(schema.mantRecords).values({
+      id: "rec-cm-103", kind: "C", vehicleId: id, equipmentSnapshot: { code: "CM-103", plate: "BCDG-13", noPlate: false, type: "Camión", brand: "Scania", model: null, year: null, worksite: "Arauco", unit: "h" },
+      worksiteId: WS.arauco, reading: 1_500, unit: "h", workDate: "2026-10-10", registeredBy: actor.userId, executorKind: "yo", executorUserId: actor.userId,
+      executorName: "Jefatura Equipos", signedAt: "2026-10-10T12:00:00.000Z",
+    })
+    const result = await editIdentity(id, { equipmentTypeId: T.tracto })
+    expect(result && result.ok && result.resolved).toMatchObject({ type: { id: T.tracto }, unit: "h" })
+    expect(await profileOf(id)).toMatchObject({ unit: "h" })
+    expect(await fuelRow(id)).toMatchObject({ equipmentTypeId: T.tracto, meterType: "odometer" })
+  })
+
+  it("(d) una pauta en km se rechaza para un camión en horas; la de horas se acepta, y en Biodiversa la de km", async () => {
+    const rejected = await createEquipment(actor, input({ code: "CM-104", plate: "BCDG-14", equipmentTypeId: T.camion, worksiteId: WS.arauco, scheduleId: scheduleKm }))
+    expect(rejected).toMatchObject({ ok: false, fieldErrors: { scheduleId: "Esa pauta se mide en kilómetros y el equipo en horas." } })
+    const accepted = await createdId(await createEquipment(actor, input({ code: "CM-104", plate: "BCDG-14", equipmentTypeId: T.camion, worksiteId: WS.arauco, scheduleId: scheduleH })))
+    expect(await profileOf(accepted)).toMatchObject({ unit: "h", scheduleId: scheduleH })
+    const bio = await createdId(await createEquipment(actor, input({ code: "CM-105", plate: "BCDG-15", equipmentTypeId: T.camion, worksiteId: WS.bio, scheduleId: scheduleKm })))
+    expect(await profileOf(bio)).toMatchObject({ unit: "km", scheduleId: scheduleKm })
+  })
+
+  it("el perfil sube su updated_at cuando cambia la unidad: por el cambio de tipo del padrón y por setEquipmentUnit", async () => {
+    const id = await createdId(await createEquipment(actor, input({ code: "CM-106", plate: "BCDG-16", equipmentTypeId: T.km, worksiteId: WS.arauco })))
+    await setOldUpdatedAt(id)
+    expect(await profileUpdatedAfter(id, "2020-01-01T00:00:00Z")).toBe(false)
+    // De odómetro a horas, sin registros ni pauta: la unidad del tipo nuevo, y el perfil lo registra.
+    const padron = await editIdentity(id, { equipmentTypeId: T.h })
+    expect(padron && padron.ok && padron.resolved.unit).toBe("h")
+    expect(await profileOf(id)).toMatchObject({ unit: "h" })
+    expect(await profileUpdatedAfter(id, "2020-01-01T00:00:00Z")).toBe(true)
+
+    await setOldUpdatedAt(id)
+    const changed = await testDb.transaction((tx) => setEquipmentUnit(tx, actor, { vehicleId: id, unit: "km", reason: "Se mide en kilómetros según jefatura" }))
+    expect(changed).toMatchObject({ ok: true, data: { changed: true, unit: "km" } })
+    expect(await profileUpdatedAfter(id, "2020-01-01T00:00:00Z")).toBe(true)
+  })
+
+  describe("setEquipmentUnit: el cambio de unidad de una sola vez", () => {
+    const REASON = "Se mide en kilómetros según jefatura"
+    let id = ""
+
+    it("cambia la unidad, libera la pauta y limpia la lectura inicial y la preventiva declarada; conserva los registros; deja historial y auditoría; no toca Combustible", async () => {
+      id = await createdId(await createEquipment(actor, input({ code: "CM-200", plate: "BCDG-20", equipmentTypeId: T.camion, worksiteId: WS.arauco, scheduleId: scheduleH, initialReading: 1_000, initialReadingDate: "2026-09-01" })))
+      expect(await updateEquipmentPlan(actor, id, {
+        scheduleId: scheduleH, initialReading: 1_000, initialReadingDate: "2026-09-01",
+        priorPreventive: { date: "2026-08-15", reading: 900, intervalValue: 300, evidence: "OT 12345" },
+      }, { active: true, retiredReason: "" })).toMatchObject({ ok: true })
+      await testDb.insert(schema.mantRecords).values({
+        id: "rec-cm-200", kind: "C", vehicleId: id, equipmentSnapshot: { code: "CM-200", plate: "BCDG-20", noPlate: false, type: "Camión", brand: "Scania", model: null, year: null, worksite: "Arauco", unit: "h" },
+        worksiteId: WS.arauco, reading: 1_100, unit: "h", workDate: "2026-10-10", registeredBy: actor.userId, executorKind: "yo", executorUserId: actor.userId,
+        executorName: "Jefatura Equipos", signedAt: "2026-10-10T12:00:00.000Z",
+      })
+      const fuelBefore = await fuelRow(id)
+      const auditsBefore = (await audits("mant_equipment", id)).length
+      const historyBefore = (await listEquipmentHistory(id)).length
+
+      const result = await testDb.transaction((tx) => setEquipmentUnit(tx, actor, { vehicleId: id, unit: "km", reason: REASON }))
+      expect(result).toMatchObject({ ok: true, data: { changed: true, unit: "km" } })
+      expect(await profileOf(id)).toMatchObject({
+        unit: "km", scheduleId: null, initialReading: null, initialReadingDate: null,
+        priorPreventiveDate: null, priorPreventiveReading: null, priorPreventiveInterval: null, priorPreventiveEvidence: null,
+        priorPreventiveDeclaredBy: null, priorPreventiveSource: null,
+      })
+      // Los registros siguen como se midieron: son historia, no se anulan ni se reescriben.
+      const records = await testDb.select().from(schema.mantRecords).where(eq(schema.mantRecords.vehicleId, id))
+      expect(records).toEqual([expect.objectContaining({ id: "rec-cm-200", status: "vigente", unit: "h", reading: 1_100 })])
+      // Combustible no cambia: ni su medidor, ni su rendimiento, ni su fila.
+      expect(await fuelRow(id)).toEqual(fuelBefore)
+      // Historial y auditoría del mismo cambio.
+      const entry = (await listEquipmentHistory(id)).find((item) => item.summary.startsWith("Cambio de unidad de medida"))
+      expect(entry).toMatchObject({ action: "update" })
+      expect(entry?.summary).toContain("Unidad de medida: horas → kilómetros")
+      expect(entry?.summary).toContain(`Motivo: ${REASON}`)
+      expect(Object.keys(entry?.changes ?? {}).sort()).toEqual([
+        "Fecha de la lectura inicial", "Fecha de la preventiva declarada (anterior a la plataforma)", "Lectura de la preventiva declarada",
+        "Lectura inicial", "Pauta", "Respaldo de la preventiva declarada", "Servicio de la preventiva declarada", "Unidad de medida",
+      ])
+      expect((await listEquipmentHistory(id)).length).toBe(historyBefore + 1)
+      const audit = (await audits("mant_equipment", id)).find((row) => row.reason === REASON)
+      expect(audit).toMatchObject({ action: "update", entityCode: "CM-200" })
+      expect((await audits("mant_equipment", id)).length).toBe(auditsBefore + 1)
+    })
+
+    it("es idempotente: una segunda corrida con la misma unidad no escribe nada", async () => {
+      const before = { profile: await profileOf(id), history: (await listEquipmentHistory(id)).length, audits: (await audits("mant_equipment", id)).length }
+      const again = await testDb.transaction((tx) => setEquipmentUnit(tx, actor, { vehicleId: id, unit: "km", reason: REASON }))
+      expect(again).toMatchObject({ ok: true, data: { changed: false, unit: "km", changes: {} } })
+      expect(await profileOf(id)).toEqual(before.profile)
+      expect((await listEquipmentHistory(id)).length).toBe(before.history)
+      expect((await audits("mant_equipment", id)).length).toBe(before.audits)
+    })
+
+    it("rechaza una pauta de la unidad vieja, una lectura sin fecha y un motivo corto, sin escribir nada", async () => {
+      const fresh = await createdId(await createEquipment(actor, input({ code: "CM-201", plate: "BCDG-21", equipmentTypeId: T.camion, worksiteId: WS.arauco })))
+      const before = await profileOf(fresh)
+      const badSchedule = await testDb.transaction((tx) => setEquipmentUnit(tx, actor, { vehicleId: fresh, unit: "km", scheduleId: scheduleH, reason: REASON }))
+      expect(badSchedule).toMatchObject({ ok: false, fieldErrors: { scheduleId: "Esa pauta se mide en horas y el equipo quedaría en kilómetros." } })
+      const noDate = await testDb.transaction((tx) => setEquipmentUnit(tx, actor, { vehicleId: fresh, unit: "km", initialReading: 500, reason: REASON }))
+      expect(noDate).toMatchObject({ ok: false, fieldErrors: { initialReadingDate: "Indica la fecha de la lectura inicial." } })
+      const shortReason = await testDb.transaction((tx) => setEquipmentUnit(tx, actor, { vehicleId: fresh, unit: "km", reason: "x" }))
+      expect(shortReason).toMatchObject({ ok: false, fieldErrors: { reason: expect.any(String) } })
+      expect(await profileOf(fresh)).toEqual(before)
+    })
+
+    it("un vehículo que no está en Mantención no se toca", async () => {
+      const result = await testDb.transaction((tx) => setEquipmentUnit(tx, actor, { vehicleId: "veh-inactivo", unit: "h", reason: REASON }))
+      expect(result).toMatchObject({ ok: false, message: "Ese equipo no está en Mantención." })
+    })
+
+    it("una pauta de la unidad nueva se conserva si se pasa, y la lectura inicial nueva va con su fecha", async () => {
+      const fresh = await createdId(await createEquipment(actor, input({ code: "CM-202", plate: "BCDG-22", equipmentTypeId: T.km, worksiteId: WS.arauco, scheduleId: scheduleKm })))
+      const result = await testDb.transaction((tx) => setEquipmentUnit(tx, actor, {
+        vehicleId: fresh, unit: "h", scheduleId: scheduleH, initialReading: 300, initialReadingDate: "2026-10-01", reason: "Se mide en horas según jefatura",
+      }))
+      expect(result).toMatchObject({ ok: true, data: { changed: true, unit: "h" } })
+      expect(await profileOf(fresh)).toMatchObject({ unit: "h", scheduleId: scheduleH, initialReading: 300, initialReadingDate: "2026-10-01" })
+      expect(await fuelRow(fresh)).toMatchObject({ meterType: "odometer" })
+    })
+  })
+
+  it("la importación valida la pauta contra la unidad del equipo: un camión fuera de Biodiversa acepta horas y rechaza km; en Biodiversa, km", async () => {
+    const rows: Array<Array<string | number | null>> = [
+      ["IMC-1", "BCDG-31", "Camión producción (prueba)", "Scania", null, null, "Arauco", "Maquinaria prueba", 800, "01-10-2026"],
+      ["IMC-2", "BCDG-32", "Camión producción (prueba)", "Scania", null, null, "Arauco", "Camiones prueba", 800, "01-10-2026"],
+      ["IMC-3", "BCDG-33", "Camión producción (prueba)", "Scania", null, null, "Biodiversa", "Camiones prueba", 800, "01-10-2026"],
+    ]
+    const preview = await previewEquipmentImport(await workbookBuffer(rows))
+    expect(preview.ok).toBe(true)
+    if (!preview.ok) return
+    expect(Object.fromEntries(preview.data.rows.map((row) => [row.code, row.kind]))).toEqual({ "IMC-1": "create", "IMC-2": "error", "IMC-3": "create" })
+    expect(preview.data.rows.find((row) => row.code === "IMC-2")?.messages.join(" ")).toMatch(/Esa pauta se mide en kilómetros y el equipo en horas/)
+
+    const commit = await commitEquipmentImport(actor, await workbookBuffer(rows), "equipos.xlsx")
+    expect(commit).toMatchObject({ ok: true, data: { created: 2, errors: 1 } })
+    const [horas] = await vehicleByCode("IMC-1")
+    const [bio] = await vehicleByCode("IMC-3")
+    expect(await profileOf(horas!.id)).toMatchObject({ unit: "h", scheduleId: scheduleH })
+    expect(await profileOf(bio!.id)).toMatchObject({ unit: "km", scheduleId: scheduleKm })
+    const [horasVehicle] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, horas!.id))
+    expect(horasVehicle).toMatchObject({ meterType: "odometer" })
   })
 })

@@ -7,6 +7,7 @@ import {
 import { daysBetween } from "@/lib/mantencion/readings"
 import { todayInChile } from "@/lib/utils"
 import { getCurrentScheduleSnapshots } from "./schedule-versions"
+import { effectiveMeterSql } from "./unit-sql"
 import { equipmentStatus, newerPreventive, WORKSHOP_UPDATE_DAYS, workshopState, type WorkshopState } from "@/lib/mantencion/status"
 import type { MantEquipmentStatus, MantPreventiveSummary, MantReading, MantUnit } from "@/lib/mantencion/types"
 import { mergeLatestGpsByVehicle } from "@/lib/integrations/fleet-gps/merge-latest"
@@ -97,6 +98,12 @@ export function unitFromMeter(meterType: string): MantUnit | null {
   return null
 }
 
+/**
+ * La unidad EFECTIVA del equipo (`km` / `h`, o nulo si no tiene medidor legible) en SQL: la que
+ * fija su perfil o, si no, la de su tipo. Una consulta que la use debe unir `mant_equipment_profiles`.
+ */
+export const effectiveUnitSql = sql<string | null>`case ${effectiveMeterSql} when 'odometer' then 'km' when 'hour_meter' then 'h' end`
+
 function scopeFilter(scope: MantWorksiteScope): SQL | undefined {
   if (scope === "all") return undefined
   if (scope.length === 0) return sql`false`
@@ -118,7 +125,8 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
       worksiteName: worksites.name,
       typeId: fuelEquipmentTypes.id,
       typeName: fuelEquipmentTypes.name,
-      meterType: fuelEquipmentTypes.defaultMeterType,
+      // La unidad del equipo (perfil o tipo), no la del tipo: un camión puede medir en horas aunque su tipo sea odómetro.
+      meterType: effectiveMeterSql,
       brandId: mantBrands.id,
       brandName: mantBrands.name,
       scheduleId: mantSchedules.id,
@@ -322,7 +330,12 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
   return rows
 }
 
-/** Registros vigentes más recientes por equipo (ventana por `row_number`). */
+/**
+ * Registros vigentes más recientes por equipo (ventana por `row_number`). Sólo cuentan los de la
+ * unidad EFECTIVA del equipo: un registro en km no lee ni decide el estado de una pauta en horas (y
+ * al revés); los de otra unidad quedan como historia. Se filtra ANTES de la ventana, para que las
+ * 12 lecturas o las 5 preventivas sean de la unidad vigente.
+ */
 async function recentRecords(vehicleIds: string[], limit: number, preventiveOnly: boolean) {
   const ranked = db
     .select({
@@ -337,9 +350,13 @@ async function recentRecords(vehicleIds: string[], limit: number, preventiveOnly
       rn: sql<number>`row_number() over (partition by ${mantRecords.vehicleId} order by ${mantRecords.workDate} desc, ${mantRecords.reading} desc)`.as("rn"),
     })
     .from(mantRecords)
+    .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantRecords.vehicleId))
+    .innerJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
+    .innerJoin(mantEquipmentProfiles, eq(mantEquipmentProfiles.vehicleId, mantRecords.vehicleId))
     .where(and(
       inArray(mantRecords.vehicleId, vehicleIds),
       eq(mantRecords.status, "vigente"),
+      eq(mantRecords.unit, effectiveUnitSql),
       preventiveOnly ? eq(mantRecords.kind, "P") : undefined,
     ))
     .as("ranked")

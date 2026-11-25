@@ -478,6 +478,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-sync-catalog-pglite.test.ts",
   // Historial de la flota para la app: tope por equipo, privacidad, versión (ETag) y la foto con Bearer.
   "lib/__tests__/mantencion-app-history-pglite.test.ts",
+  // La unidad (km/h) es del equipo, no del tipo: camiones de producción en horas y los de Biodiversa en km (2026-11-25).
+  "lib/__tests__/mantencion-unidad-por-equipo-fleet-pglite.test.ts",
   // Órdenes de trabajo (2026-11): alta, transiciones por rol, concurrencia, rechazo, CAPA y avisos; y la sincronización del teléfono.
   "lib/__tests__/mantencion-work-orders-pglite.test.ts",
   "lib/__tests__/mantencion-work-orders-sync-pglite.test.ts",
@@ -682,5 +684,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-work-orders-traslado-pglite.test.ts",
   "lib/__tests__/mantencion-hoja-vida-sigue-equipo-pglite.test.ts",
   "scripts/__tests__/apply-trinorma-equipos-faltantes-pglite.test.ts",
+  // Camiones de producción a horas en Mantención, Biodiversa en km (2026-11-25).
+  "scripts/__tests__/apply-medidor-camiones-2026-11-pglite.test.ts",
   "scripts/__tests__/apply-trinorma-lecturas-preventivas-pglite.test.ts",
 ]

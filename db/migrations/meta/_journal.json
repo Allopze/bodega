@@ -2815,6 +2815,13 @@
       "when": 1795464853370,
       "tag": "0401_clumsy_taskmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 402,
+      "version": "7",
+      "when": 1795632879307,
+      "tag": "0402_mant_equipment_unit",
+      "breakpoints": true
     }
   ]
 }
