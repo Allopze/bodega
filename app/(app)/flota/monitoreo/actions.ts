@@ -51,6 +51,10 @@ const ERROR_MESSAGE: Record<OnwayClientErrorCode, string> = {
   ONWAY_RESPONSE_INVALID: "OnWay respondió con un formato no reconocido.",
   ONWAY_SNAPSHOT_EMPTY: "OnWay aceptó la cuenta, pero no devolvió ningún equipo. Revisa que la cuenta configurada tenga la flota asignada en el portal.",
   ONWAY_SYNC_FAILED: "No se pudo actualizar el monitoreo GPS.",
+  ONWAY_CAPTCHA_UNAVAILABLE: "El solver automático de la verificación no está instalado. Usa «Resolver verificación» para completarla a mano.",
+  ONWAY_CAPTCHA_NOT_RECOGNIZED: "OnWay pidió un desafío que el solver no reconoce. Usa «Resolver verificación» para completarlo a mano.",
+  ONWAY_CAPTCHA_REJECTED: "OnWay rechazó la resolución automática de la verificación. Usa «Resolver verificación» para completarla a mano.",
+  ONWAY_CAPTCHA_BLOCKED: "Google bloqueó las consultas automatizadas desde este equipo. Espera unas horas antes de reintentar; insistir alarga el bloqueo.",
 }
 
 async function requireGpsManager(): Promise<Awaited<ReturnType<typeof requirePermission>> | null> {

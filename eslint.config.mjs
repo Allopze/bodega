@@ -467,6 +467,9 @@ const eslintConfig = defineConfig([
       "**/oc-pdfcn-render.ts",
       "lib/services/platform-health.ts",
       "lib/services/purchasing-module/invoice-ocr.ts",
+      // Volumen Docker propio del scraper de OnWay (sesión de Auth0), fuera de
+      // STORAGE_PATH a propósito: no se respalda. Usa `turbopackIgnore` igual.
+      "lib/integrations/onway/onway-profile.ts",
       // Sirve el worker de MapLibre desde node_modules (con turbopackIgnore).
       "app/vendor/maplibre/**/route.ts",
       // Sólo manipulan el nombre (extname/basename), nunca arman una ruta de escritura.

@@ -99,6 +99,12 @@ services:
       - ONWAY_USERNAME=${ONWAY_USERNAME:-}
       - ONWAY_PASSWORD=${ONWAY_PASSWORD:-}
       - ONWAY_SYNC_ENABLED=${ONWAY_SYNC_ENABLED:-false}
+      # Resolver automático del CAPTCHA de Auth0. Apagado por defecto: cada
+      # rechazo degrada la confianza del perfil. Sin modelo instalado no hace
+      # nada, y en cualquier fallo el desafío se entrega a una persona como antes.
+      - ONWAY_CAPTCHA_SOLVER=${ONWAY_CAPTCHA_SOLVER:-false}
+      - ONWAY_CAPTCHA_PROFILE_DIR=${ONWAY_CAPTCHA_PROFILE_DIR:-/data/onway-profile}
+      - ONWAY_VISION_MODEL_PATH=${ONWAY_VISION_MODEL_PATH:-/data/onway-models/recaptcha_cls.onnx}
       # Wialon (Gurtam): fuente GPS complementaria a OnWay.
       - WIALON_BASE_URL=${WIALON_BASE_URL:-https://hst-api.wialon.com}
       - WIALON_ALLOWED_HOSTS=${WIALON_ALLOWED_HOSTS:-}
@@ -185,6 +191,15 @@ services:
       # /srv/backups/plataforma). La ruta interna no cambia: los scripts siguen
       # viendo BACKUP_DIR=/data/backups dentro del contenedor.
       - ${BACKUP_HOST_PATH:-bodega-backups}:/data/backups
+      # Sesión de Auth0 del scraper de OnWay (storage-state: cookies + `_GRECAPTCHA`).
+      # Perderla obliga a resolver el CAPTCHA otra vez, así que persiste entre
+      # reinicios. Deliberadamente FUERA de bodega-storage: no viaja en los
+      # respaldos porque son cookies de un portal de terceros.
+      - bodega-onway-profile:/data/onway-profile
+      # Clasificador local del desafío de imágenes (AGPL-3.0, ~108 MB). Sólo
+      # lectura: lo llena el one-shot `install-onway-vision-model`. Sin el modelo
+      # el sistema degrada a la vista asistida, nunca falla al arrancar.
+      - bodega-onway-models:/data/onway-models:ro
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
@@ -272,6 +287,12 @@ services:
       - ONWAY_USERNAME=${ONWAY_USERNAME:-}
       - ONWAY_PASSWORD=${ONWAY_PASSWORD:-}
       - ONWAY_SYNC_ENABLED=${ONWAY_SYNC_ENABLED:-false}
+      # Resolver automático del CAPTCHA de Auth0. Apagado por defecto: cada
+      # rechazo degrada la confianza del perfil. Sin modelo instalado no hace
+      # nada, y en cualquier fallo el desafío se entrega a una persona como antes.
+      - ONWAY_CAPTCHA_SOLVER=${ONWAY_CAPTCHA_SOLVER:-false}
+      - ONWAY_CAPTCHA_PROFILE_DIR=${ONWAY_CAPTCHA_PROFILE_DIR:-/data/onway-profile}
+      - ONWAY_VISION_MODEL_PATH=${ONWAY_VISION_MODEL_PATH:-/data/onway-models/recaptcha_cls.onnx}
       # Wialon: mismo respaldo del .env que la app (el token guardado en la
       # plataforma va cifrado en system_settings, dentro del dump).
       - WIALON_BASE_URL=${WIALON_BASE_URL:-https://hst-api.wialon.com}
@@ -1382,6 +1403,42 @@ services:
       - SEED_DEV_ALLOW_DEPLOYED=true
     command: ["npx", "tsx", "scripts/dev-seed/index.ts", "--apply", "--write-report"]
 
+  # One-shot MANUAL: descarga el clasificador local de captchas de OnWay
+  # (YOLO11x-cls, ~108 MB, licencia AGPL-3.0 declarada en el ONNX). No va en el
+  # deploy: se corre una vez por host y verifica el sha256 del archivo.
+  # Sin él, `ONWAY_CAPTCHA_SOLVER=true` no hace nada y el desafío de Auth0 se
+  # sigue entregando a una persona como hasta 2026-11-25.
+  #
+  #   docker compose run --rm install-onway-vision-model
+  install-onway-vision-model:
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    entrypoint: ["node", "scripts/install-onway-vision-model.mjs"]
+    environment:
+      - ONWAY_VISION_MODEL_PATH=/data/onway-models/recaptcha_cls.onnx
+    volumes:
+      - bodega-onway-models:/data/onway-models
+
+  # One-shot de sólo lectura: qué sesión de Auth0 tiene guardada el scraper de
+  # OnWay y desde cuándo. Perderla obliga a resolver el primer CAPTCHA otra vez,
+  # así que se consulta antes de cualquier rotación manual.
+  #
+  #   docker compose run --rm onway-profile-status
+  onway-profile-status:
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -eu
+        dir="$${ONWAY_CAPTCHA_PROFILE_DIR:-/data/onway-profile}"
+        echo "[onway] perfil: $$dir"
+        ls -la "$$dir" 2>/dev/null || echo "[onway] sin sesión guardada"
+    environment:
+      - ONWAY_CAPTCHA_PROFILE_DIR=/data/onway-profile
+    volumes:
+      - bodega-onway-profile:/data/onway-profile
+
   db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -1408,3 +1465,9 @@ volumes:
   # define una ruta absoluta del host, se usa esa en vez de este volumen.
   bodega-backups:
   bodega-db:
+  # Sesión de Auth0 del scraper de OnWay. Fuera de bodega-storage a propósito:
+  # son cookies de un portal de terceros y no deben viajar en los respaldos.
+  bodega-onway-profile:
+  # Modelo ONNX del clasificador de captchas (AGPL-3.0). Se llena con
+  # `docker compose run --rm install-onway-vision-model`.
+  bodega-onway-models:

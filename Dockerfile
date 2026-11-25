@@ -649,6 +649,13 @@ COPY --from=build /app/node_modules/zlibjs ./node_modules/zlibjs
 COPY --from=build /app/node_modules/whatwg-url ./node_modules/whatwg-url
 COPY --from=build /app/node_modules/tr46 ./node_modules/tr46
 COPY --from=build /app/node_modules/webidl-conversions ./node_modules/webidl-conversions
+# Clasificador del CAPTCHA de OnWay. Se importa dinámicamente (junto a `sharp`)
+# sólo cuando Auth0 pide el desafío, así que el trazado de Next no lo ve y sin
+# esto el solver caería siempre en `ONWAY_CAPTCHA_UNAVAILABLE`. Corre en WASM:
+# `onnxruntime-node` no sirve aquí, publica binarios glibc y esta imagen es musl.
+COPY --from=build /app/node_modules/onnxruntime-web ./node_modules/onnxruntime-web
+COPY --from=build /app/node_modules/onnxruntime-common ./node_modules/onnxruntime-common
+COPY --from=build /app/scripts/install-onway-vision-model.mjs ./scripts/install-onway-vision-model.mjs
 COPY --from=build /app/db/migrations ./db/migrations
 COPY --from=build /app/db/seed ./db/seed
 # Standalone migration runner (uses runtime deps only; see scripts/migrate.mjs).

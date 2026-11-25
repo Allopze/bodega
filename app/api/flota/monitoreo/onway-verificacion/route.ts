@@ -40,6 +40,10 @@ const CLIENT_MESSAGE: Partial<Record<OnwayClientErrorCode, { status: number; mes
   ONWAY_RESPONSE_INVALID: { status: 502, message: "OnWay respondió con un formato no reconocido." },
   ONWAY_SNAPSHOT_EMPTY: { status: 502, message: "OnWay aceptó la cuenta pero no devolvió equipos." },
   ONWAY_SYNC_FAILED: { status: 502, message: "No se pudo abrir la verificación de OnWay." },
+  ONWAY_CAPTCHA_UNAVAILABLE: { status: 503, message: "El solver automático no está instalado. Resuelve la verificación a mano." },
+  ONWAY_CAPTCHA_NOT_RECOGNIZED: { status: 409, message: "OnWay pidió un desafío que el solver no reconoce. Resuélvelo a mano." },
+  ONWAY_CAPTCHA_REJECTED: { status: 409, message: "El portal rechazó la resolución automática. Resuelve la verificación a mano." },
+  ONWAY_CAPTCHA_BLOCKED: { status: 429, message: "Google bloqueó las consultas automatizadas desde este equipo. Espera unas horas antes de reintentar." },
 }
 
 /**

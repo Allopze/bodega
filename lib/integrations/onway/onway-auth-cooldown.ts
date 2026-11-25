@@ -26,6 +26,39 @@ export const ONWAY_INTERACTIVE_AUTH_COOLDOWN_MS = 30 * 60_000
 /** El código que deja una corrida que se rindió esperando el desafío. */
 export const ONWAY_INTERACTIVE_AUTH_ERROR_CODE = "ONWAY_INTERACTIVE_AUTH_REQUIRED"
 
+/**
+ * Cuarentena tras el aviso de Google por consultas automatizadas.
+ *
+ * Es un remedio **distinto** al de la verificación interactiva y convive con
+ * él: aquél es «la cuenta necesita un segundo factor», éste es «Google marcó la
+ * IP». En ese estado no hay captcha que resolver; es una sanción temporal y
+ * cada reintento la renueva. El referente usa 6 h por defecto y el aviso real
+ * («es posible que tu red o computadora estén enviando consultas
+ * automatizadas… no podemos procesar tu solicitud») se detecta en el solver.
+ */
+export const ONWAY_CAPTCHA_BLOCK_HOURS = Number(process.env.ONWAY_CAPTCHA_BLOCK_HOURS ?? 6)
+
+export const ONWAY_CAPTCHA_BLOCK_ERROR_CODE = "ONWAY_CAPTCHA_BLOCKED"
+
+/**
+ * ¿Hay que saltarse el intento automático por un bloqueo de Google vigente?
+ *
+ * Misma regla que la cuarentena de verificación interactiva: sólo la última
+ * corrida decide, y sólo si terminó bloqueada dentro de la ventana. Así el
+ * bloqueo se levanta solo en cuanto hay una lectura distinta, sin estado en
+ * memoria que un reinicio pueda perder.
+ */
+export function isOnwayCaptchaBlockActive(
+  latest: OnwayRunAttempt | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!latest) return false
+  if (latest.status !== "failed" || latest.errorCode !== ONWAY_CAPTCHA_BLOCK_ERROR_CODE) return false
+  const startedAt = new Date(latest.startedAt).getTime()
+  if (!Number.isFinite(startedAt)) return false
+  return now.getTime() - startedAt < ONWAY_CAPTCHA_BLOCK_HOURS * 60 * 60_000
+}
+
 export interface OnwayRunAttempt {
   startedAt: string
   status: string

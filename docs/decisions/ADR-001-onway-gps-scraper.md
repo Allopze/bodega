@@ -2,7 +2,7 @@
 
 ## Estado
 
-Aceptada
+Aceptada, con enmiendas del 2026-11-25 (ver «Enmienda» al final)
 
 ## Fecha
 
@@ -62,3 +62,86 @@ Rechazada: el DOM es más frágil que el contrato JSON usado por el mapa. Persis
 4. Ejecutar “Actualizar ahora” y revisar vehículos vinculados, no vinculados y hora de captura.
 5. Activar la automatización solo después de una sincronización manual exitosa.
 6. Ante `ONWAY_INTERACTIVE_AUTH_REQUIRED`, usar «Resolver verificación» en Monitoreo GPS: la persona resuelve el CAPTCHA/OTP en la vista asistida y la sesión queda en memoria para la siguiente sincronización. No programar reintentos agresivos.
+
+---
+
+## Enmienda 2026-11-25: sesión persistente y resolver automático
+
+### Qué cambia
+
+Dos afirmaciones de este ADR dejan de ser ciertas tal como estaban escritas:
+
+1. «No se guardan cookies […] Las cookies viven únicamente en el contexto de navegador en memoria.»
+2. «Una verificación interactiva (CAPTCHA u OTP) no se resuelve automáticamente.»
+
+Ambas se sustituyen por lo siguiente. El resto del ADR sigue vigente.
+
+### Por qué
+
+El cron de OnWay corre cada 5 minutos y hasta hoy cada corrida creaba un contexto
+de navegador nuevo. Auth0 emite el desafío según la confianza acumulada del
+navegador, así que un contexto sin historial lo recibe casi siempre: medido en
+`referencia-resolver-onway`, con el perfil ya confiable la mayoría de las
+consultas «pasan con un click y sin desafío», y sin él el desafío escala a
+imágenes de forma sistemática. El resultado fue el ciclo del 2026-11-22: 2 873
+corridas fallidas seguidas y el GPS detenido hasta que alguien resolvía a mano.
+
+Enmendar el perfil persistente no es una optimización: es lo que evita que el
+cron destruya en cada corrida la confianza que una persona consiguió resolviendo
+el CAPTCHA.
+
+### Sesión persistente (reemplaza «las cookies viven solo en memoria»)
+
+- Se persiste **`storageState`** (cookies + localStorage) en
+  `/data/onway-profile/<sha256-credenciales>.storage-state.json`, en un volumen
+  Docker propio (`bodega-onway-profile`), **fuera de `bodega-storage`**: no viaja
+  en los respaldos porque son cookies de un portal de terceros.
+- Permisos `0600` en el archivo y `0700` en el directorio. El nombre deriva del
+  hash de las credenciales, así que cambiarlas abre una sesión limpia. Rotación
+  manual: borrar el archivo (`resetOnwayProfile`) y volver a resolver el desafío.
+- El impacto de una filtración se acota porque el archivo no sale del host, no se
+  respalda y la credencial que protege está en `system_settings` cifrada con el
+  llavero AES-GCM existente.
+- Se guarda **sólo cuando el portal confirma la sesión** (snapshot leído o
+  verificación resuelta por una persona); nunca un contexto a medio autenticar.
+- Es best-effort: si el volumen no está montado, la lectura del portal sigue y
+  se pierde únicamente el beneficio entre corridas.
+
+### Resolver automático (reemplaza «no se resuelve automáticamente»)
+
+- Sólo aplica al **reCAPTCHA v2 de imágenes**, que es lo que Auth0 presenta hoy
+  en este tenant. El repertorio del clasificador son las 14 clases del modelo
+  `DannyLuna/recaptcha-classification-57k`; una consigna fuera de ellas, un OTP o
+  un widget distinto (hCaptcha, Arkose, audio) **no se intentan** y se entregan a
+  una persona.
+- Es local: el modelo corre con `onnxruntime-web` (WASM) dentro del contenedor.
+  Ninguna imagen ni audio sale del servidor.
+- Está **apagado por defecto** (`ONWAY_CAPTCHA_SOLVER=false`): cada rechazo
+  degrada la confianza del perfil y el referente documenta que insistir la hunde.
+  Se enciende sólo con evidencia de que mejora el resultado.
+- Ante cualquier fallo —modelo ausente, desafío no reconocido, rechazo, bloqueo
+  de Google— el flujo **degrada exactamente al comportamiento anterior**: la
+  vista asistida de una persona con `flota:manage_gps`. El solver nunca declara
+  éxito por su cuenta; la sesión se confirma con la misma señal estricta que ya
+  usa la vista (`/OnlineTracking*` sin el botón de entrada visible).
+- Una verificación abierta por una persona tiene prioridad absoluta: el solver no
+  toca la página que esa persona está usando.
+- `ONWAY_CAPTCHA_BLOCKED` (aviso de Google por consultas automatizadas) abre una
+  cuarentena de 6 h en la que no se intenta nada, para no alargar la sanción.
+
+### Licencia del modelo
+
+El ONNX declara **AGPL-3.0** en sus metadatos. Por eso no se embarca en la
+imagen: se descarga con `docker compose run --rm install-onway-vision-model` a
+un volumen de sólo lectura, verificando su sha256. Uso interno; revisar antes de
+distribuir o de ofrecer el producto como servicio.
+
+### Consecuencias de la enmienda
+
+- Reiniciar el contenedor ya **no** obliga a resolver el CAPTCHA otra vez.
+- El volumen `bodega-onway-profile` no se respalda a propósito. Perderlo se
+  recupera resolviendo el desafío una vez, no restaurando un archivo.
+- El consumo de memoria del clasificador (~700 MB de RSS medidos en musl) se
+  suma al del navegador durante el desafío, y sólo entonces.
+- Sin el modelo instalado, `ONWAY_CAPTCHA_SOLVER=true` no hace nada y el sistema
+  se comporta como antes del 2026-11-25.

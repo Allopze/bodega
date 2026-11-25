@@ -67,7 +67,7 @@ const nextConfig: NextConfig = {
   // compilado de servidor llevaba al worker de webpack sobre su heap de 4 GB
   // (OOM medido el 2026-10-01). Externo, Node lo resuelve en runtime y el
   // trazado standalone copia el paquete; el bundle de navegador sí lo incluye.
-  serverExternalPackages: ["postgres", "tesseract.js", "tesseract.js-core", "pdfjs-dist", "takumi-pdf", "@sentry/nextjs"],
+  serverExternalPackages: ["postgres", "tesseract.js", "tesseract.js-core", "pdfjs-dist", "takumi-pdf", "@sentry/nextjs", "onnxruntime-web"],
   images: {
     formats: ["image/avif", "image/webp"],
     deviceSizes: [360, 480, 640, 750, 828, 1080, 1200, 1920],

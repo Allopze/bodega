@@ -14,7 +14,11 @@ import {
   type OnwayChallengeStatus,
   type OnwayChallengeViewport,
 } from "./onway-interactive-auth-contract"
+import { isOnwayCaptchaBlockActive } from "./onway-auth-cooldown"
+import { readLatestOnwayRunAttempt } from "./onway-run-attempts"
 import { killProcessGroupsAndWait, listChromiumProcesses, processGroups } from "./browser-reaper"
+import { restoreOnwayProfile, saveOnwayProfile } from "./onway-profile"
+import { onwayCaptchaSolverEnabled, solveOnwayCaptcha } from "./onway-captcha-solver"
 import { parseOnwaySnapshot, type OnwaySnapshotResult } from "./onway-contract"
 import {
   parseOnwayAlertRows,
@@ -65,6 +69,34 @@ const BROWSER_CLOSE_TIMEOUT_MS = 10_000
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 const MAX_TELEMETRY_DEVICES = 500
 
+/**
+ * Viewport fijo y coherente con la pantalla emulada. El referente usa una
+ * ventana real (`viewport: null`); en el contenedor no hay display, así que se
+ * declara un tamaño explícito en vez de quedar con el 1280×720 por defecto sin
+ * `outerWidth`/`outerHeight` coherentes, que es una señal de automatización.
+ */
+const ONWAY_VIEWPORT = { width: 1_440, height: 900 }
+
+/**
+ * Parche de realismo del navegador, portado del referente
+ * (`src/prt/widget.ts`): reCAPTCHA lee `navigator.webdriver`, `permissions.query`
+ * y `window.chrome`. Sin esto el desafío escala a imágenes casi siempre.
+ */
+const ONWAY_REALISM_SCRIPT = `(function(){try{
+Object.defineProperty(navigator,'webdriver',{get:function(){return undefined;}});
+var pq=navigator.permissions&&navigator.permissions.query;
+if(pq)navigator.permissions.query=function(p){return(p&&p.name==='notifications')?Promise.resolve({state:(window.Notification&&Notification.permission)||'prompt',onchange:null}):pq.call(navigator.permissions,p);};
+if(!window.chrome)window.chrome={runtime:{},app:{isInstalled:false},csi:function(){},loadTimes:function(){}};
+if(!window.outerWidth)Object.defineProperty(window,'outerWidth',{get:function(){return window.innerWidth||1440;}});
+if(!window.outerHeight)Object.defineProperty(window,'outerHeight',{get:function(){return (window.innerHeight||900)+85;}});
+}catch(e){}})();`
+
+async function applyOnwayStealth(context: BrowserContext): Promise<void> {
+  // Sin parche se sigue: puede funcionar igual, y un fallo aquí no debe impedir
+  // la lectura del portal.
+  try { await context.addInitScript(ONWAY_REALISM_SCRIPT) } catch { /* contexto mínimo */ }
+}
+
 interface OnwayBrowserSession {
   server: BrowserServer
   browser: Browser
@@ -75,8 +107,9 @@ interface OnwayBrowserSession {
   account: string
   /**
    * Grupos de proceso de los Chromium que este lanzamiento creó. Se registran
-   * al abrir porque `launchServer` no expone el `pid` del driver, y sin el dato
-   * el cierre sólo puede adivinar cuáles matar. Ver `browser-reaper.ts`.
+   * al abrir porque ni `launchServer` ni `launchPersistentContext` exponen el
+   * `pid` del driver, y sin el dato el cierre sólo puede adivinar cuáles matar.
+   * Ver `browser-reaper.ts`.
    */
   groups: number[]
   /**
@@ -169,6 +202,18 @@ export type OnwayClientErrorCode =
   /** El portal aceptó la sesión pero no devolvió ningún equipo. */
   | "ONWAY_SNAPSHOT_EMPTY"
   | "ONWAY_SYNC_FAILED"
+  /** El solver no está instalado o el operador no lo habilitó. */
+  | "ONWAY_CAPTCHA_UNAVAILABLE"
+  /** El desafío no es un tablero de imágenes de reCAPTCHA (OTP, hCaptcha, audio). */
+  | "ONWAY_CAPTCHA_NOT_RECOGNIZED"
+  /** El portal rechazó la resolución automática. */
+  | "ONWAY_CAPTCHA_REJECTED"
+  /**
+   * Google cortó la consulta por automatización. No hay captcha que resolver y
+   * cada reintento alarga la sanción: `onway-auth-cooldown.ts` abre una
+   * cuarentena con este código.
+   */
+  | "ONWAY_CAPTCHA_BLOCKED"
 
 export class OnwayClientError extends Error {
   constructor(readonly code: OnwayClientErrorCode) {
@@ -356,11 +401,10 @@ state.challengeStarting ??= false
  * Cierra el navegador del scraper y se asegura de que **no quede ningún
  * Chromium vivo**.
  *
- * `server.kill()` mata al driver de Playwright, pero Chromium es su hijo: queda
- * reparentado a PID 1 y sigue girando. Medido en producción el 2026-11-24, cada
- * `ONWAY_PORTAL_TIMEOUT` dejaba así un renderer al 100 % de CPU para siempre
- * (se encontraron árboles de 4 h y 18 h, ocho renderers al 100 %, load average
- * 12 sobre 12 núcleos).
+ * Cerrar el driver de Playwright no mata a Chromium: queda reparentado a PID 1 y
+ * sigue girando. Medido en producción el 2026-11-24, cada `ONWAY_PORTAL_TIMEOUT`
+ * dejaba así un renderer al 100 % de CPU para siempre (se encontraron árboles de
+ * 4 h y 18 h, ocho renderers al 100 %, load average 12 sobre 12 núcleos).
  *
  * Los grupos de proceso se registran al lanzar el navegador (`getBrowserSession`),
  * no al cerrarlo: cuando el driver muere, el parentesco se pierde y ya no hay
@@ -428,7 +472,12 @@ async function getBrowserSession(account: string): Promise<OnwayBrowserSession> 
       locale: "es-CL",
       timezoneId: "America/Santiago",
       serviceWorkers: "block",
+      viewport: ONWAY_VIEWPORT,
     })
+    await applyOnwayStealth(context)
+    // Restaurar la sesión anterior es lo que hace que Auth0 deje de pedir el
+    // desafío: la reputación del navegador viaja en la cookie `_GRECAPTCHA`.
+    await restoreOnwayProfile(context, account)
     const page = await context.newPage()
     // Los grupos que aparecieron son los de este navegador. Se capturan ahora,
     // que los procesos siguen vivos y con su `pgid` intacto: después del cierre
@@ -646,16 +695,44 @@ async function scrapeWithSession(
     } catch {
       const currentUrl = page.url()
       if (isAllowedOnwayAuthUrl(currentUrl)) {
-        throw new OnwayClientError(
-          await hasInteractiveChallenge(page) ? "ONWAY_INTERACTIVE_AUTH_REQUIRED" : "ONWAY_AUTH_REJECTED",
-        )
+        if (!await hasInteractiveChallenge(page)) throw new OnwayClientError("ONWAY_AUTH_REJECTED")
+
+        // Última oportunidad antes de entregar el desafío a una persona: el
+        // solver trabaja sobre ESTA página, no abre navegador propio.
+        const solved = await attemptAutomaticCaptcha(page, timeouts)
+        if (!solved.ok) {
+          // El bloqueo se propaga con su código: es el único fallo que necesita
+          // cuarentena en vez del flujo humano (`onway-auth-cooldown.ts`).
+          throw new OnwayClientError(
+            solved.failure === "ONWAY_CAPTCHA_BLOCKED" ? "ONWAY_CAPTCHA_BLOCKED" : "ONWAY_INTERACTIVE_AUTH_REQUIRED",
+          )
+        }
+
+        // El token quedó en el widget; hay que reenviar el formulario para que
+        // Auth0 canjee la sesión. Si no aparece el snapshot, el intento falló.
+        try {
+          await page.locator('button[type="submit"]').click({ timeout: 10_000 })
+        } catch {
+          throw new OnwayClientError("ONWAY_INTERACTIVE_AUTH_REQUIRED")
+        }
+        try {
+          response = await page.waitForResponse(isSnapshotResponse, { timeout: responseTimeoutMs })
+        } catch {
+          throw new OnwayClientError("ONWAY_INTERACTIVE_AUTH_REQUIRED")
+        }
+      } else {
+        throw new OnwayClientError("ONWAY_PORTAL_TIMEOUT")
       }
-      throw new OnwayClientError("ONWAY_PORTAL_TIMEOUT")
     }
     const snapshot = await readSnapshotResponse(response)
     // El portal devolvió el snapshot: la sesión es válida y hay que protegerla
     // de un cierre por un fallo posterior (ver `shouldKeepBrowserAfterFailure`).
     if (state.browserSession) state.browserSession.authenticated = true
+    // Persistir la sesión sólo ahora, con el portal ya confirmando: guardar un
+    // contexto a medio autenticar dejaría cookies inútiles y una falsa
+    // sensación de perfil sano. Best-effort: no retrasa ni tumba la lectura.
+    const session = state.browserSession
+    if (session) void saveOnwayProfile(session.context, session.account)
     return snapshot
   } catch (error) {
     // Un fallo de la LECTURA no invalida la SESIÓN. Cerrar el navegador acá
@@ -666,6 +743,67 @@ async function scrapeWithSession(
     else await replaceHungPage()
     if (error instanceof OnwayClientError) throw error
     throw new OnwayClientError("ONWAY_SYNC_FAILED")
+  }
+}
+
+/**
+ * Intenta resolver automáticamente el CAPTCHA de Auth0.
+ *
+ * Nunca abre un navegador propio ni toca el estado del desafío humano: si una
+ * persona ya tiene la vista abierta, se aparta. Devuelve el resultado del
+ * intento; sólo `ok` significa que el widget entregó un token, y aun así quien
+ * llama debe confirmar la sesión reenviando el formulario y esperando el
+ * snapshot. `failure` sólo sirve para distinguir el bloqueo de Google, que
+ * necesita cuarentena, del resto, que se degrada al flujo humano.
+ */
+async function attemptAutomaticCaptcha(
+  page: Page,
+  timeouts: OnwayScrapeTimeouts,
+): Promise<{ ok: boolean; failure: string | null }> {
+  if (!onwayCaptchaSolverEnabled()) return { ok: false, failure: null }
+  // Una vista asistida en curso tiene prioridad: no se compite por el navegador
+  // que esa persona está usando para resolver el desafío a mano.
+  if (isOnwayInteractiveAuthPending()) return { ok: false, failure: null }
+  // Tras el aviso de Google por consultas automatizadas no hay captcha que
+  // resolver: insistir alarga la sanción. Ver `onway-auth-cooldown.ts`.
+  if (await isOnwayCaptchaBlockCooldownActive()) {
+    logger.warn("[flota/onway] bloqueo de Google vigente; no se intenta el captcha")
+    return { ok: false, failure: "ONWAY_CAPTCHA_BLOCKED" }
+  }
+
+  const context = state.browserSession?.context
+  if (!context) return { ok: false, failure: null }
+
+  try {
+    const result = await solveOnwayCaptcha(page, context, {
+      deadlineMs: Math.max(30_000, timeouts.responseTimeoutMs ?? NAVIGATION_TIMEOUT_MS),
+    })
+    logger.warn("[flota/onway] resolución automática de la verificación", {
+      ok: result.ok,
+      outcome: result.outcome,
+      failure: result.failure,
+      tiles: result.tilesSelected,
+    })
+    return { ok: result.ok, failure: result.failure }
+  } catch {
+    // Un fallo del solver no puede tumbar la lectura: se degrada al flujo
+    // humano, que es el comportamiento anterior.
+    return { ok: false, failure: null }
+  }
+}
+
+/**
+ * Lee la última corrida de OnWay y decide si hay un bloqueo de Google vigente.
+ *
+ * Best-effort: si la base no responde, se intenta igual. El bloqueo protege
+ * contra insistir sobre una sanción, no es una regla de corrección.
+ */
+async function isOnwayCaptchaBlockCooldownActive(): Promise<boolean> {
+  try {
+    const latest = await readLatestOnwayRunAttempt()
+    return isOnwayCaptchaBlockActive(latest)
+  } catch {
+    return false
   }
 }
 
@@ -960,6 +1098,10 @@ async function markChallengeSolved(challenge: OnwayChallenge): Promise<void> {
   // que un fallo de lectura posterior la descarte (ver
   // `shouldKeepBrowserAfterFailure`): perder estas cookies significa otro CAPTCHA.
   if (state.browserSession) state.browserSession.authenticated = true
+  // Esta es la sesión más valiosa: la consiguió una persona resolviendo el
+  // CAPTCHA. Guardarla es lo que permite que el cron deje de pedirlo.
+  const session = state.browserSession
+  if (session) void saveOnwayProfile(session.context, session.account)
   logger.info("[flota/onway] verificación interactiva completada", { challengeId: challenge.id })
 }
 
