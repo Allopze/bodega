@@ -27,6 +27,7 @@ export const ADMIN_AREAS: AreaNode[] = [
           { label: "Estanques de combustible",   href: "/admin/flota-catalogos/estanques-combustible",   permissions: ["admin:fleet_catalog"] },
           { label: "Productos de combustible",   href: "/admin/flota-catalogos/productos-combustible",   permissions: ["admin:fleet_catalog"] },
           { label: "Tipos de equipo",             href: "/admin/flota-catalogos/tipos-equipo",            permissions: ["admin:fleet_catalog"] },
+          { label: "Propietarios",                href: "/admin/flota-catalogos/propietarios",            permissions: ["admin:fleet_catalog"] },
           { label: "Vehículos",                   href: "/admin/flota-catalogos/vehiculos",               permissions: ["admin:fleet_vehicles"] },
           { label: "Proveedores de combustible",  href: "/admin/flota-catalogos/proveedores-combustible", permissions: ["combustibles:manage_suppliers"] },
         ],

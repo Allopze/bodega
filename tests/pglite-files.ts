@@ -668,6 +668,9 @@ export const pgliteTestFiles = [
   "db/__tests__/trinorma-0398-pglite.test.ts",
   "db/__tests__/trinorma-0399-pglite.test.ts",
   "lib/__tests__/trinorma-maestros-pglite.test.ts",
+  // Catálogo de empresas propietarias en Administración: renombre sin chocar con el propio nombre,
+  // tipo, activar/desactivar con equipos que la conservan, recuento y auditoría.
+  "lib/__tests__/fleet-owners-catalog-pglite.test.ts",
   "lib/__tests__/trinorma-consolidado-pglite.test.ts",
   "lib/__tests__/trinorma-ot-pglite.test.ts",
   "lib/__tests__/trinorma-tablero-pglite.test.ts",

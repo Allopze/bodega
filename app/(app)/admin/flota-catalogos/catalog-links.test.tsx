@@ -43,6 +43,20 @@ describe("CatalogLinks", () => {
     expect(screen.getByRole("link", { name: /Productos de combustible/ })).toHaveAttribute("href", "/admin/flota-catalogos/productos-combustible")
   })
 
+  /**
+   * Los propietarios se gobiernan con el catálogo de flota, no con el padrón de vehículos: quien
+   * sólo tiene `admin:fleet_vehicles` (secretaría, admin de contrato) los sigue creando en línea
+   * desde la ficha, pero no ve ni entra a esta pantalla.
+   */
+  it("muestra Propietarios con admin:fleet_catalog y no con admin:fleet_vehicles", () => {
+    const { unmount } = render(<CatalogLinks permissions={["admin:fleet_catalog"]} />)
+    expect(screen.getByRole("link", { name: /Propietarios/ })).toHaveAttribute("href", "/admin/flota-catalogos/propietarios")
+    unmount()
+
+    render(<CatalogLinks permissions={["admin:fleet_vehicles"]} />)
+    expect(screen.queryByRole("link", { name: /Propietarios/ })).not.toBeInTheDocument()
+  })
+
   it("shows nothing when the session has none of the linked permissions", () => {
     render(<CatalogLinks permissions={[]} />)
 

@@ -35,6 +35,7 @@ const ENTITY_LABELS: Record<string, string> = {
   product:          "Producto",
   product_category: "Categoría",
   warehouse:        "Bodega",
+  fleet_owner:      "Empresa propietaria",
   billing_chipax_settings: "Configuración Chipax",
   // Configuraciones de integraciones administrables desde la plataforma.
   dte_portal_settings:        "Configuración DTE",

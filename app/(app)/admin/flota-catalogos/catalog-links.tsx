@@ -22,6 +22,12 @@ const LINKS = [
     permission:  "admin:fleet_catalog" satisfies Permission,
   },
   {
+    title:       "Propietarios",
+    description: "Empresas dueñas de los equipos (Chome, ASIR, bancos, leasing): corrige nombres y tipos, activa o desactiva.",
+    href:        "/admin/flota-catalogos/propietarios",
+    permission:  "admin:fleet_catalog" satisfies Permission,
+  },
+  {
     title:       "Vehículos",
     description: "Crear, editar y dar de baja vehículos asociados a faenas.",
     href:        "/admin/flota-catalogos/vehiculos",
