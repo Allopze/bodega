@@ -1,6 +1,8 @@
 # Camiones de producción en horómetro, Biodiversa en odómetro — sólo Mantención (2026-11-25)
 
-**Estado:** en implementación en la rama `feat/mantencion-unidad-por-equipo` (worktree `bodega-wt/mant-unidad`). Sin datos de producción tocados.
+**Estado: HECHO Y APLICADO EN PRODUCCIÓN el 2026-11-25.** Código en `main` (`b848c1423`), migración `0402` desplegada. El script movió los 62 camiones y tractos de producción a horas con la pauta «Maquinaria pesada»; los 8 de Biodiversa siguen en km. Respaldo previo en el servidor: `/srv/plataforma/backups/prod-2026-11-25-1859-pre-medidor-camiones.dump`. Verificado con lecturas: 62 perfiles en `h`, 62 filas de historial y de auditoría, 0 registros/OT afectados y `fuel_vehicles` sin tocar.
+
+Para revertir, a mano y sólo si hiciera falta: `UPDATE mant_equipment_profiles SET unit = NULL, schedule_id = <pauta «Camiones y tractos»>` de esos 62 equipos (no tenían lectura inicial ni preventiva declarada, así que no hay nada más que restaurar).
 
 ## Decisión del usuario (2026-11-25)
 
