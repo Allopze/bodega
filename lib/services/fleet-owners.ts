@@ -1,9 +1,9 @@
-import { asc, eq } from "drizzle-orm"
+import { asc, count, eq } from "drizzle-orm"
 import type { Tx } from "@/db"
 import { fleetOwners, fuelVehicles } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
-import { cleanName, findByNameKey } from "@/lib/mantencion/normalize"
+import { cleanName, findByNameKey, nameKey } from "@/lib/mantencion/normalize"
 
 /**
  * Empresa propietaria de un equipo y marca «ubicación por confirmar»
@@ -44,7 +44,33 @@ export async function listFleetOwners(client: Pick<Tx, "select">, options: { onl
     .map((row) => ({ id: row.id, name: row.name, kind: row.kind as FleetOwnerKind, isActive: row.isActive }))
 }
 
-export type FleetOwnerResult<T> = { ok: true; message: string; data: T } | { ok: false; message: string }
+export interface FleetOwnerCatalogRow extends FleetOwnerRow {
+  /** Equipos que hoy tienen a esta empresa como propietaria (activos o no). */
+  vehicleCount: number
+}
+
+/**
+ * Catálogo completo para Administración: activas e inactivas, con cuántos equipos
+ * tiene cada una (lo que importa al desactivarla: esos equipos la conservan).
+ */
+export async function listFleetOwnersWithVehicleCount(client: Pick<Tx, "select">): Promise<FleetOwnerCatalogRow[]> {
+  const rows = await client
+    .select({
+      id: fleetOwners.id,
+      name: fleetOwners.name,
+      kind: fleetOwners.kind,
+      isActive: fleetOwners.isActive,
+      vehicleCount: count(fuelVehicles.id),
+    })
+    .from(fleetOwners)
+    .leftJoin(fuelVehicles, eq(fuelVehicles.ownerId, fleetOwners.id))
+    .groupBy(fleetOwners.id)
+    .orderBy(asc(fleetOwners.name))
+  return rows.map((row) => ({ ...row, kind: row.kind as FleetOwnerKind, vehicleCount: Number(row.vehicleCount) }))
+}
+
+/** `field` dice a qué campo del formulario pertenece el error, para que la acción lo pinte ahí. */
+export type FleetOwnerResult<T> = { ok: true; message: string; data: T } | { ok: false; message: string; field?: "name" | "kind" }
 
 /**
  * Crea una empresa propietaria. Si ya hay una con el mismo nombre (sin distinguir
@@ -57,12 +83,12 @@ export async function createFleetOwnerTx(
   input: { name: string; kind: string },
 ): Promise<FleetOwnerResult<{ id: string; created: boolean }>> {
   const name = cleanName(input.name)
-  if (name.length < 2) return { ok: false, message: "Escribe el nombre de la empresa (mínimo 2 letras)." }
-  if (name.length > FLEET_OWNER_NAME_MAX_LENGTH) return { ok: false, message: `El nombre no puede pasar de ${FLEET_OWNER_NAME_MAX_LENGTH} caracteres.` }
-  if (!isFleetOwnerKind(input.kind)) return { ok: false, message: "Elige el tipo de empresa." }
+  if (name.length < 2) return { ok: false, message: "Escribe el nombre de la empresa (mínimo 2 letras).", field: "name" }
+  if (name.length > FLEET_OWNER_NAME_MAX_LENGTH) return { ok: false, message: `El nombre no puede pasar de ${FLEET_OWNER_NAME_MAX_LENGTH} caracteres.`, field: "name" }
+  if (!isFleetOwnerKind(input.kind)) return { ok: false, message: "Elige el tipo de empresa.", field: "kind" }
   const existing = findByNameKey(await tx.select().from(fleetOwners), name)
   if (existing) {
-    if (!existing.isActive) return { ok: false, message: `La empresa ${existing.name} existe pero está inactiva.` }
+    if (!existing.isActive) return { ok: false, message: `La empresa ${existing.name} existe pero está inactiva: se reactiva en Catálogos de flota › Propietarios.`, field: "name" }
     return { ok: true, message: `La empresa ${existing.name} ya existía: se usó esa.`, data: { id: existing.id, created: false } }
   }
   const id = nanoid()
@@ -77,6 +103,74 @@ export async function createFleetOwnerTx(
     newState: { name, kind: input.kind },
   }, tx)
   return { ok: true, message: `Empresa ${name} creada.`, data: { id, created: true } }
+}
+
+/**
+ * Renombra y/o reclasifica una empresa propietaria (Administración › Catálogos de flota).
+ * La unicidad se mide como en el alta —sin distinguir mayúsculas ni tildes— pero
+ * excluyendo a la propia empresa, para poder corregir «asir» → «ASIR». No toca la
+ * faena de ningún equipo ni el costo imputado: sólo el dato de la empresa.
+ */
+export async function updateFleetOwnerTx(
+  tx: Tx,
+  actor: FleetOwnerActor,
+  input: { id: string; name: string; kind: string },
+): Promise<FleetOwnerResult<{ changed: boolean }>> {
+  const name = cleanName(input.name)
+  if (name.length < 2) return { ok: false, message: "Escribe el nombre de la empresa (mínimo 2 letras).", field: "name" }
+  if (name.length > FLEET_OWNER_NAME_MAX_LENGTH) return { ok: false, message: `El nombre no puede pasar de ${FLEET_OWNER_NAME_MAX_LENGTH} caracteres.`, field: "name" }
+  if (!isFleetOwnerKind(input.kind)) return { ok: false, message: "Elige el tipo de empresa.", field: "kind" }
+
+  const owners = await tx.select().from(fleetOwners)
+  const current = owners.find((owner) => owner.id === input.id)
+  if (!current) return { ok: false, message: "Esa empresa propietaria no existe." }
+  const key = nameKey(name)
+  const clash = owners.find((owner) => owner.id !== current.id && nameKey(owner.name) === key)
+  if (clash) return { ok: false, message: `Ya existe la empresa ${clash.name}${clash.isActive ? "" : " (inactiva)"}.`, field: "name" }
+  if (current.name === name && current.kind === input.kind) return { ok: true, message: "No había cambios que guardar.", data: { changed: false } }
+
+  await tx.update(fleetOwners).set({ name, kind: input.kind, updatedAt: new Date().toISOString() }).where(eq(fleetOwners.id, current.id))
+  await recordAudit({
+    userId: actor.userId,
+    userEmail: actor.email ?? undefined,
+    action: "update",
+    entityType: "fleet_owner",
+    entityId: current.id,
+    entityCode: name,
+    oldState: { name: current.name, kind: current.kind },
+    newState: { name, kind: input.kind },
+  }, tx)
+  return { ok: true, message: `Empresa ${name} actualizada.`, data: { changed: true } }
+}
+
+/**
+ * Activa o desactiva una empresa propietaria. Desactivarla sólo la saca del selector
+ * de altas nuevas: los equipos que ya la tienen la conservan (`setVehicleOwnershipTx`
+ * deja mantener la actual aunque esté inactiva).
+ */
+export async function setFleetOwnerActiveTx(
+  tx: Tx,
+  actor: FleetOwnerActor,
+  input: { id: string; isActive: boolean },
+): Promise<FleetOwnerResult<{ changed: boolean; name: string }>> {
+  const [owner] = await tx.select().from(fleetOwners).where(eq(fleetOwners.id, input.id))
+  if (!owner) return { ok: false, message: "Esa empresa propietaria no existe." }
+  if (owner.isActive === input.isActive) {
+    return { ok: true, message: `La empresa ${owner.name} ya estaba ${input.isActive ? "activa" : "inactiva"}.`, data: { changed: false, name: owner.name } }
+  }
+
+  await tx.update(fleetOwners).set({ isActive: input.isActive, updatedAt: new Date().toISOString() }).where(eq(fleetOwners.id, owner.id))
+  await recordAudit({
+    userId: actor.userId,
+    userEmail: actor.email ?? undefined,
+    action: "update",
+    entityType: "fleet_owner",
+    entityId: owner.id,
+    entityCode: owner.name,
+    oldState: { isActive: owner.isActive },
+    newState: { isActive: input.isActive },
+  }, tx)
+  return { ok: true, message: `Empresa ${owner.name} ${input.isActive ? "activada" : "desactivada"}.`, data: { changed: true, name: owner.name } }
 }
 
 export interface VehicleOwnershipInput {

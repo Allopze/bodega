@@ -10,6 +10,7 @@ const catalogRoutes = [
   { path: "/admin/productos/familias", title: "Familias EPP" },
   { path: "/admin/flota-catalogos/vehiculos", title: "Vehículos de combustible" },
   { path: "/admin/flota-catalogos/proveedores-combustible", title: "Proveedores de combustible" },
+  { path: "/admin/flota-catalogos/propietarios", title: "Propietarios de flota" },
 ]
 
 test.describe("Catálogos administrativos migrados", () => {
@@ -58,6 +59,50 @@ test.describe("Catálogos administrativos migrados", () => {
     const hub = page.getByRole("main")
     await expect(hub.getByRole("link", { name: /Vehículos/ })).toHaveAttribute("href", "/admin/flota-catalogos/vehiculos")
     await expect(hub.getByRole("link", { name: /Proveedores de combustible/ })).toHaveAttribute("href", "/admin/flota-catalogos/proveedores-combustible")
+    await expect(hub.getByRole("link", { name: /Propietarios/ })).toHaveAttribute("href", "/admin/flota-catalogos/propietarios")
+  })
+
+  test("propietarios de flota mantienen crear, duplicado, renombrar, cambiar tipo y ciclo de estado", async ({ page }) => {
+    // El nombre es único sin distinguir mayúsculas ni tildes: un sufijo por intento evita que un
+    // retry choque con la empresa que el intento anterior sí alcanzó a crear.
+    const unique = Date.now().toString().slice(-6)
+    const name = `QA_Propietario E2E ${unique}`
+    const renamed = `QA_Propietario E2E ${unique} Renombrado`
+
+    await page.goto("/admin/flota-catalogos/propietarios")
+    await page.getByRole("button", { name: "Nueva empresa" }).first().click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible()
+    await dialog.getByLabel("Nombre").fill(name)
+    await dialog.getByRole("button", { name: "Crear empresa" }).click()
+    await expect(dialog).toBeHidden()
+    await expect(page.getByRole("cell", { name, exact: true })).toBeVisible()
+
+    // En el catálogo, repetir un nombre (aunque cambien las mayúsculas) es un error, no una reutilización.
+    await page.getByRole("button", { name: "Nueva empresa" }).first().click()
+    await dialog.getByLabel("Nombre").fill(name.toUpperCase())
+    await dialog.getByRole("button", { name: "Crear empresa" }).click()
+    await expect(dialog).toContainText("Ya existe una empresa con ese nombre.")
+    await dialog.getByRole("button", { name: "Cancelar" }).click()
+    await expect(dialog).toBeHidden()
+
+    await page.getByRole("button", { name: `Editar empresa ${name}` }).click()
+    await expect(dialog).toBeVisible()
+    await dialog.getByLabel("Nombre").fill(renamed)
+    await dialog.getByRole("combobox", { name: /Tipo/ }).click()
+    await page.getByRole("option", { name: "Financiera" }).click()
+    await dialog.getByRole("button", { name: "Guardar cambios" }).click()
+    await expect(dialog).toBeHidden()
+    const row = page.getByRole("row", { name: new RegExp(renamed) })
+    await expect(row).toContainText("Financiera")
+    await expect(page.getByRole("cell", { name, exact: true })).toHaveCount(0)
+
+    // Sin equipos asignados, desactivar es directo (sin confirmación); reactivar nunca pregunta.
+    await page.getByRole("button", { name: `Desactivar empresa ${renamed}` }).click()
+    await expect(page.getByRole("button", { name: `Activar empresa ${renamed}` })).toBeVisible()
+    await expect(row).toContainText("Inactivo")
+    await page.getByRole("button", { name: `Activar empresa ${renamed}` }).click()
+    await expect(page.getByRole("button", { name: `Desactivar empresa ${renamed}` })).toBeVisible()
   })
 
   test("vehículos mantienen edición, desactivación y reactivación", async ({ page }) => {
@@ -121,5 +166,22 @@ test.describe("Catálogos administrativos migrados", () => {
     await expect(page.getByRole("button", { name: `Activar proveedor de combustible ${supplierName}` })).toBeVisible()
     await page.getByRole("button", { name: `Activar proveedor de combustible ${supplierName}` }).click()
     await expect(page.getByRole("button", { name: `Desactivar proveedor de combustible ${supplierName}` })).toBeVisible()
+  })
+})
+
+test.describe("Propietarios de flota — el servidor decide el acceso", () => {
+  test("quien no administra catálogos de flota no entra a la pantalla ni por URL", async ({ browser }) => {
+    const context = await browser.newContext()
+    const page = await context.newPage()
+    // `scoped@e2e.chome.cl` es un usuario legítimo sin administración (rol de solicitante de faena).
+    // El login NO se traga el error: con una clave equivocada la sesión no existe, la ruta
+    // redirige a /login y la prueba daría verde sin haber probado la barrera de permisos.
+    await login(page, "scoped@e2e.chome.cl", "scoped2026")
+    await page.goto("/admin/flota-catalogos/propietarios")
+
+    await expect(page).toHaveURL(/\/forbidden$/)
+    await expect(page.getByRole("heading", { name: "Propietarios de flota" })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Nueva empresa" })).toHaveCount(0)
+    await context.close()
   })
 })

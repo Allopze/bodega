@@ -136,7 +136,7 @@ describe("getAdminAreas", () => {
     expect(catalogos?.items.length).toBeGreaterThan(0)
   })
 
-  it("exposes the 5 real sub-routes of Catálogos de flota as children, filtered by permission", () => {
+  it("exposes the 6 real sub-routes of Catálogos de flota as children, filtered by permission", () => {
     const areas = getAdminAreas(sessionWithPermissions(ALL_ADMIN_PERMISSIONS))
     const fleet = areas
       .find((area) => area.id === "catalogos")
@@ -146,6 +146,7 @@ describe("getAdminAreas", () => {
       "/admin/flota-catalogos/estanques-combustible",
       "/admin/flota-catalogos/productos-combustible",
       "/admin/flota-catalogos/tipos-equipo",
+      "/admin/flota-catalogos/propietarios",
       "/admin/flota-catalogos/vehiculos",
       "/admin/flota-catalogos/proveedores-combustible",
     ])

@@ -49,7 +49,7 @@ test("el sidebar agrupa Administración por categorías y oculta las áreas de n
   await expect(sidebar.getByRole("link", { name: "Catálogos de flota" })).toBeVisible()
 })
 
-test("Catálogos de flota expone sus 5 sub-rutas y marca activo solo el destino exacto", async ({ page }) => {
+test("Catálogos de flota expone sus 6 sub-rutas y marca activo solo el destino exacto", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1080 })
   await login(page)
   await page.goto("/admin/flota-catalogos/tipos-equipo")
@@ -64,6 +64,7 @@ test("Catálogos de flota expone sus 5 sub-rutas y marca activo solo el destino 
   for (const child of [
     "Estanques de combustible",
     "Productos de combustible",
+    "Propietarios",
     "Vehículos",
     "Proveedores de combustible",
   ]) {
