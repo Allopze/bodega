@@ -370,9 +370,8 @@ Capturas de la pasada anterior (11-23), 1440×900 y 390×844:
 ## Límites y datos pendientes
 
 - **Reimportar el consolidado** en cada ambiente para poblar mecánico, observaciones, fotos y detalle
-  por ítem de las pautas históricas. Hecho **sólo en desarrollo** (ver arriba); la migración 0401 y la
-  reimportación **no se aplicaron en producción**. Hasta entonces, la matriz histórica muestra sólo las
-  pautas que ya tengan detalle y el resto se informa como «sin detalle por ítem».
+  por ítem de las pautas históricas. Hecho en **desarrollo** y, el 2026-11-25, en **producción** (ver
+  «Reimportación en producción»). Pendiente: `plataforma-dev` (:3001), que tiene otra base y no tiene la 0401.
 - **Fotos históricas de mantención**: el importador no guarda las fotos de los formularios de
   mantención (sólo las de pautas). El correctivo histórico muestra «Sin foto»; las nativas usan el
   visor de la plataforma.
@@ -400,7 +399,7 @@ Capturas de la pasada anterior (11-23), 1440×900 y 390×844:
   prueba; el tope de «últimas 8 pautas» se verificó en E2E con 10 pautas sintéticas de un equipo (muestra las 8
   más recientes), no con datos reales.
 - **Fuera de alcance, declarado**:
-  - aplicar la migración 0401 y reimportar el consolidado en **producción** (ver el runbook de abajo);
+  - ~~aplicar la migración 0401 y reimportar el consolidado en producción~~: hecho, ver «Reimportación en producción»;
   - **exportación a PDF** de las pestañas nuevas (el Excel está hecho);
   - **comparación contra una captura real de Looker**: no hay captura del panel original en el repositorio; la
     comparación fue estructural, contra la especificación y el consolidado. Hace falta que alguien aporte esa
@@ -409,10 +408,30 @@ Capturas de la pasada anterior (11-23), 1440×900 y 390×844:
     integración con Drive, así que un proxy necesitaría credenciales de Google que no existen aquí;
   - rediseño del TopBar a 1024 px (hallazgo 7).
 
-## Despliegue a producción (runbook; NO ejecutado)
+## Reimportación en producción (2026-11-25)
 
-Para quien corra el despliegue. Está armado con lo que se hizo en desarrollo y con las notas del proyecto;
-los pasos de producción **no se probaron** y deben confirmarse con lecturas antes de actuar.
+La 0401 ya estaba aplicada en producción (402 migraciones; la tabla `mant_historical_schedule_items` y las
+columnas nuevas existían) cuando se corrió la reimportación. Esta corrió el 2026-11-25 a las 12:26 hora de Chile, con
+la cuenta del usuario como responsable y a su pedido: respaldo previo (`prod-2026-11-25-pre-looker-reimport.dump`,
+24 MB), simulación, `--apply` y segunda simulación, con el mismo método de bundle por stdin de las cargas del 22-11.
+
+- **El historial ya estaba cargado.** Las 4 hojas se habían importado en producción el 2026-11-22; las notas que
+  decían «sólo los 142 de 2026-11-18» estaban desactualizadas. Por eso MANTENCIONES, INSPECCIONES y HALLAZGOS dieron
+  **0 nuevas, 0 completadas y todo «sin cambios»** (2.344 / 1.333 / 1.132), sin rechazos ni diferencias.
+- **Lo que sí cambió**: las 6 pautas se completaron (mecánico, observaciones, ítems no hechos y fotos) y se
+  insertaron **266 ítems de detalle** (219 realizado, 44 no aplica, 3 no realizado), igual que en desarrollo.
+- **Segunda simulación**: todo «sin cambios», 266 ítems sin cambios. Verificación de sólo lectura: 2.344 / 1.333 /
+  1.132 / 6, 266 ítems, 6 pautas con mecánico y con ambas fotos, auditoría `mant_historical_import` nueva, `/api/health` 200.
+- **Sigue igual**: 6 trabajos sin equipo (WX-6495 ×4, JN-1255, estructura de limpieza), 2 en conflicto (KCH-126 /
+  KXZD-19, filas 1853 y 1856) y 1 aviso de lectura (`DIAS_DETENIDO` −7 de la fila 2155, que queda vacío).
+- **No verificado**: el Panel en pantalla en producción (no hay sesión desde esta máquina). Lo esperable es la matriz
+  de Camiones con hasta 4 columnas y Máquinas sin pautas.
+- Los registros de la corrida están en `~/backups-prod/prod-2026-11-25-importador-{simulacion,apply,resimulacion}.txt`.
+
+## Despliegue a producción (runbook original)
+
+Quedó como referencia: el despliegue y la reimportación ya se hicieron (ver arriba). Está armado con lo que se
+hizo en desarrollo y con las notas del proyecto.
 
 1. **Antes de desplegar**: el trabajo está en `main`; confirmar que la integración continua queda verde. El
    deploy lo corre una persona (`npm run deploy:prod`, que exige `main` y el árbol limpio; un worktree limpio
@@ -426,16 +445,15 @@ los pasos de producción **no se probaron** y deben confirmarse con lecturas ant
 4. **Reimportar el consolidado** (`CONSOLIDADO_CHOME_COMBUSTIBLE_MANTENCION_INSPECCION.xlsx`, 3,1 MB, ignorado
    por git; contiene datos personales: no copiarlo fuera del canal que se use). Una carga anterior del historial
    en producción (2026-11-18) se hizo con un bundle esbuild por stdin contra el contenedor de la app; este
-   script (`scripts/import-consolidado-mantencion.ts`) **no se ha probado en producción**, así que habrá que
-   empaquetarlo igual. Orden: respaldo → **simulación** con `--report` → revisar el informe → `--apply` →
+   script (`scripts/import-consolidado-mantencion.ts`) se empaquetó igual y corrió en producción el 2026-11-25
+   (esbuild no debe usar `--loader:.xlsx=binary`: el Node 22 del contenedor no tiene `Uint8Array.fromBase64`; se
+   embebe el base64 como texto y se decodifica con `Buffer`). Orden: respaldo → **simulación** con `--report` → revisar el informe → `--apply` →
    segunda simulación, que debe dejar todo «sin cambios». El respaldo y la simulación van en una sesión ssh
    distinta de la que pasa el bundle por stdin (un `docker compose exec -T` previo se come el stdin).
-5. **Advertencia de volumen**: el importador carga **todas las hojas** del consolidado, no sólo las 6 pautas
-   del tablero. En desarrollo fueron MANTENCIONES 2.344 filas (2.202 nuevas y 142 completadas), INSPECCIONES
-   1.333, HALLAZGOS 1.132 y PAUTAS 6, sin rechazos. En producción debe esperarse una carga de ese orden;
-   las notas del proyecto indican que el historial de producción sólo tenía los 142 trabajos cargados el
-   2026-11-18 desde otro archivo —**verificarlo con una lectura antes de aplicar**—. Decidir si se quiere esa
-   carga completa o sólo el detalle de las pautas.
+5. **Volumen**: el importador carga **todas las hojas** del consolidado, no sólo las 6 pautas del tablero. En
+   desarrollo fueron MANTENCIONES 2.344 filas (2.202 nuevas y 142 completadas), INSPECCIONES 1.333, HALLAZGOS 1.132
+   y PAUTAS 6. **En producción no hubo carga de ese tamaño**: ya estaba cargado desde el 2026-11-22 (ver arriba) y
+   sólo se agregó el detalle de las pautas.
 6. **Qué esperar en pantalla tras la carga**: la matriz de Camiones con hasta 4 columnas (las 4 pautas reales),
    Máquinas sin pautas (las 2 de máquinas son de prueba y el tablero las excluye) y la pauta KCH-135/SRCJ-42 sin
    vínculo de equipo por un conflicto de código y patente que debe conciliarse a mano.
