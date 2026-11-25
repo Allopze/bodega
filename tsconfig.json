@@ -44,6 +44,7 @@
     "erpnext-develop",
     "odoo-19.0",
     "dashboards-referencia",
+    "referencia-resolver-onway",
     ".claude/worktrees"
   ]
 }

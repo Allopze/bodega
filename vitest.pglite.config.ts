@@ -28,7 +28,7 @@ export default defineConfig({
     // cada test dos o tres veces y los de React fallan con
     // «Cannot read properties of null (reading 'useState')», porque se carga
     // una segunda copia de React desde el `node_modules` del worktree.
-    exclude: ["node_modules", ".next", ".tmp", ".claude/worktrees/**"],
+    exclude: ["node_modules", ".next", ".tmp", ".claude/worktrees/**", "referencia-resolver-onway/**"],
     setupFiles: ["./components/__tests__/setup.ts"],
     env: {
       DATABASE_URL: "postgres:///bodega_test",

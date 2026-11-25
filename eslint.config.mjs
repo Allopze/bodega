@@ -319,6 +319,10 @@ const eslintConfig = defineConfig([
     "odoo-19.0/**",
     // Muestra estática de composición visual (no es código de la app).
     "referencia/**",
+    // Proyecto aparte de OnWay (su propio package.json y node_modules); vive en la
+    // raíz pero no se versiona (`.git/info/exclude`), así que ningún `git status`
+    // lo delata y los globs `**` del repo lo recorren igual.
+    "referencia-resolver-onway/**",
   ]),
   {
     plugins: {
