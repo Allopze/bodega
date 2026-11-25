@@ -1,4 +1,3 @@
-import { maintenanceUnitOfMeter } from "./padron-identity"
 import type { MantUnit } from "./types"
 
 /**
@@ -18,6 +17,13 @@ export const ODOMETER_TRUCK_WORKSITE_CODE = "BIODIVERSA"
 
 /** `fuel_equipment_types.performance_family` de camiones y tractocamiones. */
 export const TRUCK_PERFORMANCE_FAMILY = "camiones"
+
+/** La unidad de Mantención de un medidor (`fuel_equipment_types.default_meter_type`); `null` si no es km ni horas. */
+export function maintenanceUnitOfMeter(meterType: string): MantUnit | null {
+  if (meterType === "odometer") return "km"
+  if (meterType === "hour_meter") return "h"
+  return null
+}
 
 export interface DefaultUnitInput {
   /** `fuel_equipment_types.default_meter_type` del tipo del equipo. */
@@ -44,11 +50,4 @@ export function defaultMaintenanceUnit(input: DefaultUnitInput): MantUnit | null
 export function effectiveMaintenanceUnit(stored: string | null | undefined, typeMeterType: string): MantUnit | null {
   if (stored === "km" || stored === "h") return stored
   return maintenanceUnitOfMeter(typeMeterType)
-}
-
-/** `fuel_vehicles.meter_type` / `performance_unit` que corresponden a una unidad de Mantención. */
-export function meterDefaultsOfUnit(unit: MantUnit): { meterType: "odometer" | "hour_meter"; performanceUnit: "km_per_liter" | "liters_per_hour" } {
-  return unit === "km"
-    ? { meterType: "odometer", performanceUnit: "km_per_liter" }
-    : { meterType: "hour_meter", performanceUnit: "liters_per_hour" }
 }

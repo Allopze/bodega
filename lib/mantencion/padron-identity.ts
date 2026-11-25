@@ -1,4 +1,4 @@
-import { defaultMaintenanceUnit, TRUCK_PERFORMANCE_FAMILY } from "./equipment-unit"
+import { defaultMaintenanceUnit, maintenanceUnitOfMeter, TRUCK_PERFORMANCE_FAMILY } from "./equipment-unit"
 import type { MantUnit } from "./types"
 
 /**
@@ -38,12 +38,8 @@ export interface PadronTypeOption {
   performanceFamily?: string | null
 }
 
-/** La unidad de Mantención de un tipo de equipo, por su medidor; `null` si no se mide en km ni en horas. */
-export function maintenanceUnitOfMeter(meterType: string): MantUnit | null {
-  if (meterType === "odometer") return "km"
-  if (meterType === "hour_meter") return "h"
-  return null
-}
+/** Se sigue exportando desde aquí: lo usan el padrón, el servidor y sus pruebas. */
+export { maintenanceUnitOfMeter }
 
 /**
  * Por qué no se puede elegir un tipo para un equipo de Mantención, o `null` si se puede. Compara la

@@ -28,6 +28,16 @@ describe("pickGpsEstimateReading", () => {
     expect(pickGpsEstimateReading({ ...base, gps, visionlink: sample(1010, "2026-11-01") })?.source).toBe("gps")
   })
 
+  it("un medidor en 0 no es una lectura: sin lectura oficial no se estima («al día · 0 h» era tranquilidad falsa)", () => {
+    const noOfficial = { ...base, official: null }
+    // El horómetro de la GPS de los camiones llega en 0.00: ni de la GPS ni de VisionLink.
+    expect(pickGpsEstimateReading({ ...noOfficial, gps: sample(0, "2026-11-08") })).toBeNull()
+    expect(pickGpsEstimateReading({ ...noOfficial, visionlink: sample(0, "2026-11-08") })).toBeNull()
+    expect(pickGpsEstimateReading({ ...noOfficial, unit: "km", gps: sample(0, "2026-11-08") })).toBeNull()
+    // Una lectura positiva sin lectura oficial sigue estimándose.
+    expect(pickGpsEstimateReading({ ...noOfficial, gps: sample(15, "2026-11-08") })).toEqual({ value: 15, at: at("2026-11-08"), source: "gps" })
+  })
+
   it("equipo retirado o sin pauta no se estima", () => {
     const visionlink = sample(1040, "2026-11-08")
     expect(pickGpsEstimateReading({ ...base, visionlink, active: false })).toBeNull()

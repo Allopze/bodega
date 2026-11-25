@@ -11,7 +11,9 @@ import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { toast } from "@/lib/toast"
+import { defaultMaintenanceUnit, TRUCK_PERFORMANCE_FAMILY } from "@/lib/mantencion/equipment-unit"
 import { unitName } from "@/lib/mantencion/format"
+import type { MantUnit } from "@/lib/mantencion/types"
 import type { ActionState } from "@/lib/validation/operations"
 import { EquipmentPlanFields } from "./equipment-plan-fields"
 import type { EquipmentFormCatalogs, EquipmentFormValues } from "./equipment-form-types"
@@ -51,12 +53,21 @@ export function EquipmentForm({
   const error = (field: string) => state.fieldErrors?.[field]?.[0]
 
   const type = catalogs.types.find((item) => item.id === values.equipmentTypeId)
-  const schedules = React.useMemo(() => (type ? catalogs.schedules.filter((item) => item.unit === type.unit) : []), [type, catalogs.schedules])
+  const worksite = catalogs.worksites.find((item) => item.id === values.worksiteId)
+  // La unidad la fijan el tipo y la faena (los camiones de producción miden en horas, los de Biodiversa en km): el
+  // servidor aplica la misma regla, así que lo que se ofrece aquí es lo que acepta.
+  const unit: MantUnit | null = !type
+    ? null
+    : type.meterType === undefined
+      ? type.unit
+      : defaultMaintenanceUnit({ typeMeterType: type.meterType, typeFamily: type.family ?? null, worksiteCode: worksite?.code ?? null }) ?? type.unit
+  const isTruck = type?.family === TRUCK_PERFORMANCE_FAMILY
+  const schedules = React.useMemo(() => (unit ? catalogs.schedules.filter((item) => item.unit === unit) : []), [unit, catalogs.schedules])
 
   // Una pauta elegida antes de cambiar el tipo a otra unidad ya no sirve: se suelta, no se envía a escondidas.
   React.useEffect(() => {
-    if (values.scheduleId && type && !schedules.some((item) => item.id === values.scheduleId)) setValues((current) => ({ ...current, scheduleId: "" }))
-  }, [type, schedules, values.scheduleId])
+    if (values.scheduleId && unit && !schedules.some((item) => item.id === values.scheduleId)) setValues((current) => ({ ...current, scheduleId: "" }))
+  }, [unit, schedules, values.scheduleId])
 
   const reportedRef = React.useRef<ActionState | null>(null)
   React.useEffect(() => {
@@ -84,12 +95,12 @@ export function EquipmentForm({
         </div>
         <Field
           label="Tipo de equipo" required htmlFor="eq-type" error={error("equipmentTypeId")}
-          helper={type ? `Se mide en ${unitName(type.unit)}.` : undefined}
+          helper={!type || !unit ? undefined : isTruck && !worksite ? "Los camiones miden en horas; los de Biodiversa, en kilómetros. Elige la faena." : `Se mide en ${unitName(unit)}.`}
         >
           <OptionSelect
             id="eq-type" name="equipmentTypeId" className={SELECT} placeholder="Elige el tipo…" value={values.equipmentTypeId} error={!!error("equipmentTypeId")}
             onValueChange={(v) => set("equipmentTypeId", v)}
-            options={catalogs.types.map((item) => ({ value: item.id, label: `${item.name} · ${item.unit}`, textValue: item.name }))}
+            options={catalogs.types.map((item) => ({ value: item.id, label: item.family === TRUCK_PERFORMANCE_FAMILY ? item.name : `${item.name} · ${item.unit}`, textValue: item.name }))}
           />
         </Field>
         <Field label="Marca" required htmlFor="eq-brand" error={error("brandId")} helper="Lista cerrada: las pautas dependen de la marca.">
@@ -109,7 +120,7 @@ export function EquipmentForm({
           />
         </Field>
         <EquipmentPlanFields
-          unit={type?.unit ?? null}
+          unit={unit}
           schedules={catalogs.schedules}
           values={values}
           readingLocked={false}

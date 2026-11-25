@@ -62,7 +62,9 @@ afterAll(async () => {
 describe.sequential("camiones de producción a horas (Mantención)", () => {
   it("la simulación informa y no escribe nada", async () => {
     const { applyMedidorCamiones } = await load()
-    const report = await applyMedidorCamiones({ actorEmail: ACTOR })
+    const report = await applyMedidorCamiones({ actorEmail: ACTOR, readings: { "KA-200": { reading: 6_638, date: daysAgo(2) }, "ZZ-1": { reading: 10, date: daysAgo(2) } } })
+    // Una clave de --lecturas que no calza con ningún equipo se avisa en vez de ignorarse en silencio.
+    expect(report.unmatchedReadings).toEqual(["ZZ-1"])
     // KA-200 (Cholguán) y KA-300 (Arauco) se mueven; KA-135 es de Biodiversa; KA-999 está de baja; KA-777 no tiene ficha.
     expect(report.outcomes.map((o) => o.code).sort()).toEqual(["KA-200", "KA-300"])
     expect(report.outcomes.every((o) => o.result === "dry-run")).toBe(true)
@@ -124,14 +126,16 @@ describe.sequential("camiones de producción a horas (Mantención)", () => {
     const { applyMedidorCamiones } = await load()
     await expect(applyMedidorCamiones({ actorEmail: ACTOR, apply: true, scheduleName: "Camiones y tractos" })).rejects.toThrow(/kilómetros, no en horas/)
     await expect(applyMedidorCamiones({ actorEmail: ACTOR, apply: true, scheduleName: "No existe" })).rejects.toThrow(/no existe/)
-    await expect(applyMedidorCamiones({ actorEmail: "nadie@chome.test", apply: true })).rejects.toThrow(/No hay un usuario activo/)
+    await expect(applyMedidorCamiones({ actorEmail: "nadie@chome.test", apply: true, scheduleName: "Maquinaria pesada" })).rejects.toThrow(/No hay un usuario activo/)
+    // Con --apply hay que decir la pauta (o --sin-pauta): una segunda corrida no completaría la que se olvidó.
+    await expect(applyMedidorCamiones({ actorEmail: ACTOR, apply: true })).rejects.toThrow(/Falta --pauta-horas/)
   })
 
   it("se detiene si la faena de Biodiversa no existe con ese código", async () => {
     const { applyMedidorCamiones } = await load()
     await inMemoryDb.update(schema.worksites).set({ code: "BIO-OTRO" }).where(eq(schema.worksites.id, IDS.wsBio))
     try {
-      await expect(applyMedidorCamiones({ actorEmail: ACTOR, apply: true })).rejects.toThrow(/No existe la faena con código BIODIVERSA/)
+      await expect(applyMedidorCamiones({ actorEmail: ACTOR, apply: true, scheduleName: "Maquinaria pesada" })).rejects.toThrow(/No existe la faena con código BIODIVERSA/)
     } finally {
       await inMemoryDb.update(schema.worksites).set({ code: "BIODIVERSA" }).where(eq(schema.worksites.id, IDS.wsBio))
     }

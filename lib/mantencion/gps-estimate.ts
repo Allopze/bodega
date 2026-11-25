@@ -62,6 +62,9 @@ export function pickGpsEstimateReading(input: {
     && (input.gps == null || dayOf(visionlink) >= dayOf(input.gps))
   const chosen = useVisionlink ? visionlink : input.gps
   if (!chosen || !newerThanOfficial(chosen)) return null
+  // Un medidor en 0 no es una lectura: es un equipo cuyo dispositivo no lo cablea (el horómetro de la GPS de los
+  // camiones llega en 0.00). Proyectarlo daba «al día · 0 h» a un equipo del que no se sabe nada.
+  if (!(chosen.value > 0)) return null
 
   if (official != null) {
     const days = Math.max(1, daysBetween(official.date, dayOf(chosen)))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { defaultMaintenanceUnit, effectiveMaintenanceUnit, meterDefaultsOfUnit } from "./equipment-unit"
+import { defaultMaintenanceUnit, effectiveMaintenanceUnit } from "./equipment-unit"
 
 describe("defaultMaintenanceUnit", () => {
   const truck = { typeMeterType: "odometer", typeFamily: "camiones" }
@@ -43,12 +43,5 @@ describe("effectiveMaintenanceUnit", () => {
 
   it("ignora un valor que no es km ni h", () => {
     expect(effectiveMaintenanceUnit("mi", "odometer")).toBe("km")
-  })
-})
-
-describe("meterDefaultsOfUnit", () => {
-  it("lleva la unidad al medidor y rendimiento de Combustible", () => {
-    expect(meterDefaultsOfUnit("km")).toEqual({ meterType: "odometer", performanceUnit: "km_per_liter" })
-    expect(meterDefaultsOfUnit("h")).toEqual({ meterType: "hour_meter", performanceUnit: "liters_per_hour" })
   })
 })

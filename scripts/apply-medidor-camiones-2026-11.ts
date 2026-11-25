@@ -21,8 +21,11 @@
  * Simulación por defecto: corre el mismo código en una transacción y la deshace. Idempotente: un
  * equipo que ya mide en horas queda «ya estaba».
  *
- *   npx tsx scripts/apply-medidor-camiones-2026-11.ts --actor-email <correo> [--pauta-horas <nombre>] [--lecturas <json>]
- *   npx tsx scripts/apply-medidor-camiones-2026-11.ts --actor-email <correo> [--pauta-horas <nombre>] [--lecturas <json>] --apply
+ *   npx tsx scripts/apply-medidor-camiones-2026-11.ts --actor-email <correo> --pauta-horas <nombre> [--lecturas <json>]
+ *   npx tsx scripts/apply-medidor-camiones-2026-11.ts --actor-email <correo> --pauta-horas <nombre> [--lecturas <json>] --apply
+ *
+ * `--apply` exige `--pauta-horas` (o `--sin-pauta`, explícito): una segunda corrida no completa la pauta de un equipo
+ * que ya estaba en horas, así que olvidarla en la primera deja a los equipos sin pauta.
  *
  * `--lecturas` es un JSON `{ "KPL-133": { "reading": 6638, "date": "2026-11-09" } }`, con la clave
  * por código o patente, con la última lectura del horómetro de cada equipo.
@@ -54,6 +57,8 @@ export interface MedidorReport {
   keptInKm: number
   /** Camiones sin baja que no están en Mantención (sin perfil): no se tocan. */
   withoutProfile: number
+  /** Claves de `--lecturas` que no calzaron con ningún equipo movido: casi siempre un código mal escrito. */
+  unmatchedReadings: string[]
 }
 class DryRunRollback extends Error {}
 
@@ -62,6 +67,8 @@ export interface ApplyOptions {
   apply?: boolean
   /** Nombre de una pauta en horas ya creada, que se asigna a todos los equipos movidos. */
   scheduleName?: string
+  /** Mover los equipos sin asignarles pauta. Con `apply`, sin `scheduleName` hay que decirlo explícitamente. */
+  withoutSchedule?: boolean
   readings?: InitialHoursReadings
 }
 
@@ -77,11 +84,15 @@ function indexReadings(readings: InitialHoursReadings | undefined): Map<string, 
 
 export async function applyMedidorCamiones(options: ApplyOptions): Promise<MedidorReport> {
   const apply = options.apply ?? false
+  if (apply && !options.scheduleName && !options.withoutSchedule) {
+    throw new Error("Falta --pauta-horas <nombre> (o --sin-pauta): una segunda corrida no completa la pauta de un equipo que ya estaba en horas. No se escribió nada.")
+  }
   const actorRow = await db.query.users.findFirst({ where: and(eq(users.email, options.actorEmail), eq(users.isActive, true)), columns: { id: true, email: true } })
   if (!actorRow) throw new Error(`No hay un usuario activo con el correo ${options.actorEmail}: la bitácora necesita un responsable.`)
   const actor = { userId: actorRow.id, email: actorRow.email }
   const readings = indexReadings(options.readings)
-  const report: MedidorReport = { outcomes: [], keptInKm: 0, withoutProfile: 0 }
+  const report: MedidorReport = { outcomes: [], keptInKm: 0, withoutProfile: 0, unmatchedReadings: [] }
+  const usedReadings = new Set<InitialHoursReading>()
 
   try {
     await db.transaction(async (tx) => {
@@ -121,6 +132,7 @@ export async function applyMedidorCamiones(options: ApplyOptions): Promise<Medid
         if (truck.worksiteId === kmSite.id) { report.keptInKm += 1; continue }
 
         const reading = readings.get(`c:${equipmentCodeKey(truck.code)}`) ?? readings.get(`p:${plateKey(truck.plate)}`)
+        if (reading) usedReadings.add(reading)
         const unit = effectiveMaintenanceUnit(truck.profileUnit, truck.typeMeter)
         const base = { code: label, worksite: truck.worksiteName }
         if (!unit) { report.outcomes.push({ ...base, result: "omitido", detail: "su tipo no se mide en km ni en horas" }); continue }
@@ -147,6 +159,8 @@ export async function applyMedidorCamiones(options: ApplyOptions): Promise<Medid
         ]
         report.outcomes.push({ ...base, result: apply ? "aplicado" : "dry-run", detail: notes.join("; ") })
       }
+      // `indexReadings` guarda por código y por patente el MISMO objeto: una clave usada deja su objeto en `usedReadings`.
+      report.unmatchedReadings = Object.entries(options.readings ?? {}).filter(([, value]) => !usedReadings.has(value)).map(([key]) => key)
       // La simulación corre el mismo código y lo deshace: lo que informa es lo que `--apply` haría.
       if (!apply) throw new DryRunRollback()
     })
@@ -161,6 +175,7 @@ export function printMedidorReport(report: MedidorReport, apply: boolean) {
   const n = (r: Result) => report.outcomes.filter((o) => o.result === r).length
   console.log(`\n${apply ? `${n("aplicado")} aplicado(s)` : `${n("dry-run")} por aplicar (simulación)`}, ${n("ya estaba")} ya estaban, ${n("omitido")} omitido(s).`)
   console.log(`${report.keptInKm} de la faena ${ODOMETER_TRUCK_WORKSITE_CODE} se quedan en kilómetros; ${report.withoutProfile} camiones sin ficha de Mantención no se tocan.`)
+  if (report.unmatchedReadings.length) console.log(`AVISO: estas claves de --lecturas no calzaron con ningún equipo movido: ${report.unmatchedReadings.join(", ")}.`)
 }
 
 function argValue(argv: string[], flag: string): string | undefined {
@@ -178,7 +193,7 @@ export async function main(argv = process.argv) {
   const readingsPath = argValue(argv, "--lecturas")
   const readings = readingsPath ? (JSON.parse(readFileSync(readingsPath, "utf8")) as InitialHoursReadings) : undefined
   console.log(`Camiones de producción a horas (Mantención) — ${apply ? "escribiendo" : "simulación (no escribe)"}`)
-  printMedidorReport(await applyMedidorCamiones({ actorEmail, apply, scheduleName: argValue(argv, "--pauta-horas"), readings }), apply)
+  printMedidorReport(await applyMedidorCamiones({ actorEmail, apply, scheduleName: argValue(argv, "--pauta-horas"), withoutSchedule: argv.includes("--sin-pauta"), readings }), apply)
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

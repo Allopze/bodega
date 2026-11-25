@@ -81,16 +81,16 @@ export async function listMantCatalogs(opts: { includeInactive?: boolean } = {})
  * catálogo sirve al formulario para elegir el tipo, no para decidir la unidad de
  * un equipo existente (eso va por `effectiveMeterSql`).
  */
-export async function listEquipmentTypes(): Promise<Array<{ id: string; name: string; unit: MantUnit }>> {
+export async function listEquipmentTypes(): Promise<Array<{ id: string; name: string; unit: MantUnit; meterType: string; family: string | null }>> {
   const rows = await db
-    .select({ id: fuelEquipmentTypes.id, name: fuelEquipmentTypes.name, meter: fuelEquipmentTypes.defaultMeterType })
+    .select({ id: fuelEquipmentTypes.id, name: fuelEquipmentTypes.name, meter: fuelEquipmentTypes.defaultMeterType, family: fuelEquipmentTypes.performanceFamily })
     .from(fuelEquipmentTypes)
     .where(and(eq(fuelEquipmentTypes.isActive, true), inArray(fuelEquipmentTypes.defaultMeterType, ["odometer", "hour_meter"])))
     .orderBy(asc(fuelEquipmentTypes.sortOrder), asc(fuelEquipmentTypes.name))
-  const types: Array<{ id: string; name: string; unit: MantUnit }> = []
+  const types: Array<{ id: string; name: string; unit: MantUnit; meterType: string; family: string | null }> = []
   for (const row of rows) {
     const unit = unitFromMeter(row.meter)
-    if (unit) types.push({ id: row.id, name: row.name, unit })
+    if (unit) types.push({ id: row.id, name: row.name, unit, meterType: row.meter, family: row.family })
   }
   return types
 }
