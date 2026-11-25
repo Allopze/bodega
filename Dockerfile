@@ -738,12 +738,15 @@ RUN chmod +x ./scripts/backup-*.sh ./scripts/restore-all.sh ./scripts/catastroph
 # at runtime fails with EACCES.
 # /data/backups (BACKUP_DIR) es el mismo caso para el volumen bodega-backups: sin
 # precrearlo, el orquestador de respaldos no puede crear ni un snapshot.
+# /data/onway-profile y /data/onway-models: idéntico, y sin esto el solver de
+# captchas fallaba con EACCES al escribir el modelo y la sesión de Auth0
+# (medido en producción el 2026-11-25: `open ...recaptcha_cls.onnx.parcial`).
 # /app/.gnupg: backup-scheduler corre con HOME=/app (de root) y gpg aborta si no
 # puede crear su homedir —"can't create directory '/app/.gnupg'"—, así que el
 # snapshot cifrado fallaba aun con gnupg instalado.
-RUN mkdir -p /app/storage /app/.next/cache /data/storage /data/backups /app/backups /app/.gnupg && \
-    chown nextjs:nodejs /app/storage /data/storage /data/backups /app/backups /app/.gnupg && \
-    chmod 700 /app/.gnupg && \
+RUN mkdir -p /app/storage /app/.next/cache /data/storage /data/backups /data/onway-profile /data/onway-models /app/backups /app/.gnupg && \
+    chown nextjs:nodejs /app/storage /data/storage /data/backups /data/onway-profile /data/onway-models /app/backups /app/.gnupg && \
+    chmod 700 /app/.gnupg /data/onway-profile && \
     chown -R nextjs:nodejs /app/.next/cache
 
 USER nextjs
