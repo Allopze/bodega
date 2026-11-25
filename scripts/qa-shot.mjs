@@ -3,8 +3,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const url = process.env.URL || 'http://localhost:3003/control-operacional'
-const user = process.env.QA_USER || 'allopze@gmail.com'
-const pass = process.env.QA_PASS || 'Chgo1314'
+// Credenciales de la sesión QA: vienen del entorno, nunca escritas aquí (mismas variables que scripts/qa-login.mjs).
+const user = process.env.QA_USER
+const pass = process.env.QA_PASSWORD
+if (!user || !pass) {
+  console.error('Faltan QA_USER o QA_PASSWORD. Ejemplo: node --env-file=.env.qa scripts/qa-shot.mjs')
+  process.exit(1)
+}
 const outDir = process.env.OUT_DIR || 'audit/control-operacional-fixes'
 fs.mkdirSync(outDir, { recursive: true })
 

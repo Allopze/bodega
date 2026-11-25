@@ -1,4 +1,10 @@
 import { chromium } from 'playwright'
+// Credenciales de la sesión QA: vienen del entorno, nunca escritas aquí (mismas variables que scripts/qa-login.mjs).
+const { QA_USER, QA_PASSWORD } = process.env
+if (!QA_USER || !QA_PASSWORD) {
+  console.error('Faltan QA_USER o QA_PASSWORD. Ejemplo: node --env-file=.env.qa scripts/qa-debug.mjs')
+  process.exit(1)
+}
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] })
 const page = await browser.newPage()
 page.on('console', m => console.log('[console]', m.type(), m.text()))
@@ -23,8 +29,8 @@ const reactCheck = await page.evaluate(() => {
 })
 console.log('react check:', JSON.stringify(reactCheck))
 
-await page.locator('input[name="email"]').first().fill('allopze@gmail.com')
-await page.locator('input[name="password"]').first().fill('Chgo1314')
+await page.locator('input[name="email"]').first().fill(QA_USER)
+await page.locator('input[name="password"]').first().fill(QA_PASSWORD)
 
 // Esperar y clickear
 await page.waitForTimeout(2000)

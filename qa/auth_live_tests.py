@@ -3,10 +3,17 @@ Isolates rate-limit buckets via spoofed cf-connecting-ip to avoid locking
 the shared 'unresolved' bucket. All accounts QA_AUTH_* are throwaway.
 """
 import json
+import os
 import time
 import requests
 
 BASE = "http://host.docker.internal:3001"
+
+# Credenciales de la sesión QA: vienen del entorno, nunca escritas aquí.
+QA_USER = os.environ.get("QA_USER")
+QA_PASSWORD = os.environ.get("QA_PASSWORD")
+if not QA_USER or not QA_PASSWORD:
+    raise SystemExit("Faltan QA_USER o QA_PASSWORD (por ejemplo: set -a; . ./.env.qa; set +a; python3 qa/auth_live_tests.py)")
 
 def mk(ip: str | None = None):
     s = requests.Session()
@@ -63,7 +70,7 @@ def rec(name, detail):
 
 # --- Test A: admin login works, capture cookie flags ---
 s = mk()
-r = login(s, "allopze@gmail.com", "Chgo1314")
+r = login(s, QA_USER, QA_PASSWORD)
 rec("A_admin_login", describe_login(r))
 rec("A_cookie_flags", json.dumps(cookie_flags(s), indent=1))
 sr = s.get(f"{BASE}/api/auth/session", timeout=10)
