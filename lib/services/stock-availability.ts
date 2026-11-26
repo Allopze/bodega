@@ -31,6 +31,14 @@ export interface PendingRequestItem {
 
 export interface StockAvailabilityFilters {
   worksiteId?: string
+  /**
+   * Los repuestos de catálogo entran al stock de su faena (ADR mantención 0001): lo aprobado y aún
+   * sin llegar es stock en tránsito, como el de cualquier producto. Quien mide demanda de
+   * reposición (la alerta «sin stock con demanda») los deja fuera: un repuesto comprado para una
+   * OT está en cero por diseño hasta que llega y no es un quiebre.
+   * Por omisión entran.
+   */
+  includeSpareParts?: boolean
 }
 
 /** Lo por recibir de un producto que la faena todavía no tiene en bodega. */
@@ -38,6 +46,8 @@ export interface IncomingWithoutStockRow extends StockAvailabilityRow {
   productName: string
   productSku: string | null
   unitOfMeasure: string
+  /** Un repuesto no se entrega a un trabajador: la tabla de stock no le ofrece «Entregar». */
+  isSparePart: boolean
 }
 
 /**
@@ -107,8 +117,7 @@ export async function getStockAvailability(
       requestScope,
       eq(worksites.isActive, true),
       eq(products.isService, false),
-      // Consumo directo: el repuesto de catálogo no llega a la bodega, no es stock en tránsito.
-      eq(products.isSparePart, false),
+      filters.includeSpareParts === false ? eq(products.isSparePart, false) : undefined,
       notInArray(purchaseRequests.status, [...TERMINAL_REQUEST_STATUSES]),
       inArray(purchaseRequestItems.status, [...NOT_YET_AT_FAENA_ITEM_STATUSES]),
     ))
@@ -144,7 +153,7 @@ export async function getIncomingWithoutStock(
       .from(worksiteStock)
       .where(and(inArray(worksiteStock.worksiteId, worksiteIds), inArray(worksiteStock.productId, productIds))),
     db
-      .select({ id: products.id, name: products.name, sku: products.sku, unitOfMeasure: products.unitOfMeasure })
+      .select({ id: products.id, name: products.name, sku: products.sku, unitOfMeasure: products.unitOfMeasure, isSparePart: products.isSparePart })
       .from(products)
       .where(and(inArray(products.id, productIds), textSearchSql(options.q ?? "", [products.name, products.sku]))),
   ])
@@ -159,6 +168,7 @@ export async function getIncomingWithoutStock(
       productName: product.name,
       productSku: product.sku,
       unitOfMeasure: product.unitOfMeasure,
+      isSparePart: product.isSparePart === true,
     }]
   })
 }

@@ -44,7 +44,9 @@ export async function listStockoutsWithDemand(
   session: Session | null,
   faena: string,
 ): Promise<Array<{ worksiteId: string; productId: string }>> {
-  const availability = await getStockAvailability(session, { worksiteId: faena || undefined })
+  // Sin repuestos: uno comprado para una OT está en cero hasta que llega, y eso no es un quiebre de
+  // reposición (ver `StockAvailabilityFilters.includeSpareParts`).
+  const availability = await getStockAvailability(session, { worksiteId: faena || undefined, includeSpareParts: false })
   const pending = availability.filter((row) => row.incoming > 0)
   if (pending.length === 0) return []
 

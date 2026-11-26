@@ -5,6 +5,20 @@ import { formatDate } from "@/lib/utils"
 
 vi.mock("./stock-export-button", () => ({ StockExportButton: () => null }))
 
+/** Espía las props que recibe el menú de cada fila, sin cambiar lo que dibuja. */
+let rowMenuSpy: ((props: { productId: string; canDeliver: boolean }) => void) | null = null
+const spyOnRowMenu = (spy: NonNullable<typeof rowMenuSpy>) => { rowMenuSpy = spy }
+vi.mock("./stock-row-menu", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./stock-row-menu")>()
+  return {
+    ...actual,
+    StockRowMenu: (props: React.ComponentProps<typeof actual.StockRowMenu>) => {
+      rowMenuSpy?.(props)
+      return actual.StockRowMenu(props)
+    },
+  }
+})
+
 import { StockTable } from "./stock-table"
 import { WarehouseHeaderMetrics } from "./bodega-header-metrics"
 import type { WorksiteStockWithProduct } from "./types"
@@ -45,6 +59,7 @@ function cells(table: ReturnType<typeof within>, column: number) {
 
 afterEach(() => {
   sessionStorage.clear()
+  rowMenuSpy = null
 })
 
 describe("StockTable", () => {
@@ -254,6 +269,83 @@ describe("StockTable — contexto por fila", () => {
     expect(screen.getByRole("table").querySelectorAll("colgroup col")).toHaveLength(5)
     expect(table.getAllByRole("button", { name: "Acciones para Buzo Dupont Tyvek" })).toHaveLength(2)
     expect(table.getByRole("columnheader", { name: "Acciones" })).toBeTruthy()
+  })
+})
+
+describe("StockTable — repuestos con reserva por OT", () => {
+  const SPARE = line({
+    id: "s-rep", productId: "p-rep", quantity: 9, isSparePart: true, reserved: 3, free: 6,
+    product: { name: "Filtro de aceite", sku: "REP-1", unitOfMeasure: "unidad" },
+  })
+  const GLOVE = line({ id: "s-epp", productId: "p-epp", quantity: 50 })
+
+  function renderMixed() {
+    return renderTable([{ id: "ws-1", name: "Biodiversa", items: [SPARE, GLOVE] }])
+  }
+
+  it("agrega «Reservado OT» y «Libre» cuando hay un repuesto, con cifras en mono tabular", () => {
+    const table = renderMixed()
+
+    expect(table.getByRole("columnheader", { name: "Reservado OT" })).toBeTruthy()
+    expect(table.getByRole("columnheader", { name: "Libre" })).toBeTruthy()
+    // Orden de filas: nombre ascendente → Buzo Dupont Tyvek (EPP) antes que Filtro de aceite.
+    const [glove, spare] = (table.getAllByRole("row") as HTMLElement[])
+      .filter((row) => within(row).queryAllByRole("cell").length > 0)
+      .map((row) => within(row).getAllByRole("cell"))
+    const reservedCell = spare![2]!
+    const freeCell = spare![3]!
+    expect(reservedCell.textContent).toBe("3")
+    expect(freeCell.textContent).toBe("6")
+    expect(reservedCell.firstElementChild).toHaveClass("font-mono", "tabular-nums")
+    expect(freeCell.firstElementChild).toHaveClass("font-mono", "tabular-nums")
+    // La fila que no es repuesto no cambia: sin cifras, sólo un guion.
+    expect(glove![2]!.textContent).toBe("—")
+    expect(glove![3]!.textContent).toBe("—")
+  })
+
+  it("sin ningún repuesto la tabla queda como antes: sin las dos columnas", () => {
+    const table = renderTable()
+
+    expect(table.queryByRole("columnheader", { name: "Reservado OT" })).toBeNull()
+    expect(table.queryByRole("columnheader", { name: "Libre" })).toBeNull()
+  })
+
+  it("explica las dos columnas desde su encabezado y reserva su ancho", () => {
+    const table = renderMixed()
+
+    expect(table.getByRole("button", { name: "Qué significa Reservado OT" })).toBeTruthy()
+    expect(table.getByRole("button", { name: "Qué significa Libre" })).toBeTruthy()
+    expect(screen.getByRole("table").querySelectorAll("colgroup col")).toHaveLength(6)
+  })
+
+  it("en la tarjeta móvil sólo el repuesto lleva Reservado OT y Libre", () => {
+    renderMixed()
+    const [gloveCard, spareCard] = screen.getAllByRole("article")
+
+    expect(within(spareCard!).getByText("Reservado OT")).toBeTruthy()
+    expect(within(spareCard!).getByText("Libre")).toBeTruthy()
+    expect(within(spareCard!).getByText("3 unidades")).toBeTruthy()
+    expect(within(spareCard!).getByText("6 unidades")).toBeTruthy()
+    expect(within(gloveCard!).queryByText("Reservado OT")).toBeNull()
+    expect(within(gloveCard!).queryByText("Libre")).toBeNull()
+  })
+
+  it("el encabezado de grupo abarca las columnas nuevas", () => {
+    renderMixed()
+
+    const groupHeader = screen.getByRole("rowheader", { name: /Biodiversa/ })
+    expect(groupHeader).toHaveAttribute("colspan", "6")
+  })
+
+  it("un repuesto no se entrega: el menú de su fila nunca recibe el permiso de entregar", () => {
+    const calls: Array<{ productId: string; canDeliver: boolean }> = []
+    spyOnRowMenu((props) => calls.push({ productId: props.productId, canDeliver: props.canDeliver }))
+    render(<StockTable worksites={[{ id: "ws-1", name: "Biodiversa", items: [SPARE, GLOVE] }]} canDeliver canAdjust />)
+
+    // Ajustar y dar de baja sí valen para un repuesto (el inventario de arranque entra por ahí); entregar no.
+    expect(calls.filter((call) => call.productId === "p-epp").every((call) => call.canDeliver)).toBe(true)
+    expect(calls.filter((call) => call.productId === "p-rep").every((call) => !call.canDeliver)).toBe(true)
+    expect(calls.some((call) => call.productId === "p-rep")).toBe(true)
   })
 })
 

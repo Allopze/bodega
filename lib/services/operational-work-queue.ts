@@ -811,6 +811,9 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       ELSE CONCAT('/bodega?faena=', ${purchaseRequests.worksiteId}) END AS href,
       CASE WHEN ${products.isEpp} THEN 'Registrar entrega' ELSE 'Despachar desde bodega' END::text AS cta_label
     ${itemBase} AND ${purchaseRequestItems.status} IN ('partially_received', 'partially_delivered')
+      -- Un repuesto no se entrega ni se despacha a un trabajador (ADR mantención 0001): ahora que tiene
+      -- stock por faena, su saldo no genera la tarea «Entregar».
+      AND ${products.isSparePart} IS NOT TRUE
       AND EXISTS (
         SELECT 1 FROM ${worksiteStock}
         WHERE ${worksiteStock.productId} = ${purchaseRequestItems.productId}

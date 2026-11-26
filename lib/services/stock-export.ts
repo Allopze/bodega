@@ -6,15 +6,17 @@ import { formatVariantProductName } from "@/lib/products/variant-grouping"
 
 import { eq, and, sql, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { worksites, worksiteStock, inventoryMovements, products, users } from "@/db/schema"
+import { worksites, worksiteStock, inventoryMovements, mantRecords, mantWorkOrders, products, users } from "@/db/schema"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { buildXlsxBuffer, type ReportData } from "@/lib/reports/export"
 import { periodSql } from "@/lib/adquisiciones/list-query"
-import { MOVEMENT_TYPE_LABELS } from "@/lib/movement-labels"
+import { kardexTypeLabel } from "@/lib/bodega/kardex-labels"
 import type { Session } from "next-auth"
 import { todayInChile } from "@/lib/utils"
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { getIncomingWithoutStock, getStockAvailability } from "@/lib/services/stock-availability"
+import { loadSpareStockLevels, stockLevelKey } from "@/lib/services/bodega-spare-stock"
+import { mantRecordOfMovement } from "@/lib/services/stock-mant-reference"
 
 export interface StockExportFilters {
   worksiteId?: string
@@ -49,6 +51,7 @@ export async function getStockExport(
       productName:    products.name,
       productSku:     products.sku,
       unitOfMeasure:  products.unitOfMeasure,
+      isSparePart:    products.isSparePart,
       quantity:       worksiteStock.quantity,
       lastMovementAt: worksiteStock.lastMovementAt,
     })
@@ -64,6 +67,7 @@ export async function getStockExport(
 
   const truncated = rows.length > maxRows
   const limited = truncated ? rows.slice(0, maxRows) : rows
+  // Los repuestos también entran: tienen stock por faena (ADR mantención 0001).
   const availabilityRows = await getStockAvailability(session, { worksiteId: filters.worksiteId })
   // Lo pedido para una faena que nunca tuvo el producto: la pantalla lo
   // muestra en 0, y la planilla tiene que decir lo mismo.
@@ -93,11 +97,15 @@ export async function getStockExport(
       productName: r.productName,
       productSku: r.productSku,
       unitOfMeasure: r.unitOfMeasure,
+      isSparePart: r.isSparePart,
       quantity: 0,
       lastMovementAt: null,
     })),
   ].sort((a, b) => a.worksiteName.localeCompare(b.worksiteName, "es")
     || a.productName.localeCompare(b.productName, "es"))
+
+  // «Reservado OT» y «Libre» sólo para los repuestos: el resto de las filas va con las celdas vacías.
+  const spareLevels = await loadSpareStockLevels(exportRows)
 
   const report: ReportData = {
     filenameBase: "stock-por-faena",
@@ -111,9 +119,13 @@ export async function getStockExport(
       "En bodega",
       "Por recibir",
       "Último movimiento",
+      // Al final para no mover las columnas que ya conocen quienes usan la planilla.
+      "Reservado OT",
+      "Libre",
     ],
     rows: exportRows.map((r) => {
       const availability = availabilityByKey.get(`${r.worksiteId}\u0000${r.productId}`)
+      const spare = spareLevels.get(stockLevelKey(r.worksiteId, r.productId))
       return [
         r.worksiteName,
         formatVariantProductName(r.productName, sizeById.get(r.productId)),
@@ -123,6 +135,8 @@ export async function getStockExport(
         r.quantity,
         availability?.incoming ?? 0,
         r.lastMovementAt ?? "",
+        spare?.reserved ?? "",
+        spare?.free ?? "",
       ]
     }),
     rowLimitApplied: truncated,
@@ -183,6 +197,7 @@ export async function getKardexExport(
       productName:     products.name,
       productSku:      products.sku,
       type:            inventoryMovements.type,
+      referenceType:   inventoryMovements.referenceType,
       quantity:        inventoryMovements.quantity,
       stockBefore:     inventoryMovements.stockBefore,
       stockAfter:      inventoryMovements.stockAfter,
@@ -190,11 +205,16 @@ export async function getKardexExport(
       performedByName: users.name,
       reason:          inventoryMovements.reason,
       notes:           inventoryMovements.notes,
+      // Uso de un repuesto (o su reverso): el registro de mantención y la OT de ese registro.
+      recordFolio:     mantRecords.folio,
+      workOrderFolio:  mantWorkOrders.folio,
     })
     .from(inventoryMovements)
     .innerJoin(worksites, eq(inventoryMovements.worksiteId, worksites.id))
     .innerJoin(products, eq(inventoryMovements.productId, products.id))
     .innerJoin(users, eq(inventoryMovements.performedBy, users.id))
+    .leftJoin(mantRecords, mantRecordOfMovement)
+    .leftJoin(mantWorkOrders, eq(mantWorkOrders.id, mantRecords.workOrderId))
     .where(and(wsScope, wsFilter, prodFilter, periodFilter))
     .orderBy(sql`${inventoryMovements.performedAt} DESC`)
     .limit(maxRows + 1)
@@ -219,6 +239,9 @@ export async function getKardexExport(
       "Responsable",
       "Motivo",
       "Observaciones",
+      // Al final para no mover las columnas que ya conocen quienes usan la planilla.
+      "OT",
+      "Registro de mantención",
     ],
     rows: limited.map((r) => [
       r.performedAt ?? "",
@@ -226,13 +249,15 @@ export async function getKardexExport(
       formatVariantProductName(r.productName, sizeById.get(r.productId)),
       resolveProductSize(sizeById.get(r.productId) ?? [])?.label ?? "",
       r.productSku ?? "",
-      MOVEMENT_TYPE_LABELS[r.type] ?? r.type,
+      kardexTypeLabel(r.type, r.referenceType),
       r.quantity,
       r.stockBefore,
       r.stockAfter,
       r.performedByName,
       r.reason ?? "",
       r.notes ?? "",
+      r.workOrderFolio ?? "",
+      r.recordFolio ?? "",
     ]),
     rowLimitApplied: truncated,
   }

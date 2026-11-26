@@ -14,8 +14,10 @@ import {
   deliveries, deliveryItems,
   statusHistory, users, products, worksites, workers, suppliers,
   inventoryMovements,
+  mantPartsAllocationSources, mantPartsNoteItems, mantPartsNotes, mantRecordParts, mantRecords, mantWorkOrders,
 } from "@/db/schema"
-import { and, asc, desc, eq, inArray } from "drizzle-orm"
+import { mantRecordOfMovement } from "@/lib/services/stock-mant-reference"
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import type { Session } from "next-auth"
 import type { ItemDetailData } from "./trazabilidad-item.types"
@@ -201,9 +203,29 @@ export async function getItemDetail(
             reason:        inventoryMovements.reason,
             notes:         inventoryMovements.notes,
             stockAfter:    inventoryMovements.stockAfter,
+            // Uso de un repuesto en una OT (o su reverso): el registro y la OT salen en la misma
+            // consulta, por el `referenceId` del movimiento.
+            recordId:       mantRecords.id,
+            recordFolio:    mantRecords.folio,
+            workOrderId:    mantWorkOrders.id,
+            workOrderFolio: mantWorkOrders.folio,
+            // Las notas de pedido que alimentaron la reserva de la línea del registro: línea →
+            // reserva → aportes con nota → ítem de la nota → NP. Puede haber más de una (la
+            // reserva es única por OT y repuesto y acumula aportes) o ninguna (se usó sin NP).
+            noteCodes: sql<string[] | null>`(
+              select array_agg(distinct ${mantPartsNotes.code} order by ${mantPartsNotes.code})
+              from ${mantRecordParts}
+              inner join ${mantPartsAllocationSources} on ${mantPartsAllocationSources.allocationId} = ${mantRecordParts.allocationId}
+              inner join ${mantPartsNoteItems} on ${mantPartsNoteItems.id} = ${mantPartsAllocationSources.noteItemId}
+              inner join ${mantPartsNotes} on ${mantPartsNotes.id} = ${mantPartsNoteItems.noteId}
+              where (${mantRecordParts.inventoryMovementId} = ${inventoryMovements.id} or ${mantRecordParts.reversalMovementId} = ${inventoryMovements.id})
+                and ${mantPartsAllocationSources.quantity} > 0
+            )`,
           })
           .from(inventoryMovements)
           .leftJoin(users, eq(inventoryMovements.performedBy, users.id))
+          .leftJoin(mantRecords, mantRecordOfMovement)
+          .leftJoin(mantWorkOrders, eq(mantWorkOrders.id, mantRecords.workOrderId))
           .where(
             and(
               eq(inventoryMovements.productId, item.productId),
@@ -311,6 +333,15 @@ export async function getItemDetail(
       reason:          m.reason,
       notes:           m.notes,
       stockAfter:      m.stockAfter,
+      maintenance:     m.recordId
+        ? {
+            workOrderId:    m.workOrderId,
+            workOrderFolio: m.workOrderFolio,
+            recordId:       m.recordId,
+            recordFolio:    m.recordFolio,
+            noteCodes:      m.noteCodes ?? [],
+          }
+        : null,
     })),
   }
 }
