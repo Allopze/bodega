@@ -42,8 +42,9 @@ Viven en el código; ver la cabecera de `lib/services/mantencion/parts/allocatio
   - No hay columna de «reservado» en `worksite_stock`.
 - **Mutex:** la fila (faena, producto) de `worksite_stock`.
 - **Orden global de bloqueo:** equipo → OT → faena → filas de stock por `product_id` → reservas.
-- **Salidas que no son consumo** (desecho, traslado, anulaciones): no se comen lo reservado. El ajuste sí puede, y rebaja reservas.
+- **Salidas que no son consumo** (desecho, traslado, anulaciones): no se comen lo reservado. El ajuste sí puede, y rebaja reservas. Esa rebaja queda en `mant_parts_allocation_sources` (origen `ajuste`, con el motivo y el folio del ajuste) y en la auditoría, pero **no** escribe evento en la OT ni avisa: tomaría un bloqueo sobre la OT después del de stock y rompería el orden global. La sección «Repuestos» de la OT la muestra desde los orígenes.
 - **Cantidades** en centésimas, porque el stock es `real` (float4).
+- **Bloqueos entre productos de una misma bodega:** la recepción bloquea primero las filas de los repuestos y después las de los demás productos en el orden de los ítems; el despacho de una guía, en el orden de sus ítems. Dos transacciones cruzadas pueden chocar: Postgres aborta una (no hay corrupción) y el usuario reintenta. El riesgo ya existía entre productos comunes.
 - **Kárdex:** el consumo apunta al registro (`referenceType: mant_record`) y su reverso también (`mant_record_void`). La línea se enlaza por `inventory_movement_id`.
 
 ## Consecuencias

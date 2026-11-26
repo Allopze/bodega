@@ -22,7 +22,7 @@ import { applyMovementTx } from "./stock"
 import { OFFICE_ORIGIN_LABEL, prepareDispatchGuideForOfficeReceiptTx, resolveOfficeWorksite } from "./dispatch-guides"
 import { notifyManyUser, notifyAfterCommit } from "./notifications"
 import { notifyWorkOrderPartsReceived } from "./mantencion/work-orders/notifications"
-import { addToAllocationTx, lockForStockTx } from "./mantencion/parts"
+import { addToAllocationTx, freeStockTx, lockForStockTx } from "./mantencion/parts"
 import { closeOrderTx } from "./purchasing-module/receiving"
 import {
   collectRequesterShortfallNoticesTx,
@@ -504,11 +504,17 @@ export async function registerReceipt(
             // oficina no: ahí es stock de la oficina y la reserva nace al despachar la guía (D11).
             // Si la OT ya cerró o se anuló, `addToAllocationTx` devuelve `null` y el stock queda libre.
             if (product.isSparePart && input.stage === "faena" && requestItem?.workOrderId) {
-              await addToAllocationTx(tx, {
+              // REC-001 (sin movimiento: el stock ya estaba en la oficina): sólo se reserva lo que
+              // sigue libre ahí. Entre la llegada y esta etapa pudo darse de baja, y reservar de más
+              // bloquearía toda salida posterior de ese repuesto en la oficina.
+              const reservable = stockWorksiteId
+                ? qtyRec
+                : Math.min(qtyRec, await freeStockTx(tx, sparePartStockWorksiteId, lockedOcItem.productId))
+              if (reservable > 0) await addToAllocationTx(tx, {
                 workOrderId: requestItem.workOrderId,
                 worksiteId: sparePartStockWorksiteId,
                 productId: lockedOcItem.productId,
-                quantity: qtyRec,
+                quantity: reservable,
                 source: "recepcion",
                 receiptId,
                 requestItemId: requestItem.id,

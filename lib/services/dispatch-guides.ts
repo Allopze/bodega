@@ -84,6 +84,22 @@ import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-th
  * Respaldo del rótulo de origen cuando la faena-oficina no se puede resolver.
  * El nombre real sale de `officeWorksiteLabel`; esto es sólo la última carta.
  */
+
+/**
+ * Un repuesto viaja en guía sólo si su recepción en oficina le dio stock (`ingreso_oc` de esa
+ * recepción y ese producto). Las recepciones anteriores al corte del ADR de mantención 0001
+ * registraron cantidad recibida sin ingreso: trasladarlas sacaría stock ajeno de la oficina.
+ * Se exige dentro de una consulta que ya une `receipt_items` y `products`.
+ */
+function sparePartEnteredOfficeStockSql(): SQL {
+  return sql`(${products.isSparePart} = false OR EXISTS (
+    SELECT 1 FROM ${inventoryMovements} AS office_ingress
+    WHERE office_ingress.reference_type = 'receipt'
+      AND office_ingress.reference_id = ${receiptItems.receiptId}
+      AND office_ingress.product_id = ${products.id}
+      AND office_ingress.type = 'ingreso_oc'
+  ))`
+}
 export const OFFICE_ORIGIN_LABEL = "Oficina CHOME"
 
 /** Referencia de kardex que une guía ↔ movimiento en los dos sentidos. */
@@ -419,6 +435,7 @@ export async function prepareDispatchGuideForOfficeReceiptTx(
       eq(purchaseOrderItems.purchaseOrderId, input.purchaseOrderId),
       eq(products.isService, false),
       gt(receiptItems.quantityReceived, 0),
+      sparePartEnteredOfficeStockSql(),
     ))
     .orderBy(asc(receiptItems.id))
 
@@ -519,6 +536,7 @@ export async function prepareAdditionalDispatchGuideForOfficeReceipt(
         eq(purchaseOrderItems.purchaseOrderId, order.id),
         eq(products.isService, false),
         gt(receiptItems.quantityReceived, 0),
+        sparePartEnteredOfficeStockSql(),
       ))
       .orderBy(asc(receiptItems.id))
     const activeIds = rows.map((row) => row.receiptItemId)
