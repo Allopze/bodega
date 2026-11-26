@@ -699,6 +699,7 @@ export const pgliteTestFiles = [
   // NP · L2 compras: solicitud desde NP y catalogación obligatoria.
 
   // NP · L3 notas de pedido: servicio, sync y catálogo del teléfono.
+  "lib/__tests__/np-parts-notes-pglite.test.ts",
 
   // NP · L4 consumo: registro, anulación, cierre de OT y conciliación.
 
