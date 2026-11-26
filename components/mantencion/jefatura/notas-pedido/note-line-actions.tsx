@@ -79,10 +79,13 @@ function TakeFromStockDialog({ noteId, line, worksiteName, stockOptions, onOpenC
                 <OptionSelect id="np-take-product" aria-label="Repuesto de la bodega" value={productId} placeholder="Elige el repuesto…" onValueChange={setProductId} options={options} />
               </Field>
             )}
-            <p role="status" className={free > 0 ? "text-sm font-semibold text-[var(--color-text)]" : "text-sm font-semibold text-[var(--color-warning-ink)]"}>
-              {formatQty(free)} libres en {worksiteName}
-            </p>
-            {free <= 0 && <p className="text-sm text-[var(--color-text-muted)]">No hay stock libre de este repuesto en la faena: cómpralo o espera a que llegue.</p>}
+            {/* Hasta elegir el repuesto no hay saldo que mostrar: «0 libres» se leía como si no hubiera stock. */}
+            {productId && (
+              <p role="status" className={free > 0 ? "text-sm font-semibold text-[var(--color-text)]" : "text-sm font-semibold text-[var(--color-warning-ink)]"}>
+                {formatQty(free)} libres en {worksiteName}
+              </p>
+            )}
+            {productId && free <= 0 && <p className="text-sm text-[var(--color-text-muted)]">No hay stock libre de este repuesto en la faena: cómpralo o espera a que llegue.</p>}
             <Field
               label="Cantidad a sacar"
               htmlFor="np-take-quantity"

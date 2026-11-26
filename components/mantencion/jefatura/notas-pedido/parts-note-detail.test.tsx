@@ -139,6 +139,9 @@ describe("PartsNoteDetailView: líneas", () => {
     expect(dialog.getByText(/El mecánico pidió «Filtro de aceite motor»/)).toBeTruthy()
     // Aunque haya un solo repuesto con stock, no se preselecciona: puede no ser el que pidió el mecánico.
     expect((dialog.getByRole("button", { name: "Sacar de bodega" }) as HTMLButtonElement).disabled).toBe(true)
+    // Sin repuesto elegido no se muestra saldo (ni el «no hay stock», que confundía).
+    expect(dialog.queryByText(/libres en Biodiversa/)).toBeNull()
+    expect(dialog.queryByText(/No hay stock libre/)).toBeNull()
     fireEvent.click(dialog.getByRole("combobox", { name: "Repuesto de la bodega" }))
     fireEvent.click(await screen.findByRole("option", { name: /Filtro de aceite FA-1/ }))
     expect(dialog.getByText("3 libres en Biodiversa")).toBeTruthy()
