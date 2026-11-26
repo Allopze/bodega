@@ -71,7 +71,8 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
 
       <PanelTabs active={tab} params={params} />
 
-      {context.filters.invalidPeriod && (
+      {/* Planificación no usa el período (es el estado de hoy, PAN4-6): un rango malo en la dirección no le cambia nada. */}
+      {context.filters.invalidPeriod && tab !== "planificacion" && (
         <Callout tone="warning" className="mb-4">
           El rango de fechas de la dirección no es válido: se muestra {DEFAULT_RANGE_LABEL}.
         </Callout>
