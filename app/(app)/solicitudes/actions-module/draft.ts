@@ -76,6 +76,8 @@ export async function persistDraft(
     model:         item.model || null,
     vehicleId:     item.vehicleId || null,
     workOrderId:   item.workOrderId || null,
+    // Sólo repuestos compra líneas de nota de pedido (el servicio lo verifica contra la OT).
+    partsNoteItemId: isRepuestos ? (item.partsNoteItemId || null) : null,
     estimatedUnitPrice: item.estimatedUnitPrice ?? null,
   }))
   const requestInput = {

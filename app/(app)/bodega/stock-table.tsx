@@ -136,6 +136,11 @@ const COLLAPSED_STORAGE_KEY = "bodega:stock-collapsed"
 const GROUP_BY_LABEL: Record<GroupBy, string> = { faena: "Por faena", producto: "Por producto" }
 const INCOMING_DEFINITION =
   "Lo aprobado en solicitudes que todavía no llega a esta faena. Si ya está en la oficina, sigue contando hasta que llegue."
+// Sólo los repuestos las llevan (ADR mantención 0001): lo que llega para una OT queda apartado para ella.
+const RESERVED_DEFINITION =
+  "Lo apartado para órdenes de trabajo abiertas y que aún no se usa. Si la orden se cierra o se anula, vuelve a quedar libre."
+const FREE_DEFINITION =
+  "En bodega menos lo reservado para órdenes de trabajo: lo que se puede usar sin quitárselo a una OT."
 
 /**
  * `sessionStorage` y no la URL: agrupar es preferencia de vista y se aplica en
@@ -323,11 +328,36 @@ function CoverageCell({ coverage, align = "right" }: { coverage: StockCoverage |
   )
 }
 
+/**
+ * «Reservado OT» y «Libre» de una fila. Sólo los repuestos tienen cifra; en las demás filas va un guion,
+ * que no compite con lo que sí hay. «Libre» en cero se atenúa, como el saldo en cero.
+ */
+function SpareLevelCell({ item, level }: { item: WorksiteStockWithProduct; level: "reserved" | "free" }) {
+  if (!item.isSparePart) {
+    return <TableCell className="text-right"><span className="text-[var(--color-text-faint)]">—</span></TableCell>
+  }
+  const value = level === "reserved" ? (item.reserved ?? 0) : (item.free ?? 0)
+  return (
+    <TableCell className="text-right">
+      <span className={cn(
+        "font-mono text-sm tabular-nums",
+        level === "free" && value > 0 ? "font-semibold text-[var(--color-text)]"
+          : level === "free" ? "font-normal text-[var(--color-text-faint)]"
+          : "text-[var(--color-text)]",
+      )}>
+        {formatQty(value)}
+      </span>
+    </TableCell>
+  )
+}
+
 export function StockTable({ worksites, canExport, canDeliver = false, canAdjust = false }: StockTableProps) {
   const hasRowActions = canDeliver || canAdjust
   const allItems = worksites.flatMap((ws) => ws.items)
   // La columna existe sólo si la página calculó la cobertura (CHART-035a).
   const hasCoverage = allItems.some((item) => item.coverage !== undefined)
+  // «Reservado OT» y «Libre» existen sólo cuando hay un repuesto a la vista; las filas que no lo son no cambian.
+  const hasSpareParts = allItems.some((item) => item.isSparePart)
   const productCount = new Set(allItems.map((item) => item.productId)).size
   const incomingOnlyCount = allItems.filter((item) => item.quantity <= 0 && item.incoming > 0).length
   const [groupBy, setGroupBy] = useGroupBy()
@@ -423,7 +453,7 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                             productName={s.product?.name ?? title}
                             worksiteId={worksiteId}
                             hasStockRecord={s.hasStockRecord}
-                            canDeliver={canDeliver && !empty}
+                            canDeliver={canDeliver && !empty && !s.isSparePart}
                             canAdjust={canAdjust}
                           />
                         )}
@@ -450,6 +480,29 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                             {formatQty(s.incoming, unit)}
                           </dd>
                         </div>
+                        {s.isSparePart && (
+                          <>
+                            <div>
+                              <dt className="text-[var(--color-text-subtle)]">
+                                <AvailabilityDefinition label="Reservado OT" definition={RESERVED_DEFINITION} />
+                              </dt>
+                              <dd className="mt-0.5 font-mono text-sm tabular-nums text-[var(--color-text)]">
+                                {formatQty(s.reserved ?? 0, unit)}
+                              </dd>
+                            </div>
+                            <div className="text-right">
+                              <dt className="text-[var(--color-text-subtle)]">
+                                <AvailabilityDefinition label="Libre" definition={FREE_DEFINITION} className="w-full justify-end" />
+                              </dt>
+                              <dd className={cn(
+                                "mt-0.5 font-mono text-sm tabular-nums",
+                                (s.free ?? 0) > 0 ? "font-semibold text-[var(--color-text)]" : "font-normal text-[var(--color-text-faint)]",
+                              )}>
+                                {formatQty(s.free ?? 0, unit)}
+                              </dd>
+                            </div>
+                          </>
+                        )}
                         {hasCoverage && (
                           <div>
                             <dt className="text-[var(--color-text-subtle)]">Cobertura</dt>
@@ -478,13 +531,15 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
               desalineadas entre grupos. Los anchos viven en el <colgroup>. */}
           <div className="hidden md:block">
             <TableRoot framed={false}>
-            <Table className="min-w-[768px] table-fixed text-sm">
+            <Table className={cn("table-fixed text-sm", hasSpareParts ? "min-w-[992px]" : "min-w-[768px]")}>
               <caption className="sr-only">
                 Stock por producto, agrupado por {groupBy === "faena" ? "faena" : "producto"}
               </caption>
               <colgroup>
                 <col className={hasCoverage ? "w-72" : "w-80"} />
                 <col className="w-32" />
+                {hasSpareParts && <col className="w-28" />}
+                {hasSpareParts && <col className="w-28" />}
                 {hasCoverage && <col className="w-44" />}
                 <col className="w-36" />
                 <col className="w-44" />
@@ -502,6 +557,8 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                     sortKey="quantity" active={sort.key === "quantity"} dir={sort.dir} onSort={handleSort}
                     className="px-5 py-2.5 text-right font-semibold"
                   />
+                  {hasSpareParts && <AvailabilityHeader label="Reservado OT" definition={RESERVED_DEFINITION} />}
+                  {hasSpareParts && <AvailabilityHeader label="Libre" definition={FREE_DEFINITION} />}
                   {hasCoverage && (
                     <SortableHeader
                       label="Cobertura"
@@ -532,7 +589,7 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                     <TableRow>
                       <TableHead
                         scope="rowgroup"
-                        colSpan={(hasRowActions ? 5 : 4) + (hasCoverage ? 1 : 0)}
+                        colSpan={(hasRowActions ? 5 : 4) + (hasCoverage ? 1 : 0) + (hasSpareParts ? 2 : 0)}
                         className="bg-[var(--color-surface-2)] px-5 py-2.5 text-left text-eyebrow"
                       >
                         {/* Un <button> y no <details>: `details` no es válido
@@ -573,6 +630,8 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                             {formatQty(s.quantity)}
                           </span>
                         </TableCell>
+                        {hasSpareParts && <SpareLevelCell item={s} level="reserved" />}
+                        {hasSpareParts && <SpareLevelCell item={s} level="free" />}
                         {hasCoverage && (
                           <TableCell className="text-right"><CoverageCell coverage={s.coverage} /></TableCell>
                         )}
@@ -596,7 +655,8 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                               productName={s.product?.name ?? title}
                               worksiteId={worksiteId}
                               hasStockRecord={s.hasStockRecord}
-                              canDeliver={canDeliver && !empty}
+                              // Un repuesto no se entrega a un trabajador (lo impone el motor de stock): sólo se usa en una OT.
+                              canDeliver={canDeliver && !empty && !s.isSparePart}
                               canAdjust={canAdjust}
                             />
                           </TableCell>

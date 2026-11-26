@@ -55,6 +55,8 @@ export function ItemEditorEquipment({
   // guardar con un mensaje claro).
   const workOrderOptions = vehicle?.openWorkOrders ?? []
   const linkedWorkOrderMissing = !!item.workOrderId && !workOrderOptions.some((order) => order.id === item.workOrderId)
+  // El ítem que compra una línea de una nota de pedido es de esa OT: cambiarla soltaría la línea.
+  const fromPartsNote = !!item.partsNoteItemId
 
   return (
     <div className="ml-8 space-y-3">
@@ -66,7 +68,9 @@ export function ItemEditorEquipment({
         <Field
           label="Equipo de flota"
           htmlFor={`veh-${item._key}`}
-          helper={vehicle ? undefined : "Elige el equipo para que el gasto quede en su ficha. Si no está en flota, escribe sus datos abajo."}
+          helper={fromPartsNote
+            ? "Viene de una nota de pedido: el equipo y la OT no se pueden cambiar."
+            : vehicle ? undefined : "Elige el equipo para que el gasto quede en su ficha. Si no está en flota, escribe sus datos abajo."}
         >
           <Combobox
             id={`veh-${item._key}`}
@@ -75,7 +79,7 @@ export function ItemEditorEquipment({
             onChange={onSelectVehicle}
             placeholder="Busca por código o patente"
             clearLabel="Otro equipo (no está en flota)"
-            disabled={readOnly}
+            disabled={readOnly || fromPartsNote}
           />
         </Field>
 
@@ -88,7 +92,7 @@ export function ItemEditorEquipment({
             <Select
               value={item.workOrderId || NO_WORK_ORDER}
               onValueChange={(value) => onSelectWorkOrder(value === NO_WORK_ORDER ? "" : value)}
-              disabled={readOnly}
+              disabled={readOnly || fromPartsNote}
             >
               <SelectTrigger id={`ot-${item._key}`} className="h-8 text-sm">
                 <SelectValue placeholder="Sin OT" />

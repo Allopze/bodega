@@ -12,6 +12,7 @@ import {
   quotationRequirementMessage,
 } from "../quotation-requirement"
 import { assertLinkedWorkOrderOpen } from "./linked-work-order"
+import { assertPartsNoteLineBuyable } from "./linked-parts-note"
 import type { RequestModuleConfig, SubmitRequestInput } from "../request-config"
 
 export async function submitRequest(
@@ -55,6 +56,7 @@ export async function submitRequest(
         estimatedUnitPrice: purchaseRequestItems.estimatedUnitPrice,
         vehicleId: purchaseRequestItems.vehicleId,
         workOrderId: purchaseRequestItems.workOrderId,
+        partsNoteItemId: purchaseRequestItems.partsNoteItemId,
         productId: purchaseRequestItems.productId,
       })
       .from(purchaseRequestItems)
@@ -89,8 +91,20 @@ export async function submitRequest(
       if (item.workOrderId && item.vehicleId) linkedOrders.set(item.workOrderId, item.vehicleId)
       else if (item.workOrderId) throw new Error("La OT exige elegir el equipo de flota")
     }
+    // Un ítem que compra una línea de nota de pedido no puede «elegir otra OT»: la línea es
+    // de esa OT, así que el aviso le dice que quite el ítem.
+    const noteOrderIds = new Set(items.flatMap((item) => (item.partsNoteItemId && item.workOrderId ? [item.workOrderId] : [])))
     for (const [workOrderId, vehicleId] of linkedOrders) {
-      await assertLinkedWorkOrderOpen(tx, { workOrderId, vehicleId }, ": quita el vínculo o elige otra OT antes de enviar la solicitud")
+      await assertLinkedWorkOrderOpen(tx, { workOrderId, vehicleId }, noteOrderIds.has(workOrderId)
+        ? ": quita ese ítem de la solicitud antes de enviarla"
+        : ": quita el vínculo o elige otra OT antes de enviar la solicitud")
+    }
+    // Y la línea de la nota tiene que seguir siendo comprable: jefatura pudo rechazarla o
+    // anular la nota después de que se guardó el borrador.
+    for (const item of items) {
+      if (!item.partsNoteItemId) continue
+      if (!item.workOrderId) throw new Error("La línea de la nota de pedido exige una OT")
+      await assertPartsNoteLineBuyable(tx, { partsNoteItemId: item.partsNoteItemId, workOrderId: item.workOrderId })
     }
 
     // Vía rápida: una OT vinculada, o un equipo que no está operativo. Por ítem:

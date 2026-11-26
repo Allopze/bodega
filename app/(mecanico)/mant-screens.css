@@ -131,3 +131,29 @@
 .pin-full .err { justify-content: center; }
 .splash { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; }
 .splash p { margin: 0; font-size: 16px; line-height: 1.4; max-width: 320px; color: var(--gr); }
+
+/* Repuestos de la OT, hoja «Pedir repuestos» y repuestos de bodega en el trabajo (ADR mantención 0001).
+ * El estado va siempre en palabras (`.pst`) y con ícono; el color sólo lo refuerza. */
+.prlist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.prow { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--ln3); }
+.prow:first-child { border-top: 0; padding-top: 2px; }
+.pico { flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--ln3); color: var(--gr); }
+.pico.ok { background: var(--gt); color: var(--gi); }
+.pico.info { background: var(--amt); color: var(--ink); }
+.pico.bad { background: #fbe3dc; color: #8f1c12; }
+.prtxt { flex: 1; min-width: 0; }
+.prname { font-size: 16px; line-height: 1.3; overflow-wrap: anywhere; }
+.prq { font: 700 15px var(--fm); margin-right: 4px; }
+.pst { font-weight: 700; font-size: 15px; margin-top: 2px; line-height: 1.3; overflow-wrap: anywhere; }
+.pst.ok { color: var(--gi); }
+.pst.bad { color: #8f1c12; }
+.prnp { font: 500 13px var(--fm); color: var(--gr); margin-top: 2px; }
+.pline { display: flex; flex-direction: column; gap: 12px; }
+.plhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 17px; }
+.stepper input.stq { width: 84px; min-width: 0; height: 52px; padding: 0; border: 0; background: transparent; text-align: center; font: 700 20px var(--ft); }
+.repstk { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--ln); border-left: 4px solid var(--gi); border-radius: 8px; background: #fff; }
+.repstk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.repstk-head strong { font-size: 16px; line-height: 1.3; overflow-wrap: anywhere; padding-top: 10px; }
+.repstk-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.repstk-of { font-size: 15px; color: var(--gr); }
+

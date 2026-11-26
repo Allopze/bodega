@@ -2,10 +2,8 @@ import type { Metadata } from "next"
 import type { ReactNode } from "react"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import {
-  inventoryMovements, physicalInventoryCounts, products, stockAdjustments, stockReturns, users, worksites, worksiteStock,
-} from "@/db/schema"
-import { and, eq, asc, desc, sql, count } from "drizzle-orm"
+import { inventoryMovements, products, worksites, worksiteStock } from "@/db/schema"
+import { and, eq, asc, sql, count } from "drizzle-orm"
 import { requirePermission, can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -31,6 +29,8 @@ import { KARDEX_PAGE_SIZE } from "@/lib/constants"
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import { getIncomingWithoutStock, getStockAvailability } from "@/lib/services/stock-availability"
+import { listKardexMovements } from "@/lib/services/kardex-movements"
+import { loadSpareStockLevels, stockLevelKey } from "@/lib/services/bodega-spare-stock"
 import { getProductBalanceMovements, getStockConsumption, stockConsumptionKey } from "@/lib/services/stock-coverage"
 import {
   computeCoverage,
@@ -103,6 +103,10 @@ export default async function BodegaPage({
   const canExportCharts      = can(session, "warehouse:export")
   const canViewDeliveries    = can(session, "deliveries:view")
   const canCreateDeliveries  = can(session, "deliveries:create")
+  // Los folios de la OT y del registro en el kárdex enlazan sólo con permiso para abrirlos (la pantalla de destino
+  // lo exige en el servidor igual): sin él se leen como texto.
+  const canOpenWorkOrder     = can(session, "mant:ot:view_worksite") || can(session, "mant:ot:view_all")
+  const canOpenRecord        = can(session, "mant:records:view_own") || can(session, "mant:records:view_worksite") || can(session, "mant:records:view_all")
   const onlyDemand           = firstStr(sp.demanda) === "1"
   const coverageFilter       = parseCoverageParam(sp.cobertura)
 
@@ -241,6 +245,7 @@ export default async function BodegaPage({
           productName:    products.name,
           productSku:     products.sku,
           unitOfMeasure:  products.unitOfMeasure,
+          isSparePart:    products.isSparePart,
           worksiteName:   worksites.name,
         })
         .from(worksiteStock)
@@ -264,48 +269,10 @@ export default async function BodegaPage({
     ? await getIncomingWithoutStock(availabilityRows, { q: filters.q })
     : []
 
+  // El kárdex trae en la misma consulta el folio del documento y, si el movimiento es el uso de un repuesto (o su
+  // reverso), el registro de mantención y la OT. El alcance y los filtros los pone esta página.
   const movements = view === "kardex"
-    ? await db
-        .select({
-          id:             inventoryMovements.id,
-          worksiteId:     inventoryMovements.worksiteId,
-          productId:      inventoryMovements.productId,
-          type:           inventoryMovements.type,
-          quantity:       inventoryMovements.quantity,
-          stockBefore:    inventoryMovements.stockBefore,
-          stockAfter:     inventoryMovements.stockAfter,
-          performedAt:    inventoryMovements.performedAt,
-          reason:         inventoryMovements.reason,
-          notes:          inventoryMovements.notes,
-          referenceType:  inventoryMovements.referenceType,
-          referenceId:    inventoryMovements.referenceId,
-          // Los documentos de bodega llevan su folio en su propia tabla; el resto
-          // (entrega, recepción, guía) lo trae escrito en el motivo o la nota.
-          documentFolio:  sql<string | null>`coalesce(${stockAdjustments.code}, ${stockReturns.code}, ${physicalInventoryCounts.code})`,
-          productName:    products.name,
-          worksiteName:   worksites.name,
-          performedByName: users.name,
-        })
-        .from(inventoryMovements)
-        .innerJoin(products, eq(inventoryMovements.productId, products.id))
-        .innerJoin(worksites, eq(inventoryMovements.worksiteId, worksites.id))
-        .leftJoin(users, eq(inventoryMovements.performedBy, users.id))
-        .leftJoin(stockAdjustments, and(
-          eq(inventoryMovements.referenceType, "stock_adjustment"),
-          eq(stockAdjustments.id, inventoryMovements.referenceId),
-        ))
-        .leftJoin(stockReturns, and(
-          eq(inventoryMovements.referenceType, "delivery_return"),
-          eq(stockReturns.id, inventoryMovements.referenceId),
-        ))
-        .leftJoin(physicalInventoryCounts, and(
-          eq(inventoryMovements.referenceType, "physical_inventory_count"),
-          eq(physicalInventoryCounts.id, inventoryMovements.referenceId),
-        ))
-        .where(movementWhere)
-        .orderBy(desc(inventoryMovements.performedAt), desc(inventoryMovements.id))
-        .limit(kardexPagination.limit)
-        .offset(kardexPagination.offset)
+    ? await listKardexMovements({ where: movementWhere, limit: kardexPagination.limit, offset: kardexPagination.offset })
     : []
 
   // Productos que efectivamente aparecen en el kardex del alcance: alimenta el
@@ -341,6 +308,9 @@ export default async function BodegaPage({
   const sizedName = (productId: string, name: string) =>
     formatVariantProductName(name, attributesById.get(productId))
 
+  // «Reservado OT» y «Libre»: sólo las filas de repuesto lo llevan.
+  const spareLevels = await loadSpareStockLevels(stockRows)
+
   const stockByWorksite: Record<string, WorksiteStockWithProduct[]> = {}
   const availabilityByKey = new Map(
     availabilityRows.map((row) => [`${row.worksiteId}\u0000${row.productId}`, row]),
@@ -348,6 +318,7 @@ export default async function BodegaPage({
   for (const row of stockRows) {
     const availability = availabilityByKey.get(`${row.worksiteId}\u0000${row.productId}`)
     const used = consumption.get(stockConsumptionKey(row.worksiteId, row.productId))
+    const spare = spareLevels.get(stockLevelKey(row.worksiteId, row.productId))
     const item: WorksiteStockWithProduct = {
       id: row.id,
       worksiteId: row.worksiteId,
@@ -357,6 +328,8 @@ export default async function BodegaPage({
       lastMovementAt: row.lastMovementAt,
       updatedAt: row.updatedAt,
       hasStockRecord: true,
+      isSparePart: row.isSparePart,
+      ...(spare ? { reserved: spare.reserved, free: spare.free } : {}),
       coverage: computeCoverage({
         quantity: row.quantity,
         consumed: used?.consumed ?? 0,
@@ -380,16 +353,18 @@ export default async function BodegaPage({
       lastMovementAt: null,
       updatedAt: "",
       hasStockRecord: false,
+      isSparePart: row.isSparePart,
       product: { name: sizedName(row.productId, row.productName), sku: row.productSku, unitOfMeasure: row.unitOfMeasure },
       worksite: { name: worksiteNameById.get(row.worksiteId) ?? "" },
     })
   }
 
   // "Sin stock con demanda": lo agotado de lo que la faena pidió y aún no llega.
-  // Misma definición que el aviso (ver `attention.ts`).
+  // Misma definición que el aviso (ver `attention.ts`), que deja fuera los repuestos:
+  // uno comprado para una OT está en cero hasta que llega y no es un quiebre.
   if (onlyDemand) {
     for (const [worksiteId, items] of Object.entries(stockByWorksite)) {
-      stockByWorksite[worksiteId] = items.filter((item) => item.quantity <= 0 && item.incoming > 0)
+      stockByWorksite[worksiteId] = items.filter((item) => !item.isSparePart && item.quantity <= 0 && item.incoming > 0)
     }
   }
 
@@ -424,6 +399,8 @@ export default async function BodegaPage({
     referenceType: row.referenceType,
     referenceId: row.referenceId,
     documentFolio: row.documentFolio,
+    workOrderId: row.workOrderId,
+    workOrderFolio: row.workOrderFolio,
     performedByName: row.performedByName,
     product: { name: sizedName(row.productId, row.productName) },
     worksite: { name: row.worksiteName },
@@ -590,6 +567,8 @@ export default async function BodegaPage({
             movements={kardexMovements}
             worksites={worksiteOptions}
             canExport={canExportStock}
+            canOpenWorkOrder={canOpenWorkOrder}
+            canOpenMaintenanceRecord={canOpenRecord}
             pagination={kardexPagination}
             searchParams={sp}
           />

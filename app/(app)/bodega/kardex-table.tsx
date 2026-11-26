@@ -4,7 +4,8 @@ import { formatDate } from "@/lib/utils"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ArrowSquareOut, ClockCounterClockwise } from "@phosphor-icons/react/dist/ssr"
 import { KardexExportButton } from "./kardex-export-button"
-import { movementLabel, movementToneClass } from "./movement-labels"
+import { movementToneClass } from "./movement-labels"
+import { kardexTypeLabel } from "@/lib/bodega/kardex-labels"
 import { movementDocumentHref, movementFolio, referenceTypeLabel } from "./movement-href"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
@@ -17,6 +18,10 @@ export interface KardexTableProps {
   movements: InventoryMovementWithRelations[]
   worksites?: WorksiteOption[]
   canExport?: boolean
+  /** Los folios del registro de mantención y de la OT son enlace sólo con permiso para abrir esas pantallas;
+   *  sin él se leen igual, como texto. */
+  canOpenMaintenanceRecord?: boolean
+  canOpenWorkOrder?: boolean
   /** Sólo para redactar el vacío: distingue "no hay movimientos" de "tu
    *  búsqueda no encontró ninguno". */
   searchQuery?: string
@@ -32,8 +37,20 @@ function formatMoment(iso: string): { date: string; time: string } {
   return { date: formatDate(iso), time }
 }
 
-function DocumentLink({ movement }: { movement: InventoryMovementWithRelations }) {
-  const href = movementDocumentHref(movement.referenceType, movement.referenceId)
+/** El uso de un repuesto en una OT y su reverso apuntan al registro de mantención (ADR mantención 0001). */
+const MAINTENANCE_REFERENCES = new Set(["mant_record", "mant_record_void"])
+
+function DocumentLink({
+  movement, canOpenMaintenanceRecord, canOpenWorkOrder,
+}: {
+  movement: InventoryMovementWithRelations
+  canOpenMaintenanceRecord: boolean
+  canOpenWorkOrder: boolean
+}) {
+  const isMaintenance = MAINTENANCE_REFERENCES.has(movement.referenceType ?? "")
+  const href = isMaintenance && !canOpenMaintenanceRecord
+    ? null
+    : movementDocumentHref(movement.referenceType, movement.referenceId)
   const label = referenceTypeLabel(movement.referenceType)
   const folio = movementFolio(movement)
   if (!label) return <span className="text-[var(--color-text-faint)]">—</span>
@@ -43,8 +60,9 @@ function DocumentLink({ movement }: { movement: InventoryMovementWithRelations }
       {folio && <span className="block font-mono text-2xs font-semibold text-[var(--color-text)]">{folio}</span>}
     </>
   )
-  if (!href) return <span className="text-[var(--color-text-subtle)]">{content}</span>
-  return (
+  const doc = !href ? (
+    <span className="text-[var(--color-text-subtle)]">{content}</span>
+  ) : (
     <Link
       href={href}
       className="group/doc inline-flex items-start gap-1 text-[var(--color-text-muted)] underline-offset-2 hover:text-[var(--color-text)] hover:underline"
@@ -53,9 +71,35 @@ function DocumentLink({ movement }: { movement: InventoryMovementWithRelations }
       <ArrowSquareOut size={11} aria-hidden className="mt-0.5 shrink-0" />
     </Link>
   )
+  if (!isMaintenance || !movement.workOrderFolio) return doc
+
+  // La OT va en su propia línea y con su propio enlace: un enlace dentro de otro no es HTML válido.
+  const workOrder = (
+    <>
+      OT <span className="font-mono text-2xs font-semibold text-[var(--color-text)]">{movement.workOrderFolio}</span>
+    </>
+  )
+  return (
+    <span className="flex flex-col items-start gap-1">
+      {doc}
+      {canOpenWorkOrder && movement.workOrderId ? (
+        <Link
+          href={`/mantencion/ot/${encodeURIComponent(movement.workOrderId)}`}
+          className="inline-flex items-center gap-1 text-[var(--color-text-muted)] underline-offset-2 hover:text-[var(--color-text)] hover:underline"
+        >
+          <span>{workOrder}</span>
+          <ArrowSquareOut size={11} aria-hidden className="shrink-0" />
+        </Link>
+      ) : (
+        <span className="text-[var(--color-text-subtle)]">{workOrder}</span>
+      )}
+    </span>
+  )
 }
 
-export function KardexTable({ movements, worksites = [], canExport = false, searchQuery = "" }: KardexTableProps) {
+export function KardexTable({
+  movements, worksites = [], canExport = false, canOpenMaintenanceRecord = false, canOpenWorkOrder = false, searchQuery = "",
+}: KardexTableProps) {
   // Con cero filas la sección se queda igual, con su encabezado y su vacío. El
   // `return null` de antes hacía desaparecer el kardex entero al buscar algo
   // que sólo existía en el stock, sin decir por qué.
@@ -111,7 +155,7 @@ export function KardexTable({ movements, worksites = [], canExport = false, sear
                       </TableCell>
                       <TableCell>
                         <span className="inline-block rounded-[var(--radius)] bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-muted)]">
-                          {movementLabel(m.type)}
+                          {kardexTypeLabel(m.type, m.referenceType)}
                         </span>
                       </TableCell>
                       <TableCell className="text-sm font-medium text-[var(--color-text)]">
@@ -135,7 +179,7 @@ export function KardexTable({ movements, worksites = [], canExport = false, sear
                         {m.performedByName ?? "—"}
                       </TableCell>
                       <TableCell className="text-xs">
-                        <DocumentLink movement={m} />
+                        <DocumentLink movement={m} canOpenMaintenanceRecord={canOpenMaintenanceRecord} canOpenWorkOrder={canOpenWorkOrder} />
                       </TableCell>
                       <TableCell
                         title={observation || undefined}
@@ -175,7 +219,7 @@ export function KardexTable({ movements, worksites = [], canExport = false, sear
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
                     <span className="rounded-[var(--radius)] bg-[var(--color-surface-2)] px-2 py-0.5 font-medium text-[var(--color-text-muted)]">
-                      {movementLabel(m.type)}
+                      {kardexTypeLabel(m.type, m.referenceType)}
                     </span>
                     <span className="text-[var(--color-text-subtle)]">
                       {moment.date}{moment.time ? ` · ${moment.time}` : ""}
@@ -184,7 +228,7 @@ export function KardexTable({ movements, worksites = [], canExport = false, sear
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--color-text-muted)]">
                     {m.performedByName && <span>{m.performedByName}</span>}
-                    <DocumentLink movement={m} />
+                    <DocumentLink movement={m} canOpenMaintenanceRecord={canOpenMaintenanceRecord} canOpenWorkOrder={canOpenWorkOrder} />
                   </div>
                   {(m.reason ?? m.notes) && (
                     <p className="mt-2 text-xs text-[var(--color-text-muted)] line-clamp-2">

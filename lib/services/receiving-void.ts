@@ -31,6 +31,9 @@ import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import {
   dispatchGuides,
+  inventoryMovements,
+  mantPartsAllocationSources,
+  mantPartsAllocations,
   products,
   purchaseOrderItems,
   purchaseOrders,
@@ -42,6 +45,7 @@ import {
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 import { applyMovementTx } from "./stock"
+import { lockForStockTx, shrinkAllocationsForSourceTx } from "./mantencion/parts"
 import { rollupOrderReceiptStatus } from "./receiving"
 import { persistPurchaseOrderInvoiceReconciliationTx } from "./purchasing-module/invoice-reconciliation-service"
 
@@ -114,11 +118,24 @@ export async function voidReceipt(
       status: purchaseRequestItems.status,
     }).from(purchaseRequestItems).where(inArray(purchaseRequestItems.id, requestItemIds)).for("update")
     const yaEntregado = requestItems.find((item) => (ITEM_ALREADY_OUT as readonly string[]).includes(item.status))
+
+    // Repuestos de catálogo (ADR mantención 0001): entran al stock y se reservan. Se conocen antes
+    // del chequeo de «ya salió» porque el mensaje cambia: un repuesto llega a `delivered` al llegar
+    // a faena (D10), no porque alguien lo haya retirado de la bodega.
+    const productIds = [...new Set(orderItems.flatMap((item) => (item.productId ? [item.productId] : [])))]
+    const productRows = productIds.length === 0 ? [] : await tx
+      .select({ id: products.id, isSparePart: products.isSparePart })
+      .from(products)
+      .where(inArray(products.id, productIds))
+    const sparePartIds = new Set(productRows.filter((row) => row.isSparePart).map((row) => row.id))
+
     if (yaEntregado) {
-      throw new Error(
-        "No se puede anular: alguno de los ítems ya se entregó. "
-        + "Corrige con un ajuste de inventario, que deja su propio folio y motivo.",
-      )
+      const sparePartArrived = orderItems.some((item) => item.requestItemId === yaEntregado.id && item.productId && sparePartIds.has(item.productId))
+      throw new Error(sparePartArrived
+        ? "No se puede anular: el repuesto ya llegó a la faena. "
+          + "Corrige con un ajuste de inventario, que deja su folio y motivo."
+        : "No se puede anular: alguno de los ítems ya se entregó. "
+          + "Corrige con un ajuste de inventario, que deja su propio folio y motivo.")
     }
 
     const isOffice = receipt.locationType === "office"
@@ -129,6 +146,43 @@ export async function voidReceipt(
      */
     const stockWorksiteId = receipt.worksiteId
     let reversedMovements = 0
+
+    /*
+     * Repuestos: lo que esta recepción ingresó al stock, por producto. Sólo se revierte lo que
+     * existe en el kárdex como `ingreso_oc` de ESTA recepción: las anteriores al corte nunca
+     * ingresaron stock y revertirlas se llevaría stock ajeno. La reserva que aportó se rebaja
+     * haya habido movimiento o no (REC-001: la etapa de faena reserva sin mover).
+     *
+     * Bloqueo en el orden global —OT de las reservas, faena, filas de stock— ANTES de tocar nada.
+     */
+    const ingressedByProduct = new Map<string, number>()
+    const spareLines = lines.filter((line) => {
+      const productId = orderItemById.get(line.purchaseOrderItemId)?.productId
+      return line.quantityReceived > 0 && productId && sparePartIds.has(productId)
+    })
+    if (spareLines.length > 0 && stockWorksiteId) {
+      const spareProductIds = [...new Set(spareLines.map((line) => orderItemById.get(line.purchaseOrderItemId)!.productId as string))]
+      const ingresses = await tx
+        .select({ productId: inventoryMovements.productId, quantity: inventoryMovements.quantity })
+        .from(inventoryMovements)
+        .where(and(
+          eq(inventoryMovements.type, "ingreso_oc"),
+          eq(inventoryMovements.referenceType, "receipt"),
+          eq(inventoryMovements.referenceId, receipt.id),
+          inArray(inventoryMovements.productId, spareProductIds),
+        ))
+      for (const row of ingresses) ingressedByProduct.set(row.productId, (ingressedByProduct.get(row.productId) ?? 0) + Number(row.quantity))
+      const reservedFor = await tx
+        .select({ workOrderId: mantPartsAllocations.workOrderId })
+        .from(mantPartsAllocationSources)
+        .innerJoin(mantPartsAllocations, eq(mantPartsAllocations.id, mantPartsAllocationSources.allocationId))
+        .where(eq(mantPartsAllocationSources.receiptId, receipt.id))
+      await lockForStockTx(tx, {
+        workOrderIds: [...new Set(reservedFor.map((row) => row.workOrderId))],
+        worksiteId: stockWorksiteId,
+        productIds: spareProductIds,
+      })
+    }
 
     for (const line of lines) {
       const orderItem = orderItemById.get(line.purchaseOrderItemId)
@@ -147,9 +201,26 @@ export async function voidReceipt(
       //    y su referencia: el kardex muestra el ingreso y su reverso, no un hueco.
       if (!orderItem.productId || !stockWorksiteId) continue
       const product = await tx.query.products.findFirst({ where: eq(products.id, orderItem.productId) })
-      // Servicios y repuestos de catálogo (consumo directo) nunca ingresaron
-      // stock: no hay nada que revertir.
-      if (product?.isService || product?.isSparePart) continue
+      // Los servicios nunca ingresaron stock: no hay nada que revertir.
+      if (product?.isService) continue
+
+      let revertQuantity = line.quantityReceived
+      if (product?.isSparePart) {
+        // La reserva que aportó esta recepción se rebaja primero, para que la guarda del motor ya la
+        // vea achicada. Si lo recibido ya se usó, lanza con el registro y la OT: la anulación se bloquea.
+        await shrinkAllocationsForSourceTx(tx, {
+          receiptId: receipt.id,
+          productId: orderItem.productId,
+          quantity: line.quantityReceived,
+          source: "anulacion_recepcion",
+          actorUserId: input.voidedBy,
+          reason: `Anulación de la recepción ${receipt.code}: ${reason}`,
+        })
+        const ingressed = ingressedByProduct.get(orderItem.productId) ?? 0
+        revertQuantity = Math.min(line.quantityReceived, ingressed)
+        ingressedByProduct.set(orderItem.productId, ingressed - revertQuantity)
+        if (revertQuantity <= 0) continue
+      }
 
       const [onHand] = await tx.select({ quantity: worksiteStock.quantity })
         .from(worksiteStock)
@@ -157,10 +228,10 @@ export async function voidReceipt(
           eq(worksiteStock.worksiteId, stockWorksiteId),
           eq(worksiteStock.productId, orderItem.productId),
         ))
-      if ((onHand?.quantity ?? 0) < line.quantityReceived) {
+      if ((onHand?.quantity ?? 0) < revertQuantity) {
         throw new Error(
           `No se puede anular: de ${product?.name ?? "un producto"} quedan ${onHand?.quantity ?? 0} `
-          + `y la recepción ingresó ${line.quantityReceived}. Lo recibido ya se movió; `
+          + `y la recepción ingresó ${revertQuantity}. Lo recibido ya se movió; `
           + "corrige con un ajuste de inventario.",
         )
       }
@@ -169,7 +240,7 @@ export async function voidReceipt(
         worksiteId: stockWorksiteId,
         productId: orderItem.productId,
         type: "egreso_anulacion",
-        quantity: -line.quantityReceived,
+        quantity: -revertQuantity,
         referenceType: "receipt_void",
         referenceId: receipt.id,
         performedBy: input.voidedBy,

@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { getItemDetail } from "@/lib/services/trazabilidad-item"
 import { getItemLeadTime } from "@/lib/services/analytics-module/lead-time-item"
 import { plainDateToDay } from "@/lib/services/analytics-module/lead-time-shape"
@@ -146,7 +146,14 @@ export default async function TrazabilidadItemPage({
         <DeliveriesTable deliveries={deliveries} item={item} />
 
         {/* Inventory Movements */}
-        <InventoryMovementsTable movements={inventoryMovements} item={item} />
+        <InventoryMovementsTable
+          movements={inventoryMovements}
+          item={item}
+          // Los folios de la OT y del registro enlazan sólo con permiso para abrirlos (la pantalla de
+          // destino lo exige en el servidor igual): sin él se leen como texto.
+          canOpenWorkOrder={can(session, "mant:ot:view_worksite") || can(session, "mant:ot:view_all")}
+          canOpenRecord={can(session, "mant:records:view_own") || can(session, "mant:records:view_worksite") || can(session, "mant:records:view_all")}
+        />
 
         {/* Status history timeline */}
         <EntityTimeline entityType="item" events={timeline} />

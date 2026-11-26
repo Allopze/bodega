@@ -15,12 +15,14 @@ import { todayInChile } from "@/lib/utils"
 import { viewerFromSession } from "../access"
 import { ACTION_TYPE_LABELS, SPECIALTY_LABELS, workOrderActionType } from "@/lib/mantencion/action-type"
 import { daysStopped, specialtiesOf, workOrdersWhere, type WorkOrderListFilters } from "./query"
+import { loadWorkOrderPartsRows } from "./export-parts"
 
 /**
- * Libro «Órdenes de trabajo»: la hoja principal (una fila por OT), «Ítems» e
- * «Historial», con fechas reales de Excel, la fila 1 fija y la hoja de
- * metadatos que pone `buildXlsxBuffer`. Respeta el alcance del usuario igual
- * que la lista, y deja una fila en la bitácora por cada exportación.
+ * Libro «Órdenes de trabajo»: la hoja principal (una fila por OT), «Ítems»,
+ * «Repuestos» (notas de pedido, reservas y consumo) e «Historial», con fechas
+ * reales de Excel, la fila 1 fija y la hoja de metadatos que pone
+ * `buildXlsxBuffer`. Respeta el alcance del usuario igual que la lista, y deja
+ * una fila en la bitácora por cada exportación.
  */
 
 export const WORK_ORDERS_EXPORT_LIMIT = 5000
@@ -50,6 +52,11 @@ const EVENT_LABELS: Record<OtEventType, string> = {
   voided: "Anulada",
   reopened: "Reabierta",
   record_linked: "Registro enlazado",
+  parts_note_created: "Nota de pedido enviada",
+  parts_note_resolved: "Nota de pedido resuelta",
+  parts_allocated: "Repuestos reservados",
+  parts_consumed: "Repuestos usados",
+  parts_released: "Reserva liberada",
 }
 
 export async function exportWorkOrders(input: {
@@ -78,7 +85,7 @@ export async function exportWorkOrders(input: {
   if (kept.length === 0) return { ok: false, message: "No hay órdenes de trabajo para exportar con estos filtros." }
   const ids = kept.map((row) => row.ot.id)
 
-  const [items, events] = await Promise.all([
+  const [items, events, partsRows] = await Promise.all([
     db.select().from(mantWorkOrderItems).where(inArray(mantWorkOrderItems.workOrderId, ids))
       .orderBy(asc(mantWorkOrderItems.workOrderId), asc(mantWorkOrderItems.kind), asc(mantWorkOrderItems.sortOrder)),
     db.select({ event: mantWorkOrderEvents, actorName: users.name })
@@ -86,7 +93,11 @@ export async function exportWorkOrders(input: {
       .innerJoin(users, eq(users.id, mantWorkOrderEvents.actorUserId))
       .where(inArray(mantWorkOrderEvents.workOrderId, ids))
       .orderBy(asc(mantWorkOrderEvents.workOrderId), asc(mantWorkOrderEvents.createdAt)),
+    loadWorkOrderPartsRows(ids),
   ])
+  // Las filas de repuestos salen en el mismo orden de OT que la hoja principal.
+  const otOrder = new Map(ids.map((id, index) => [id, index]))
+  partsRows.sort((a, b) => (otOrder.get(a.workOrderId) ?? 0) - (otOrder.get(b.workOrderId) ?? 0) || a.name.localeCompare(b.name, "es"))
 
   const meta = new Map(kept.map((row) => [row.ot.id, {
     folio: row.ot.folio, worksite: row.worksiteName, code: row.ot.equipmentSnapshot.code, plate: row.ot.equipmentSnapshot.plate,
@@ -157,6 +168,23 @@ export async function exportWorkOrders(input: {
         item.done === "si" ? "SÍ" : item.done === "no" ? "NO" : "Sin marcar",
         item.note ?? "",
       ]),
+    },
+    {
+      worksheetName: "Repuestos",
+      headers: [...leadHeaders, "NP", "Repuesto", "N° de parte", "Estado del pedido", "Pedido", "Reservado", "Usado", "Liberado", "Pendiente de conciliar"],
+      rows: partsRows.map((row) => [
+        ...lead(row.workOrderId),
+        row.noteCodes.join(", "),
+        row.name,
+        row.partNumber,
+        row.noteStatus,
+        row.requested,
+        row.reserved,
+        row.used,
+        row.released,
+        row.pendingConciliation,
+      ]),
+      columnFormats: { 8: "#,##0.00", 9: "#,##0.00", 10: "#,##0.00", 11: "#,##0.00", 12: "#,##0.00" },
     },
     {
       worksheetName: "Historial",

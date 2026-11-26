@@ -138,7 +138,8 @@ export default async function Page({
         gt(worksiteStock.quantity, 0),
         eq(products.isActive, true),
         eq(products.isService, false),
-        // Un repuesto de catálogo es consumo directo: nunca se entrega desde bodega.
+        // Un repuesto de catálogo nunca se entrega a un trabajador: sólo sale de bodega al usarse
+        // en una OT (ADR mantención 0001, D8).
         eq(products.isSparePart, false),
       )),
     getDeliverableEppItems({ worksiteIds: allWorksites.map((worksite) => worksite.id) }),

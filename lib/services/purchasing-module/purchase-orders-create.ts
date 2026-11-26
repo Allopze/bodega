@@ -316,9 +316,11 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
             // que apuntar al mismo equipo que el ítem del que salió.
             equipmentId:         requestItem.equipmentId,
             // El remanente sigue siendo para el mismo camión y la misma OT, y
-            // conserva el precio que estimó quien pidió.
+            // conserva el precio que estimó quien pidió. También sigue comprando
+            // la misma línea de la nota de pedido del mecánico.
             vehicleId:           requestItem.vehicleId,
             workOrderId:         requestItem.workOrderId,
+            partsNoteItemId:     requestItem.partsNoteItemId,
             estimatedUnitPrice:  requestItem.estimatedUnitPrice,
             suggestedSupplierId: requestItem.suggestedSupplierId,
             supplierHint:        requestItem.supplierHint,

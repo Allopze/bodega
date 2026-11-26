@@ -4,6 +4,9 @@
  * (`?desde=`). Es el contrato que consumen el botón «Pedir repuestos» de la OT y la
  * ficha del equipo, así que se prueba con la base mockeada: lo que importa es qué
  * decide el servidor con lo que encuentra, no el SQL.
+ *
+ * También la solicitud desde una nota de pedido del mecánico (`?np=`, ADR mantención
+ * 0001), con el cargador de la nota (`loadPartsNotePrefill`, de la línea L3) mockeado.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { Session } from "next-auth"
@@ -31,6 +34,8 @@ vi.mock("@/lib/auth/can", () => ({
   canAccessWorksite: (session: Session, worksiteId: string) =>
     session.user.isGlobal === true || session.user.worksiteIds.includes(worksiteId),
 }))
+const loadPartsNotePrefill = vi.hoisted(() => vi.fn())
+vi.mock("@/lib/services/mantencion/parts-notes/query", () => ({ loadPartsNotePrefill }))
 vi.mock("@/lib/services/epp-replenishment", () => ({ listReplenishmentSuggestions: vi.fn(async () => []) }))
 vi.mock("@/lib/services/fleet", () => ({
   vehicleLabel: (vehicle: { plate: string; code: string | null }) =>
@@ -57,6 +62,7 @@ const VEHICLE_ROW = { id: "v-1", code: "KA-135", plate: "RBYD-98", isActive: tru
 beforeEach(() => {
   selectResults.length = 0
   findFirstResults.length = 0
+  loadPartsNotePrefill.mockReset()
 })
 
 describe("buildPrefill — repuestos desde una OT (?ot=)", () => {
@@ -238,5 +244,112 @@ describe("buildPrefill — «Pedir repuestos» desde la ficha de un repuesto (?r
     selectResults.push([])
     const missing = await buildPrefill({ ...base, session: sessionOf(["ws-bio"]), sparePartId: "no-existe" })
     expect(missing.prefillItems).toBeUndefined()
+  })
+})
+
+describe("buildPrefill — solicitud desde una nota de pedido (?np=)", () => {
+  const NOTE = {
+    noteId: "np-1", noteCode: "NP-2026-0007", worksiteId: "ws-bio", vehicleId: "v-1", vehicleLabel: "KA-135 · RBYD-98",
+    workOrderId: "ot-1", workOrderFolio: "OT-BIO-0007", urgency: "critical" as const,
+    items: [
+      { partsNoteItemId: "npi-1", productId: null, description: "Manguera hidráulica 1/2", quantity: 2, unitOfMeasure: "unidad", partNumber: "MH-12" },
+      { partsNoteItemId: "npi-2", productId: "rpt-9", description: "Filtro de aceite", quantity: 1, unitOfMeasure: "unidad", partNumber: null },
+    ],
+  }
+
+  it("precarga faena, equipo, OT, urgencia y una línea por repuesto con su partsNoteItemId", async () => {
+    loadPartsNotePrefill.mockResolvedValue(NOTE)
+    selectResults.push([OT_ROW])
+    const result = await buildPrefill({ ...base, session: sessionOf(["ws-bio"]), partsNoteId: "np-1" })
+
+    expect(result.initialWorksiteId).toBe("ws-bio")
+    // El equipo detenido hace crítica la solicitud.
+    expect(result.initialUrgency).toBe("critical")
+    expect(result.prefillItems).toEqual([
+      {
+        productId: null, productNameFree: "Manguera hidráulica 1/2", quantity: 2, unitOfMeasure: "unidad", urgency: "critical",
+        notes: "N° de parte: MH-12",
+        vehicleId: "v-1", vehicleLabel: "KA-135 · RBYD-98", workOrderId: "ot-1", workOrderFolio: "OT-BIO-0007", partsNoteItemId: "npi-1",
+      },
+      {
+        productId: "rpt-9", productNameFree: "Filtro de aceite", quantity: 1, unitOfMeasure: "unidad", urgency: "critical", notes: "",
+        vehicleId: "v-1", vehicleLabel: "KA-135 · RBYD-98", workOrderId: "ot-1", workOrderFolio: "OT-BIO-0007", partsNoteItemId: "npi-2",
+      },
+    ])
+    expect(result.prefillNotice).toBe("Solicitud desde la nota de pedido NP-2026-0007 de la OT OT-BIO-0007. Revisa las cantidades antes de enviar.")
+  })
+
+  it("el cargador recibe a quien pide (alcance en el servidor) y el id de la nota", async () => {
+    loadPartsNotePrefill.mockResolvedValue(NOTE)
+    selectResults.push([OT_ROW])
+    await buildPrefill({ ...base, session: sessionOf(["ws-bio"], ["repuestos:create", "mant:np:manage"]), partsNoteId: "np-1" })
+
+    expect(loadPartsNotePrefill).toHaveBeenCalledTimes(1)
+    expect(loadPartsNotePrefill).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u-jefe", worksiteIds: ["ws-bio"], isGlobal: false, permissions: ["repuestos:create", "mant:np:manage"] }),
+      "np-1",
+    )
+  })
+
+  it("una urgencia alta (equipo en marcha) se respeta", async () => {
+    loadPartsNotePrefill.mockResolvedValue({ ...NOTE, urgency: "high" })
+    selectResults.push([OT_ROW])
+    const result = await buildPrefill({ ...base, session: sessionOf(["ws-bio"]), partsNoteId: "np-1" })
+    expect(result.initialUrgency).toBe("high")
+    expect(result.prefillItems!.every((item) => item.urgency === "high")).toBe(true)
+  })
+
+  it("sin permiso o con la nota ya resuelta (null) no precarga nada y lo avisa", async () => {
+    loadPartsNotePrefill.mockResolvedValue(null)
+    const result = await buildPrefill({ ...base, session: sessionOf(["ws-bio"]), partsNoteId: "np-1" })
+
+    expect(result).toEqual({
+      prefillNotice: "La nota de pedido no existe, ya no tiene repuestos por comprar o no tienes acceso a ella.",
+    })
+    // Sin nota no se mira la OT.
+    expect(selectResults).toHaveLength(0)
+  })
+
+  it("abre en la faena del equipo aunque la nota se escribió en otra", async () => {
+    loadPartsNotePrefill.mockResolvedValue({ ...NOTE, worksiteId: "ws-cho" })
+    selectResults.push([{ ...OT_ROW, orderWorksiteId: "ws-cho", vehicleWorksiteId: "ws-bio" }])
+    const result = await buildPrefill({ ...base, session: sessionOf(["ws-bio", "ws-cho"]), partsNoteId: "np-1" })
+    expect(result.initialWorksiteId).toBe("ws-bio")
+  })
+
+  it("una OT que se cerró desde que el mecánico pidió no abre el creador, y el aviso dice por qué", async () => {
+    loadPartsNotePrefill.mockResolvedValue(NOTE)
+    selectResults.push([{ ...OT_ROW, status: "cerrada" }])
+    const result = await buildPrefill({ ...base, session: sessionOf(["ws-bio"]), partsNoteId: "np-1" })
+
+    expect(result.prefillItems).toBeUndefined()
+    expect(result.initialWorksiteId).toBeUndefined()
+    expect(result.prefillNotice).toBe("No se puede pedir desde la nota de pedido NP-2026-0007. La OT no existe, está cerrada o está fuera de tus faenas.")
+  })
+
+  it("una OT fuera del alcance de quien pide tampoco precarga", async () => {
+    loadPartsNotePrefill.mockResolvedValue(NOTE)
+    selectResults.push([OT_ROW])
+    const result = await buildPrefill({ ...base, session: sessionOf(["ws-cho"]), partsNoteId: "np-1" })
+    expect(result.prefillItems).toBeUndefined()
+    expect(result.prefillNotice).toContain("fuera de tus faenas")
+  })
+
+  it("un equipo dado de baja no abre el creador", async () => {
+    loadPartsNotePrefill.mockResolvedValue(NOTE)
+    selectResults.push([{ ...OT_ROW, isActive: false }])
+    const result = await buildPrefill({ ...base, session: sessionOf(["ws-bio"]), partsNoteId: "np-1" })
+    expect(result.prefillItems).toBeUndefined()
+    expect(result.prefillNotice).toMatch(/dado de baja/)
+  })
+
+  it("la nota manda sobre ?ot= y los demás orígenes del enlace", async () => {
+    loadPartsNotePrefill.mockResolvedValue(NOTE)
+    selectResults.push([OT_ROW])
+    const result = await buildPrefill({
+      ...base, session: sessionOf(["ws-bio"]), partsNoteId: "np-1", workOrderId: "ot-otra", productoIds: ["p-1"], cantidades: ["3"],
+    })
+    expect(result.prefillItems).toHaveLength(2)
+    expect(result.prefillItems![0]).toMatchObject({ partsNoteItemId: "npi-1", workOrderId: "ot-1" })
   })
 })

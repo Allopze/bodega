@@ -141,12 +141,17 @@ export function KardexSection({
   movements,
   worksites,
   canExport,
+  canOpenWorkOrder = false,
+  canOpenMaintenanceRecord = false,
   pagination,
   searchParams,
 }: {
   movements: InventoryMovementWithRelations[]
   worksites: WorksiteOption[]
   canExport: boolean
+  /** Los folios de la OT y del registro de mantención enlazan sólo con permiso para abrirlos. */
+  canOpenWorkOrder?: boolean
+  canOpenMaintenanceRecord?: boolean
   pagination: PaginationState
   searchParams: Record<string, string | string[] | undefined>
 }) {
@@ -170,6 +175,8 @@ export function KardexSection({
         movements={movements}
         worksites={worksites}
         canExport={canExport}
+        canOpenWorkOrder={canOpenWorkOrder}
+        canOpenMaintenanceRecord={canOpenMaintenanceRecord}
         searchQuery={searchQuery}
       />
       {/* La paginación acompaña a una tabla con filas. Sin ellas, un paginador

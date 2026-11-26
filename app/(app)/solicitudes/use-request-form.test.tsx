@@ -172,6 +172,62 @@ describe("useRequestForm — equipo de flota y OT del ítem", () => {
   })
 })
 
+describe("useRequestForm — líneas de una nota de pedido (?np=)", () => {
+  const NOTE_ITEM = {
+    productId: null, productNameFree: "Manguera hidráulica 1/2", quantity: 2, unitOfMeasure: "unidad", urgency: "critical",
+    notes: "N° de parte: MH-12", vehicleId: "v-1", vehicleLabel: "KA-135 · RBYD-98", workOrderId: "ot-1", workOrderFolio: "OT-BIO-0007",
+    partsNoteItemId: "npi-1",
+  }
+
+  it("abre con la línea de la nota y la manda oculta al guardar", () => {
+    const { result } = setup({ initialWorksiteId: "ws-1", initialUrgency: "critical", prefillItems: [NOTE_ITEM] })
+    expect(result.current.items[0]).toMatchObject({ partsNoteItemId: "npi-1", workOrderId: "ot-1", vehicleId: "v-1" })
+    expect(serializedItem(result)).toMatchObject({ vehicleId: "v-1", workOrderId: "ot-1", partsNoteItemId: "npi-1" })
+  })
+
+  it("un ítem sin línea de nota manda null", () => {
+    const { result } = setup()
+    expect(serializedItem(result).partsNoteItemId).toBeNull()
+  })
+
+  it("cambiar de equipo o de OT suelta la línea de la nota: es de esa OT", () => {
+    const { result } = setup({ initialWorksiteId: "ws-1", prefillItems: [NOTE_ITEM] })
+    const key = result.current.items[0]!._key
+
+    // Elegir la misma OT no la suelta.
+    act(() => result.current.selectWorkOrder(key, "ot-1"))
+    expect(result.current.items[0]).toMatchObject({ workOrderId: "ot-1", partsNoteItemId: "npi-1" })
+
+    act(() => result.current.selectVehicle(key, "v-2"))
+    expect(result.current.items[0]).toMatchObject({ vehicleId: "v-2", workOrderId: "", partsNoteItemId: "" })
+    expect(serializedItem(result).partsNoteItemId).toBeNull()
+  })
+
+  it("cambiar la faena suelta el vínculo con la nota junto con el equipo y la OT", () => {
+    const { result } = setup({ initialWorksiteId: "ws-1", prefillItems: [NOTE_ITEM] })
+    act(() => result.current.setWorksiteId("ws-2"))
+    expect(result.current.items[0]).toMatchObject({ vehicleId: "", workOrderId: "", partsNoteItemId: "" })
+  })
+
+  it("al editar un borrador hidrata la línea de la nota para no perderla al guardar de nuevo", () => {
+    const { result } = setup({
+      editRequest: {
+        id: "req-1", code: "REP-1", worksiteId: "ws-1", requestType: "repuestos", urgency: "critical",
+        deliveryMode: "directo_faena", requiredDate: "2099-12-01", status: "draft", notes: null,
+        items: [{
+          id: "it-1", productId: null, productNameFree: "Manguera hidráulica 1/2", quantity: 2, unitOfMeasure: "unidad", urgency: "critical",
+          suggestedSupplierId: null, supplierHint: null, notes: null, status: "draft", workerId: null, workerName: null,
+          equipmentCode: null, equipmentLabel: null, attributes: [],
+          vehicleId: "v-1", vehicleLabel: "KA-135 · RBYD-98", workOrderId: "ot-1", workOrderFolio: "OT-BIO-0007",
+          partsNoteItemId: "npi-1",
+        }],
+      },
+    })
+    expect(result.current.items[0]).toMatchObject({ partsNoteItemId: "npi-1" })
+    expect(serializedItem(result)).toMatchObject({ id: "it-1", workOrderId: "ot-1", partsNoteItemId: "npi-1" })
+  })
+})
+
 describe("useRequestForm — despacho por defecto", () => {
   it("repuestos nace con despacho directo a faena", () => {
     expect(setup({ initialRequestType: "repuestos" }).result.current.deliveryMode).toBe("directo_faena")

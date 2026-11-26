@@ -27,7 +27,22 @@ export function stepsFor(kind: "P" | "C"): readonly FlowStep[] {
 
 export type FlowErrors = Record<string, string>
 
-export interface FlowPart { quantity: string; description: string }
+export interface FlowPart {
+  quantity: string
+  description: string
+  /**
+   * `stock`: salió de la bodega de la faena (reserva de la OT: exige `productId`); `externo`: lo trajo otro.
+   * Sin `source` es el texto libre de siempre. Lo agrega el chip «Disponibles para esta OT» (ADR mantención 0001).
+   */
+  source?: "stock" | "externo"
+  productId?: string | null
+  allocationId?: string | null
+}
+
+/** Lo que una línea de repuesto aporta al contrato más allá de cantidad y texto: nada si es texto libre. */
+export function partStockFields(part: Pick<FlowPart, "source" | "productId" | "allocationId">): Pick<FlowPart, "source" | "productId" | "allocationId"> {
+  return part.source ? { source: part.source, productId: part.productId ?? null, allocationId: part.allocationId ?? null } : {}
+}
 
 /** Un trabajo de la correctiva (único por tipo): sus horas y sus repuestos. */
 export interface FlowJob {

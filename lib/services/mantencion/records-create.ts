@@ -16,6 +16,8 @@ import { lockAndLoadVehicle } from "./records-create-context"
 import { reject, type Author, type RecordFailure, type RecordPlan } from "./records-create-types"
 import { OT_PERMISSIONS } from "@/lib/mantencion/work-order-states"
 import { validateRecord } from "./records-create-validate"
+import { consumeRecordParts, lineKey, NO_PARTS, PartRejection, type RecordPartsPlan } from "./records-create-parts"
+import { notifyPendingStockAfterCommit, type PendingStockNotice } from "./parts/consumption-notifications"
 import type { SyncContext } from "./sync-auth"
 
 /**
@@ -25,6 +27,11 @@ import type { SyncContext } from "./sync-auth"
  * veces deja UNA fila y devuelve siempre el mismo folio. Todo ocurre en una
  * transacción; el folio se toma al final para sostener lo menos posible el
  * bloqueo del contador. Un registro firmado no se modifica jamás: sólo se crea.
+ *
+ * Repuestos (ADR mantención 0001): las líneas `source: "stock"` descuentan de la bodega de la
+ * faena dentro de esta misma transacción, con la OT ya bloqueada y antes del folio
+ * (`records-create-parts.ts`). La falta de stock NUNCA rechaza el registro: la línea queda
+ * «pendiente de conciliar» y se avisa a quienes concilian cuando la transacción ya confirmó.
  */
 
 export interface RecordOutcome {
@@ -87,8 +94,10 @@ export async function createRecord(input: SyncRecord, context: SyncContext): Pro
   const already = await findExisting(db, input.id)
   if (already) return existingOutcome(already, author.userId)
 
+  // Aviso «Faltó stock»: se arma dentro de la transacción y sale cuando ésta ya confirmó.
+  const stockNotices: PendingStockNotice[] = []
   try {
-    return await db.transaction(async (tx): Promise<RecordOutcome> => {
+    const outcome = await db.transaction(async (tx): Promise<RecordOutcome> => {
       const vehicle = await lockAndLoadVehicle(tx, input.vehicleId)
       // Dos envíos simultáneos del mismo id se serializan en el bloqueo del equipo: el segundo ve al primero aquí.
       const raced = await findExisting(tx, input.id)
@@ -103,11 +112,30 @@ export async function createRecord(input: SyncRecord, context: SyncContext): Pro
       if (!link.ok) return failureOutcome(link)
 
       const plan = validated.value
+      // Repuestos de la bodega (ADR mantención 0001): se decide y descuenta con la OT ya bloqueada y ANTES
+      // del folio (regla 8). Un `PartRejection` lanzado aquí revierte todo, también las líneas ya descontadas.
+      const stock = input.kind === "C"
+        ? await consumeRecordParts(tx, input, {
+          recordWorksiteId: plan.vehicle.worksiteId,
+          workOrderId: link.workOrder?.id ?? null,
+          actorUserId: author.userId,
+          userEmail: author.viewer.email ?? undefined,
+        })
+        : NO_PARTS
       const folio = await nextFolio(tx, plan.vehicle.worksiteId, input.kind)
-      const receivedAt = await insertRecord(tx, input, plan, author, context.deviceId, folio, link.workOrder)
+      const receivedAt = await insertRecord(tx, input, plan, author, context.deviceId, folio, link.workOrder, stock)
+      if (stock.pending.length > 0 && link.workOrder) {
+        stockNotices.push({ recordId: input.id, recordFolio: folio, workOrderFolio: link.workOrder.folio, actorUserId: author.userId, lines: stock.pending })
+      }
       return { status: 200, body: { ok: true, id: input.id, folio, receivedAt: toIso(receivedAt), duplicate: false, warnings: plan.warnings } }
     })
+    for (const notice of stockNotices) notifyPendingStockAfterCommit(notice)
+    return outcome
   } catch (error) {
+    // Una línea de repuesto inválida: el registro no se guarda (y nada se descuenta). El teléfono lo deja «Rechazado» con el motivo.
+    if (error instanceof PartRejection) {
+      return { status: 422, body: { ok: false, code: "rejected", message: error.message, field: error.field } }
+    }
     // Una foto reclamada por otro registro: el registro no se guarda a medias.
     if (error instanceof PhotoClaimError) {
       return {
@@ -202,6 +230,7 @@ async function insertRecord(
   deviceId: string,
   folio: string,
   workOrder: LinkedWorkOrder | null,
+  stock: RecordPartsPlan,
 ): Promise<string> {
   const { vehicle, preventive, corrective } = plan
   const snapshot: MantEquipmentSnapshot = {
@@ -283,10 +312,16 @@ async function insertRecord(
       hours: job.hours, noParts: job.noParts, sortOrder: index,
     }))
     await tx.insert(mantRecordJobs).values(jobRows)
-    const partRows = corrective.jobs.flatMap((job, jobIndex) => job.parts.map((part, index) => ({
-      id: nanoid(), recordId: input.id, jobId: (jobRows[jobIndex] as { id: string }).id,
-      quantity: part.quantity, description: part.description, sortOrder: index,
-    })))
+    // Cada línea ya trae lo que decidió el descuento: su id (el evento de la OT lo cita), la fuente, el movimiento y el estado.
+    const partRows = corrective.jobs.flatMap((job, jobIndex) => job.parts.map((part, index) => {
+      const line = stock.lines.get(lineKey(jobIndex, index))
+      return {
+        id: line?.id ?? nanoid(), recordId: input.id, jobId: (jobRows[jobIndex] as { id: string }).id,
+        quantity: line?.quantity ?? part.quantity, description: part.description, sortOrder: index,
+        source: line?.source ?? "texto", productId: line?.productId ?? null, allocationId: line?.allocationId ?? null,
+        inventoryMovementId: line?.inventoryMovementId ?? null, stockStatus: line?.stockStatus ?? "no_aplica", stockNote: line?.stockNote ?? null,
+      }
+    }))
     if (partRows.length) await tx.insert(mantRecordParts).values(partRows)
     await tx.insert(mantRecordDrivers).values(corrective.drivers.map((driver) => ({
       recordId: input.id, driverId: driver.id, driverName: driver.name,
@@ -301,6 +336,16 @@ async function insertRecord(
       actorUserId: author.userId,
       deviceId,
     })
+    if (stock.eventItems.length > 0) {
+      await tx.insert(mantWorkOrderEvents).values({
+        id: nanoid(),
+        workOrderId: workOrder.id,
+        type: "parts_consumed",
+        changeSet: { recordId: input.id, folio, items: stock.eventItems },
+        actorUserId: author.userId,
+        deviceId,
+      })
+    }
     // El catálogo del teléfono lista los registros enlazados de la OT: su marca de tiempo tiene que moverse. La versión no, para no invalidar lo que la web tiene abierto.
     await tx.update(mantWorkOrders).set({ updatedAt: sql`now()` }).where(eq(mantWorkOrders.id, workOrder.id))
   }
@@ -342,6 +387,9 @@ async function insertRecord(
       photos: plan.photos.length,
       deviceId,
       workOrder: workOrder?.folio ?? null,
+      ...(stock.eventItems.length > 0
+        ? { stockParts: { descontado: stock.eventItems.length - stock.pending.length, pendienteConciliar: stock.pending.length } }
+        : {}),
     },
   }, tx)
   return created.receivedAt

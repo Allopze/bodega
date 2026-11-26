@@ -76,8 +76,10 @@ export async function GET(req: NextRequest) {
             eq(worksiteStock.productId, products.id),
             eq(worksiteStock.worksiteId, worksiteId),
           ))
-          // Un repuesto de catálogo es consumo directo: no tiene saldo que ajustar ni contar.
-          .where(and(eq(products.isActive, true), eq(products.isService, false), eq(products.isSparePart, false)))
+          // Los repuestos también: tienen stock por faena (ADR mantención 0001) y su saldo de arranque entra por un
+          // ajuste o un conteo. Entregarlos sí está vetado (lo impone el motor de stock), pero eso lo cubre
+          // `/entregas`, que no los lista.
+          .where(and(eq(products.isActive, true), eq(products.isService, false)))
           .orderBy(asc(products.name))
       : []
 

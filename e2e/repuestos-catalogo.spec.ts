@@ -150,7 +150,7 @@ async function expectOtEsperando(page: Page, folio: string, esperando: boolean) 
   }).toPass({ timeout: 60_000 })
 }
 
-test("pedir desde la OT con el catálogo, catalogar al armar la OC, precio al emitir y recepción en faena sin Bodega", async ({ page }) => {
+test("pedir desde la OT con el catálogo, catalogar al armar la OC, precio al emitir y recepción en faena al stock reservado para la OT", async ({ page }) => {
   test.setTimeout(360_000)
   const { search, otherPart, vehiclePart } = REPUESTOS_CATALOGO_E2E
   const run = Date.now().toString(36).toUpperCase()
@@ -279,7 +279,7 @@ test("pedir desde la OT con el catálogo, catalogar al armar la OC, precio al em
   await expect(filaHistorial).toContainText("Orden de compra")
   await expect(filaHistorial).toContainText("$45.000")
 
-  // ── Paso 5: recepción en faena → «Entregado», sin movimiento en Bodega, y la OT deja de esperar ──
+  // ── Paso 5: recepción en faena → «Entregado» (D10), entra al stock de la faena reservado para la OT (ADR mantención 0001) y la OT deja de esperar ──
   await page.goto(`/recepcion/nueva?oc=${orderId}`)
   // Directo a faena (lo que propone una solicitud de repuestos): no hay etapa de oficina.
   await expect(receiptStageCard(page, "Oficina")).toHaveCount(0)
@@ -293,12 +293,19 @@ test("pedir desde la OT con el catálogo, catalogar al armar la OC, precio al em
   await withSql(async (sql) => {
     const items = await sql`select status from purchase_request_items where request_id = ${requestId}`
     expect(items.map((item) => item.status)).toEqual(["delivered", "delivered"])
-    const [movements] = await sql`
-      select count(*)::int as n from inventory_movements where product_id in (${vehiclePart.id}, ${newPartId})`
-    expect(movements!.n, "un repuesto de catálogo no mueve Bodega").toBe(0)
+    // Desde el ADR de mantención 0001 el repuesto recibido entra al stock de la faena (`ingreso_oc`) y,
+    // como la línea es de una OT abierta, queda reservado para ella.
+    const movements = await sql`
+      select type, quantity from inventory_movements where product_id in (${vehiclePart.id}, ${newPartId})`
+    expect(movements.map((row) => row.type), "el repuesto recibido entra al stock de la faena").toEqual(["ingreso_oc", "ingreso_oc"])
     const [stock] = await sql`
-      select count(*)::int as n from worksite_stock where product_id in (${vehiclePart.id}, ${newPartId})`
-    expect(stock!.n).toBe(0)
+      select coalesce(sum(quantity), 0)::float as total from worksite_stock where product_id in (${vehiclePart.id}, ${newPartId})`
+    expect(stock!.total).toBe(2)
+    // La línea pedida desde la OT queda reservada para ella; la que se agregó sin equipo ni OT, libre.
+    const reserved = await sql`
+      select product_id, quantity::float as quantity from mant_parts_allocations
+      where product_id in (${vehiclePart.id}, ${newPartId}) and status = 'activa'`
+    expect(reserved, "lo recibido para la OT queda reservado para ella").toEqual([{ product_id: vehiclePart.id, quantity: 1 }])
   })
   await page.goto(`/solicitudes/${requestId}`)
   await expect(textoVisible(page, "Entregado").first()).toBeVisible({ timeout: 15_000 })

@@ -9,7 +9,7 @@ La fase 1 («Repuestos vinculados», desplegada 2026-11-08) ató el ítem de rep
 Objetivo: un catálogo de repuestos que crece con el uso, sin frenar al que pide.
 
 ### Decisiones del usuario (2026-11-09)
-1. **Consumo directo:** el repuesto de catálogo NO entra a stock ni kárdex; al recibirse en faena pasa a «entregado» como hoy. El catálogo sirve para identidad, precios y conciliación.
+1. **Consumo directo** *(revertida el 2026-11-26 por `docs/mantencion/adr/0001-repuestos-con-stock-y-notas-de-pedido.md`: el repuesto recibido entra al stock de la faena y se reserva para su OT)*: el repuesto de catálogo NO entra a stock ni kárdex; al recibirse en faena pasa a «entregado» como hoy. El catálogo sirve para identidad, precios y conciliación.
 2. **Opcional, se cataloga al comprar:** quien pide busca en el catálogo o escribe texto libre. Compras, al armar la OC, vincula la línea a un repuesto existente o lo crea.
 3. **Compatibilidad derivada del historial:** sin tabla de compatibilidad. El repuesto muestra para qué vehículos (marca/modelo) se compró y el buscador prioriza lo ya comprado para el vehículo elegido. Marca del fabricante del repuesto como texto.
 4. **Permiso nuevo `repuestos:catalog`** para administrador, secretaria, jefa_chome y jefe_mantencion; pantalla propia «Catálogo de repuestos».

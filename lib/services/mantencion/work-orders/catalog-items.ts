@@ -4,12 +4,14 @@ import { mantRecords, mantWorkOrderEvents, mantWorkOrderItems, mantWorkOrders, u
 import type { CatalogWorkOrder } from "@/lib/mantencion/contracts"
 import type { OtItemDone, OtItemKind, OtItemOrigin, OtStatus, OtWorkshopKind } from "@/lib/mantencion/work-order-states"
 import type { MantViewer } from "../access"
+import { loadCatalogPartsForWorkOrders } from "../parts-notes/overview"
 
 /**
  * Órdenes de trabajo del catálogo de la app: las asignadas a mí (abiertas y las
  * cerradas de los últimos 7 días). El mecánico no toma OT: se las asignan.
  * Cada una trae el resumen del equipo, porque puede ser de una faena cuyo
- * equipo no está en mi catálogo.
+ * equipo no está en mi catálogo, sus notas de pedido (sin las anuladas) y los
+ * repuestos reservados para ella y sin usar.
  */
 
 const CLOSED_WINDOW_DAYS = 7
@@ -20,7 +22,7 @@ const iso = (value: string) => new Date(value).toISOString()
 async function hydrate(viewer: MantViewer, rows: Array<{ ot: typeof mantWorkOrders.$inferSelect; worksiteName: string; assignedToName: string | null }>): Promise<CatalogWorkOrder[]> {
   if (rows.length === 0) return []
   const ids = rows.map((row) => row.ot.id)
-  const [items, returns, records] = await Promise.all([
+  const [items, returns, records, parts] = await Promise.all([
     db.select().from(mantWorkOrderItems).where(inArray(mantWorkOrderItems.workOrderId, ids))
       .orderBy(asc(mantWorkOrderItems.kind), asc(mantWorkOrderItems.sortOrder), asc(mantWorkOrderItems.createdAt)),
     db.select({ workOrderId: mantWorkOrderEvents.workOrderId, type: mantWorkOrderEvents.type, reason: mantWorkOrderEvents.reason, createdAt: mantWorkOrderEvents.createdAt })
@@ -31,6 +33,8 @@ async function hydrate(viewer: MantViewer, rows: Array<{ ot: typeof mantWorkOrde
       .from(mantRecords)
       .where(and(inArray(mantRecords.workOrderId, ids), eq(mantRecords.status, "vigente")))
       .orderBy(asc(mantRecords.signedAt)),
+    // Notas de pedido y repuestos reservados de TODAS mis OT, en pocas consultas (ADR mantención 0001).
+    loadCatalogPartsForWorkOrders(ids),
   ])
   // Lo recibido «desde el último rechazo» (o reapertura): es lo que habilita terminar de nuevo.
   // Reloj del servidor (`received_at`), el mismo del evento; `signed_at` es del teléfono.
@@ -81,6 +85,8 @@ async function hydrate(viewer: MantViewer, rows: Array<{ ot: typeof mantWorkOrde
         done: item.done as OtItemDone | null,
         note: item.note,
       })),
+      partsNotes: parts.notes.get(ot.id) ?? [],
+      partsAvailable: parts.available.get(ot.id) ?? [],
       lastRejection: rejected ? { count: ot.rejectionCount, reason: rejected.reason ?? "", at: iso(rejected.createdAt) } : null,
       linkedRecords: records
         .filter((record) => record.workOrderId === ot.id && (!back || new Date(record.receivedAt).getTime() > new Date(back.createdAt).getTime()))

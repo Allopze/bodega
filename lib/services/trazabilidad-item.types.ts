@@ -104,5 +104,16 @@ export interface ItemDetailData {
     reason: string | null
     notes: string | null
     stockAfter: number | null
+    /**
+     * Sólo el uso de un repuesto en una OT (`egreso_mantencion`) y su reverso al anular el
+     * registro: la OT, el registro y las notas de pedido de las que salió lo usado.
+     */
+    maintenance: {
+      workOrderId: string | null
+      workOrderFolio: string | null
+      recordId: string
+      recordFolio: string | null
+      noteCodes: string[]
+    } | null
   }>
 }

@@ -9,6 +9,7 @@ import { deliveries, deliveryItems, products, worksites, worksiteStock, inventor
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { nextCodeTx } from "@/lib/code-sequences"
+import { guardSparePartEgressTx, isReservationCheckedEgress, SPARE_PART_FORBIDDEN_MESSAGE, SPARE_PART_MOVEMENT_TYPES } from "@/lib/services/stock-reservations"
 
 /* ── Movement types ─────────────────────────────────────────────────────────── */
 export type MovementType =
@@ -22,6 +23,7 @@ export type MovementType =
   | "ingreso_traslado"     // + : entrada por guía de despacho interna en la faena destino
   | "ingreso_anulacion"    // + : reverso de una entrega anulada (el egreso nunca debió existir)
   | "egreso_anulacion"     // - : reverso de una recepción anulada (el ingreso nunca debió existir)
+  | "egreso_mantencion"    // - : repuesto usado en una OT, declarado en el registro del mecánico (ADR mantención 0001)
 /* ── Apply movement ─────────────────────────────────────────────────────────── */
 
 export interface ApplyMovementInput {
@@ -35,6 +37,11 @@ export interface ApplyMovementInput {
   userEmail?:     string
   reason?:        string
   notes?:         string
+  /**
+   * Id del movimiento, para quien necesita guardarlo (la línea del registro de
+   * mantención lo enlaza). Sin él, se genera uno.
+   */
+  movementId?:    string
 }
 
 export interface RegisterStockReturnInput {
@@ -277,16 +284,29 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
     throw new Error(`Worksite '${ws.name}' is not active`)
   }
 
-  // Catálogo de repuestos: un repuesto se compra para un equipo y se consume
-  // directo, sin pasar por bodega. La recepción ya los omite; esta guarda impide
-  // que cualquier otro camino (ajuste, traspaso, guía) les abra existencias.
+  // Repuestos (ADR mantención 0001, 2026-11-26): tienen stock por faena y se
+  // reservan por OT. Su única salida operativa es el consumo en una OT
+  // (`egreso_mantencion`); no se entregan, devuelven ni retiran a un trabajador.
+  // Las demás salidas no pueden comerse lo reservado (`guardSparePartEgressTx`),
+  // salvo el ajuste, que rebaja reservas. El consumo lo valida
+  // `consumePartTx` bajo el mismo bloqueo antes de llegar aquí.
   const [product] = await tx
     .select({ isSparePart: products.isSparePart })
     .from(products)
     .where(eq(products.id, input.productId))
     .limit(1)
   if (product?.isSparePart === true) {
-    throw new Error("Los repuestos no tienen existencias en bodega: se compran para un equipo y se consumen directo")
+    if (!SPARE_PART_MOVEMENT_TYPES.has(input.type)) throw new Error(SPARE_PART_FORBIDDEN_MESSAGE)
+    if (isReservationCheckedEgress(input.type, input.quantity)) {
+      await guardSparePartEgressTx(tx, {
+        worksiteId: input.worksiteId,
+        productId: input.productId,
+        type: input.type,
+        quantity: input.quantity,
+        performedBy: input.performedBy,
+        reason: input.reason,
+      })
+    }
   }
 
   const now = new Date().toISOString()
@@ -386,7 +406,7 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
     }
 
     await tx.insert(inventoryMovements).values({
-      id: nanoid(),
+      id: input.movementId ?? nanoid(),
       worksiteId: input.worksiteId,
       productId: input.productId,
       type: input.type,
@@ -421,7 +441,7 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
   const { currentQty, newQty } = await applyStockDelta(tx, input, now)
 
   await tx.insert(inventoryMovements).values({
-    id: nanoid(),
+    id: input.movementId ?? nanoid(),
     worksiteId: input.worksiteId,
     productId: input.productId,
     type: input.type,

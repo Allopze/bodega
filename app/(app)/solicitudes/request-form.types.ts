@@ -123,6 +123,8 @@ export interface EditItem {
   vehicleLabel?:       string | null
   workOrderId?:        string | null
   workOrderFolio?:     string | null
+  /** Línea de la nota de pedido que el ítem compra (ADR mantención 0001); sólo con OT. */
+  partsNoteItemId?:    string | null
   estimatedUnitPrice?: number | null
   attributes:          { attributeId: string | null; attributeName: string; value: string }[]
 }
@@ -157,6 +159,11 @@ export interface ItemRow {
   /** OT abierta de ese equipo; sólo con `vehicleId`. */
   workOrderId:         string
   workOrderFolio:      string
+  /**
+   * Línea de la nota de pedido del mecánico que el ítem compra (`?np=`). Viaja oculta:
+   * con ella el equipo y la OT no se pueden cambiar, porque la línea es de esa OT.
+   */
+  partsNoteItemId?:    string
   /** Precio unitario estimado en CLP, tal como se escribe ("" = sin indicar). */
   estimatedUnitPrice:  string
   isEpp:               boolean
@@ -199,6 +206,8 @@ export interface PrefillItem {
   vehicleLabel?:        string | null
   workOrderId?:         string | null
   workOrderFolio?:      string | null
+  /** Línea de la nota de pedido que el ítem compra (`?np=`); sólo con `workOrderId`. */
+  partsNoteItemId?:     string | null
   estimatedUnitPrice?:  number | null
   replenishmentGapKey?: string
   /** Atributos ya cargados (copia de otra solicitud), por nombre y valor. */

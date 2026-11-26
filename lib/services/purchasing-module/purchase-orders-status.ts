@@ -3,7 +3,7 @@
  * All DB mutations here, never in Server Actions or UI components.
  */
 
-import { eq, and, desc, gt, inArray, isNotNull } from "drizzle-orm"
+import { eq, and, desc, gt, inArray, isNotNull, isNull, ne, or } from "drizzle-orm"
 import { db } from "@/db"
 import {
   productSupplierPriceHistory,
@@ -12,6 +12,7 @@ import {
   purchaseOrders,
   purchaseOrderItems,
   purchaseRequestItems,
+  purchaseRequests,
   suppliers,
 } from "@/db/schema"
 import { recordAudit, recordStatusChange, recordStatusChanges } from "@/lib/audit"
@@ -229,6 +230,25 @@ async function revertSparePartPricesTx(tx: PriceTx, orderId: string): Promise<vo
   }
 }
 
+/** Cuántos repuestos se nombran en el aviso antes de resumir el resto («y 2 más»). */
+const UNCATALOGUED_NAMES_SHOWN = 3
+const UNCATALOGUED_NAME_MAX_LENGTH = 60
+
+/**
+ * «Cataloga el repuesto antes de emitir la OC: …»: el texto de un error de negocio llega
+ * tal cual a quien emite (`safeActionMessage` descarta lo que pasa de 500 caracteres), así
+ * que se nombran pocos repuestos y con la descripción recortada.
+ */
+function uncataloguedPartsMessage(names: Array<string | null>): string {
+  const labels = names.map((name) => {
+    const text = name?.trim() || "repuesto sin descripción"
+    return text.length > UNCATALOGUED_NAME_MAX_LENGTH ? `${text.slice(0, UNCATALOGUED_NAME_MAX_LENGTH - 1)}…` : text
+  })
+  const shown = labels.slice(0, UNCATALOGUED_NAMES_SHOWN).join(", ")
+  const rest = labels.length - UNCATALOGUED_NAMES_SHOWN
+  return `Cataloga el repuesto antes de emitir la OC: ${shown}${rest > 0 ? ` y ${rest} más` : ""}.`
+}
+
 export async function issueAndSendOrder(
   orderId: string,
   userId: string,
@@ -289,6 +309,28 @@ export async function issueAndSendOrder(
     if (ocItems.length === 0) {
       throw new Error("No se puede emitir y enviar una orden de compra sin ítems")
     }
+
+    // ADR mantención 0001, D4: un repuesto pedido para una OT (o para una línea de nota de
+    // pedido) entra al stock de la faena con su producto de catálogo, así que la línea tiene
+    // que estar catalogada antes de que la OC salga. Los servicios con OT no tienen repuesto
+    // de catálogo: sólo se exige a las solicitudes de repuestos.
+    const uncatalogued = await tx
+      .select({
+        requestName: purchaseRequestItems.productNameFree,
+        orderName: purchaseOrderItems.productNameFree,
+      })
+      .from(purchaseOrderItems)
+      .innerJoin(purchaseRequestItems, eq(purchaseRequestItems.id, purchaseOrderItems.requestItemId))
+      .innerJoin(purchaseRequests, eq(purchaseRequests.id, purchaseRequestItems.requestId))
+      .where(and(
+        eq(purchaseOrderItems.purchaseOrderId, orderId),
+        ne(purchaseOrderItems.status, "cancelled"),
+        isNull(purchaseOrderItems.productId),
+        eq(purchaseRequests.requestType, "repuestos"),
+        or(isNotNull(purchaseRequestItems.workOrderId), isNotNull(purchaseRequestItems.partsNoteItemId)),
+      ))
+      .orderBy(purchaseOrderItems.sortOrder, purchaseOrderItems.id)
+    if (uncatalogued.length > 0) throw new Error(uncataloguedPartsMessage(uncatalogued.map((line) => line.orderName ?? line.requestName)))
 
     const now = new Date().toISOString()
     await tx

@@ -86,6 +86,12 @@ export const OT_EVENT_TYPES = [
   "voided",
   "reopened",
   "record_linked",
+  // Repuestos (ADR mantención 0001): nota de pedido, reserva, consumo y liberación.
+  "parts_note_created",
+  "parts_note_resolved",
+  "parts_allocated",
+  "parts_consumed",
+  "parts_released",
 ] as const
 export type OtEventType = (typeof OT_EVENT_TYPES)[number]
 

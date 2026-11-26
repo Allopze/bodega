@@ -170,9 +170,9 @@ export async function resolveCatalogItemQuantitiesTx(
     .for("share")
 
   // Este camino sirve a las solicitudes de EPP y «otro» (crear, borrador y
-  // editar ítem). Un repuesto de catálogo es consumo directo y vive en la
-  // solicitud de repuestos, que lo valida en persist-draft.ts: aquí colgaría de
-  // un tipo que lo recibiría como bien con stock. El formulario ya no lo ofrece,
+  // editar ítem). Un repuesto de catálogo vive en la solicitud de repuestos, que
+  // lo enlaza al equipo y a la OT y lo valida en persist-draft.ts: aquí quedaría
+  // sin OT ni reserva. El formulario ya no lo ofrece,
   // pero el payload llega como JSON.
   for (const [index, item] of items.entries()) {
     const sparePart = item.productId ? productRows.find((row) => row.id === item.productId && row.isSparePart) : undefined

@@ -136,6 +136,8 @@ const CODE_SERIES_TABLES: Record<string, string> = {
   FISC:  "prevention_external_engagements",
   OAL:   "prevention_external_engagements",
   EXT:   "prevention_external_engagements",
+  // Notas de pedido de repuestos del mecánico (NP-AAAA-NNNN, ADR mantención 0001).
+  NP:    "mant_parts_notes",
 }
 
 /**

@@ -3,7 +3,7 @@ import { STORE, idbGet, idbGetAll, req, runTx } from "./db"
 import { emit } from "./events"
 import { referencedPhotoIds, releasePhoto } from "./drafts"
 import type { WorkOrderOpPayload } from "../contracts"
-import type { QueueItem, QueueRecordItem, QueueReplyItem, QueueStatus, QueueWorkOrderItem, QueueWorkshopItem } from "./types"
+import type { QueueItem, QueuePartsNoteItem, QueueRecordItem, QueueReplyItem, QueueStatus, QueueWorkOrderItem, QueueWorkshopItem } from "./types"
 
 /**
  * Cola de envío. Cada elemento lleva su autor y se manda con la credencial de ESE
@@ -43,7 +43,7 @@ export function newRecordItem(input: Pick<QueueRecordItem, "payload" | "summary"
   return { ...base(input.payload.id, input.authorUserId, now), type: "record", payload: input.payload, summary: input.summary, photoIds: input.photoIds, folio: null, receivedAt: null, warnings: [], rejection: null }
 }
 
-export async function enqueueSimple(item: QueueWorkshopItem | QueueReplyItem | QueueWorkOrderItem): Promise<void> {
+export async function enqueueSimple(item: QueueWorkshopItem | QueueReplyItem | QueueWorkOrderItem | QueuePartsNoteItem): Promise<void> {
   await runTx([STORE.queue], "readwrite", async (s) => { await req(s.queue.put(item)) })
   emit("queue")
 }
@@ -60,6 +60,11 @@ export function newWorkOrderItem(input: Pick<QueueWorkOrderItem, "summary"> & { 
 
 export function newReplyItem(input: Pick<QueueReplyItem, "payload" | "summary"> & { authorUserId: string }, id: string, now = new Date().toISOString()): QueueReplyItem {
   return { ...base(id, input.authorUserId, now), type: "reply", payload: input.payload, summary: input.summary }
+}
+
+/** Nota de pedido de repuestos: el `id` de la cola es el de la NP (`payload.id`), la clave de idempotencia del servidor. */
+export function newPartsNoteItem(input: Pick<QueuePartsNoteItem, "payload" | "summary"> & { authorUserId: string }, id: string, now = new Date().toISOString()): QueuePartsNoteItem {
+  return { ...base(id, input.authorUserId, now), type: "parts_note", payload: input.payload, summary: input.summary }
 }
 
 /**

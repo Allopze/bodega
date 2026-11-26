@@ -82,7 +82,7 @@ beforeAll(async () => {
     { id: PRODUCT_MEDIUM, sku: "GUANTE-M", name: "Guante", categoryId: CATEGORY_ID, unitOfMeasure: "par", isActive: true, createdAt: NOW, updatedAt: NOW },
     { id: PRODUCT_XL, sku: "GUANTE-XL", name: "Guante", categoryId: CATEGORY_ID, unitOfMeasure: "par", isActive: true, createdAt: NOW, updatedAt: NOW },
     { id: SERVICE, sku: "SERV-01", name: "Calibración", categoryId: CATEGORY_ID, unitOfMeasure: "servicio", isService: true, isActive: true, createdAt: NOW, updatedAt: NOW },
-    // Repuesto de catálogo: consumo directo, nunca ingresa a la bodega.
+    // Repuesto de catálogo: tiene stock por faena (ADR mantención 0001), así que lo pedido y aprobado es stock en tránsito.
     { id: SPARE_PART, sku: "RPT-001", name: "Filtro hidráulico", categoryId: CATEGORY_ID, unitOfMeasure: "unidad", isSparePart: true, partNumber: "HF-35", isActive: true, createdAt: NOW, updatedAt: NOW },
   ])
   await inMemoryDb.insert(schema.worksiteStock).values([
@@ -102,7 +102,8 @@ beforeAll(async () => {
     { id: "request-item-s", requestId: "request-alpha", productId: PRODUCT_SMALL, quantity: 10, status: "partially_delivered", createdAt: NOW, updatedAt: NOW },
     { id: "request-item-l", requestId: "request-alpha", productId: PRODUCT_LARGE, quantity: 6, status: "partially_received", createdAt: NOW, updatedAt: NOW },
     { id: "request-item-service", requestId: "request-alpha", productId: SERVICE, quantity: 50, status: "partially_received", createdAt: NOW, updatedAt: NOW },
-    // Pedido y aprobado, pero el repuesto de catálogo no es stock en tránsito: no cuenta.
+    // Pedido y aprobado: el repuesto de catálogo entra a la bodega de la faena, así que cuenta como por recibir
+    // (salvo que quien pregunta lo deje fuera con `includeSpareParts: false`).
     { id: "request-item-spare-part", requestId: "request-alpha", productId: SPARE_PART, quantity: 9, status: "approved", createdAt: NOW, updatedAt: NOW },
     // Aprobado y todavía sin OC: también está por recibir, entero.
     { id: "request-item-approved", requestId: "request-alpha", productId: PRODUCT_LARGE, quantity: 2, status: "approved", createdAt: NOW, updatedAt: NOW },
@@ -152,7 +153,7 @@ afterAll(async () => pg.close())
 
 describe("getStockAvailability", () => {
   it("counts approved request quantities that have not reached the final worksite", async () => {
-    const rows = await getStockAvailability(scopedSession([WS_ALPHA]))
+    const rows = await getStockAvailability(scopedSession([WS_ALPHA]), { includeSpareParts: false })
 
     expect(rows).toEqual([
       // 6 pedidos con 1 recibido en faena (la OC sólo cubre 5) + 2 aprobados sin OC.
@@ -165,6 +166,16 @@ describe("getStockAvailability", () => {
     ])
   })
 
+  it("includes spare parts by default: they enter the worksite stock", async () => {
+    const rows = await getStockAvailability(scopedSession([WS_ALPHA]))
+
+    expect(rows).toContainEqual({ worksiteId: WS_ALPHA, productId: SPARE_PART, incoming: 9 })
+    // El resto de las líneas no cambia.
+    expect(rows.filter((row) => row.productId !== SPARE_PART)).toEqual(
+      await getStockAvailability(scopedSession([WS_ALPHA]), { includeSpareParts: false }),
+    )
+  })
+
   it("intersects a selected worksite with the session scope", async () => {
     const rows = await getStockAvailability(scopedSession([WS_ALPHA]), { worksiteId: WS_BETA })
 
@@ -174,7 +185,7 @@ describe("getStockAvailability", () => {
 
 describe("getIncomingWithoutStock", () => {
   it("returns what is still to be received for products the worksite has never stocked", async () => {
-    const rows = await getStockAvailability(scopedSession([WS_ALPHA]))
+    const rows = await getStockAvailability(scopedSession([WS_ALPHA]), { includeSpareParts: false })
 
     // XL está en 0 pero tiene registro: lo muestra su propia fila de stock.
     expect(await getIncomingWithoutStock(rows)).toEqual([
@@ -185,8 +196,15 @@ describe("getIncomingWithoutStock", () => {
         productName: "Guante",
         productSku: "GUANTE-M",
         unitOfMeasure: "par",
+        isSparePart: false,
       },
     ])
+  })
+
+  it("marks a spare part that the worksite has never stocked, so the table does not offer to deliver it", async () => {
+    const rows = await getStockAvailability(scopedSession([WS_ALPHA]))
+
+    expect(await getIncomingWithoutStock(rows)).toContainEqual(expect.objectContaining({ productId: SPARE_PART, incoming: 9, isSparePart: true }))
   })
 
   it("applies the same product search as the stock table", async () => {

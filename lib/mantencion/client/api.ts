@@ -4,6 +4,7 @@ import type {
   MantCatalog,
   MantCatalogOthers,
   ObservationReply,
+  SyncPartsNote,
   SyncRecord,
   SyncRecordResponse,
   SyncWarning,
@@ -276,3 +277,10 @@ export const postObservationReply = (token: string, payload: ObservationReply, f
 /** `POST /api/mantencion/sync/ot`: 409/422 es un rechazo definitivo con su motivo (la OT ya no admite esa operación). */
 export const postWorkOrderOp = (token: string, payload: WorkOrderOpRequest, fetchImpl: FetchFn = fetch) =>
   postSimple("/api/mantencion/sync/ot", token, payload, fetchImpl, "La plataforma rechazó la operación de la orden de trabajo.")
+
+/**
+ * `POST /api/mantencion/sync/notas-pedido`: 200 (también `duplicate`) la saca de la cola; 409/422 es un rechazo
+ * definitivo con su motivo (la OT ya no admite pedidos).
+ */
+export const postPartsNote = (token: string, payload: SyncPartsNote, fetchImpl: FetchFn = fetch) =>
+  postSimple("/api/mantencion/sync/notas-pedido", token, payload, fetchImpl, "La plataforma rechazó el pedido de repuestos.")

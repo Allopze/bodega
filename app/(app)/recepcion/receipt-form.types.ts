@@ -16,8 +16,11 @@ export interface ReceiptOcItem {
   unitOfMeasure:        string
   notes:                string | null
   isEmergencyService?:   boolean
-  /** Repuesto de catálogo: consumo directo, no entra a stock al recibirse. */
-  isDirectConsumption?: boolean
+  /**
+   * Repuesto de catálogo: entra al stock de la bodega donde se recibe y, si su solicitud
+   * trae una OT, queda reservado para ella al llegar a faena (ADR mantención 0001).
+   */
+  isSparePart?: boolean
   emergencyResourceLabel?: string | null
 }
 

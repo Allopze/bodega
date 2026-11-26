@@ -21,6 +21,7 @@
 
 import { and, asc, desc, eq, inArray, isNull, ne, notInArray, or, sql, type AnyColumn, type SQL } from "drizzle-orm"
 import { db, type Tx } from "@/db"
+import { describeProductStockBlockers, productsWithStock } from "@/lib/services/product-deactivation"
 import {
   fuelVehicles,
   productCategories,
@@ -983,6 +984,12 @@ export async function updateSparePart(
 
 export async function setSparePartActive(id: string, active: boolean, actorUserId?: string): Promise<void> {
   await db.transaction(async (tx) => {
+    // Desde el ADR de mantención 0001 el repuesto tiene stock por faena: desactivar uno con
+    // saldo escondería inventario real, igual que con cualquier producto (CAT-001).
+    if (!active) {
+      const blockers = await productsWithStock(tx, [id])
+      if (blockers.length > 0) throw new Error(describeProductStockBlockers(blockers))
+    }
     const [updated] = await tx
       .update(products)
       .set({ isActive: active, updatedAt: new Date().toISOString() })

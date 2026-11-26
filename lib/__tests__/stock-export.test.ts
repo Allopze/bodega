@@ -173,7 +173,7 @@ describe("getStockExport", () => {
 
     expect((ws?.getRow(1).values as unknown[]).slice(1)).toEqual([
       "Faena", "Producto", "Talla", "SKU", "U/M", "En bodega", "Por recibir",
-      "Último movimiento",
+      "Último movimiento", "Reservado OT", "Libre",
     ])
     expect(ws?.actualRowCount).toBe(3) // header + 2 data rows
   })
@@ -243,7 +243,8 @@ describe("getStockExport", () => {
       expect(ws?.actualRowCount).toBe(3) // header + Bota (sin registro) + Guantes
       // Orden por faena y producto, igual que las filas con registro.
       expect((ws?.getRow(2).values as unknown[]).slice(1)).toEqual([
-        "Faena Alfa", "Bota Seguridad", "", "EPP-002", "par", 0, 6, "",
+        // Las dos últimas, «Reservado OT» y «Libre», sólo tienen cifra en los repuestos.
+        "Faena Alfa", "Bota Seguridad", "", "EPP-002", "par", 0, 6, "", "", "",
       ])
       expect((ws?.getRow(3).values as unknown[]).slice(1, 3)).toEqual(["Faena Alfa", "Guantes Nitrilo"])
     } finally {
@@ -421,6 +422,7 @@ describe("getKardexExport", () => {
       "Fecha", "Faena", "Producto", "Talla", "SKU", "Tipo de movimiento",
       "Cantidad", "Stock anterior", "Stock posterior",
       "Responsable", "Motivo", "Observaciones",
+      "OT", "Registro de mantención",
     ])
     expect(ws?.actualRowCount).toBe(3) // header + 2
 

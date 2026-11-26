@@ -1,3 +1,25 @@
+# Notas de pedido y repuestos con stock — verificación, 2026-11-26
+
+El mecánico pide repuestos para su OT con una nota de pedido. Jefatura los saca de la bodega, los compra o los rechaza. El
+repuesto que llega entra al stock de la faena reservado para la OT, el registro lo descuenta, anular repone y cerrar la OT
+libera. Migración 0403 y 3 permisos nuevos. El detalle está en [notas-pedido-2026-11-26.md](notas-pedido-2026-11-26.md).
+
+- **PASS · puertas:**
+  - typecheck y lint con exit 0;
+  - `test:fast`: 22.635 pasan y 1 falla (`backup-env-whitelist`, la misma que en la base);
+  - `test:pglite`: 5.934 pasan;
+  - `db:verify-migrations`: 404 entradas.
+- **PASS · E2E aislada:**
+  - `notas-pedido.spec.ts` pasa 7/7 sobre build de producción, con base y puerto propios;
+  - en los 16 specs de las áreas tocadas, sólo fallan 2 rojos previos de la unidad km/h.
+- **PASS · revisión final (Opus):** sin bloqueantes; el importante y dos menores, corregidos con prueba.
+- **PASS · recorrido visual:** escritorio y móvil. Tres defectos corregidos.
+- **LÍMITES:**
+  - concurrencia real sin probar contra Postgres;
+  - la compra completa no está en la E2E;
+  - antes de producción, inventario de arranque con jefatura.
+  - La rama no está en `main` ni desplegada.
+
 # Historial de mantenciones unificado — verificación, 2026-11-25
 
 `/mantencion/registros/historicos` pasó de «Historial anterior» (lista plana de respuestas de Forms) a una vista única de

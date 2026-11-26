@@ -13,6 +13,10 @@ const HREF_BY_REFERENCE: Record<string, (id: string) => string> = {
   stock_adjustment:         (id) => `/bodega/documentos?doc=${id}`,
   delivery_return:          (id) => `/bodega/documentos?doc=${id}`,
   physical_inventory_count: (id) => `/bodega/documentos?doc=${id}`,
+  // Consumo de repuestos en mantención y su reverso al anular el registro: el
+  // movimiento apunta al registro; la línea se enlaza por `inventory_movement_id`.
+  mant_record:              (id) => `/mantencion/registros/${id}`,
+  mant_record_void:         (id) => `/mantencion/registros/${id}`,
   // `worksite_closure` no tiene pantalla: es un evento administrativo que ya
   // queda en `audit_log`. Devuelve null y la celda se pinta sin enlace, en vez
   // de inventarle un destino.
@@ -26,6 +30,8 @@ export const REFERENCE_TYPE_LABELS: Record<string, string> = {
   delivery_return:          "Devolución",
   physical_inventory_count: "Conteo físico",
   worksite_closure:         "Cierre de faena",
+  mant_record:              "Registro de mantención",
+  mant_record_void:         "Anulación de registro",
 }
 
 export function movementDocumentHref(

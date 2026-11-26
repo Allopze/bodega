@@ -20,10 +20,10 @@ El flujo de repuestos existe como «solicitud con cotizaciones» pero vive aisla
 2. **Aprobación:** sigue sólo en `jefa_chome`/`administrador` (`repuestos:approve`).
 3. **Cotizaciones:** umbral por monto configurable en Admin. Bajo el umbral basta proveedor sugerido y precio estimado; sobre el umbral, 3 cotizaciones o justificación. Urgencia crítica con equipo detenido o OT vinculada: vía rápida con justificación obligatoria.
 4. **Costo manual de la OT:** pasa a ser sólo mano de obra / taller externo. Costo de mantención por equipo = ese costo + OC de repuestos y servicios vinculadas al vehículo.
-5. **Roles que crean/envían:** `jefe_mantencion` (ve todas), `supervisor_mantencion` y `admin_contrato` (ven las propias). El mecánico no.
+5. **Roles que crean/envían:** `jefe_mantencion` (ve todas), `supervisor_mantencion` y `admin_contrato` (ven las propias). El mecánico no. *(2026-11-26, ADR mantención 0001: el mecánico pide con una nota de pedido que jefatura convierte en solicitud.)*
 6. **Centro de costo:** fuera de este plan (seguimiento aparte: nunca se asigna en ninguna solicitud ni OC).
 7. **Catálogo de repuestos:** fase 2, plan aparte. Aquí el repuesto sigue siendo texto libre con precio estimado.
-8. **Cierre del ciclo:** la OT **no** lleva repuestos como parte de su documento. Lo usado lo declara el mecánico en el registro de la correctiva (app y PC), que ya existe. La OT muestra, como información, las solicitudes/OC vinculadas y, al lado, lo que los registros enlazados declararon usar. Sin cambios en la app del mecánico.
+8. **Cierre del ciclo:** la OT **no** lleva repuestos como parte de su documento. Lo usado lo declara el mecánico en el registro de la correctiva (app y PC), que ya existe. La OT muestra, como información, las solicitudes/OC vinculadas y, al lado, lo que los registros enlazados declararon usar. Sin cambios en la app del mecánico. *(2026-11-26, ADR mantención 0001: el repuesto usado puede salir del stock reservado para la OT y descuenta en el kárdex.)*
 
 ### Decisiones posteriores a la implementación (2026-11-07)
 9. **Umbral:** $200.000 por defecto.
