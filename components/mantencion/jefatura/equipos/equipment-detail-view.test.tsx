@@ -65,17 +65,17 @@ describe("ficha del equipo: «Repuestos y servicios comprados»", () => {
     expect(screen.getByRole("heading", { name: "Repuestos y servicios comprados" })).toBeDefined()
     expect(screen.getByRole("link", { name: "REP-2026-0042" }).getAttribute("href")).toBe("/solicitudes/req-1")
     expect(screen.getByRole("link", { name: "OC-2026-0310" }).getAttribute("href")).toBe("/compras/oc-1")
-    expect(screen.getByRole("link", { name: "Pedir repuestos" }).getAttribute("href")).toBe("/solicitudes/nueva?tipo=repuestos&vehiculo=veh-1")
+    expect(screen.getByRole("link", { name: "Solicitar compra" }).getAttribute("href")).toBe("/solicitudes/nueva?tipo=repuestos&vehiculo=veh-1")
   })
 
   it("sin compras y con permiso ofrece pedir repuestos; sin permiso lo dice en texto", () => {
     render(view({ purchases: [], purchaseLinks: { canOpenRequests: false, canOpenOrders: false, canOpenSpareParts: false, newRequestHref: "/solicitudes/nueva?tipo=repuestos&vehiculo=veh-1" } }))
     expect(screen.getByText("Sin compras vinculadas")).toBeDefined()
-    expect(screen.getByRole("link", { name: "Pedir repuestos" })).toBeDefined()
+    expect(screen.getByRole("link", { name: "Solicitar compra" })).toBeDefined()
     cleanup()
     render(view({ purchases: [] }))
     expect(screen.getByText("Nadie ha pedido repuestos ni servicios para este equipo.")).toBeDefined()
-    expect(screen.queryByRole("link", { name: "Pedir repuestos" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Solicitar compra" })).toBeNull()
   })
 
   it("el permiso del catálogo llega a la tarjeta: con repuestos:catalog el repuesto enlaza a su ficha; sin él, sólo muestra su identidad", () => {

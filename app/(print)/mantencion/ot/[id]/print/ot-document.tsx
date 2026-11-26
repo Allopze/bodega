@@ -62,7 +62,7 @@ export function OtDocument({ detail, linkedWork, logoSrc }: { detail: WorkOrderD
           <Item label="Faena de imputación" value={detail.worksiteName} />
           {detail.executionWorksiteName && <Item label="Faena de ejecución" value={detail.executionWorksiteName} />}
           <Item label="Horas hombre" value={laborHoursText(detail.laborHours)} mono />
-          <Item label="Días detenido" value={daysStoppedText(detail.daysStopped)} mono />
+          <Item label="Días en taller" value={daysStoppedText(detail.daysStopped)} mono />
         </dl>
       </section>
 

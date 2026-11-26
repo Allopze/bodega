@@ -133,7 +133,7 @@ export async function exportRecords(input: {
   const recordRows: ReportCell[][] = kept.map((row) => {
     const r = row.record
     const c = row.corrective
-    // Sólo el vigente tiene estado de taller: un anulado no acumula «días detenido».
+    // Sólo el vigente tiene estado de taller: un anulado no acumula «días en taller».
     const workshop = c?.inWorkshop && r.status === "vigente"
       ? workshopState({ inWorkshop: true, entryDate: c.workshopEntryDate, workDate: r.workDate, updates: updatesByRecord.get(r.id) ?? [] }, today)
       : null
@@ -188,10 +188,10 @@ export async function exportRecords(input: {
   const recordHeaders = [
     "Folio", "Tipo", "Estado", "Revisión", "Fecha del trabajo", "Firmado en el teléfono", "Recibido en la plataforma",
     "Faena", "Equipo", "Patente", "Tipo de equipo", "Marca", "Modelo", "Año", "Lectura", "Unidad",
-    "Pauta", "Intervalo", "Intervalo sugerido", "Pauta elegida a mano", "Motivo de la pauta a mano",
+    "Pauta", "Intervalo", "Intervalo sugerido", "Intervalo elegido a mano", "Motivo del intervalo a mano",
     "Hecho por", "Registrado por", "Detalle de autoría",
     "Ítems realizados", "Ítems no realizados", "Ítems no aplica", "Observaciones",
-    "Tipos de trabajo", "Aceites", "Trabajo realizado", "Horas", "Pasó por taller", "Entró a taller", "Salió de taller", "Días detenido", "Motivo de seguir en taller",
+    "Tipos de trabajo", "Aceites", "Trabajo realizado", "Horas", "Pasó por taller", "Entró a taller", "Salió de taller", "Días en taller", "Motivo de seguir en taller",
     "Salto de lectura", "Fuera de faena", "Duplicado de", "Corrige a", "Motivo de anulación", "Anulado por", "Anulado el",
   ]
   const recordFormats: Record<number, string> = {

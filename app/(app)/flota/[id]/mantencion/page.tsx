@@ -194,7 +194,7 @@ export default async function EquipmentDetailPage({
     },
   }
 
-  // «Editar mantención»: pauta, lectura inicial y baja. La identidad se edita en «Editar vehículo».
+  // «Editar plan de mantención»: pauta, lectura inicial y baja. La identidad se edita en «Editar vehículo».
   const edit: EquipmentEditData | null = schedules
     ? {
         schedules: schedules.map((item) => ({ id: item.id, name: item.name, unit: item.unit, intervalCount: item.intervals.length })),

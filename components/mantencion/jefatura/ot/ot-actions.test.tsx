@@ -362,7 +362,6 @@ describe("OtActions: «Solicitar compra»", () => {
     expect(openMenu()).toEqual(["Solicitar compra"])
     expect(screen.getByRole("menuitem", { name: "Solicitar compra" }).getAttribute("href")).toBe(HREF)
     expect(screen.queryByRole("button", { name: "Solicitar compra" })).toBeNull()
-    expect(screen.queryByText("Pedir repuestos")).toBeNull()
   })
 })
 

@@ -194,7 +194,7 @@ test("el panel abre con la franja «Hoy» y cada cifra lleva a su subconjunto", 
 
   // Los Indicadores son el Panel (2026-11-14): lo pendiente va en una franja, no en tarjetas.
   expect(await page.locator("[data-kpi-card]").count()).toBe(0)
-  const today = page.getByRole("region", { name: "Hoy" })
+  const today = page.getByRole("region", { name: "Pendientes de hoy" })
   await expect(today.getByRole("link", { name: /^Órdenes por asignar/ })).toBeVisible()
   await expect(today.getByRole("link", { name: /^Equipos en taller/ })).toBeVisible()
   await expect(today.getByRole("link", { name: /^Registros por revisar/ })).toBeVisible()
@@ -203,12 +203,12 @@ test("el panel abre con la franja «Hoy» y cada cifra lleva a su subconjunto", 
   await today.getByRole("link", { name: /^Órdenes por asignar/ }).click()
   await expect(page).toHaveURL(/\/mantencion\/ot\?estado=solicitada/)
   await page.goto("/mantencion/panel")
-  await page.getByRole("region", { name: "Hoy" }).getByRole("link", { name: /^Equipos en taller/ }).click()
+  await page.getByRole("region", { name: "Pendientes de hoy" }).getByRole("link", { name: /^Equipos en taller/ }).click()
   await expect(page).toHaveURL(/\/mantencion\/equipos\?taller=1/)
   // La correctiva abierta sembrada deja su equipo en la lista de Equipos en taller.
   await expect(textoVisible(page, rec.B.code).first()).toBeVisible()
   await page.goto("/mantencion/panel")
-  await page.getByRole("region", { name: "Hoy" }).getByRole("link", { name: /^Registros por revisar/ }).click()
+  await page.getByRole("region", { name: "Pendientes de hoy" }).getByRole("link", { name: /^Registros por revisar/ }).click()
   await expect(page).toHaveURL(/\/mantencion\/registros\?revision=pendiente&estado=vigente/)
 
   // Debajo de la franja van los gráficos del período.

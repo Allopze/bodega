@@ -19,7 +19,7 @@ import { loadFleet } from "./fleet"
 import { loadEquipmentTimeline } from "./maintenance-work"
 
 /**
- * Excel del historial de mantenciones de UN equipo («Exportar historial» de su
+ * Excel del historial de mantenciones de UN equipo («Exportar Excel» de su
  * ficha). Abre con lo mismo que muestra la tarjeta «Historial de mantenciones»
  * de la ficha: para quien puede ver el historial, la hoja «Historial» trae los
  * trabajos de las tres fuentes (formularios, órdenes de trabajo que entraron a

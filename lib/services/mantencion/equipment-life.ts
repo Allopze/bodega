@@ -47,7 +47,7 @@ export interface LifeRow {
   inWorkshop: boolean
   workshopEntryDate: string | null
   workshopExitDate: string | null
-  /** Días detenido (ingreso → salida, o hasta hoy si sigue en taller); `null` si no pasó por taller. */
+  /** Días en taller (ingreso → salida, o hasta hoy si sigue en taller); `null` si no pasó por taller. */
   daysInWorkshop: number | null
   voidReason: string | null
   voidedAt: string | null
@@ -127,7 +127,7 @@ export async function loadLifeRows(
   const today = todayInChile()
 
   const rows = kept.map<LifeRow>(({ record: r, corrective: c, worksiteName, registeredByName, voidReason, voidedAt, voidedByName }) => {
-    // Un anulado no deja el equipo en taller ni acumula «días detenido»: sólo el vigente tiene estado.
+    // Un anulado no deja el equipo en taller ni acumula «días en taller»: sólo el vigente tiene estado.
     const inWorkshopNow = !!c?.inWorkshop && r.status === "vigente"
     const workshop = inWorkshopNow
       ? workshopState({ inWorkshop: true, entryDate: c.workshopEntryDate, workDate: r.workDate, updates: updatesByRecord.get(r.id) ?? [] }, today)

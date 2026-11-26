@@ -116,11 +116,11 @@ export type PartsNoteDetailLine = {
   used: number
   /** Ítems de solicitud que la compran, con su solicitud y su OC si ya existe. */
   purchases: Array<{ requestItemId: string; requestId: string; requestCode: string; status: string; orderId: string | null; orderCode: string | null }>
-  /** Stock libre del producto en la faena de la OT (para «Sacar de bodega»); null sin producto. */
+  /** Stock libre del producto en la faena de la OT (para «Reservar de bodega»); null sin producto. */
   freeInWorksite: number | null
 }
 
-/** Repuesto con stock libre en la faena actual del equipo: lo que jefatura puede «Sacar de bodega». */
+/** Repuesto con stock libre en la faena actual del equipo: lo que jefatura puede «Reservar de bodega». */
 export type PartsNoteStockOption = {
   productId: string
   name: string

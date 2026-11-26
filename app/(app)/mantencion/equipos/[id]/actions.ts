@@ -7,7 +7,7 @@ import { guardPermission } from "@/lib/auth/can"
 import { exportEquipmentHistory } from "@/lib/services/mantencion/export-equipment-history"
 
 /**
- * «Exportar historial» de la ficha: Excel con las mantenciones del equipo.
+ * «Exportar Excel» de la ficha: Excel con las mantenciones del equipo.
  * Pide `mant:export` EN el servidor; el servicio vuelve a comprobar que el
  * equipo esté en el alcance de faenas de quien exporta y recorta los registros
  * por visibilidad. Ocultar el botón no es control de acceso.

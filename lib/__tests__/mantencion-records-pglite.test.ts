@@ -700,6 +700,6 @@ describe("anulación y lecturas del Panel", () => {
     const headers = (sheet.getRow(1).values as unknown[]).slice(1)
     const row = sheet.getRow(2)
     expect(row.getCell(headers.indexOf("Salió de taller") + 1).value || null).toBeNull()
-    expect(row.getCell(headers.indexOf("Días detenido") + 1).value || null).toBeNull()
+    expect(row.getCell(headers.indexOf("Días en taller") + 1).value || null).toBeNull()
   })
 })

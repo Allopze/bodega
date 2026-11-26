@@ -23,7 +23,7 @@ import { loadRecordAccessRow } from "./records-detail"
  * `n` es la revisión del documento: 1 mientras está vigente, 2 anulado, seguida
  * de una huella (`1-ab12cd34ef`) cuando la hoja incluye datos que cambian después
  * de firmar: observaciones y respuestas del supervisor, novedades de taller y,
- * mientras el equipo sigue en taller, el día de hoy (los «días detenido» crecen
+ * mientras el equipo sigue en taller, el día de hoy (los «días en taller» crecen
  * a diario). Un registro sin nada de eso conserva el nombre sin huella
  * (`{id}-1.pdf`). Un archivo archivado sólo se reutiliza si su nombre es el de
  * la revisión actual: si algo cambió, o la anulación no limpió `pdf_storage_key`,
@@ -71,7 +71,7 @@ export async function pdfMutableFingerprint(recordId: string, status: string, to
     for (const update of updates) parts.push(update.id, update.kind, update.exitDate ?? "-")
   }
   // Sólo el vigente tiene estado de taller (un anulado no acumula días): mientras sigue en taller
-  // la hoja dice «Días detenido» hasta hoy, así que el día entra en la huella.
+  // la hoja dice «Días en taller» hasta hoy, así que el día entra en la huella.
   const row = corrective[0]
   if (row?.inWorkshop && status === "vigente") {
     const state = workshopState({

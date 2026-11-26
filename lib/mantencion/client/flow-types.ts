@@ -77,7 +77,7 @@ export interface FlowDraft {
   /** Sólo dígitos. */
   readingText: string
   workDate: string
-  /** Pauta elegida a mano (índice en `schedule.intervals`); `null` = la sugerida. */
+  /** Intervalo elegido a mano (índice en `schedule.intervals`); `null` = la sugerida. */
   intervalIndex: number | null
   intervalOpen: boolean
   intervalReason: string

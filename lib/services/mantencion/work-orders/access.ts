@@ -214,7 +214,7 @@ export function canEditRequest(viewer: AccessViewer, ot: WorkOrderAccessFacts): 
 
 /**
  * Corregir la clasificación (tipo de acción, especialidades, faena de ejecución y, tras la salida,
- * horas hombre) de una OT que ya no admite «Editar solicitud»: sólo la jefatura, con motivo, en
+ * horas hombre) de una OT que ya no admite «Editar orden»: sólo la jefatura, con motivo, en
  * cualquier estado salvo anulada. Alimenta el Panel Trinorma, el PDF y el Excel.
  */
 export function canReclassifyWorkOrder(viewer: AccessViewer, ot: WorkOrderAccessFacts): AccessCheck {

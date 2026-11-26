@@ -58,7 +58,7 @@ export interface OtLinkedRecord {
 
 export interface OtFlags {
   canStart: boolean
-  /** Fecha estimada, ítems SÍ/NO y registros: sólo con la OT «en taller». */
+  /** Entrega estimada, ítems SÍ/NO y registros: sólo con la OT «en taller». */
   canWork: boolean
   canFinish: boolean
   /** «Pedir repuestos»: la OT está asignada o en ejecución y es de este usuario (la misma guardia del servidor). */

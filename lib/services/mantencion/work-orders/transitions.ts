@@ -589,7 +589,7 @@ const sameList = (a: readonly string[] | null | undefined, b: readonly string[] 
 
 /**
  * Corrige tipo de acción, especialidades, faena de ejecución y, si la OT ya pasó por la salida de
- * taller, horas hombre. Es la puerta para lo que «Editar solicitud» ya no alcanza (OT en taller, por
+ * taller, horas hombre. Es la puerta para lo que «Editar orden» ya no alcanza (OT en taller, por
  * recibir, por conformidad o cerrada): sólo `mant:ot:manage`, en cualquier estado salvo anulada, con
  * motivo, y deja el evento `edited` con `scope: "clasificacion"` y qué cambió (antes → después). No
  * toca el estado ni la versión de nadie más: sólo `version + 1`. Un campo no enviado (`undefined`) se

@@ -96,7 +96,7 @@ export const editWorkOrderSchema = z.preprocess(dropHiddenItems, z.object({
 export type EditWorkOrderInput = z.infer<typeof editWorkOrderSchema>
 
 /**
- * «Corregir clasificación»: tipo de acción, especialidades, faena de ejecución y —si la OT ya pasó
+ * «Corregir tipo de acción»: tipo de acción, especialidades, faena de ejecución y —si la OT ya pasó
  * por la salida de taller— horas hombre, con motivo. Un campo que no llega (`undefined`) se conserva;
  * `null` lo borra.
  */

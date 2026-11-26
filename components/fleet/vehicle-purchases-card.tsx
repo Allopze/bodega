@@ -83,7 +83,7 @@ export function VehiclePurchasesCard({
   newRequestHref: string | null
 }) {
   const requestButton = newRequestHref
-    ? <Button asChild size="sm" variant="secondary"><Link href={newRequestHref}>Pedir repuestos</Link></Button>
+    ? <Button asChild size="sm" variant="secondary"><Link href={newRequestHref}>Solicitar compra</Link></Button>
     : null
 
   return (

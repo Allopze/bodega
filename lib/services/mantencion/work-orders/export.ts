@@ -131,7 +131,7 @@ export async function exportWorkOrders(input: {
     "Mecánico", "Reparación solicitada", "Observaciones", "Taller", "Nombre del taller", "Encargado del taller", "Operador",
     "Ingreso a taller", "Lectura de ingreso", "Unidad", "Entrega estimada", "Salida de taller", "Recepción del equipo", "Recibió", "Conformidad en faena",
     "Recibió en faena", "Cerrada", "Veces devuelta", "Motivo de anulación", "Creada",
-    "Tipo de acción", "Especialidades", "Horas hombre", "Días detenido", "Faena de ejecución", "Trabajo realizado",
+    "Tipo de acción", "Especialidades", "Horas hombre", "Días en taller", "Faena de ejecución", "Trabajo realizado",
   ]
 
   const sheets: ReportSheet[] = [

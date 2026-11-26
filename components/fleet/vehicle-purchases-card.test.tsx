@@ -25,7 +25,7 @@ describe("«Repuestos y servicios comprados»", () => {
     // El vacío es texto dentro de la tarjeta, no un segundo encabezado al nivel de su título.
     expect(screen.queryByRole("heading", { name: "Sin compras vinculadas" })).toBeNull()
     // El único botón es el del estado vacío: no se repite en la cabecera.
-    const links = screen.getAllByRole("link", { name: "Pedir repuestos" })
+    const links = screen.getAllByRole("link", { name: "Solicitar compra" })
     expect(links).toHaveLength(1)
     expect(links[0]!.getAttribute("href")).toBe(NEW_REQUEST)
   })
@@ -50,7 +50,7 @@ describe("«Repuestos y servicios comprados»", () => {
     expect(row.textContent).toContain("02-11-2026")
     expect(row.textContent).toContain("Alexis Morales")
     // Con compras, el botón pasa a la cabecera de la tarjeta.
-    expect(screen.getByRole("link", { name: "Pedir repuestos" }).getAttribute("href")).toBe(NEW_REQUEST)
+    expect(screen.getByRole("link", { name: "Solicitar compra" }).getAttribute("href")).toBe(NEW_REQUEST)
   })
 
   it("marca «Uso personal» la compra emitida en un período de uso personal, sin ocultarla ni tocar el costo", () => {
@@ -94,7 +94,7 @@ describe("«Repuestos y servicios comprados»", () => {
 
   it("sin permiso de pedir no hay botón aunque haya compras", () => {
     render(<VehiclePurchasesCard records={[record()]} canOpenRequests canOpenOrders newRequestHref={null} />)
-    expect(screen.queryByRole("link", { name: "Pedir repuestos" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Solicitar compra" })).toBeNull()
   })
 
   describe("identidad del repuesto de catálogo", () => {

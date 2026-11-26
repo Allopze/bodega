@@ -219,7 +219,7 @@ describe("tipo de acción y el interruptor", () => {
 })
 
 describe("término del trabajo: trabajo realizado y horas hombre", () => {
-  it("guarda ambos al terminar, con el evento y la bitácora, y el detalle los muestra con los días detenido", async () => {
+  it("guarda ambos al terminar, con el evento y la bitácora, y el detalle los muestra con los días en taller", async () => {
     const id = await readyToFinish({ actionType: "correctiva", specialties: ["mecanica"] })
     const mec = await actorOf(IDS.mecBio)
     const result = ok(await transitions.finishWorkOrder(mec, {
@@ -233,7 +233,7 @@ describe("término del trabajo: trabajo realizado y horas hombre", () => {
     expect(audits.some((audit) => stateOf(audit.newState).laborHours === 5.5)).toBe(true)
 
     const detail = await loadWorkOrderDetail(await viewerOf(IDS.jefe), id)
-    // Días detenido = días civiles de Chile entre ingreso (hace 2 h) y salida (hace 1 min): 0, salvo
+    // Días en taller = días civiles de Chile entre ingreso (hace 2 h) y salida (hace 1 min): 0, salvo
     // que la corrida caiga entre las 00:00 y las 02:00 de Chile, cuando el ingreso fue el día anterior.
     const stored = await row(id)
     const chileDay = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago" }).format(new Date(iso))
@@ -320,7 +320,7 @@ describe("alcance por faena y Excel", () => {
     await workbook.xlsx.load(Buffer.from(outcome.data.base64, "base64") as never)
     const sheet = workbook.worksheets[0]!
     const headers = (sheet.getRow(1).values as unknown[]).slice(1).map(String)
-    for (const header of ["Tipo de acción", "Especialidades", "Horas hombre", "Días detenido", "Faena de ejecución", "Trabajo realizado"]) expect(headers).toContain(header)
+    for (const header of ["Tipo de acción", "Especialidades", "Horas hombre", "Días en taller", "Faena de ejecución", "Trabajo realizado"]) expect(headers).toContain(header)
     const folioCol = headers.indexOf("Folio") + 1
     const rowFor = (folio: string) => {
       for (let r = 2; r <= sheet.rowCount; r++) if (sheet.getRow(r).getCell(folioCol).value === folio) return sheet.getRow(r)
@@ -399,7 +399,7 @@ describe("corregir la clasificación (reclassifyWorkOrder)", () => {
     expect(await loadWorkOrderDetail(await viewerOf(IDS.mecBio), id)).toMatchObject({ canReclassify: false })
   })
 
-  it("una OT anulada no se corrige; «Por asignar» y «Asignada» van por «Editar solicitud» (canReclassify queda en false)", async () => {
+  it("una OT anulada no se corrige; «Por asignar» y «Asignada» van por «Editar orden» (canReclassify queda en false)", async () => {
     const jefe = await actorOf(IDS.jefe)
     const created = ok(await createWorkOrder(jefe, createInput({ actionType: "correctiva" })))
     expect(await loadWorkOrderDetail(await viewerOf(IDS.jefe), created.id)).toMatchObject({ canEditRequest: true, canReclassify: false })

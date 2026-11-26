@@ -239,7 +239,7 @@ function Corrective({ detail }: { detail: RecordDetail }) {
         <dl className="grid">
           <Item label="Entró a taller" value={corrective.workshopEntryDate ? formatDate(corrective.workshopEntryDate) : "No pasó por taller"} />
           <Item label="Estado" value={corrective.workshop ? (corrective.workshop.inWorkshop ? "Sigue en taller" : `Salió el ${corrective.workshop.exitDate ? formatDate(corrective.workshop.exitDate) : "—"}`) : "—"} />
-          <Item label="Días detenido" value={corrective.workshop?.daysStopped != null ? String(corrective.workshop.daysStopped) : "—"} />
+          <Item label="Días en taller" value={corrective.workshop?.daysStopped != null ? String(corrective.workshop.daysStopped) : "—"} />
           {corrective.workshopReason && <Item label="Motivo de seguir en taller" value={corrective.workshopReason} />}
         </dl>
         {corrective.updates.length > 0 && (

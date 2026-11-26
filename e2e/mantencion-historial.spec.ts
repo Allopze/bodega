@@ -213,11 +213,11 @@ test("la hoja de vida del equipo muestra su línea de tiempo y lleva al historia
   await expect(page.getByRole("heading", { name: "Historial de mantenciones", exact: true })).toHaveCount(1)
   await expect(page.getByRole("heading", { name: "Hoja de vida", exact: true })).toHaveCount(0)
   await expect(page.getByText(/aún no tiene mantenciones/)).toHaveCount(0)
-  // «Exportar historial» baja lo mismo que muestra la tarjeta. El camión X1 no tiene nada firmado: antes respondía
+  // «Exportar Excel» baja lo mismo que muestra la tarjeta. El camión X1 no tiene nada firmado: antes respondía
   // «Este equipo todavía no tiene mantenciones que puedas exportar».
   const [download] = await Promise.all([
     page.waitForEvent("download", { timeout: 30_000 }),
-    page.getByRole("button", { name: "Exportar historial", exact: true }).filter({ visible: true }).click(),
+    page.getByRole("button", { name: "Exportar Excel del historial de mantenciones", exact: true }).filter({ visible: true }).click(),
   ])
   expect(download.suggestedFilename()).toMatch(new RegExp(`^historial-${EX.bulk.code}-\\d{4}-\\d{2}-\\d{2}\\.xlsx$`))
   const book = await readBook(download)
@@ -239,7 +239,7 @@ test("«Órdenes de trabajo cerradas» avisa dónde están los trabajos anterior
   await expectPageTitle(page, "Órdenes de trabajo")
   const link = page.getByRole("link", { name: "Historial de mantenciones", exact: true })
   await expect(link).toHaveAttribute("href", "/mantencion/registros/historicos")
-  await expect(textoVisible(page, /Aquí están las órdenes de trabajo hechas en la plataforma/)).toBeVisible()
+  await expect(textoVisible(page, /Los trabajos de los formularios y los registros firmados están en el/)).toBeVisible()
   // Sólo en «Cerradas»: en las otras pestañas el aviso sobra.
   await page.goto("/mantencion/ot?estado=en_ejecucion")
   await expectPageTitle(page, "Órdenes de trabajo")

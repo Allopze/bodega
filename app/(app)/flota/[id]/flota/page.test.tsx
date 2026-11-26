@@ -229,7 +229,7 @@ describe("ficha de vehículo: repuestos y servicios comprados", () => {
     expect(screen.queryByText("Sin compras vinculadas")).toBeNull()
   })
 
-  it("con compras, las lista con su OC y el botón «Pedir repuestos» sólo si puede crear solicitudes", async () => {
+  it("con compras, las lista con su OC y el botón «Solicitar compra» sólo si puede crear solicitudes", async () => {
     mocks.can.mockImplementation((_session, permission) => permission === "repuestos:create" || permission === "repuestos:view_all")
     await renderWith([purchase])
 
@@ -238,13 +238,13 @@ describe("ficha de vehículo: repuestos y servicios comprados", () => {
     expect(screen.getByText("Filtro hidráulico")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "REP-2026-0042" }).getAttribute("href")).toBe("/solicitudes/req-1")
     expect(screen.getByRole("link", { name: "OC-2026-0310" }).getAttribute("href")).toBe("/compras/oc-1")
-    expect(screen.getByRole("link", { name: "Pedir repuestos" }).getAttribute("href")).toBe("/solicitudes/nueva?tipo=repuestos&vehiculo=veh-1")
+    expect(screen.getByRole("link", { name: "Solicitar compra" }).getAttribute("href")).toBe("/solicitudes/nueva?tipo=repuestos&vehiculo=veh-1")
   })
 
   it("sin repuestos:create no hay botón, y sin repuestos:view_all la solicitud es texto", async () => {
     await renderWith([purchase])
 
-    expect(screen.queryByRole("link", { name: "Pedir repuestos" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Solicitar compra" })).toBeNull()
     expect(screen.queryByRole("link", { name: "REP-2026-0042" })).toBeNull()
     expect(screen.getByText("REP-2026-0042")).toBeInTheDocument()
   })
@@ -254,7 +254,7 @@ describe("ficha de vehículo: repuestos y servicios comprados", () => {
     await renderWith([], { isActive: false })
 
     expect(screen.getByText("Sin compras vinculadas")).toBeInTheDocument()
-    expect(screen.queryByRole("link", { name: "Pedir repuestos" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Solicitar compra" })).toBeNull()
   })
 })
 

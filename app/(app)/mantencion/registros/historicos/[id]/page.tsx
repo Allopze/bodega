@@ -125,7 +125,7 @@ export default async function HistoricalRecordPage({ params }: { params: Promise
             <Fact label="Nº de orden">{row.orderText.trim() || DASH}</Fact>
             <Fact label="Ingreso a taller">{dayLabel(row.entryDate)}</Fact>
             <Fact label="Salida de taller">{dayLabel(row.exitDate)}</Fact>
-            <Fact label="Días detenido">{row.downtimeDays !== null ? String(row.downtimeDays).replace(".", ",") : DASH}</Fact>
+            <Fact label="Días en taller">{row.downtimeDays !== null ? String(row.downtimeDays).replace(".", ",") : DASH}</Fact>
             <Fact label="Horas hombre">{row.laborHours !== null ? formatHours(row.laborHours) : row.hoursText.trim() || DASH}</Fact>
             <Fact label="Hecho por">{responsible}</Fact>
             <Fact label="Especialidades">{specialties || DASH}</Fact>

@@ -192,8 +192,8 @@ export interface WorkOrderDetail extends WorkOrderListRow {
   allowedTransitions: OtTransition[]
   canEditRequest: boolean
   /**
-   * «Corregir clasificación»: la jefatura, en cualquier estado salvo anulada, y sólo cuando NO
-   * aplica «Editar solicitud» (`canEditRequest`), para no ofrecer dos puertas al mismo cambio.
+   * «Corregir tipo de acción»: la jefatura, en cualquier estado salvo anulada, y sólo cuando NO
+   * aplica «Editar orden» (`canEditRequest`), para no ofrecer dos puertas al mismo cambio.
    */
   canReclassify: boolean
   canEditExecution: boolean
