@@ -255,7 +255,8 @@ export async function buildPrefill({
         unitOfMeasure: products.unitOfMeasure,
       })
       .from(products)
-      // Reposición de stock: un repuesto de catálogo (consumo directo) no se repone.
+      // Reposición de stock: un repuesto de catálogo no se repone por aquí; se compra para una OT
+      // desde la solicitud de repuestos (ADR mantención 0001).
       .where(and(eq(products.isActive, true), eq(products.isSparePart, false), inArray(products.id, productoIds)))
     const byId = new Map(rows.map((row) => [row.id, row]))
 

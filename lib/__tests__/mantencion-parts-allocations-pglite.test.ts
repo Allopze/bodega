@@ -319,3 +319,13 @@ describe("liberar y revertir", () => {
     expect(summary.every((row) => row.reserved > 0)).toBe(true)
   })
 })
+
+describe("catálogo de repuestos con stock", () => {
+  it("no deja desactivar un repuesto que tiene saldo en una faena (CAT-001)", async () => {
+    const { setSparePartActive } = await import("@/lib/services/spare-parts-catalog")
+    expect(await stockOf(P.filter)).toBeGreaterThan(0)
+    await expect(setSparePartActive(P.filter, false, IDS.jefe)).rejects.toThrow("Filtro de aceite")
+    const [row] = await testDb.select({ isActive: schema.products.isActive }).from(schema.products).where(eq(schema.products.id, P.filter))
+    expect(row?.isActive).toBe(true)
+  })
+})
