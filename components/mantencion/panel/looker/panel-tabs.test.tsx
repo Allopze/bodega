@@ -6,7 +6,7 @@ import { PanelTabs } from "./panel-tabs"
 afterEach(cleanup)
 
 const nav = () => screen.getByRole("navigation", { name: "Secciones del panel de mantención" })
-const hrefOf = (name: string) => screen.getByRole("link", { name, exact: true }).getAttribute("href")
+const hrefOf = (name: string) => screen.getByRole("link", { name }).getAttribute("href")
 
 describe("PanelTabs", () => {
   it("rotula las dos pestañas por unidad como «Por kilómetros» y «Por horas», y conserva sus valores de URL", () => {

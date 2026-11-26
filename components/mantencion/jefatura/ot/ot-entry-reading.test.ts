@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { checkEntryReading, ENTRY_READING_MAX, lastKnownReading, lastReadingText, readingToText } from "./ot-entry-reading"
+import { checkEntryReading, ENTRY_READING_MAX, lastKnownReading, lastReadingText, readingToText, type EntryReadings } from "./ot-entry-reading"
 
-const KNOWN = { readings: [{ value: 7501, date: "2026-11-10", source: "MC-STF-0003" }], initial: { value: 7000, date: "2026-01-05", source: "Lectura inicial" } }
+const KNOWN: EntryReadings = { readings: [{ value: 7501, date: "2026-11-10", source: "MC-STF-0003" }], initial: { value: 7000, date: "2026-01-05", source: "Lectura inicial" } }
 
 describe("readingToText", () => {
   it("devuelve el texto del campo sin miles y con la coma decimal", () => {
