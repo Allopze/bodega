@@ -27,9 +27,9 @@ Para el Jefe de Mantención y los administradores de contrato. Explica dónde es
 
 **«Sin clasificar».** El formulario nuevo (desde junio de 2026) dejó de preguntar si el trabajo era preventivo o correctivo. Por eso esos trabajos aparecen como «sin clasificar» y no entran en el porcentaje de correctivas. Desde ahora, la OT de la plataforma lo pregunta.
 
-## El historial anterior
+## El historial de mantenciones
 
-**Dónde:** Mantención → Registros firmados → **Historial anterior**.
+**Dónde:** Mantención → Registros firmados → **Historial de mantenciones**. Reúne las respuestas de los formularios, las órdenes de trabajo y los registros firmados; las respuestas tal como se guardaron están en la pestaña **Respuestas de formularios**.
 
 Cada trabajo de los formularios queda con su texto original, su tipo de acción, sus horas, su contrato (Residuos, Calymag, Rodantes) y las observaciones de calidad del consolidado. Si un trabajo no quedó ligado a un equipo, por ejemplo porque el equipo no está en la flota o porque el código y la patente no coinciden, se puede ligar a mano desde su detalle.
 

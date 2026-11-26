@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, ne, sql, type SQL } from "drizzle-orm"
+import { and, asc, eq, inArray, isNotNull, ne, or, sql, type AnyColumn, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fuelVehicles,
@@ -16,12 +16,13 @@ import { worksiteScopeSqlFor } from "@/lib/auth/scope"
 import { bucketKey, isPartialBucket, listBuckets, type ChartWindow } from "@/lib/indicators/period"
 import { actionTypeFromText, isActionType, workOrderActionType, type ActionTypeOrUnknown } from "@/lib/mantencion/action-type"
 import { FORMS_CUTOVER_DATE } from "@/lib/mantencion/forms-cutover"
+import { formatReading } from "@/lib/mantencion/format"
 import { workshopState } from "@/lib/mantencion/status"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { getOperationalSettings } from "@/lib/services/system-settings"
-import { equipmentScope, recordVisibility, recordVisibilitySql, type MantViewer } from "./access"
+import { equipmentCurrentlyInWorksites, equipmentScope, recordVisibility, recordVisibilitySql, type MantViewer } from "./access"
 import type { MantWorksiteScope } from "./fleet"
-import { workOrderVisibility, workOrderVisibilitySql } from "./work-orders/access"
+import { vehicleNowInWorksitesSql, workOrderVisibility, workOrderVisibilitySql } from "./work-orders/access"
 
 /**
  * «Trabajos de mantención» del Panel (Trinorma, R5): lo que se hizo sobre cada equipo en un período,
@@ -78,7 +79,37 @@ export interface MaintenanceWorkRow {
   inWorkshop: boolean
   /** `true` taller externo; `null` = el trabajo no lo informa. */
   external: boolean | null
+  /** Sólo con `detail` (el Historial de mantenciones y la línea de tiempo): el Panel no carga textos largos. */
+  detail?: MaintenanceWorkDetail
 }
+
+/** Lo que el Historial de mantenciones muestra de un trabajo además de lo que suma el Panel. */
+export interface MaintenanceWorkDetail {
+  /** El trabajo en palabras de quien lo hizo; vacío si no lo informa. */
+  description: string
+  /** Fechas civiles del paso por taller, si existen. */
+  entryDate: string | null
+  exitDate: string | null
+  /** Lectura del equipo: el texto del formulario o «12.345 km» / «1.234 h» de la plataforma. */
+  reading: string | null
+  /** Nº de orden que escribieron en el formulario (el folio de la OT ya va en `reference`). */
+  orderText: string | null
+  /** Nombre del taller o ejecutor externo, si el trabajo lo informa. */
+  responsible: string | null
+  /** Claves de `SPECIALTIES`. */
+  specialties: string[]
+  /** Contrato del consolidado (sólo el historial). */
+  contract: string | null
+  /** Ficha de origen del trabajo. */
+  href: string
+  /** Sólo historial: a la fila le falta vincular el equipo o la faena (se resuelve en «Respuestas de formularios»). */
+  unlinkedEquipment: boolean
+  unlinkedWorksite: boolean
+  qualityNotes: string | null
+}
+
+/** Un trabajo con su detalle (`loadMaintenanceHistory`, `loadEquipmentTimeline`). */
+export type MaintenanceHistoryRow = MaintenanceWorkRow & { detail: MaintenanceWorkDetail }
 
 export interface MaintenanceWorkQuery {
   from: string
@@ -128,10 +159,28 @@ interface RowFilter {
   recordVisibility: SQL | null
   /**
    * `panel` aplica el corte de los formularios (historial < corte, registros >= corte y sin OT);
-   * `fact` es «¿hubo trabajo en el equipo?»: sin corte y con todos los registros vigentes.
+   * `fact` es «¿hubo trabajo en el equipo?»: sin corte y con todos los registros vigentes;
+   * `timeline` es la hoja de vida de un equipo: sin corte, y los registros con OT no se repiten (ya los cuenta la OT).
    */
-  mode: "panel" | "fact"
+  mode: "panel" | "fact" | "timeline"
+  /** Agrega `detail` a cada fila. Sin esto, las columnas de texto largo ni se leen. */
+  detail?: boolean
+  /**
+   * «La hoja de vida sigue al equipo»: además de la faena del trabajo, entra lo hecho a un equipo que HOY está en el
+   * alcance. Sin esto, las cifras cuentan sólo donde se hizo el trabajo (igual que el Panel).
+   */
+  followEquipment?: boolean
   today: string
+}
+
+/**
+ * Alcance de una fila por la faena del trabajo; con `followEquipment`, también por la faena ACTUAL del equipo.
+ * Una faena elegida explícitamente (`?faena=`) manda: no se amplía.
+ */
+function workScope(filter: RowFilter, worksiteColumn: AnyColumn, follow: (worksiteIds: readonly string[]) => SQL): SQL | undefined {
+  const byWork = worksiteScopeSqlFor(filter.scope, worksiteColumn, filter.worksiteId)
+  if (!filter.followEquipment || filter.worksiteId || filter.scope === "all" || filter.scope.length === 0) return byWork
+  return or(byWork, follow(filter.scope))
 }
 
 const EXTERNAL_NEGATIVE = new Set(["NO", "N", "0", "FALSO", "INTERNO"])
@@ -147,7 +196,19 @@ export function externalFromHistorical(value: string | null): boolean | null {
   return !EXTERNAL_NEGATIVE.has(text)
 }
 
+const EXTERNAL_AFFIRMATIVE = new Set(["SI", "SÍ", "S", "1", "VERDADERO", "EXTERNO"])
+
+/** El nombre del taller externo cuando el formulario lo dice («MAESTRANZA MELO»); un «Sí» pelado no es un nombre. */
+export function externalNameFromHistorical(value: string | null): string | null {
+  const text = (value ?? "").trim()
+  if (!text || externalFromHistorical(text) !== true || EXTERNAL_AFFIRMATIVE.has(text.toUpperCase())) return null
+  return text
+}
+
+const textOrNull = (value: string | null | undefined) => value?.trim() || null
+
 async function loadHistorialRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
+  const detail = !!filter.detail
   const rows = await db.select({
     key: mantHistoricalRecords.sourceKey,
     recordId: mantHistoricalRecords.sourceRecordId,
@@ -164,6 +225,13 @@ async function loadHistorialRows(filter: RowFilter): Promise<MaintenanceWorkRow[
     kindText: mantHistoricalRecords.kindText,
     laborHours: mantHistoricalRecords.laborHours,
     external: HISTORICAL_EXTERNAL,
+    // Textos largos: sólo con `detail` (si no, una constante y la base no los envía).
+    description: detail ? mantHistoricalRecords.description : sql<string>`''`,
+    readingText: detail ? mantHistoricalRecords.readingText : sql<string>`''`,
+    orderText: detail ? mantHistoricalRecords.orderText : sql<string>`''`,
+    specialties: detail ? mantHistoricalRecords.specialties : sql<string[] | null>`NULL`,
+    contractText: detail ? mantHistoricalRecords.contractText : sql<string | null>`NULL`,
+    qualityNotes: detail ? mantHistoricalRecords.qualityNotes : sql<string | null>`NULL`,
   })
     .from(mantHistoricalRecords)
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantHistoricalRecords.vehicleId))
@@ -173,7 +241,7 @@ async function loadHistorialRows(filter: RowFilter): Promise<MaintenanceWorkRow[
       sql`${HISTORICAL_DATE} >= ${filter.from} AND ${HISTORICAL_DATE} <= ${filter.to}`,
       // Desde el corte, el trabajo lo cuentan los registros de la plataforma: el historial no suma dos veces.
       filter.mode === "panel" ? sql`${HISTORICAL_DATE} < ${FORMS_CUTOVER_DATE}` : undefined,
-      worksiteScopeSqlFor(filter.scope, mantHistoricalRecords.worksiteId, filter.worksiteId),
+      workScope(filter, mantHistoricalRecords.worksiteId, (ids) => equipmentCurrentlyInWorksites(mantHistoricalRecords.vehicleId, ids)),
       filter.vehicleIds ? inArray(mantHistoricalRecords.vehicleId, filter.vehicleIds.length ? [...filter.vehicleIds] : ["__none__"]) : undefined,
     ))
   return rows.map((row) => ({
@@ -190,11 +258,34 @@ async function loadHistorialRows(filter: RowFilter): Promise<MaintenanceWorkRow[
     workshopDays: workshopDaysBetween(plainDay(row.entryDate), plainDay(row.exitDate)),
     inWorkshop: false,
     external: externalFromHistorical(row.external),
+    ...(detail ? {
+      detail: {
+        description: row.description,
+        entryDate: plainDay(row.entryDate),
+        exitDate: plainDay(row.exitDate),
+        reading: textOrNull(row.readingText),
+        orderText: textOrNull(row.orderText),
+        responsible: externalNameFromHistorical(row.external),
+        specialties: row.specialties ?? [],
+        contract: textOrNull(row.contractText),
+        href: `/mantencion/registros/historicos/${row.key}`,
+        unlinkedEquipment: row.vehicleId === null,
+        unlinkedWorksite: row.worksiteId === null,
+        qualityNotes: textOrNull(row.qualityNotes),
+      },
+    } : {}),
   }))
+}
+
+/** «12.345 km · 1.234 h» con las lecturas que la OT declaró al ingreso; `null` si no declaró ninguna. */
+function orderReading(odometer: number | null, hourmeter: number | null): string | null {
+  const parts = [odometer !== null ? formatReading(odometer, "km") : null, hourmeter !== null ? formatReading(hourmeter, "h") : null].filter((part): part is string => part !== null)
+  return parts.length ? parts.join(" · ") : null
 }
 
 async function loadOrderRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
   if (!filter.orderVisibility) return []
+  const detail = !!filter.detail
   const entryDay = SANTIAGO_DAY(mantWorkOrders.workshopEntryAt)
   const exitDay = SANTIAGO_DAY(mantWorkOrders.workshopExitAt)
   const rows = await db.select({
@@ -212,6 +303,13 @@ async function loadOrderRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
     maintenance: mantWorkOrders.maintenance,
     laborHours: mantWorkOrders.laborHours,
     workshopKind: mantWorkOrders.workshopKind,
+    workshopName: detail ? mantWorkOrders.workshopName : sql<string | null>`NULL`,
+    workPerformed: detail ? mantWorkOrders.workPerformed : sql<string | null>`NULL`,
+    repairDescription: detail ? mantWorkOrders.repairDescription : sql<string | null>`NULL`,
+    observations: detail ? mantWorkOrders.observations : sql<string | null>`NULL`,
+    entryOdometer: detail ? mantWorkOrders.entryOdometer : sql<number | null>`NULL`,
+    entryHourmeter: detail ? mantWorkOrders.entryHourmeter : sql<number | null>`NULL`,
+    specialties: detail ? mantWorkOrders.specialties : sql<string[] | null>`NULL`,
   })
     .from(mantWorkOrders)
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantWorkOrders.vehicleId))
@@ -222,7 +320,7 @@ async function loadOrderRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
       isNotNull(mantWorkOrders.workshopEntryAt),
       filter.orderVisibility,
       sql`${entryDay} >= ${filter.from} AND ${entryDay} <= ${filter.to}`,
-      worksiteScopeSqlFor(filter.scope, mantWorkOrders.worksiteId, filter.worksiteId),
+      workScope(filter, mantWorkOrders.worksiteId, vehicleNowInWorksitesSql),
       filter.vehicleIds ? inArray(mantWorkOrders.vehicleId, filter.vehicleIds.length ? [...filter.vehicleIds] : ["__none__"]) : undefined,
     ))
   return rows.map((row) => {
@@ -241,6 +339,22 @@ async function loadOrderRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
       workshopDays: open ? workshopDaysBetween(row.entryDay, filter.today) : workshopDaysBetween(row.entryDay, row.exitDay),
       inWorkshop: open,
       external: row.workshopKind ? row.workshopKind === "externo" : null,
+      ...(detail ? {
+        detail: {
+          description: textOrNull(row.workPerformed) ?? textOrNull(row.repairDescription) ?? textOrNull(row.observations) ?? "",
+          entryDate: row.entryDay,
+          exitDate: row.exitDay,
+          reading: orderReading(row.entryOdometer, row.entryHourmeter),
+          orderText: null,
+          responsible: row.workshopKind === "externo" ? textOrNull(row.workshopName) : null,
+          specialties: row.specialties ?? [],
+          contract: null,
+          href: `/mantencion/ot/${row.id}`,
+          unlinkedEquipment: false,
+          unlinkedWorksite: false,
+          qualityNotes: null,
+        },
+      } : {}),
     }
   })
 }
@@ -248,6 +362,7 @@ async function loadOrderRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
 /** Los registros firmados de la plataforma como trabajos (ver la cabecera del archivo para el corte y el «sin OT»). */
 async function loadRecordRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
   if (!filter.recordVisibility) return []
+  const detail = !!filter.detail
   const rows = await db.select({
     id: mantRecords.id,
     folio: mantRecords.folio,
@@ -262,6 +377,12 @@ async function loadRecordRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> 
     hours: mantRecordCorrectives.hours,
     inWorkshop: mantRecordCorrectives.inWorkshop,
     workshopEntryDate: mantRecordCorrectives.workshopEntryDate,
+    reading: detail ? mantRecords.reading : sql<number>`0`,
+    unit: detail ? mantRecords.unit : sql<string>`'km'`,
+    executorName: detail ? mantRecords.executorName : sql<string>`''`,
+    scheduleName: detail ? mantRecords.scheduleNameSnapshot : sql<string | null>`NULL`,
+    notes: detail ? mantRecords.notes : sql<string | null>`NULL`,
+    correctiveDescription: detail ? mantRecordCorrectives.description : sql<string | null>`NULL`,
   })
     .from(mantRecords)
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantRecords.vehicleId))
@@ -271,9 +392,12 @@ async function loadRecordRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> 
       eq(mantRecords.status, "vigente"),
       filter.recordVisibility,
       sql`${mantRecords.workDate} >= ${filter.from} AND ${mantRecords.workDate} <= ${filter.to}`,
-      // Lo que tiene OT ya se cuenta por la OT; antes del corte, por el historial.
-      filter.mode === "panel" ? sql`${mantRecords.workOrderId} IS NULL AND ${mantRecords.workDate} >= ${FORMS_CUTOVER_DATE}` : undefined,
-      worksiteScopeSqlFor(filter.scope, mantRecords.worksiteId, filter.worksiteId),
+      // Lo que tiene OT ya se cuenta por la OT; antes del corte, por el historial. La hoja de vida de un equipo
+      // (`timeline`) no tiene corte, pero tampoco repite lo que ya muestra su OT.
+      filter.mode === "panel"
+        ? sql`${mantRecords.workOrderId} IS NULL AND ${mantRecords.workDate} >= ${FORMS_CUTOVER_DATE}`
+        : filter.mode === "timeline" ? sql`${mantRecords.workOrderId} IS NULL` : undefined,
+      workScope(filter, mantRecords.worksiteId, (ids) => equipmentCurrentlyInWorksites(mantRecords.vehicleId, ids)),
       filter.vehicleIds ? inArray(mantRecords.vehicleId, filter.vehicleIds.length ? [...filter.vehicleIds] : ["__none__"]) : undefined,
     ))
 
@@ -314,6 +438,24 @@ async function loadRecordRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> 
       workshopDays: state?.daysStopped ?? null,
       inWorkshop: !!state?.inWorkshop,
       external: row.executorKind === "externo",
+      ...(detail ? {
+        detail: {
+          description: corrective
+            ? row.correctiveDescription ?? ""
+            : [textOrNull(row.scheduleName), textOrNull(row.notes)].filter((part): part is string => part !== null).join(" — "),
+          entryDate: corrective ? row.workshopEntryDate : null,
+          exitDate: state?.exitDate ?? null,
+          reading: formatReading(row.reading, row.unit === "h" ? "h" : "km"),
+          orderText: null,
+          responsible: row.executorKind === "externo" ? textOrNull(row.executorName) : null,
+          specialties: [],
+          contract: null,
+          href: `/mantencion/registros/${row.id}`,
+          unlinkedEquipment: false,
+          unlinkedWorksite: false,
+          qualityNotes: null,
+        },
+      } : {}),
     }
   })
 }
@@ -328,27 +470,71 @@ export interface MaintenanceWorkResult {
   includesOrders: boolean
 }
 
-/** Los trabajos del rango dentro del alcance de quien mira, del más reciente al más antiguo. */
-export async function loadMaintenanceWork(viewer: MantViewer, query: MaintenanceWorkQuery): Promise<MaintenanceWorkResult> {
-  const scope = equipmentScope(viewer)
+/** El filtro de lectura de quien mira (alcance, visibilidad de OT y de registros); los extras son de cada vista. */
+function viewerFilter(viewer: MantViewer, query: MaintenanceWorkQuery, extra: Pick<RowFilter, "mode"> & Partial<Pick<RowFilter, "detail" | "followEquipment">>): RowFilter {
   const visibility = workOrderVisibility(viewer)
   // Las OT entran sólo con visibilidad completa para el alcance (todas, o las de sus faenas). Quien ve únicamente
   // las propias no recibe un conteo parcial que parezca el de la faena: se trata como «no ve OT» y el Panel lo dice.
   const fullOrderView = visibility.kind === "all" || visibility.worksiteIds.length > 0
-  const orderVisibility = fullOrderView ? workOrderVisibilitySql(visibility) : null
-  const filter: RowFilter = {
+  return {
     from: query.from,
     to: query.to,
-    scope,
+    scope: equipmentScope(viewer),
     ...(query.worksiteId ? { worksiteId: query.worksiteId } : {}),
     ...(query.vehicleId ? { vehicleIds: [query.vehicleId] } : {}),
-    orderVisibility,
+    orderVisibility: fullOrderView ? workOrderVisibilitySql(visibility) : null,
     recordVisibility: recordVisibilitySql(recordVisibility(viewer)),
-    mode: "panel",
     today: query.today ?? todayInChile(),
+    ...extra,
   }
+}
+
+async function loadRows(filter: RowFilter): Promise<MaintenanceWorkResult> {
   const [historial, orders, records] = await Promise.all([loadHistorialRows(filter), loadOrderRows(filter), loadRecordRows(filter)])
-  return { rows: sortRows([...historial, ...orders, ...records]), includesOrders: orderVisibility !== null }
+  return { rows: sortRows([...historial, ...orders, ...records]), includesOrders: filter.orderVisibility !== null }
+}
+
+/** Los trabajos del rango dentro del alcance de quien mira, del más reciente al más antiguo. */
+export async function loadMaintenanceWork(viewer: MantViewer, query: MaintenanceWorkQuery): Promise<MaintenanceWorkResult> {
+  return loadRows(viewerFilter(viewer, query, { mode: "panel" }))
+}
+
+export interface MaintenanceHistoryResult {
+  rows: MaintenanceHistoryRow[]
+  includesOrders: boolean
+}
+
+/**
+ * Lo mismo que `loadMaintenanceWork` (misma regla de corte, de alcance y de pruebas: su total es el «Trabajos del
+ * período» del Panel) con el detalle de cada trabajo, para el Historial de mantenciones. Con un equipo elegido,
+ * la hoja de vida sigue al equipo: también entra lo hecho en la faena donde estuvo antes.
+ */
+export async function loadMaintenanceHistory(viewer: MantViewer, query: MaintenanceWorkQuery): Promise<MaintenanceHistoryResult> {
+  const result = await loadRows(viewerFilter(viewer, query, { mode: "panel", detail: true, followEquipment: !!query.vehicleId }))
+  return { rows: result.rows as MaintenanceHistoryRow[], includesOrders: result.includesOrders }
+}
+
+export interface EquipmentTimeline {
+  /** Los más recientes primero, hasta `limit`. */
+  rows: MaintenanceHistoryRow[]
+  /** Trabajos del equipo en total (incluye los que no caben en `rows`). */
+  total: number
+  includesOrders: boolean
+}
+
+const TIMELINE_FROM = "1900-01-01"
+const TIMELINE_TO = "9999-12-31"
+
+/**
+ * La línea de tiempo de un equipo: historial (sin pruebas, de cualquier fecha), OT que entraron a taller y registros
+ * sin OT, de cualquier fecha. Es la evidencia de UN equipo, no una cifra del Panel: no aplica el corte de los
+ * formularios, así que una respuesta posterior al 01-12-2026 o un registro anterior a él también aparecen.
+ */
+export async function loadEquipmentTimeline(viewer: MantViewer, vehicleId: string, options: { limit?: number; today?: string } = {}): Promise<EquipmentTimeline> {
+  const query: MaintenanceWorkQuery = { from: TIMELINE_FROM, to: TIMELINE_TO, vehicleId, ...(options.today ? { today: options.today } : {}) }
+  const result = await loadRows(viewerFilter(viewer, query, { mode: "timeline", detail: true, followEquipment: true }))
+  const rows = result.rows as MaintenanceHistoryRow[]
+  return { rows: options.limit ? rows.slice(0, options.limit) : rows, total: rows.length, includesOrders: result.includesOrders }
 }
 
 /**

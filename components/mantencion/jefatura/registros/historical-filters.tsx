@@ -7,7 +7,7 @@ import { OptionSelect, type OptionSelectOption } from "@/components/ui/option-se
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { formatDate } from "@/lib/utils"
 
-/** Qué falta identificar en un trabajo del historial anterior (`?vinculo=`). */
+/** Qué falta identificar en una respuesta de formulario (`?vinculo=`). */
 export const HISTORICAL_PENDING_OPTIONS: OptionSelectOption[] = [
   { value: "equipment", label: "Equipo sin identificar" },
   { value: "conflict", label: "Equipo con datos dudosos" },
@@ -15,7 +15,7 @@ export const HISTORICAL_PENDING_OPTIONS: OptionSelectOption[] = [
 ]
 
 /**
- * Filtros del historial anterior: la búsqueda, «Por completar» y el período del trabajo (`?desde=`/`?hasta=`).
+ * Filtros de «Respuestas de formularios»: la búsqueda, «Por completar» y el período del trabajo (`?desde=`/`?hasta=`).
  * `?faena=<id>` y `?equipo=<id>` llegan desde el Panel y la ficha del equipo y no tienen control propio. Se aplican al cambiar (URL con `router.replace`,
  * sin mover el scroll), sin botón «Buscar» (A6). `?equipo=<id>` llega desde la ficha del equipo y no tiene control
  * propio: se ve como pastilla removible, igual que en la lista de órdenes de trabajo.

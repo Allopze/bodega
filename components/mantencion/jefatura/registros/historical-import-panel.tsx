@@ -51,7 +51,7 @@ export function HistoricalImportPanel() {
       )}
       {stage.summary.afterCutover > 0 && <p className="mt-2 text-sm text-[var(--color-warning-ink)]">{cutoverNotice(stage.summary.afterCutover)}</p>}
       <div className="mt-4 flex flex-wrap gap-2">
-        <Button asChild><Link href="/mantencion/registros/historicos">Ver historial anterior</Link></Button>
+        <Button asChild><Link href="/mantencion/registros/historicos?vista=formularios">Ver las respuestas de formularios</Link></Button>
         <Button variant="secondary" onClick={() => setStage({ name: "choose" })}>Revisar otra planilla</Button>
       </div>
     </SectionCard>
@@ -118,7 +118,7 @@ export function HistoricalImportPanel() {
             </div>
           )}
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button onClick={() => confirm(stage.file)} loading={commit.pending} disabled={!stage.preview.summary.created && !stage.preview.summary.relinked}>Importar historial anterior</Button>
+            <Button onClick={() => confirm(stage.file)} loading={commit.pending} disabled={!stage.preview.summary.created && !stage.preview.summary.relinked}>Importar respuestas de formularios</Button>
             <Button variant="secondary" onClick={() => setStage({ name: "choose" })} disabled={commit.pending}>Elegir otro archivo</Button>
           </div>
           {commit.message && commit.messageTone === "error" && <Callout tone="danger" role="alert" className="mt-3">{commit.message}</Callout>}

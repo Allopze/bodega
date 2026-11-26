@@ -184,7 +184,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
         actions={
           <>
             {(can(session, "mant:records:view_worksite") || can(session, "mant:records:view_all")) && (
-              <Button asChild variant="secondary"><Link href="/mantencion/registros/historicos">Historial anterior</Link></Button>
+              <Button asChild variant="secondary"><Link href="/mantencion/registros/historicos">Historial de mantenciones</Link></Button>
             )}
             {canExport && <RecordsExportButton params={params} />}
           </>

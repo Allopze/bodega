@@ -3,9 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { can, guardPermission } from "@/lib/auth/can"
+import { parseHistoryParams } from "@/lib/mantencion/history-view"
+import { exportHistory } from "@/lib/services/mantencion/export-history"
+import type { ExportOutcome } from "@/lib/services/mantencion/export-records"
 import { commitHistoricalImport, linkHistoricalRecord, previewHistoricalImport, type HistoricalPreview, type HistoricalSummary } from "@/lib/services/mantencion/historical-import"
 import { HISTORICAL_MAX_BYTES } from "@/lib/services/mantencion/historical-workbook"
 import type { MantActionResult } from "@/lib/services/mantencion/result"
+import { todayInChile } from "@/lib/utils"
 
 const PATH = "/mantencion/registros/historicos"
 async function authorize() {
@@ -51,4 +55,18 @@ export async function linkHistoricalAction(input: { sourceKey: string; vehicleId
     if (result.ok) { revalidatePath(PATH); revalidatePath(`${PATH}/${input.sourceKey}`) }
     return result
   } catch (error) { return actionErrorResult(error, "No se pudieron guardar los vínculos.") }
+}
+
+/**
+ * Excel del Historial de mantenciones con los filtros de la pantalla. El navegador manda los parámetros de la URL tal
+ * cual; aquí se vuelven a interpretar con el mismo `parseHistoryParams` de la lista (nunca se confía en filtros ya
+ * armados) y el alcance del usuario lo pone el servicio.
+ */
+export async function exportHistoryAction(params: Record<string, string>): Promise<ExportOutcome> {
+  const guard = await guardPermission("mant:export", PATH)
+  if (guard.error) return guard.error
+  const safe = Object.fromEntries(Object.entries(params ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+  try {
+    return await exportHistory({ session: guard.session, params: parseHistoryParams(safe, todayInChile()) })
+  } catch (error) { return actionErrorResult(error, "No se pudo exportar el historial.") }
 }

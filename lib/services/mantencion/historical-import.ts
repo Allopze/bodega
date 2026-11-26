@@ -256,6 +256,41 @@ export async function getHistoricalRecord(viewer: MantViewer, sourceKey: string)
   return found ? { ...found.record, worksiteName: found.worksiteName, fields: visibleHistoricalFields(found.record.fields) } : null
 }
 
+/**
+ * Trabajos del historial que aún piden conciliar: sin equipo vinculado o sin faena. Es el contador de «Por completar»
+ * de la vista «Respuestas de formularios» (incluye las respuestas de prueba y las posteriores al corte).
+ */
+export async function countHistoricalPending(viewer: MantViewer): Promise<number> {
+  const [row] = await db.select({ total: sql<number>`count(*)::int` }).from(mantHistoricalRecords)
+    .where(and(historicalVisibility(viewer), or(isNull(mantHistoricalRecords.vehicleId), isNull(mantHistoricalRecords.worksiteId))))
+  return row?.total ?? 0
+}
+
+export interface HistoricalNeighbor { sourceKey: string; date: string; kindText: string; description: string }
+
+/**
+ * El trabajo anterior y el siguiente del MISMO equipo, en orden CRONOLÓGICO: «anterior» es el hecho antes y «siguiente»
+ * el hecho después. A igual fecha de trabajo decide la clave de origen, igual que la lista (fecha descendente y clave
+ * ascendente): la clave menor es la más reciente. Sin equipo vinculado no hay vecinos. Las respuestas de prueba no
+ * cuentan como vecinas.
+ */
+export async function getAdjacentHistoricalRecords(
+  viewer: MantViewer,
+  record: { sourceKey: string; vehicleId: string | null; entryDate: string | null; submittedAt: string },
+): Promise<{ previous: HistoricalNeighbor | null; next: HistoricalNeighbor | null }> {
+  if (!record.vehicleId) return { previous: null, next: null }
+  const date = historicalWorkDate(record)
+  const base = and(historicalVisibility(viewer), eq(mantHistoricalRecords.vehicleId, record.vehicleId), eq(mantHistoricalRecords.isTest, false))
+  const columns = { sourceKey: mantHistoricalRecords.sourceKey, date: HISTORICAL_WORK_DATE, kindText: mantHistoricalRecords.kindText, description: mantHistoricalRecords.description }
+  const [previous] = await db.select(columns).from(mantHistoricalRecords)
+    .where(and(base, sql`(${HISTORICAL_WORK_DATE} < ${date} OR (${HISTORICAL_WORK_DATE} = ${date} AND ${mantHistoricalRecords.sourceKey} > ${record.sourceKey}))`))
+    .orderBy(sql`${HISTORICAL_WORK_DATE} desc`, asc(mantHistoricalRecords.sourceKey)).limit(1)
+  const [next] = await db.select(columns).from(mantHistoricalRecords)
+    .where(and(base, sql`(${HISTORICAL_WORK_DATE} > ${date} OR (${HISTORICAL_WORK_DATE} = ${date} AND ${mantHistoricalRecords.sourceKey} < ${record.sourceKey}))`))
+    .orderBy(sql`${HISTORICAL_WORK_DATE} asc`, sql`${mantHistoricalRecords.sourceKey} desc`).limit(1)
+  return { previous: previous ?? null, next: next ?? null }
+}
+
 export async function historicalLinkOptions() {
   const [vehicles, sites] = await Promise.all([
     db.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate }).from(fuelVehicles).orderBy(asc(fuelVehicles.code), asc(fuelVehicles.plate)),

@@ -70,10 +70,10 @@ describe("Trabajos de mantención", () => {
     expect(screen.getByTestId("chart-type").getAttribute("data-source")).toMatch(/historial de formularios \(hasta el 30-11-2026\), órdenes de trabajo y registros de la plataforma \(desde el 01-12-2026\)/)
   })
 
-  it("la tira de trabajos no es un enlace (suma tres fuentes que ninguna lista reproduce) y la sección define el corte", () => {
+  it("la cifra de trabajos enlaza al Historial de mantenciones (que reproduce la suma de las tres fuentes) y la sección define el corte", () => {
     render(<MaintenanceWorkSection {...common} summary={summary()} includesOrders />)
     const region = screen.getByRole("region", { name: "Trabajos de mantención" })
-    expect(within(region).queryByRole("link", { name: /Trabajos del período/ })).toBeNull()
+    expect(within(region).getByRole("link", { name: /Trabajos del período/ }).getAttribute("href")).toBe("/mantencion/registros/historicos?desde=2026-10-01&hasta=2026-10-31")
     expect(within(region).getByText("Hasta el 30-11-2026 cuentan los formularios; desde el 01-12-2026, los registros firmados en la plataforma. Las OT cuentan cuando entran a taller.")).toBeTruthy()
   })
 
@@ -86,9 +86,9 @@ describe("Trabajos de mantención", () => {
 
   it("el enlace al historial lleva el período y la faena elegida (y omite la faena si no hay una)", () => {
     const { rerender } = render(<MaintenanceWorkSection {...common} summary={summary()} includesOrders />)
-    expect(screen.getByRole("link", { name: "Historial de formularios" }).getAttribute("href")).toBe("/mantencion/registros/historicos?desde=2026-10-01&hasta=2026-10-31")
+    expect(screen.getByRole("link", { name: "Historial de mantenciones" }).getAttribute("href")).toBe("/mantencion/registros/historicos?desde=2026-10-01&hasta=2026-10-31")
     rerender(<MaintenanceWorkSection {...common} worksiteId="ws-a" summary={summary()} includesOrders />)
-    expect(screen.getByRole("link", { name: "Historial de formularios" }).getAttribute("href")).toBe("/mantencion/registros/historicos?desde=2026-10-01&hasta=2026-10-31&faena=ws-a")
+    expect(screen.getByRole("link", { name: "Historial de mantenciones" }).getAttribute("href")).toBe("/mantencion/registros/historicos?desde=2026-10-01&hasta=2026-10-31&faena=ws-a")
   })
 
   it("el titular de «Días en taller por faena» nombra la faena con más días y no repite el total de la tira", () => {

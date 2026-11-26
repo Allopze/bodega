@@ -47,20 +47,23 @@ test("importa y consulta historia, conserva pendientes y permite conciliarlos", 
   try {
     await login(page, "jefe.mant@e2e.chome.cl")
     await page.goto("/mantencion/registros")
-    await page.getByRole("link", { name: "Historial anterior", exact: true }).click()
+    await page.getByRole("link", { name: "Historial de mantenciones", exact: true }).click()
     // Sin historial, la acción está en la cabecera y también en el estado vacío (A4): ambas llevan al mismo lugar.
-    await page.getByRole("link", { name: "Importar historial anterior", exact: true }).first().click()
+    await page.getByRole("link", { name: "Importar respuestas de formularios", exact: true }).first().click()
     await expect(page.locator("#historical-import-file")).toBeEnabled()
     await page.locator("#historical-import-file").setInputFiles(payload)
     await expect(page.getByText(/2 respuestas · 2 nuevas/)).toBeVisible()
     await expect(page.getByText(/1 con equipo identificado · 1 sin coincidencia/)).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath("vista-previa-desktop.png"), fullPage: true })
-    await page.getByRole("button", { name: "Importar historial anterior", exact: true }).click()
+    await page.getByRole("button", { name: "Importar respuestas de formularios", exact: true }).click()
     await expect(page.getByText(/2 trabajos guardados/)).toBeVisible()
     // El resultado llega antes que el refresco que la acción trae en el mismo stream: navegar en ese instante
     // corta el resto (ERR_ABORTED con la carga ya hecha). Igual que más abajo, se espera a que la red quede quieta.
     await page.waitForLoadState("networkidle")
-    await page.getByRole("link", { name: "Ver historial anterior", exact: true }).click()
+    // Lo importado se ve, tal como se guardó, en «Respuestas de formularios» (que además es donde se concilia): las filas de
+    // este caso son de agosto de 2025 y quedarían fuera de los últimos 12 meses del Historial de mantenciones.
+    await page.getByRole("link", { name: "Ver las respuestas de formularios", exact: true }).click()
+    await expect(page).toHaveURL(/vista=formularios/)
     // La búsqueda se aplica sola al escribir (sin botón «Buscar»): espera a que viaje en la URL.
     await page.getByRole("searchbox", { name: "Buscar en el historial" }).fill(marker)
     await expect(page).toHaveURL(new RegExp(`q=${marker}`))
@@ -71,10 +74,10 @@ test("importa y consulta historia, conserva pendientes y permite conciliarlos", 
     const supervisor = await supervisorContext.newPage()
     trackFailures(supervisor, errors)
     await login(supervisor, "supervisor@e2e.chome.cl")
-    await supervisor.goto(`/mantencion/registros/historicos?q=${marker}`)
+    await supervisor.goto(`/mantencion/registros/historicos?vista=formularios&q=${marker}`)
     await expect(textoVisible(supervisor, `Trabajo QA ${marker}`)).toBeVisible()
     await expect(supervisor.getByText(`Trabajo pendiente ${marker}`, { exact: true })).toHaveCount(0)
-    await expect(supervisor.getByRole("link", { name: "Importar historial anterior", exact: true })).toHaveCount(0)
+    await expect(supervisor.getByRole("link", { name: "Importar respuestas de formularios", exact: true })).toHaveCount(0)
     await expect(supervisor.getByRole("link", { name: /Ver el trabajo de/ })).toBeVisible()
     expect(await supervisor.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
     // `screenshot` oculta el cursor con un `style` inline sobre el campo de búsqueda. Si cae antes de que la
@@ -86,6 +89,9 @@ test("importa y consulta historia, conserva pendientes y permite conciliarlos", 
 
     await page.getByRole("link", { name: `QA-${marker} / LPRS-56` }).click()
     await expect(page).toHaveURL(/\/mantencion\/registros\/historicos\/[a-f0-9]{64}$/)
+    // La ficha dice el tipo con su insignia; los datos tal como venían en el formulario van plegados.
+    await expect(page.getByText("Predictiva", { exact: true })).toBeVisible()
+    await page.getByText(/^Ver los \d+ campos tal como venían en el formulario$/).click()
     await expect(page.getByText("ACCION PREDICTIVA", { exact: true })).toBeVisible()
     await expect(page.getByText("Fecha de envío", { exact: true })).toBeVisible()
     await expect(page.getByText("19-08-2025", { exact: true })).toBeVisible()
@@ -96,11 +102,13 @@ test("importa y consulta historia, conserva pendientes y permite conciliarlos", 
     await page.getByRole("combobox", { name: "Faena", exact: true }).fill("Biodiversa")
     await page.getByRole("option", { name: "Biodiversa", exact: true }).click()
     await page.getByRole("button", { name: "Guardar", exact: true }).click()
-    await expect(page.getByText("El equipo aún no está identificado.")).toHaveCount(0)
-    await expect(page.getByRole("link", { name: "Ver ficha del equipo", exact: true })).toBeVisible()
+    await expect(page.getByText("Equipo sin identificar", { exact: true })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: `QA-${marker} / LPRS-56`, exact: true })).toBeVisible()
     await page.waitForLoadState("networkidle")
     await page.goto(`/mantencion/equipos/${vehicle.id}`)
-    await expect(page.getByRole("link", { name: "Ver el historial anterior de este equipo", exact: true })).toBeVisible()
+    // La hoja de vida del equipo muestra su línea de tiempo (de cualquier fecha) y lleva al historial filtrado por él.
+    await expect(page.getByRole("heading", { name: "Historial de mantenciones" })).toBeVisible()
+    await expect(page.getByRole("link", { name: "Ver todo el historial de este equipo", exact: true })).toHaveAttribute("href", new RegExp(`/mantencion/registros/historicos\\?equipo=${vehicle.id}&periodo=todo`))
 
     await page.waitForLoadState("networkidle")
     await page.goto("/mantencion/registros/historicos/importar")
@@ -109,7 +117,7 @@ test("importa y consulta historia, conserva pendientes y permite conciliarlos", 
     sheet.getRow(3).getCell(19).value = "https://drive.google.com/qa-foto-cambiada"
     await page.locator("#historical-import-file").setInputFiles({ ...payload, buffer: Buffer.from(await workbook.xlsx.writeBuffer()) })
     await expect(page.getByText(/2 respuestas · 0 nuevas · 2 ya importadas/)).toBeVisible()
-    await expect(page.getByRole("button", { name: "Importar historial anterior", exact: true })).toBeDisabled()
+    await expect(page.getByRole("button", { name: "Importar respuestas de formularios", exact: true })).toBeDisabled()
     expect(errors).toEqual([])
   } finally { await sql.end() }
 })

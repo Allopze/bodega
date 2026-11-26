@@ -48,6 +48,8 @@ function panelHref(common: TrinormaCommon, overrides: Record<string, string | nu
 
 // ── Trabajos de mantención ─────────────────────────────────────────────────
 
+const HISTORY_PATH = "/mantencion/registros/historicos"
+
 const formatDays = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 1 })
 
 /** «7 del historial · 3 de OT · 2 registros», sin las fuentes en 0 y sin las OT para quien no las ve. */
@@ -71,9 +73,11 @@ export function MaintenanceWorkSection({
   includesOrders: boolean
 }) {
   const faena = common.worksiteId ?? undefined
+  // El Historial de mantenciones recibe el período, la faena y el equipo de la sección: es la misma suma de las tres
+  // fuentes, con el mismo corte, así que su total es el «Trabajos del período» de abajo.
+  const historyHref = withParams(HISTORY_PATH, { desde: common.from, hasta: common.to, faena, equipo: common.equipment?.id })
   const links = [
-    // La lista del historial recibe el período y la faena de la sección (`desde`, `hasta`, `faena`).
-    { label: "Historial de formularios", href: withParams("/mantencion/registros/historicos", { desde: common.from, hasta: common.to, faena }) },
+    { label: "Historial de mantenciones", href: historyHref },
     ...(includesOrders ? [{ label: "Órdenes de trabajo", href: withParams("/mantencion/ot", { faena }) }] : []),
     ...(common.equipment ? [{ label: "Hoja de vida del equipo", href: vehicleFichaHref(common.equipment.id, "mantencion") }] : []),
   ]
@@ -81,7 +85,7 @@ export function MaintenanceWorkSection({
   const source = includesOrders
     ? `historial de formularios (hasta el ${formatDate(FORMS_LAST_COUNTED_DATE)}), órdenes de trabajo y registros de la plataforma (desde el ${cutover}); sin anuladas ni filas de prueba`
     : `historial de formularios (hasta el ${formatDate(FORMS_LAST_COUNTED_DATE)}) y registros de la plataforma (desde el ${cutover}); tu perfil no ve todas las órdenes de trabajo de su alcance`
-  // Qué cuenta y desde cuándo, dicho una sola vez en la sección: ninguna lista reproduce la suma de las tres fuentes.
+  // Qué cuenta y desde cuándo, dicho una sola vez en la sección.
   const definition = `Hasta el ${formatDate(FORMS_LAST_COUNTED_DATE)} cuentan los formularios; desde el ${cutover}, los registros firmados en la plataforma. Las OT cuentan cuando entran a taller.`
   const note = common.equipment ? `${common.scopeNote} · ${common.equipment.label}` : common.scopeNote
 
@@ -101,7 +105,7 @@ export function MaintenanceWorkSection({
               compact
               title="No hay trabajos de mantención en este período"
               description="Prueba con otro período."
-              action={<Link href="/mantencion/registros/historicos" className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">Ver historial de formularios</Link>}
+              action={<Link href={historyHref} className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">Ver el historial de mantenciones</Link>}
             />
           </ChartSlot>
         }
@@ -115,7 +119,8 @@ export function MaintenanceWorkSection({
       key: "trabajos-total",
       label: "Trabajos del período",
       value: summary.total,
-      // Sin `href`: suma tres fuentes y ninguna lista la reproduce (PANN-4); el desglose va en el subtítulo.
+      // El Historial de mantenciones reproduce esta suma de las tres fuentes (PANN-4); el desglose va en el subtítulo.
+      href: historyHref,
       secondary: workSourceBreakdown(summary, includesOrders),
     },
     {

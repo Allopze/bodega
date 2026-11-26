@@ -5,8 +5,10 @@ import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { executorText, formatHours, formatNumber, formatReading, plural, recordKindText } from "@/lib/mantencion/format"
 import type { LifeRow, LifeTotals, LifeWorkOrders } from "@/lib/services/mantencion/equipment-life"
+import type { EquipmentTimeline } from "@/lib/services/mantencion/maintenance-work"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { MetaBadge } from "@/components/states/state-badge"
+import { EquipmentTimelineCard } from "@/components/mantencion/historial/equipment-timeline"
 import { OT_STATE_META, workOrderTypeText } from "../ot/ot-labels"
 import { RecordStatusBadges } from "../shared/record-badges"
 import { SectionCard } from "../shared/section-card"
@@ -19,7 +21,11 @@ export interface EquipmentLifeData {
   limit: number
   /** Órdenes de trabajo del equipo. `null` (o ausente) = sin permiso de OT: la sección no se dibuja. */
   workOrders?: LifeWorkOrders | null
-  historical?: { total: number; vehicleId: string }
+  /**
+   * «Historial de mantenciones» del equipo (`loadEquipmentTimeline`) con su `vehicleId`, para enlazar al
+   * historial completo. `null` (o ausente) = sin permiso de historial: la tarjeta no se dibuja.
+   */
+  timeline?: (EquipmentTimeline & { vehicleId: string }) | null
   /**
    * Rendimiento del log de combustible 30 días antes y después de la salida de taller de cada OT
    * cerrada (`getWorkOrderConsumptionImpact`). Ausente sin `combustibles:view` o si el equipo no
@@ -278,10 +284,9 @@ function EquipmentWorkOrdersSection({ workOrders, code, impact }: { workOrders: 
 export function EquipmentLifeSection({ life, code }: { life: EquipmentLifeData; code: string }) {
   return (
     <div className="flex flex-col gap-5">
+      {/* La línea de tiempo va primero: reúne formularios, órdenes de trabajo y registros; «Hoja de vida» es sólo lo firmado en la app. */}
+      {life.timeline && <EquipmentTimelineCard timeline={life.timeline} vehicleId={life.timeline.vehicleId} />}
       <MaintenanceLifeSection life={life} code={code} />
-      {!!life.historical?.total && <SectionCard title="Historial anterior" description={`${plural(life.historical.total, "trabajo registrado", "trabajos registrados")} en formularios anteriores`}>
-        <Link href={`/mantencion/registros/historicos?equipo=${encodeURIComponent(life.historical.vehicleId)}`} className="text-sm font-semibold text-[var(--color-primary-ink)] hover:underline">Ver el historial anterior de este equipo</Link>
-      </SectionCard>}
       <EquipmentWorkOrdersSection workOrders={life.workOrders ?? null} code={code} impact={life.workOrderImpact} />
     </div>
   )

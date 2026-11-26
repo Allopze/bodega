@@ -5,7 +5,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { can, requirePermission } from "@/lib/auth/can"
 
-export const metadata: Metadata = { title: "Importar historial anterior" }
+export const metadata: Metadata = { title: "Importar respuestas de formularios" }
 export const dynamic = "force-dynamic"
 
 export default async function ImportHistoricalPage() {
@@ -18,13 +18,13 @@ export default async function ImportHistoricalPage() {
   return (
     <PageContainer width="form">
       <PageHeader
-        title="Importar historial anterior"
+        title="Importar respuestas de formularios"
         description="Sube la exportación de Google Forms para incorporar las últimas respuestas hasta el corte de los formularios, conservando sus datos de origen."
         breadcrumb={[
           { label: "Control operacional", href: "/control-operacional" },
           { label: "Mantención" },
           { label: "Registros firmados", href: "/mantencion/registros" },
-          { label: "Historial anterior", href: "/mantencion/registros/historicos" },
+          { label: "Historial de mantenciones", href: "/mantencion/registros/historicos" },
           { label: "Importar" },
         ]}
       />

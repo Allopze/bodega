@@ -89,9 +89,11 @@ correos debe quedar fuera del repositorio.
 En producción, el seed se ejecuta **a mano**, después de migrar y sincronizar
 RBAC. No forma parte del servicio `migrate` ni del deploy automático.
 
-## Historial anterior
+## Historial de mantenciones
 
-En **Registros → Historial anterior**, la jefatura con permisos de lectura
+El **Historial de mantenciones** (Registros → Historial de mantenciones) reúne en una sola vista lo que se le hizo a cada equipo: las respuestas de los formularios anteriores, las órdenes de trabajo que entraron a taller y los registros firmados de la plataforma. Cuenta lo mismo que el Panel (corte de los formularios el 01-12-2026), se filtra por período, faena, origen, tipo, taller y especialidad, se exporta a Excel y tiene una matriz de equipos por mes. La hoja de vida de cada equipo muestra su propia línea de tiempo.
+
+En su pestaña **Respuestas de formularios** quedan todas las respuestas tal como se guardaron (también las posibles pruebas y las posteriores al corte) y es donde se concilian los equipos y faenas sin identificar. Ahí, la jefatura con permisos de lectura
 global y gestión de equipos puede subir el consolidado `.xlsx` de los
 formularios. La vista previa cuenta las respuestas nuevas y las ya importadas,
 señala los equipos y faenas pendientes y no escribe datos. Al confirmar, se

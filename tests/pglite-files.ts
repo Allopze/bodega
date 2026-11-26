@@ -478,6 +478,9 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-sync-catalog-pglite.test.ts",
   // Historial de la flota para la app: tope por equipo, privacidad, versión (ETag) y la foto con Bearer.
   "lib/__tests__/mantencion-app-history-pglite.test.ts",
+  "lib/__tests__/mantencion-history-pglite.test.ts",
+  // «Exportar Excel» del Historial: alcance, filas iguales a la lista, filtros, celdas, bitácora, metadatos y tope.
+  "lib/__tests__/mantencion-history-export-pglite.test.ts",
   // La unidad (km/h) es del equipo, no del tipo: camiones de producción en horas y los de Biodiversa en km (2026-11-25).
   "lib/__tests__/mantencion-unidad-por-equipo-fleet-pglite.test.ts",
   // Órdenes de trabajo (2026-11): alta, transiciones por rol, concurrencia, rechazo, CAPA y avisos; y la sincronización del teléfono.

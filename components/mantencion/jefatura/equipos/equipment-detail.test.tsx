@@ -2,6 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 import type { EquipmentInsurance, LifeRow } from "@/lib/services/mantencion/equipment-life"
+import type { MaintenanceHistoryRow } from "@/lib/services/mantencion/maintenance-work"
 import type { EquipmentDetailData } from "./equipment-detail-types"
 import { EquipmentInsuranceCard, insuranceNeedsAttention } from "./equipment-insurance-card"
 import { EquipmentLifeSection } from "./equipment-life-section"
@@ -187,5 +188,32 @@ describe("«Órdenes de trabajo» de la hoja de vida", () => {
     expect(screen.getByText("Este equipo aún no tiene órdenes de trabajo")).toBeTruthy()
     rerender(<EquipmentLifeSection life={life(workOrders({ total: 14 }))} code="KA-107" />)
     expect(screen.getByRole("link", { name: "Ver todas en la lista de órdenes" }).getAttribute("href")).toBe("/mantencion/ot?estado=abiertas&q=KA-107")
+  })
+})
+
+describe("«Historial de mantenciones» en la hoja de vida", () => {
+  const historyRow: MaintenanceHistoryRow = {
+    id: "h-1", source: "historial", reference: "", date: "2026-10-03", vehicleId: "veh-1", equipmentLabel: "KA-107 · DCHR-67",
+    worksiteId: "ws-1", worksiteName: "Santa Fe", actionType: "correctiva", laborHours: null, workshopDays: null, inWorkshop: false, external: null,
+    detail: {
+      description: "Cambio de bomba", entryDate: null, exitDate: null, reading: null, orderText: null, responsible: null, specialties: [], contract: null,
+      href: "/mantencion/registros/historicos/h-1", unlinkedEquipment: false, unlinkedWorksite: false, qualityNotes: null,
+    },
+  }
+  const withTimeline = (timeline: EquipmentDetailData["life"]["timeline"]) => ({ ...data().life, timeline })
+
+  it("dibuja la línea de tiempo del equipo, con su enlace al historial completo", () => {
+    render(<EquipmentLifeSection code="KA-107" life={withTimeline({ rows: [historyRow], total: 1, includesOrders: true, vehicleId: "veh-1" })} />)
+    expect(screen.getByRole("heading", { name: "Historial de mantenciones" })).toBeDefined()
+    expect(screen.getByRole("link", { name: "Correctiva, 03-10-2026, Formulario: Cambio de bomba" }).getAttribute("href")).toBe("/mantencion/registros/historicos/h-1")
+    expect(screen.getByRole("link", { name: "Ver todo el historial de este equipo" }).getAttribute("href")).toBe("/mantencion/registros/historicos?equipo=veh-1&periodo=todo")
+  })
+
+  it("sin permiso de historial (null o ausente) la tarjeta no se dibuja, y ya no aparece «Historial anterior»", () => {
+    const { rerender } = render(<EquipmentLifeSection code="KA-107" life={withTimeline(null)} />)
+    expect(screen.queryByRole("heading", { name: "Historial de mantenciones" })).toBeNull()
+    rerender(<EquipmentLifeSection code="KA-107" life={data().life} />)
+    expect(screen.queryByRole("heading", { name: "Historial de mantenciones" })).toBeNull()
+    expect(screen.queryByText("Historial anterior")).toBeNull()
   })
 })

@@ -1,46 +1,54 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { HistoricalFilters } from "@/components/mantencion/jefatura/registros/historical-filters"
-import { Badge } from "@/components/ui/badge"
+import { FormsResponsesView } from "./forms-responses-view"
+import { HistoryExportButton } from "./history-export-button"
+import { HistoryFilters } from "@/components/mantencion/historial/history-filters"
+import { HistorySummary } from "@/components/mantencion/historial/history-summary"
+import { HistoryTable } from "@/components/mantencion/historial/history-table"
+import { WorkMatrixView } from "@/components/mantencion/historial/work-matrix"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
-import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { ServerPagination } from "@/components/ui/server-pagination"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { can, requireAnyPermission } from "@/lib/auth/can"
-import { FORMS_CUTOVER_DATE, FORMS_LAST_COUNTED_DATE } from "@/lib/mantencion/forms-cutover"
+import { bucketLabel } from "@/lib/indicators/period"
 import { ACTION_TYPE_LABELS, type ActionTypeOrUnknown } from "@/lib/mantencion/action-type"
-import { formatHours, plural } from "@/lib/mantencion/format"
-import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
-import { viewerFromSession } from "@/lib/services/mantencion/access"
-import { listHistoricalRecords } from "@/lib/services/mantencion/historical-import"
-import { formatDate } from "@/lib/utils"
+import { FORMS_CUTOVER_DATE, FORMS_LAST_COUNTED_DATE } from "@/lib/mantencion/forms-cutover"
+import { plural } from "@/lib/mantencion/format"
+import {
+  HISTORY_PAGE_SIZE, HISTORY_PATH, buildWorkMatrix, countByType, filterHistoryRows, historyHref, historyMonths, parseHistoryParams,
+  sortHistoryRows, type HistoryParams,
+} from "@/lib/mantencion/history-view"
+import { resolvePagination } from "@/lib/pagination"
+import { equipmentScope, viewerFromSession } from "@/lib/services/mantencion/access"
+import { resolveHistoricalWorksiteFilter, countHistoricalPending } from "@/lib/services/mantencion/historical-import"
+import { loadHistoryWorksites } from "@/lib/services/mantencion/history-options"
+import { loadMaintenanceHistory, summarizeMaintenanceWork } from "@/lib/services/mantencion/maintenance-work"
+import { formatDate, todayInChile } from "@/lib/utils"
 
-export const metadata: Metadata = { title: "Historial anterior" }
+export const metadata: Metadata = { title: "Historial de mantenciones" }
 export const dynamic = "force-dynamic"
 
-const PATH = "/mantencion/registros/historicos"
-const WARNING_TEXT = "text-xs text-[var(--color-warning-ink)]"
+type Raw = Record<string, string | string[] | undefined>
 
-/** El tipo normalizado del consolidado; en las filas que sólo vienen del formulario, el texto que escribieron. */
-function actionLabel(row: { actionType: string | null; kindText: string }): string {
-  if (row.actionType && row.actionType in ACTION_TYPE_LABELS) return ACTION_TYPE_LABELS[row.actionType as ActionTypeOrUnknown]
-  return row.kindText || "No informada"
+const TYPE_TABS: ReadonlyArray<{ type: ActionTypeOrUnknown; label: string }> = [
+  { type: "correctiva", label: "Correctivas" },
+  { type: "preventiva", label: "Preventivas" },
+  { type: "predictiva", label: "Predictivas" },
+  { type: "sin_clasificar", label: ACTION_TYPE_LABELS.sin_clasificar },
+]
+
+function periodText(params: HistoryParams): string {
+  if (params.period === "todo") return "de todo el historial"
+  if (params.period === "12m") return "de los últimos 12 meses"
+  return `del ${formatDate(params.from)} al ${formatDate(params.to)}`
 }
-/** Horas hombre normalizadas; si no hay, lo que el formulario escribió. */
-/** La faena por su nombre; el texto crudo del formulario sólo cuando no se resolvió. */
-const worksiteLabel = (row: { worksiteName: string | null; worksiteText: string }) => row.worksiteName || row.worksiteText
-/** Fecha de ingreso; si falta, el día del envío, dicho como tal. */
-const entryLabel = (row: { entryDate: string | null; submittedAt: string }) => row.entryDate ? formatDate(row.entryDate) : row.submittedAt ? `Enviado el ${formatDate(row.submittedAt)}` : "Fecha no informada"
-const hoursLabel = (row: { laborHours: number | null; hoursText: string }) => (row.laborHours !== null ? formatHours(row.laborHours) : row.hoursText.trim() || "—")
 
-type Params = Record<string, string | string[] | undefined>
-const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value) ?? ""
-
-export default async function HistoricalRecordsPage({ searchParams }: { searchParams: Promise<Params> }) {
+export default async function MaintenanceHistoryPage({ searchParams }: { searchParams: Promise<Raw> }) {
   let session
   try {
     session = await requireAnyPermission(["mant:records:view_worksite", "mant:records:view_all"])
@@ -48,132 +56,152 @@ export default async function HistoricalRecordsPage({ searchParams }: { searchPa
     redirect("/forbidden")
   }
   const raw = await searchParams
-  const search = first(raw.q).slice(0, 100)
-  const vehicleId = first(raw.equipo).slice(0, 64)
-  const pendingParam = first(raw.vinculo)
-  const pending = pendingParam === "equipment" || pendingParam === "conflict" || pendingParam === "worksite" ? pendingParam : undefined
-  const page = Number(first(raw.page))
-  const from = first(raw.desde).slice(0, 10)
-  const to = first(raw.hasta).slice(0, 10)
-  const worksiteId = first(raw.faena).slice(0, 64)
-  const list = await listHistoricalRecords(viewerFromSession(session), { search, vehicleId, page, pending, from, to, worksiteId })
-  const period = list.applied.from || list.applied.to
-    ? `${list.applied.from ? `desde el ${formatDate(list.applied.from)}` : ""}${list.applied.from && list.applied.to ? " " : ""}${list.applied.to ? `hasta el ${formatDate(list.applied.to)}` : ""}`
-    : ""
-  const pagination = resolvePagination({ pageParam: String(list.page), totalItems: list.total, pageSize: list.pageSize })
+  const today = todayInChile()
+  const params = parseHistoryParams(raw, today)
+  const viewer = viewerFromSession(session)
   const canImport = can(session, "mant:equipment:manage") && can(session, "mant:records:view_all")
-  const filtered = Boolean(search || vehicleId || pending || list.applied.from || list.applied.to || list.applied.worksite)
+  const canExport = can(session, "mant:export")
+  const pending = canImport ? await countHistoricalPending(viewer) : 0
+
+  const viewItems = [
+    { key: "historial", label: "Historial", active: params.view === "historial", href: historyHref(params, { view: "historial" }) },
+    { key: "matriz", label: "Equipos por mes", active: params.view === "matriz", href: historyHref(params, { view: "matriz" }) },
+    { key: "formularios", label: pending > 0 ? `Respuestas de formularios · ${pending} por completar` : "Respuestas de formularios", active: params.view === "formularios", href: historyHref(params, { view: "formularios" }) },
+  ]
+
+  const header = (
+    <PageHeader
+      title="Historial de mantenciones"
+      description="Todo lo que se le hizo a los equipos: formularios anteriores, órdenes de trabajo y registros firmados."
+      breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Registros firmados", href: "/mantencion/registros" }, { label: "Historial de mantenciones" }]}
+      actions={(
+        <>
+          {canExport && params.view !== "formularios" && <HistoryExportButton params={Object.fromEntries(new URL(historyHref(params, { page: 1 }), "http://localhost").searchParams)} />}
+          {canImport && <Button asChild variant="secondary"><Link href={`${HISTORY_PATH}/importar`}>Importar respuestas de formularios</Link></Button>}
+        </>
+      )}
+    />
+  )
+  const views = <SegmentedControl ariaLabel="Vista del historial" variant="segmented" items={viewItems} className="mb-3" />
+
+  if (params.view === "formularios") {
+    return (
+      <PageContainer>
+        {header}
+        {views}
+        <FormsResponsesView viewer={viewer} raw={raw} canImport={canImport} />
+      </PageContainer>
+    )
+  }
+
+  // Una faena fuera del alcance (o inventada en la URL) no se pasa al cargador: se trata como «sin filtro», igual que en el Panel.
+  const worksite = await resolveHistoricalWorksiteFilter(viewer, params.worksiteId || undefined)
+  const [worksites, loaded] = await Promise.all([
+    loadHistoryWorksites(viewer),
+    loadMaintenanceHistory(viewer, {
+      from: params.from,
+      to: params.to,
+      ...(worksite ? { worksiteId: worksite.id } : {}),
+      ...(params.vehicleId ? { vehicleId: params.vehicleId } : {}),
+      today,
+    }),
+  ])
+  const effective: HistoryParams = worksite || !params.worksiteId ? params : { ...params, worksiteId: "" }
+  const filtered = filterHistoryRows(loaded.rows, effective)
+  const typeCounts = countByType(filterHistoryRows(loaded.rows, effective, "type"))
+  const allTypes = typeCounts.correctiva + typeCounts.preventiva + typeCounts.predictiva + typeCounts.sin_clasificar
+  // Con agrupación, el orden lo manda el grupo (por equipo o por mes) y el sentido de las columnas no aplica.
+  const ordered = effective.group === "equipo" ? sortHistoryRows(filtered, "equipo", "asc")
+    : effective.group === "mes" ? sortHistoryRows(filtered, "fecha", "desc")
+      : sortHistoryRows(filtered, effective.sort, effective.dir)
+  const pagination = resolvePagination({ pageParam: String(effective.page), totalItems: ordered.length, pageSize: HISTORY_PAGE_SIZE })
+  const pageRows = ordered.slice((pagination.page - 1) * HISTORY_PAGE_SIZE, pagination.page * HISTORY_PAGE_SIZE)
+  const months = historyMonths(effective.from, effective.to)
+  const vehicleLabel = effective.vehicleId ? loaded.rows.find((row) => row.vehicleId === effective.vehicleId)?.equipmentLabel : undefined
+  const scopeNote = worksite?.name ?? (equipmentScope(viewer) === "all" ? "Todas las faenas" : "Tus faenas")
+  // La matriz dibuja a lo más los últimos meses del período: si el período es más largo, se dice (la cabecera cuenta todo).
+  const matrixWindowed = months[0]! > effective.from.slice(0, 7)
+
+  const typeItems = [
+    { key: "todos", label: `Todos (${allTypes})`, active: !effective.type, href: historyHref(effective, { type: null }) },
+    ...TYPE_TABS.map(({ type, label }) => ({ key: type, label: `${label} (${typeCounts[type]})`, active: effective.type === type, href: historyHref(effective, { type }) })),
+  ]
+  const groupItems = [
+    { key: "ninguno", label: "Sin agrupar", active: !effective.group, href: historyHref(effective, { group: null }) },
+    { key: "equipo", label: "Por equipo", active: effective.group === "equipo", href: historyHref(effective, { group: "equipo" }) },
+    { key: "mes", label: "Por mes", active: effective.group === "mes", href: historyHref(effective, { group: "mes" }) },
+  ]
+
+  const summary = filtered.length > 0
+    ? summarizeMaintenanceWork(filtered, { from: effective.from, to: effective.to, chart: { from: `${months[0]}-01`, to: effective.to, granularity: "month" }, today })
+    : null
+  const hasFilters = Boolean(effective.q || effective.vehicleId || effective.worksiteId || effective.source || effective.type || effective.workshop || effective.specialty)
 
   return (
     <PageContainer>
-      <PageHeader
-        title="Historial anterior"
-        description="Trabajos registrados en los formularios anteriores, con sus datos de origen."
-        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Registros firmados", href: "/mantencion/registros" }, { label: "Historial anterior" }]}
-        actions={canImport ? <Button asChild><Link href={`${PATH}/importar`}>Importar historial anterior</Link></Button> : undefined}
+      {header}
+      {views}
+      {params.periodInvalid && (
+        <Callout tone="warning" className="mb-3" title="El rango de fechas no es válido">
+          Se muestran los últimos 12 meses. Elige otro rango en los filtros.
+        </Callout>
+      )}
+      <HistoryFilters
+        worksites={worksites}
+        state={{
+          period: effective.period,
+          from: effective.from,
+          to: effective.to,
+          ...(worksite ? { worksiteName: worksite.name } : {}),
+          ...(vehicleLabel ? { vehicleLabel } : {}),
+        }}
       />
 
-      <HistoricalFilters worksiteName={list.applied.worksite?.name} />
+      <div className="mb-3 text-sm text-[var(--color-text-muted)]">
+        <p>{plural(ordered.length, "trabajo", "trabajos")} {periodText(effective)}{worksite ? ` en ${worksite.name}` : ""}. Mismo criterio que el Panel.</p>
+        <details className="mt-1 text-xs">
+          <summary className="w-fit cursor-pointer text-[var(--color-primary-ink)] hover:underline">Qué cuenta</summary>
+          <p className="mt-1 max-w-3xl">
+            Los formularios hasta el {formatDate(FORMS_LAST_COUNTED_DATE)}, las órdenes de trabajo que entraron a taller y, desde el {formatDate(FORMS_CUTOVER_DATE)}, los registros firmados; sin anuladas ni pruebas.
+            Las respuestas posteriores al corte y las posibles pruebas se ven en «Respuestas de formularios».
+          </p>
+        </details>
+      </div>
 
-      <p className="mb-3 text-sm text-[var(--color-text-muted)]">
-        {plural(list.total, "trabajo", "trabajos")} {vehicleId ? "de este equipo" : "en el historial anterior"}
-        {list.applied.worksite ? ` en ${list.applied.worksite.name}` : ""}{period ? ` ${period}` : ""}. No modifican lecturas, pautas ni alertas. Cuentan en los indicadores del Panel hasta el {formatDate(FORMS_LAST_COUNTED_DATE)}, salvo posible prueba; desde el {formatDate(FORMS_CUTOVER_DATE)} la plataforma reemplaza a los formularios.
-      </p>
+      {summary && effective.view === "historial" && <HistorySummary summary={summary} params={effective} scopeNote={scopeNote} includesOrders={loaded.includesOrders} />}
 
-      {list.rows.length === 0 ? (
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <SegmentedControl ariaLabel="Filtrar por tipo de trabajo" variant="segmented" items={typeItems} />
+        {effective.view === "historial" && <SegmentedControl ariaLabel="Agrupar los trabajos" variant="segmented" items={groupItems} />}
+      </div>
+
+      {ordered.length === 0 ? (
         <EmptyState
           title="No hay trabajos para mostrar"
-          description={filtered ? "Prueba con otra búsqueda o quita los filtros para ver todo el historial anterior." : "Se llenan al importar un archivo de historial anterior."}
-          action={filtered
-            ? <Button asChild variant="secondary"><Link href={PATH}>Ver todo el historial</Link></Button>
-            : canImport ? <Button asChild><Link href={`${PATH}/importar`}>Importar historial anterior</Link></Button> : undefined}
+          description={hasFilters
+            ? "Prueba con otra búsqueda o quita los filtros para ver todo el período."
+            : effective.period === "12m"
+              ? "No hay trabajos en los últimos 12 meses. Amplía el período para ver el historial completo."
+              : "No hay trabajos en este período. Las respuestas de formularios se cargan en «Respuestas de formularios»."}
+          action={hasFilters
+            ? <Button asChild variant="secondary"><Link href={HISTORY_PATH}>Quitar los filtros</Link></Button>
+            : effective.period !== "todo"
+              ? <Button asChild variant="secondary"><Link href={historyHref(effective, { period: "todo" })}>Ver todo el historial</Link></Button>
+              : undefined}
         />
+      ) : effective.view === "matriz" ? (
+        <>
+          {matrixWindowed && (
+            <p className="mb-2 text-xs text-[var(--color-text-muted)]">
+              Se muestran los últimos {months.length} meses del período ({bucketLabel(months[0]!, "month")} a {bucketLabel(months[months.length - 1]!, "month")}). Para ver otros meses, elige un rango de fechas.
+            </p>
+          )}
+          <WorkMatrixView matrix={buildWorkMatrix(filtered, months)} params={effective} />
+        </>
       ) : (
         <>
-          <ul aria-label="Trabajos del historial anterior como tarjetas" className="grid gap-3 md:hidden">
-            {list.rows.map((row) => (
-              <li key={row.sourceKey}>
-                <ResponsiveDataListCard
-                  // La lista es el contenido de la página: sus tarjetas cuelgan del h1 (paso 6).
-                  headingLevel={2}
-                  title={row.equipmentText || "Sin equipo"}
-                  description={`${worksiteLabel(row) || "Sin faena"} · ${entryLabel(row)}`}
-                  actions={(
-                    <Button asChild variant="secondary" size="sm" className="w-full">
-                      <Link href={`${PATH}/${row.sourceKey}`} aria-label={`Ver el trabajo de ${row.equipmentText || "equipo no informado"}, orden ${row.orderText || "sin número"}`}>Ver el trabajo</Link>
-                    </Button>
-                  )}
-                >
-                  <ResponsiveDataListField label="Acción">{actionLabel(row)}</ResponsiveDataListField>
-                  <ResponsiveDataListField label="Orden">{row.orderText || "No informada"}</ResponsiveDataListField>
-                  <ResponsiveDataListField label="Horas hombre">{hoursLabel(row)}</ResponsiveDataListField>
-                  <ResponsiveDataListField label="Contrato">{row.contractText || "—"}</ResponsiveDataListField>
-                  {(row.isTest || row.qualityNotes) && (
-                    <ResponsiveDataListField label="Revisar" className="col-span-2">
-                      <span className="flex flex-wrap items-center gap-2">
-                        {row.isTest && <Badge variant="warning">Posible prueba</Badge>}
-                        {row.qualityNotes && <span className="text-[var(--color-warning-ink)]">{row.qualityNotes}</span>}
-                      </span>
-                    </ResponsiveDataListField>
-                  )}
-                  <ResponsiveDataListField label="Trabajo" className="col-span-2">
-                    <span className="whitespace-pre-wrap break-words">{row.description || "No informado"}</span>
-                  </ResponsiveDataListField>
-                  {(!row.vehicleId || !row.worksiteId) && (
-                    <ResponsiveDataListField label="Por completar" className="col-span-2">
-                      <span className="text-[var(--color-warning-ink)]">
-                        {[!row.vehicleId ? "Equipo sin identificar" : "", !row.worksiteId ? "Faena sin identificar" : ""].filter(Boolean).join(" · ")}
-                      </span>
-                    </ResponsiveDataListField>
-                  )}
-                </ResponsiveDataListCard>
-              </li>
-            ))}
-          </ul>
-
-          <div className="hidden md:block">
-            <TableRoot aria-label="Trabajos del historial anterior">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha de ingreso</TableHead>
-                    <TableHead>Equipo</TableHead>
-                    <TableHead>Faena</TableHead>
-                    <TableHead>Acción</TableHead>
-                    <TableHead>Trabajo</TableHead>
-                    <TableHead>Horas hombre</TableHead>
-                    <TableHead>Contrato</TableHead>
-                    <TableHead>Orden</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {list.rows.map((row) => (
-                    <TableRow key={row.sourceKey}>
-                      <TableCell className="whitespace-nowrap">{entryLabel(row)}</TableCell>
-                      <TableCell>
-                        <Link href={`${PATH}/${row.sourceKey}`} className="font-semibold text-[var(--color-primary-ink)] hover:underline">{row.equipmentText || "Sin equipo"}</Link>
-                        {!row.vehicleId && <span className={`block ${WARNING_TEXT}`}>Equipo sin identificar</span>}
-                        {row.isTest && <Badge variant="warning" className="mt-1">Posible prueba</Badge>}
-                      </TableCell>
-                      <TableCell>
-                        {worksiteLabel(row) || "No informada"}
-                        {!row.worksiteId && <span className={`block ${WARNING_TEXT}`}>Faena sin identificar</span>}
-                      </TableCell>
-                      <TableCell>{actionLabel(row)}</TableCell>
-                      <TableCell className="max-w-sm">
-                        <span className="line-clamp-2">{row.description || "No informado"}</span>
-                        {row.qualityNotes && <span className={`line-clamp-1 ${WARNING_TEXT}`} title={row.qualityNotes}>Observación de calidad: {row.qualityNotes}</span>}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">{hoursLabel(row)}</TableCell>
-                      <TableCell>{row.contractText || "—"}</TableCell>
-                      <TableCell>{row.orderText || "—"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableRoot>
-          </div>
-          <ServerPagination pagination={pagination} hrefForPage={(target) => buildPaginationHref(PATH, raw, target)} />
+          <HistoryTable rows={pageRows} params={effective} />
+          <ServerPagination pagination={pagination} hrefForPage={(target) => historyHref(effective, { page: target })} />
         </>
       )}
     </PageContainer>

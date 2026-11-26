@@ -1,3 +1,26 @@
+# Historial de mantenciones unificado — verificación, 2026-11-25
+
+`/mantencion/registros/historicos` pasó de «Historial anterior» (lista plana de respuestas de Forms) a una vista única de
+formularios + órdenes de trabajo + registros firmados, con resumen y gráficos, matriz «Equipos por mes», Excel, vista previa,
+ficha tipo resumen y una línea de tiempo en la hoja de vida del equipo. Sin migración ni permiso nuevo. El detalle está en
+[mantencion-historial-2026-11-25.md](mantencion-historial-2026-11-25.md).
+
+- **PASS · puertas:** typecheck y lint con exit 0; `test:fast` 22.405 pasan y 1 falla (`backup-env-whitelist`, ya roja en la
+  base `b848c1423`); `test:pglite` 5.801 pasan (447 archivos); `db:verify-migrations` 403 entradas.
+- **PASS · E2E sobre build de producción:** `mantencion-historial.spec.ts` 8/8 y `mantencion-historico.spec.ts` 1/1, sin
+  errores de consola ni 4xx/5xx; descarga real del `.xlsx`, matriz, vista previa, ficha, línea de tiempo y 390 px.
+- **PASS · revisión independiente de solo lectura:** sin críticos ni altos; medios y bajos corregidos con prueba, y dos
+  defectos reales del Excel que sacaron las pruebas de servicio.
+- **PASS · datos reales (producción, solo lectura):** la lista y el Panel devuelven los mismos trabajos en tres períodos
+  (1.705 · 2.343 · 35); cargar el período entero tarda ~100 ms. Hoy hay 0 registros firmados y 0 OT vigentes: la vista es
+  de formularios hasta que se usen las otras fuentes. Una respuesta con fecha 2027-07-20 (error de digitación) queda fuera
+  de la lista y del Panel.
+- **SIN CAMBIO · rojo previo en la base:** 7 specs de Mantención (`1-app:166`, `3a-equipos:33`, `3b-pautas:65`,
+  `4-permisos:72`, `5-ot:280`, `panel-looker-cobertura:63`, `panel-looker:83`) fallan igual en `b848c1423` (comprobado con
+  un build aparte): son de la unidad km/h por equipo.
+- **LÍMITES:** Safari/Android reales, lector de pantalla, rendimiento con volumen y el tope real de 20.000 filas del Excel
+  no se verificaron. La rama no está en `main` ni desplegada.
+
 # Panel de mantención estilo Looker — cierre de verificación, 2026-11-24
 
 Cuatro pestañas en `/mantencion/panel` (`Hoy`, `Planificación`, `Camiones`, `Máquinas`) con filtro

@@ -57,6 +57,8 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
   const filters = parseWorkOrderQuery(raw)
   const canCreate = can(session, "mant:ot:create")
   const canManage = can(session, "mant:ot:manage")
+  // Quien puede leer el Historial de mantenciones sabe adónde mirar cuando busca un trabajo que no es una OT de la plataforma.
+  const canSeeHistory = can(session, "mant:records:view_worksite") || can(session, "mant:records:view_all")
   // Quien sólo ejecuta ve únicamente sus OT asignadas: «Por asignar» siempre estaría vacía.
   const onlyExecutes = !canManage && !can(session, "mant:ot:view_worksite") && !can(session, "mant:ot:view_all")
 
@@ -126,6 +128,19 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
           <StageTabs tabs={buildOtTabs(list.counts, { hide: hiddenTabs })} ariaLabel="Estado de las órdenes de trabajo" pageParam="pagina" />
         </Suspense>
       </div>
+
+      {filters.tab === "cerrada" && canSeeHistory && (
+        // Los trabajos de los formularios anteriores y los registros firmados no son OT: viven en el Historial de mantenciones.
+        <p className="mb-3 text-sm text-[var(--color-text-muted)]">
+          Aquí están las órdenes de trabajo hechas en la plataforma. Los trabajos anteriores, de los formularios, y los registros firmados están en el{" "}
+          <Link
+            href={filters.worksiteId ? `/mantencion/registros/historicos?faena=${encodeURIComponent(filters.worksiteId)}` : "/mantencion/registros/historicos"}
+            className="font-semibold text-[var(--color-primary-ink)] underline underline-offset-2"
+          >
+            Historial de mantenciones
+          </Link>.
+        </p>
+      )}
 
       {filters.tab === "abiertas" && (
         // Los tiles del tablero y del panel enlazan a «todas las abiertas»: la lista las muestra aunque ya no sea una pestaña.

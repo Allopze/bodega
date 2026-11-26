@@ -10,13 +10,13 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
-import { can } from "@/lib/auth/can"
+import { can, canAny } from "@/lib/auth/can"
 import { getWorkOrderConsumptionImpact } from "@/lib/services/fleet"
 import { formatNumber } from "@/lib/mantencion/format"
 import { equipmentScope, recordVisibility, recordVisibilitySql, viewerFromSession } from "@/lib/services/mantencion/access"
 import { countEquipmentRecords } from "@/lib/services/mantencion/equipment"
 import { loadEquipmentInsurance, loadEquipmentWorkOrders, loadLifeRows, loadLifeTotals } from "@/lib/services/mantencion/equipment-life"
-import { listHistoricalRecords } from "@/lib/services/mantencion/historical-import"
+import { loadEquipmentTimeline } from "@/lib/services/mantencion/maintenance-work"
 import { listEquipmentHistory } from "@/lib/services/mantencion/equipment-history"
 import { loadEquipmentCurrents } from "@/lib/services/mantencion/equipment-resolve"
 import { loadFleet } from "@/lib/services/mantencion/fleet"
@@ -26,6 +26,7 @@ import { getOperationalSettings } from "@/lib/services/system-settings"
 import { getVehiclePurchaseHistory } from "@/lib/services/vehicle-purchase-history"
 import type { NewOtSheetProps } from "@/components/mantencion/jefatura/ot/new-ot-sheet"
 import { LIFE_PAGE_SIZE } from "@/components/mantencion/jefatura/equipos/equipment-life-section"
+import { EQUIPMENT_TIMELINE_LIMIT } from "@/components/mantencion/historial/equipment-timeline"
 import { listSchedules } from "@/lib/services/mantencion/schedules"
 import { getCurrentScheduleSnapshots } from "@/lib/services/mantencion/schedule-versions"
 import { PERFORMANCE_UNIT_LABELS } from "@/lib/combustibles/control/contracts"
@@ -90,7 +91,10 @@ export default async function EquipmentDetailPage({
   // Las compras vinculadas se ven con `purchasing:view` (cualquier OC) o `repuestos:view_all` (cualquier solicitud);
   // sin ninguna, `null` y la tarjeta no se dibuja, en vez de decir «sin compras».
   const canSeePurchases = can(session, "purchasing:view") || can(session, "repuestos:view_all")
-  const [history, life, totals, insurance, recordCount, schedules, workOrders, historical, purchases] = await Promise.all([
+  // La línea de tiempo del «Historial de mantenciones» (formularios, OT y registros) sólo la pide quien puede ver el
+  // historial: el mismo permiso que decidía la visibilidad de «Historial anterior». Su alcance lo aplica el servicio.
+  const canSeeHistory = canAny(session, "mant:records:view_all", "mant:records:view_worksite")
+  const [history, life, totals, insurance, recordCount, schedules, workOrders, timeline, purchases] = await Promise.all([
     listEquipmentHistory(id),
     loadLifeRows(id, visibility, { limit: lifeLimit }),
     loadLifeTotals(id, visibility),
@@ -99,7 +103,7 @@ export default async function EquipmentDetailPage({
     canManage ? listSchedules() : Promise.resolve(null),
     // Las OT tienen su propio alcance (`mant:ot:view_*`); sin permiso, `null` y la sección no se dibuja.
     loadEquipmentWorkOrders(id, viewer),
-    listHistoricalRecords(viewer, { vehicleId: id }),
+    canSeeHistory ? loadEquipmentTimeline(viewer, id, { limit: EQUIPMENT_TIMELINE_LIMIT }) : Promise.resolve(null),
     canSeePurchases ? getVehiclePurchaseHistory(id) : Promise.resolve(null),
   ])
 
@@ -168,7 +172,7 @@ export default async function EquipmentDetailPage({
       hasMore: life.hasMore,
       limit: lifeLimit,
       workOrders,
-      historical: { total: historical.total, vehicleId: id },
+      timeline: timeline ? { ...timeline, vehicleId: id } : null,
       workOrderImpact: performanceUnit && impact.length > 0
         ? { unit: PERFORMANCE_UNIT_LABELS[performanceUnit], byWorkOrder: Object.fromEntries(impact.map((item) => [item.workOrderId, { before: item.avgBefore, after: item.avgAfter }])) }
         : null,
