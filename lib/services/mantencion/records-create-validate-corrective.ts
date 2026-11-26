@@ -2,6 +2,7 @@ import type { Tx } from "@/db"
 import type { SyncCorrectiveRecord, SyncWarning } from "@/lib/mantencion/contracts"
 import { todayInChile } from "@/lib/utils"
 import { loadCatalogNames } from "./records-create-context"
+import { partField, STOCK_NEEDS_WORK_ORDER } from "./records-create-parts"
 import { reject, type Author, type CorrectivePlan, type RecordFailure, type RecordPlan, type Validated } from "./records-create-types"
 import { findAppUsers } from "./sync-app-users"
 
@@ -30,6 +31,8 @@ export async function validateCorrective(
   }
   const jobsCheck = checkJobs(input)
   if (jobsCheck) return jobsCheck
+  const sourceCheck = checkPartSources(input)
+  if (sourceCheck) return sourceCheck
 
   const today = todayInChile()
   if (input.inWorkshop) {
@@ -110,6 +113,22 @@ function checkJobs(input: SyncCorrectiveRecord): RecordFailure | null {
     }
   }
   if (input.jobs.reduce((sum, job) => sum + job.hours, 0) > 72) return reject("El total de horas no puede pasar de 72.", "jobs")
+  return null
+}
+
+/**
+ * D12 (ADR mantención 0001): una línea `source: "stock"` descuenta de la bodega POR una OT (la
+ * reserva y el kárdex cuelgan de ella), así que exige un registro enlazado a una. El teléfono nunca
+ * arma ese caso; el servidor tampoco confía en quien lo llame. Los demás campos de la línea
+ * (`productId`, `allocationId`) los resuelve el descuento, bajo bloqueo: ver `records-create-parts.ts`.
+ * Sin `source` es el texto libre de siempre y no se toca.
+ */
+function checkPartSources(input: SyncCorrectiveRecord): RecordFailure | null {
+  if (input.workOrderId) return null
+  for (const [jobIndex, job] of input.jobs.entries()) {
+    const partIndex = job.parts.findIndex((part) => part.source === "stock")
+    if (partIndex >= 0) return reject(STOCK_NEEDS_WORK_ORDER, partField(jobIndex, partIndex, "source"))
+  }
   return null
 }
 

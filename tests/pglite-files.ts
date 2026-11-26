@@ -701,6 +701,7 @@ export const pgliteTestFiles = [
   // NP · L3 notas de pedido: servicio, sync y catálogo del teléfono.
 
   // NP · L4 consumo: registro, anulación, cierre de OT y conciliación.
+  "lib/__tests__/np-consumption-pglite.test.ts",
 
   // NP · L5 app del mecánico (si alguna suite del cliente usa PGlite).
 
