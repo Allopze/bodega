@@ -143,7 +143,7 @@ export const mantencionEquiposModule = {
             { label: "Pautas", href: "/mantencion/pautas", permissions: ["mant:schedules:manage"] },
             // Marcas, talleres, conductores, tipos de trabajo y aceites. Mismo permiso
             // que exige la página y sus acciones (`mant:equipment:manage`).
-            { label: "Marcas y talleres", href: "/mantencion/catalogos", permissions: ["mant:equipment:manage"] },
+            { label: "Catálogos de mantención", href: "/mantencion/catalogos", permissions: ["mant:equipment:manage"] },
             // Los teléfonos con la app del mecánico conectada, el botón para desconectarlos y el de
             // instalar la app. Mismo permiso que exige la página y su acción (`mant:devices:manage`).
             { label: "App del mecánico", href: "/mantencion/dispositivos", permissions: ["mant:devices:manage"] },

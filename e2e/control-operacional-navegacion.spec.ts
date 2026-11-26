@@ -167,7 +167,7 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
         nombre: "Configuración",
         hijos: [
           { href: "/mantencion/pautas", nombre: "Pautas" },
-          { href: "/mantencion/catalogos", nombre: "Marcas y talleres" },
+          { href: "/mantencion/catalogos", nombre: "Catálogos de mantención" },
           { href: "/mantencion/dispositivos", nombre: "App del mecánico" },
         ],
       },

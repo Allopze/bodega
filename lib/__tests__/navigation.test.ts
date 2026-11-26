@@ -345,7 +345,7 @@ describe("sidebar navigation", () => {
 
       expect(mantencion?.children?.map((child) => [child.label, child.href, child.permissions])).toEqual([
         ["Pautas", "/mantencion/pautas", ["mant:schedules:manage"]],
-        ["Marcas y talleres", "/mantencion/catalogos", ["mant:equipment:manage"]],
+        ["Catálogos de mantención", "/mantencion/catalogos", ["mant:equipment:manage"]],
         // Antes «Dispositivos»: la pantalla lista los teléfonos con la app del mecánico y tiene «Instalar app del mecánico».
         ["App del mecánico", "/mantencion/dispositivos", ["mant:devices:manage"]],
       ])

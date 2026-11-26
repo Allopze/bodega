@@ -88,9 +88,9 @@ export function CatalogsWorkbench({ catalog, rows, counts, canEdit = true }: {
   return (
     <>
       <PageHeader
-        title="Marcas y talleres"
+        title="Catálogos de mantención"
         description="Marcas, talleres, conductores, tipos de trabajo y aceites que se ofrecen en equipos, pautas y en la app del mecánico."
-        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Marcas y talleres" }]}
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Catálogos de mantención" }]}
         // Con el catálogo vacío el botón es el llamado del estado vacío: dos iguales a la vista no suman.
         actions={hasRows && canEdit ? <Button size="sm" onClick={create}><Plus size={14} aria-hidden />{labels.create}</Button> : undefined}
       />
