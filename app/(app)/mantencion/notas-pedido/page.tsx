@@ -68,7 +68,7 @@ export default async function PartsNotesPage({ searchParams }: { searchParams: P
   const worksiteId = query.worksiteId && worksites.some((item) => item.id === query.worksiteId) ? query.worksiteId : undefined
 
   const onConciliation = query.tab === "por_conciliar"
-  const noteTab: PartsNoteTab = onConciliation ? "pendientes" : query.tab
+  const noteTab: PartsNoteTab = query.tab === "por_conciliar" ? "pendientes" : query.tab
   // Fuera de «Por conciliar» las notas pagan los conteos de las pestañas y, dentro, sólo los conteos (una fila basta).
   const [list, conciliation] = await Promise.all([
     listPartsNotes(viewer, { tab: noteTab, worksiteId, q: query.q, page: onConciliation ? 1 : query.page, pageSize: onConciliation ? 1 : PARTS_NOTES_PAGE_SIZE }),

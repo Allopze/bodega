@@ -7,7 +7,8 @@ import { canSeeNote, NP_PERMISSIONS, noteVisibility } from "./access"
 import { loadPurchases } from "./lines"
 import { isResolvableLine } from "./status"
 
-const vehicleLabel = (code: string, plate: string) => (plate && plate !== code ? `${code} · ${plate}` : code)
+/** Como `vehicleLabel` de `lib/fleet-vehicle-label.ts`, pero sin repetir la patente cuando un equipo sin patente la tiene igual al código. */
+const vehicleLabel = (code: string | null, plate: string) => (!code ? plate : plate && plate !== code ? `${code} · ${plate}` : code)
 
 /**
  * Lo que `?np=<id>` precarga en la solicitud de repuestos: el equipo y la OT de la NP,
