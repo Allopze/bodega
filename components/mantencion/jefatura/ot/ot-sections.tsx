@@ -12,6 +12,8 @@ import { formatNumber } from "@/lib/mantencion/format"
 import { OT_ITEM_KIND_LABELS, type OtItemKind } from "@/lib/mantencion/work-order-states"
 import type { WorkOrderDetail, WorkOrderItemDetail, WorkOrderPartsRequest } from "@/lib/services/mantencion/work-orders/types"
 import { SparePartIdentity, SparePartName, SparePartReference, sparePartIdentity } from "@/components/mantencion/spare-part-reference"
+import type { WorkOrderPartsOverview } from "@/lib/services/mantencion/parts/types"
+import { OtConsumptions, OtPartsOverview } from "../notas-pedido/ot-parts-overview"
 import { SectionCard } from "../shared/section-card"
 import { OT_STATE_META, actionTypeText, daysStoppedText, laborHoursText, specialtiesText } from "./ot-labels"
 import { formatDay, sortEventsNewestFirst } from "./ot-format"
@@ -260,50 +262,69 @@ function quantityText(line: Pick<WorkOrderPartsRequest, "quantity" | "unitOfMeas
 }
 
 /**
- * «Repuestos pedidos»: las solicitudes de compra vinculadas a la OT y su avance, y
- * debajo lo que los registros enlazados declararon usar. Es INFORMACIÓN: la OT no
- * lleva repuestos en su documento; el mecánico declara lo usado en el registro de
- * la correctiva y las compras salen de una solicitud. El código de la solicitud
- * sólo es enlace con `repuestos:view_all` (con `view_own` el enlace daría 404 sobre
- * una ajena). `partsRequestHref` lo calcula la página (permiso y OT no cerrada).
- * Una línea con producto de catálogo muestra su SKU y N° de parte; el nombre enlaza
- * a la ficha del repuesto sólo con `canOpenSpareParts` (`repuestos:catalog`).
+ * «Repuestos»: todo lo que pasa con los repuestos de la OT en un solo lugar. Con el resumen
+ * (`overview`, de `loadWorkOrderPartsOverview`) abre con las notas de pedido del mecánico y su avance por
+ * línea y con lo reservado sin usar («Liberar» sólo con `mant:np:manage`); sigue con «Repuestos pedidos»,
+ * las solicitudes de compra vinculadas y su avance, y cierra con lo que los registros enlazados declararon
+ * usar, con su estado de stock (Descontado, Pendiente de conciliar…). Sin el resumen —quien no ve las notas
+ * de pedido— queda lo de siempre. Es INFORMACIÓN: la OT no lleva repuestos en su documento. El código de la
+ * solicitud sólo es enlace con `repuestos:view_all` (con `view_own` el enlace daría 404 sobre una ajena).
+ * `partsRequestHref` lo calcula la página (permiso y OT no cerrada). Una línea con producto de catálogo
+ * muestra su SKU y N° de parte; el nombre enlaza a la ficha del repuesto sólo con `canOpenSpareParts`
+ * (`repuestos:catalog`).
  */
 export function OtPartsRequestsSection({
   detail,
   canOpenRequests,
   canOpenSpareParts = false,
   partsRequestHref,
+  overview = null,
+  canOpenNotes = false,
+  canManageNotes = false,
 }: {
   detail: WorkOrderDetail
   canOpenRequests: boolean
   canOpenSpareParts?: boolean
   partsRequestHref: string | null
+  /** Notas de pedido, reservas y consumos de la OT; `null` si quien mira no ve las notas de pedido. */
+  overview?: WorkOrderPartsOverview | null
+  /** Quien puede abrir la bandeja y el detalle de las notas (`mant:np:view_worksite|manage`). */
+  canOpenNotes?: boolean
+  /** Quien puede liberar reservas (`mant:np:manage`). */
+  canManageNotes?: boolean
 }) {
   const lines = detail.partsRequests
   const today = todayInChile()
   const orderLink = partsRequestHref
     ? <Button asChild variant="secondary" size="sm"><Link href={partsRequestHref}>Pedir repuestos</Link></Button>
     : null
-  const openable = new Set(detail.linkedRecords.filter((record) => record.canOpen).map((record) => record.id))
+  const openableIds = detail.linkedRecords.filter((record) => record.canOpen).map((record) => record.id)
+  const openable = new Set(openableIds)
+  // Con notas de pedido o reservas, «Sin repuestos pedidos» sería falso: lo que falta son solicitudes de compra.
+  const hasNotes = !!overview && (overview.notes.length > 0 || overview.available.some((part) => part.remaining > 0))
 
   return (
     <SectionCard
-      title="Repuestos pedidos"
-      description="Solicitudes de compra vinculadas a esta orden y su avance."
+      title="Repuestos"
+      description={overview ? "Notas de pedido, reservas, compras y consumo de esta orden." : "Solicitudes de compra vinculadas a esta orden y su avance."}
       action={lines.length > 0 ? orderLink : null}
     >
+      {overview && <div className={hasNotes ? "mb-4" : undefined}><OtPartsOverview workOrderId={detail.id} overview={overview} canOpenNotes={canOpenNotes} canManage={canManageNotes} /></div>}
+      {/* Siempre presente (también sin solicitudes): es el nombre con que se encuentra la tabla de compras. */}
+      <h3 className="mb-1.5 text-sm font-semibold text-[var(--color-text)]">Repuestos pedidos</h3>
       {lines.length === 0 ? (
         orderLink ? (
           <EmptyState
             compact
             as="p"
-            title="Sin repuestos pedidos"
-            description="Si esta orden necesita repuestos, pídelos desde aquí: la solicitud queda vinculada a la OT y al equipo."
+            title={hasNotes ? "Sin solicitudes de compra" : "Sin repuestos pedidos"}
+            description={hasNotes
+              ? "Si hay que comprar algún repuesto de esta orden, pídelo desde aquí: la solicitud queda vinculada a la OT y al equipo."
+              : "Si esta orden necesita repuestos, pídelos desde aquí: la solicitud queda vinculada a la OT y al equipo."}
             action={orderLink}
           />
         ) : (
-          <Pending>Nadie ha pedido repuestos para esta orden.</Pending>
+          <Pending>{hasNotes ? "Aún no hay solicitudes de compra para esta orden." : "Nadie ha pedido repuestos para esta orden."}</Pending>
         )
       ) : (
         <>
@@ -378,7 +399,9 @@ export function OtPartsRequestsSection({
 
       <div className="mt-4 border-t border-[var(--color-border)] pt-3">
         <h3 className="mb-1.5 text-sm font-semibold text-[var(--color-text)]">Declarados en los registros</h3>
-        {detail.partsUsed.length === 0 ? (
+        {overview ? (
+          <OtConsumptions consumptions={overview.consumptions} openableRecordIds={openableIds} />
+        ) : detail.partsUsed.length === 0 ? (
           <Pending>Ningún registro enlazado declara repuestos.</Pending>
         ) : (
           <ul aria-label="Repuestos declarados en los registros" className="flex flex-col gap-1 text-sm text-[var(--color-text)]">

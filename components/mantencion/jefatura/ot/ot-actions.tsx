@@ -13,7 +13,9 @@ import type { MantUnit } from "@/lib/mantencion/types"
 import type { OtStatus, OtTransition } from "@/lib/mantencion/work-order-states"
 import type { WorkOrderRecordForm } from "@/lib/services/mantencion/web-record"
 import type { WorkOrderDetail, WorkOrderItemDetail } from "@/lib/services/mantencion/work-orders/types"
+import type { WorkOrderAvailablePart } from "@/lib/services/mantencion/parts/types"
 import { toast } from "@/lib/toast"
+import { reservedUnusedText, type ReservedUnusedNotice } from "../notas-pedido/reserved-unused"
 import { EditOtSheet, type OtRequestSnapshot } from "./edit-ot-sheet"
 import {
   AssignDialog, EntryDialog, EstimateDialog, FinishDialog, ItemsDialog, ReasonDialog, ReceiptDialog, ReclassifyDialog, type OtBase,
@@ -73,6 +75,13 @@ export interface OtActionsProps {
   executionWorksites: Array<{ id: string; name: string }> | null
   /** `ops.mantencion.ot_action_type_required` encendido: marca el tipo de acción como obligatorio. */
   actionTypeRequired: boolean
+  /**
+   * Repuestos reservados para la OT y sin usar: «Dar conformidad» y «Anular» avisan que pasan a stock libre de la
+   * faena. `null` o ausente = nada reservado (o quien mira no ve las notas de pedido).
+   */
+  reservedUnused?: ReservedUnusedNotice | null
+  /** Repuestos reservados disponibles: los chips «Disponibles para esta OT» del registro web. */
+  availableParts?: WorkOrderAvailablePart[]
 }
 
 type RecordOption = { kind: RecordKind; disabled: boolean }
@@ -290,7 +299,7 @@ export function OtActions(props: OtActionsProps) {
       {dialog === "items" && <ItemsDialog {...dialogProps} items={props.items} />}
       {dialog === "finish" && <FinishDialog {...dialogProps} entryAt={props.entry?.entryAt ?? null} savedWorkPerformed={props.request.workPerformed} savedLaborHours={props.request.laborHours} />}
       {dialog === "receive" && <ReceiptDialog {...dialogProps} mode="receive" defaultName={props.actorName} />}
-      {dialog === "conform" && <ReceiptDialog {...dialogProps} mode="conform" defaultName={props.actorName} />}
+      {dialog === "conform" && <ReceiptDialog {...dialogProps} mode="conform" defaultName={props.actorName} reservedUnused={props.reservedUnused ?? null} />}
       {dialog === "reject" && <ReasonDialog {...dialogProps} mode="reject" />}
       {dialog === "reopen" && <ReasonDialog {...dialogProps} mode="reopen" />}
       {recordKind && recordForm && (
@@ -301,6 +310,7 @@ export function OtActions(props: OtActionsProps) {
           userId={props.actorUserId}
           userName={props.actorName}
           form={recordForm}
+          availableParts={props.availableParts}
           onClose={() => setRecordKind(null)}
         />
       )}
@@ -309,7 +319,7 @@ export function OtActions(props: OtActionsProps) {
         open={dialog === "void"}
         onOpenChange={(open) => { if (!open) setDialog(null) }}
         title={`Anular ${props.folio}`}
-        description="Queda visible como anulada, con su motivo. Si el equipo estaba en taller, vuelve a su estado anterior. No se puede deshacer."
+        description={`Queda visible como anulada, con su motivo. Si el equipo estaba en taller, vuelve a su estado anterior. No se puede deshacer.${props.reservedUnused ? ` ${reservedUnusedText(props.reservedUnused)}` : ""}`}
         variant="destructive"
         confirmLabel="Anular orden"
         reasonLabel="Motivo de la anulación"

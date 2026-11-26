@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 const session = vi.hoisted(() => ({ permissions: ["mant:records:view_all"] as string[] }))
 const scope = vi.hoisted(() => ({ equipment: 3, records: 5, inWorkshop: 1 }))
 const unassigned = vi.hoisted(() => vi.fn(async () => 2))
+const partsNotes = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => ({ rows: [], total: 0, counts: { pendientes: 5, en_gestion: 1, cerradas: 9 } })))
 // Los cargadores de series quedan como espías: la página debe pasarles la ventana de los gráficos (`chart`).
 // El equipo que `resolvePanelEquipment` reconoce dentro del alcance (como el servicio real: uno ajeno devuelve null).
 const equipmentInScope = vi.hoisted(() => ({ id: "v-1", code: "KA-1", plate: "AAAA-01", worksiteId: "ws-1", label: "KA-1 · AAAA-01" }))
@@ -40,6 +41,7 @@ vi.mock("@/lib/services/mantencion/panel", () => ({
   countPendingReview: async () => 4,
 }))
 vi.mock("@/lib/services/mantencion/work-orders/query", () => ({ countUnassignedWorkOrders: unassigned }))
+vi.mock("@/lib/services/mantencion/parts-notes/query", () => ({ listPartsNotes: partsNotes }))
 vi.mock("@/lib/services/mantencion/indicators", () => ({
   loadWorkOrderSeries: loaders.series,
   loadWorkOrderPeriodStats: async () => ({}),
@@ -94,6 +96,7 @@ afterEach(() => {
   session.permissions = ["mant:records:view_all"]
   Object.assign(scope, { equipment: 3, records: 5, inWorkshop: 1 })
   unassigned.mockClear()
+  partsNotes.mockClear()
 })
 
 type Found = { props: Record<string, unknown> }
@@ -146,6 +149,27 @@ describe("/mantencion/panel · franja «Hoy» y gráficos", () => {
     expect(unassigned).not.toHaveBeenCalled()
     expect(findElement(tree, PanelToday)!.props.unassignedOrders).toBeNull()
     expect(findElement(tree, WorkOrdersSection)).toBeNull()
+  })
+
+  it("con permiso de notas de pedido la franja trae las pendientes (la cifra de la pestaña, sin traer filas)", async () => {
+    session.permissions = ["mant:records:view_all", "mant:np:view_worksite"]
+    const tree = await page({ faena: "ws-2" })
+    expect(findElement(tree, PanelToday)!.props.pendingPartsNotes).toBe(5)
+    expect(partsNotes).toHaveBeenCalledWith(expect.anything(), { tab: "pendientes", worksiteId: "ws-2", page: 1, pageSize: 1 })
+  })
+
+  it("sin permiso de notas de pedido no se consultan ni se ofrecen; quien administra también las ve", async () => {
+    const tree = await page()
+    expect(partsNotes).not.toHaveBeenCalled()
+    expect(findElement(tree, PanelToday)!.props.pendingPartsNotes).toBeNull()
+    session.permissions = ["mant:records:view_all", "mant:np:manage"]
+    expect(findElement(await page(), PanelToday)!.props.pendingPartsNotes).toBe(5)
+  })
+
+  it("con un equipo elegido la franja no se pinta y las notas de pedido tampoco se consultan", async () => {
+    session.permissions = ["mant:records:view_all", "mant:np:view_worksite"]
+    await page({ equipo: "v-1" })
+    expect(partsNotes).not.toHaveBeenCalled()
   })
 
   it("la faena elegida acota la franja; una faena fuera del alcance se ignora", async () => {

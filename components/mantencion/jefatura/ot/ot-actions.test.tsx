@@ -266,6 +266,45 @@ describe("OtActions: «Pedir repuestos»", () => {
   })
 })
 
+describe("OtActions: aviso de repuestos reservados sin usar", () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(cleanup)
+
+  const NOTICE = { count: 2, worksiteNames: ["Santa Fe"] }
+  const TEXT = "Quedan 2 repuestos reservados sin usar; pasan a stock libre de Santa Fe."
+
+  it("«Dar conformidad» (que cierra la OT) avisa lo que queda reservado antes de confirmar", async () => {
+    render(<OtActions {...props({ status: "recepcionada", allowedTransitions: ["conform"], reservedUnused: NOTICE })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Dar conformidad" }))
+    const dialog = within(await screen.findByRole("dialog"))
+    expect(dialog.getByText(TEXT)).toBeTruthy()
+  })
+
+  it("«Anular» también lo avisa, con la misma frase", async () => {
+    render(<OtActions {...props({ status: "asignada", allowedTransitions: ["void"], reservedUnused: NOTICE })} />)
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Anular" }))
+    const dialog = within(await screen.findByRole("dialog"))
+    expect(dialog.getByText(new RegExp(TEXT.replace(/[.;]/g, "\\$&")))).toBeTruthy()
+  })
+
+  it("sin repuestos reservados no dice nada, y «Recibir equipo» (que no cierra la OT) tampoco", async () => {
+    render(<OtActions {...props({ status: "recepcionada", allowedTransitions: ["conform"] })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Dar conformidad" }))
+    expect(within(await screen.findByRole("dialog")).queryByText(/reservados sin usar/)).toBeNull()
+    cleanup()
+    render(<OtActions {...props({ status: "trabajo_terminado", allowedTransitions: ["receive"], reservedUnused: NOTICE })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Recibir equipo" }))
+    expect(within(await screen.findByRole("dialog")).queryByText(/reservados sin usar/)).toBeNull()
+  })
+
+  it("en singular concuerda: «Queda 1 repuesto reservado sin usar; pasa a stock libre…»", async () => {
+    render(<OtActions {...props({ status: "recepcionada", allowedTransitions: ["conform"], reservedUnused: { count: 1, worksiteNames: ["Santa Fe", "Biodiversa"] } })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Dar conformidad" }))
+    expect(within(await screen.findByRole("dialog")).getByText("Queda 1 repuesto reservado sin usar; pasa a stock libre de Santa Fe y Biodiversa.")).toBeTruthy()
+  })
+})
+
 describe("OtActions: diálogos y envío con expectedVersion", () => {
   beforeEach(() => vi.clearAllMocks())
   afterEach(cleanup)
