@@ -11,7 +11,7 @@ import type { QueueItem } from "./types"
  *    → fecha → ítems → terminar).
  *  - Un registro enlazado a una OT espera a las operaciones anteriores de esa OT
  *    (el ingreso la deja «en taller», y sólo entonces acepta registros).
- *  - «Terminar» espera a los registros anteriores enlazados a esa OT (el
+ *  - «Registrar salida» (`finish`) espera a los registros anteriores enlazados a esa OT (el
  *    servidor exige al menos uno vigente).
  *  - Un registro enlazado a una OT espera también a las notas de pedido
  *    anteriores de esa OT: la reserva de repuestos que el registro consume

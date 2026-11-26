@@ -163,10 +163,8 @@ export function HomeScreen({ onStart, onResume, onFix, onDiscardRejected, onNeed
             <div>{online ? "Un momento, los estamos trayendo." : "Conéctate una vez para bajarlos; después funciona sin señal."}</div>
           </Banner>
         ) : null}
-        <DueSection rows={due} onPick={(row) => start("P", row.eq.id)} />
 
-        <OtSection views={otViews} onOpen={(view) => setOpenOt(view.ot.id)} />
-
+        {/* Lo que más usa el mecánico va primero, antes de las listas: en un teléfono de 844 px de alto debe quedar sobre el pliegue. */}
         <section className="sect" aria-labelledby="h-nuevo">
           <div className="cap" id="h-nuevo">Nuevo registro</div>
           <button type="button" className="bigbtn" onClick={() => start("P")}>Mantención preventiva<IconChevronRight /></button>
@@ -176,6 +174,10 @@ export function HomeScreen({ onStart, onResume, onFix, onDiscardRejected, onNeed
         <section className="sect">
           <button type="button" className="btns wide" aria-haspopup="dialog" onClick={() => setSearchingHistory(true)}>Historial de un equipo</button>
         </section>
+
+        <DueSection rows={due} onPick={(row) => start("P", row.eq.id)} />
+
+        <OtSection views={otViews} onOpen={(view) => setOpenOt(view.ot.id)} />
 
         <WorkshopSection entries={inWorkshop} onUpdate={setWorkshop} onOpenWorkOrder={openWorkOrder} />
         <RecentSection rows={recent} now={now} records={historyById} onOpen={setOpenRecord} />

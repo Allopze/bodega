@@ -171,9 +171,9 @@ describe("cada hoja con formulario avisa cuando hay algo escrito", () => {
     expect(again).not.toHaveBeenCalled()
   })
 
-  it("Cambiar fecha de entrega: escribir el motivo pregunta", () => {
+  it("Cambiar entrega estimada: escribir el motivo pregunta", () => {
     openOt(workOrder({ status: "en_ejecucion", entry: ENTRY }))
-    fireEvent.click(screen.getByRole("button", { name: "Cambiar fecha de entrega" }))
+    fireEvent.click(screen.getByRole("button", { name: "Cambiar entrega estimada" }))
     fireEvent.change(screen.getByLabelText("Motivo del cambio"), { target: { value: "Falta un repuesto" } })
     pressEsc()
     expect(asking()).toBeTruthy()

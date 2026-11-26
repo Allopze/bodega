@@ -228,11 +228,11 @@ describe("lectura", () => {
     expect(draft.errors.reading).toMatch(/Es menor que la lectura de 40\.312 km del 01-10-2026/)
   })
 
-  it("elegir otra pauta exige motivo; la fecha no puede ser futura", () => {
+  it("elegir otro intervalo exige motivo; la fecha no puede ser futura", () => {
     const ctx = ctxFor()
     const env = buildFlowEnv(ctx)
     let draft = run(start(ctx), ctx, { type: "patch", patch: { readingText: "40312", intervalIndex: 1 } }, { type: "next", env })
-    expect(draft.errors.ivReason).toBeTruthy()
+    expect(draft.errors.ivReason).toBe("Explica por qué usas otro intervalo.")
     draft = run(draft, ctx, { type: "patch", patch: { intervalReason: "la anterior quedó incompleta", workDate: "2026-12-01" } }, { type: "next", env })
     expect(draft.errors.workDate).toMatch(/futura/)
   })

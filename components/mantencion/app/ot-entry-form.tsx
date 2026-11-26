@@ -18,7 +18,7 @@ type Errors = Partial<Record<"kind" | "workshop" | "entryAt" | "reading" | "esti
 
 /**
  * «Ingreso a taller», como en el talonario: taller (interno o externo), encargado,
- * operador, fecha y hora de ingreso, lectura del equipo y fecha estimada de entrega.
+ * operador, fecha y hora de ingreso, lectura del equipo y entrega estimada.
  * Con la lectura en la unidad del equipo (odómetro o horómetro).
  */
 export function OtEntryForm({ view, saving, error, onSubmit, onBack }: {
@@ -62,7 +62,7 @@ export function OtEntryForm({ view, saving, error, onSubmit, onBack }: {
       const check = checkReading({ value: reading, workDate: todayInChile(when), unit: ot.unit, readings: row.readings, initial: row.initial })
       if (!check.ok) next.reading = check.message
     }
-    if (!estimate) next.estimate = "Indica la fecha estimada de entrega."
+    if (!estimate) next.estimate = "Indica la entrega estimada."
     else if (entryDay && estimate < entryDay) next.estimate = "La entrega no puede ser antes del ingreso."
     setErrors(next)
     if (Object.keys(next).length > 0 || !kind || !when || reading === null) return
@@ -132,7 +132,7 @@ export function OtEntryForm({ view, saving, error, onSubmit, onBack }: {
         <FieldError message={errors.reading} />
       </div>
       <div>
-        <Label htmlFor="ot-entrega">Fecha estimada de entrega</Label>
+        <Label htmlFor="ot-entrega">Entrega estimada</Label>
         <input id="ot-entrega" type="date" className={errors.estimate ? "inp bad" : "inp"} value={estimate} min={entryDay ?? undefined} aria-invalid={Boolean(errors.estimate)} onChange={(event) => { setEstimate(event.target.value); setErrors({}) }} />
         <FieldError message={errors.estimate} />
       </div>

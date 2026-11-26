@@ -59,7 +59,7 @@ export function OtItemsEditor({ view, saving, error, onSubmit, onBack }: {
 
   return (
     <>
-      <p className="hint" style={{ marginTop: 0 }}>Marca cada ítem pedido con SÍ (se hizo) o NO (no se hizo). Para terminar la OT todos deben tener una respuesta.</p>
+      <p className="hint" style={{ marginTop: 0 }}>Marca cada ítem pedido con SÍ (se hizo) o NO (no se hizo). Para registrar la salida todos deben tener una respuesta.</p>
       {OT_ITEM_KINDS.map((kind) => {
         const items = ot.items.filter((item) => item.kind === kind)
         const fresh = added.filter((item) => item.kind === kind)

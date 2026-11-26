@@ -18,7 +18,7 @@ describe("avisos del inicio", () => {
     expect(screen.getByText("1 registro observado")).toBeTruthy()
 
     rerender(<ObservationBanner observations={[observation("o1", "r1"), observation("o2", "r1"), observation("o3", "r2")]} onOpen={() => {}} />)
-    expect(screen.getByText("Tu supervisor dejó 3 observaciones. Respóndelas para cerrarlas.")).toBeTruthy()
+    expect(screen.getByText("Tu supervisor dejó observaciones. Respóndelas para cerrarlas.")).toBeTruthy()
     expect(screen.getByText("2 registros observados")).toBeTruthy()
   })
 

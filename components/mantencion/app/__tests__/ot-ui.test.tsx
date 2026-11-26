@@ -105,7 +105,7 @@ describe("hoja de la OT", () => {
     click("Registrar ingreso")
     expect(await screen.findByText("Elige si es taller interno o externo.")).toBeTruthy()
     expect(screen.getByText("Ingresa la lectura del odómetro.")).toBeTruthy()
-    expect(screen.getByText("Indica la fecha estimada de entrega.")).toBeTruthy()
+    expect(screen.getByText("Indica la entrega estimada.")).toBeTruthy()
     expect(await queued()).toHaveLength(0)
 
     click("Externo")
@@ -115,7 +115,7 @@ describe("hoja de la OT", () => {
     fireEvent.change(screen.getByLabelText("Operador · quien trae el equipo"), { target: { value: "d-1" } })
     // Una lectura menor que la última conocida (40.312 km) no pasa.
     fireEvent.change(screen.getByLabelText("Odómetro al ingresar"), { target: { value: "39000" } })
-    fireEvent.change(screen.getByLabelText("Fecha estimada de entrega"), { target: { value: "2099-01-01" } })
+    fireEvent.change(screen.getByLabelText("Entrega estimada"), { target: { value: "2099-01-01" } })
     click("Registrar ingreso")
     expect(await screen.findByText(/Es menor que la lectura de 40\.312 km/)).toBeTruthy()
 
@@ -160,14 +160,14 @@ describe("hoja de la OT", () => {
     expect(screen.getByText("Llegaste al máximo de 12 ítems en esta lista.")).toBeTruthy()
   })
 
-  it("cambiar la fecha estimada exige un motivo y una fecha distinta", async () => {
+  it("cambiar la entrega estimada exige un motivo y una fecha distinta", async () => {
     const base = stored([workOrder({ status: "en_ejecucion", entry: ENTRY })])
     renderSheet(views(base).mine[0]!, base)
-    click("Cambiar fecha de entrega")
+    click("Cambiar entrega estimada")
     click("Guardar fecha")
     expect(await screen.findByText("Elige una fecha distinta a la actual.")).toBeTruthy()
     expect(screen.getByText("Cuenta por qué cambia la fecha (al menos 10 caracteres).")).toBeTruthy()
-    fireEvent.change(screen.getByLabelText("Nueva fecha estimada de entrega"), { target: { value: "2026-11-05" } })
+    fireEvent.change(screen.getByLabelText("Nueva entrega estimada"), { target: { value: "2026-11-05" } })
     // Mismo umbral que el servidor y la web (REASON_MIN_LENGTH): ocho caracteres no alcanzan.
     fireEvent.change(screen.getByLabelText("Motivo del cambio"), { target: { value: "Repuesto" } })
     click("Guardar fecha")
@@ -179,14 +179,14 @@ describe("hoja de la OT", () => {
     expect((await queued())[0]?.payload).toMatchObject({ action: "estimate", estimatedDeliveryDate: "2026-11-05", reason: "Espera un repuesto" })
   })
 
-  it("terminar dice qué falta; con todo listo guarda la salida con fecha y hora", async () => {
+  it("registrar la salida dice qué falta; con todo listo la guarda con fecha y hora", async () => {
     const blocked = stored([workOrder({ status: "en_ejecucion", entry: ENTRY })])
     const first = renderSheet(views(blocked).mine[0]!, blocked)
-    click(/Terminar \(salida de taller\)/)
+    click("Registrar salida de taller")
     expect(screen.getByText("Faltan 2 ítems por marcar con SÍ o NO")).toBeTruthy()
     expect(screen.getByText("Registra al menos una correctiva o preventiva de esta OT")).toBeTruthy()
-    click("Terminar y avisar")
-    expect(await screen.findByText(/Todavía no puedes terminarla: faltan 2 ítems por marcar/)).toBeTruthy()
+    click("Registrar salida y avisar")
+    expect(await screen.findByText(/Todavía no puedes registrar la salida: faltan 2 ítems por marcar/)).toBeTruthy()
     expect(await queued()).toHaveLength(0)
     expect(first.bag.syncNow).not.toHaveBeenCalled()
     cleanup()
@@ -197,9 +197,9 @@ describe("hoja de la OT", () => {
     })])
     renderSheet(views(ready).mine[0]!, ready)
     expect(screen.getByText("MC-BIO-0003", { exact: false })).toBeTruthy()
-    click(/Terminar \(salida de taller\)/)
+    click("Registrar salida de taller")
     expect(screen.getByText("Todo listo: ítems marcados y trabajo registrado.")).toBeTruthy()
-    click("Terminar y avisar")
+    click("Registrar salida y avisar")
     await waitFor(async () => expect(await queued()).toHaveLength(1))
     expect((await queued())[0]?.payload).toMatchObject({ action: "finish", note: null })
   })
@@ -228,7 +228,7 @@ describe("hoja de la OT", () => {
     const base = stored([workOrder({ status: "trabajo_terminado", entry: ENTRY, exitAt: "2026-10-29T12:00:00.000Z" })])
     renderSheet(views(base).mine[0]!, base)
     expect(screen.queryByRole("button", { name: "Registrar correctiva" })).toBeNull()
-    expect(screen.queryByRole("button", { name: /Terminar/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Registrar salida/ })).toBeNull()
     expect(screen.getByRole("button", { name: "Cerrar" })).toBeTruthy()
     expect(screen.getByText("Salida taller")).toBeTruthy()
   })

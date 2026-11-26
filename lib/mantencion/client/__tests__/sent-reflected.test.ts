@@ -118,7 +118,7 @@ describe("rechazos que no son registros (APP-5, APPN-2)", () => {
     expect(notes.map((note) => note.type)).toEqual(["workshop", "reply", "ot"])
     expect(notes[0]).toMatchObject({ title: "KA-140 · Salida de taller", message: "El equipo ya salió de taller." })
     expect(notes[1]?.title).toBe("KA-140 · Respuesta a la observación de MP-BIO-0001")
-    expect(notes[2]?.title).toBe("KA-140 · OT-BIO-0001 · Terminar la OT")
+    expect(notes[2]?.title).toBe("KA-140 · OT-BIO-0001 · Registrar salida de taller")
   })
 
   it("«Entendido» los quita de la cola, y no se podan solos", async () => {

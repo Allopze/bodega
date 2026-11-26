@@ -85,9 +85,9 @@ export interface RejectedNote {
 const OT_ACTION_LABEL: Record<WorkOrderOpRequest["action"], string> = {
   take: "Tomar la OT",
   start: "Ingreso a taller",
-  estimate: "Fecha estimada de entrega",
+  estimate: "Entrega estimada",
   items: "Marcas de ítems",
-  finish: "Terminar la OT",
+  finish: "Registrar salida de taller",
 }
 
 /**
