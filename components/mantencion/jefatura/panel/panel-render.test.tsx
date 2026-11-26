@@ -44,6 +44,23 @@ describe("franja «Hoy» del Panel de mantención", () => {
     expect(workshopBreakdown(0, 0)).toBeUndefined()
   })
 
+  it("«Notas de pedido por resolver» lleva a la bandeja de pendientes con la faena elegida, sin sumar un tile", () => {
+    render(<PanelToday unassignedOrders={2} inWorkshop={3} pendingReview={5} pendingPartsNotes={4} worksiteId="ws-1" />)
+    const today = screen.getByRole("region", { name: "Hoy" })
+    // Cuatro cifras en la misma tira compacta (regla A1: máximo 4, cada una accionable).
+    expect(within(today).getAllByRole("link")).toHaveLength(4)
+    expect(hrefOf(/Notas de pedido por resolver/)).toBe("/mantencion/notas-pedido?estado=pendientes&faena=ws-1")
+    expect(screen.getByRole("link", { name: /Notas de pedido por resolver/ }).textContent).toContain("4")
+  })
+
+  it("sin notas pendientes lo dice con palabras; sin permiso para verlas la cifra no se ofrece", () => {
+    const { rerender } = render(<PanelToday unassignedOrders={null} inWorkshop={1} pendingReview={null} pendingPartsNotes={0} worksiteId={null} />)
+    expect(screen.getByRole("link", { name: /Notas de pedido por resolver/ }).textContent).toContain("Ninguna")
+    expect(hrefOf(/Notas de pedido por resolver/)).toBe("/mantencion/notas-pedido?estado=pendientes")
+    rerender(<PanelToday unassignedOrders={null} inWorkshop={1} pendingReview={null} pendingPartsNotes={null} worksiteId={null} />)
+    expect(screen.queryByRole("link", { name: /Notas de pedido por resolver/ })).toBeNull()
+  })
+
   it("sin ninguna cifra que mostrar no deja una franja vacía", () => {
     const { container } = render(<PanelToday unassignedOrders={null} inWorkshop={null} pendingReview={null} worksiteId={null} />)
     expect(container).toBeEmptyDOMElement()

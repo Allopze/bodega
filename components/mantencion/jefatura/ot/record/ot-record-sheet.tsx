@@ -20,9 +20,11 @@ import { newDraft, stepsFor, type FlowDraft, type FlowStep } from "@/lib/mantenc
 import { validateAll } from "@/lib/mantencion/client/flow-validate"
 import { capturePhoto, PhotoError } from "@/lib/mantencion/client/photo-capture"
 import type { MantPhotoKind } from "@/lib/mantencion/types"
+import type { WorkOrderAvailablePart } from "@/lib/services/mantencion/parts/types"
 import type { WorkOrderRecordForm } from "@/lib/services/mantencion/web-record"
 import { toast } from "@/lib/toast"
 import { todayInChile } from "@/lib/utils"
+import { withStockFields } from "../../notas-pedido/record-stock-parts"
 import { RecordStepFotos, RecordStepRevisar, type LoadedPhoto, type PhotoHandlers } from "./record-step-fotos-revisar"
 import { RecordStepLectura } from "./record-step-lectura"
 import { RecordStepPauta, RecordStepTrabajo } from "./record-step-trabajo"
@@ -59,6 +61,8 @@ export interface OtRecordSheetProps {
   userId: string
   userName: string
   form: WorkOrderRecordForm
+  /** Repuestos reservados para la OT y sin usar (chips «Disponibles para esta OT»); sin ellos, sólo texto libre. */
+  availableParts?: readonly WorkOrderAvailablePart[]
   onClose: () => void
 }
 
@@ -72,7 +76,7 @@ export interface OtRecordSheetProps {
  * Se monta al abrirse: cada apertura es un registro nuevo (id nuevo). Cerrar con
  * algo escrito pide confirmar; un rechazo del servidor lleva al paso del campo.
  */
-export function OtRecordSheet({ kind, workOrderId, folio, userId, userName, form, onClose }: OtRecordSheetProps) {
+export function OtRecordSheet({ kind, workOrderId, folio, userId, userName, form, availableParts, onClose }: OtRecordSheetProps) {
   const router = useRouter()
   const [draft, dispatch] = React.useReducer(flowReducer, undefined, () => newDraft({
     userId, kind, vehicleId: form.equipment.id, schedule: form.schedule, workOrderId,
@@ -153,7 +157,8 @@ export function OtRecordSheet({ kind, workOrderId, folio, userId, userName, form
     const built = buildRecord(draft, { row, deviceId: MANT_WEB_DEVICE_ID, appVersion: MANT_WEB_APP_VERSION, offlineSince: null, now: new Date() })
     if (!built.ok) { op.setMessage(built.message, "error"); return }
     const data = new FormData()
-    data.set("record", JSON.stringify(built.payload))
+    // Las líneas de bodega viajan con su producto y su reserva (el servidor concilia si falta stock).
+    data.set("record", JSON.stringify(withStockFields(built.payload, draft)))
     for (const photo of built.payload.photos) {
       const stored = photos[photo.id]
       if (!stored) { op.setMessage("Falta una de las fotos. Vuelve a cargarla.", "error"); return }
@@ -194,7 +199,7 @@ export function OtRecordSheet({ kind, workOrderId, folio, userId, userName, form
           </SheetHeader>
           <SheetBody>
             {step === "lectura" && <RecordStepLectura draft={draft} dispatch={dispatch} row={row} onConfirm={confirmAndNext} />}
-            {step === "trabajo" && <RecordStepTrabajo draft={draft} dispatch={dispatch} row={row} catalogs={catalogs} folio={folio} />}
+            {step === "trabajo" && <RecordStepTrabajo draft={draft} dispatch={dispatch} row={row} catalogs={catalogs} folio={folio} availableParts={availableParts} />}
             {step === "pauta" && <RecordStepPauta draft={draft} dispatch={dispatch} row={row} />}
             {step === "fotos" && <RecordStepFotos draft={draft} dispatch={dispatch} handlers={handlers} />}
             {step === "revisar" && <RecordStepRevisar draft={draft} dispatch={dispatch} row={row} catalogs={catalogs} folio={folio} userName={userName} />}

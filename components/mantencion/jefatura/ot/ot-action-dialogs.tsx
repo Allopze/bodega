@@ -8,6 +8,7 @@ import {
   startWorkOrderAction, updateWorkOrderEntryAction,
 } from "@/app/(app)/mantencion/ot/[id]/actions"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Combobox } from "@/components/ui/combobox"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -25,6 +26,7 @@ import type { WorkOrderDetail, WorkOrderItemDetail } from "@/lib/services/manten
 import { toast } from "@/lib/toast"
 import { chileLocalDateTimeToUtc, chileWallClockDate } from "@/lib/utils"
 import { isValidReason, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
+import { reservedUnusedText, type ReservedUnusedNotice } from "../notas-pedido/reserved-unused"
 
 /** Datos que viajan con toda acción sobre una OT existente. */
 export interface OtBase {
@@ -449,8 +451,13 @@ export function FinishDialog({
 // ── Recepción y recepción en faena (conformidad) ─────────────────────────────
 
 export function ReceiptDialog({
-  open, onOpenChange, base, folio, mode, defaultName,
-}: DialogProps & { mode: "receive" | "conform"; defaultName: string }) {
+  open, onOpenChange, base, folio, mode, defaultName, reservedUnused = null,
+}: DialogProps & {
+  mode: "receive" | "conform"
+  defaultName: string
+  /** Repuestos reservados para la OT y sin usar: la conformidad la cierra y pasan a stock libre de la faena (ADR 0001, D5). */
+  reservedUnused?: ReservedUnusedNotice | null
+}) {
   const [at, setAt] = React.useState(chileNowLocal)
   const [name, setName] = React.useState(defaultName)
   const op = useOtAction(() => onOpenChange(false))
@@ -478,6 +485,7 @@ export function ReceiptDialog({
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">
+            {conform && reservedUnused && <Callout tone="info"><p>{reservedUnusedText(reservedUnused)}</p></Callout>}
             <Field label="Fecha y hora" htmlFor="ot-receipt-at" required>
               <DateTimePicker id="ot-receipt-at" value={at} onChange={setAt} />
             </Field>

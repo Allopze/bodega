@@ -17,6 +17,10 @@ import { checklistCounts, HOURS_MAX, HOURS_MIN, HOURS_WARNING } from "@/lib/mant
 import { formatHours, formatReading } from "@/lib/mantencion/format"
 import { groupChecklist } from "@/lib/mantencion/schedule"
 import type { MantItemValue } from "@/lib/mantencion/types"
+import type { WorkOrderAvailablePart } from "@/lib/services/mantencion/parts/types"
+import { formatQty } from "@/lib/utils"
+import { AvailablePartChips } from "../../notas-pedido/available-part-chips"
+import { addStockPart, capStockQuantity, isStockPart, leftByAllocation, stockLineMax } from "../../notas-pedido/record-stock-parts"
 import { RecordEquipment } from "./record-step-lectura"
 
 type Named = { id: string; name: string }
@@ -35,8 +39,16 @@ function ErrorText({ message }: { message: string | undefined }) {
   return message ? <p role="alert" className={ERROR}>{message}</p> : null
 }
 
-function JobCard({ job, name, error, dispatch }: { job: FlowJob; name: string; error: string | undefined; dispatch: React.Dispatch<FlowAction> }) {
+/** Lo que la tarjeta de un trabajo necesita para ofrecer los repuestos reservados para la OT. */
+interface StockAids {
+  available: readonly WorkOrderAvailablePart[]
+  jobs: readonly FlowJob[]
+  onAdd: (workTypeId: string, part: WorkOrderAvailablePart) => void
+}
+
+function JobCard({ job, name, error, dispatch, stock }: { job: FlowJob; name: string; error: string | undefined; dispatch: React.Dispatch<FlowAction>; stock: StockAids }) {
   const id = job.workTypeId
+  const left = leftByAllocation(stock.available, stock.jobs)
   return (
     <div role="group" aria-label={`Trabajo ${name}`} className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] p-3">
       <div className="flex items-center justify-between gap-2">
@@ -58,16 +70,28 @@ function JobCard({ job, name, error, dispatch }: { job: FlowJob; name: string; e
       {!job.noParts && (
         <div className="flex flex-col gap-2">
           <p className="text-sm text-[var(--color-text-muted)]">Repuestos · cantidad y repuesto</p>
-          {job.parts.map((part, index) => (
-            <div key={index} className="grid grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-2">
-              <Input aria-label={`Cantidad del repuesto ${index + 1} de ${name}`} inputMode="decimal" value={part.quantity}
-                onChange={(event) => dispatch({ type: "jobPart", workTypeId: id, index, field: "quantity", text: event.target.value })} />
-              <Input aria-label={`Repuesto ${index + 1} de ${name}`} value={part.description} placeholder="Ej: Filtro de aceite" maxLength={300}
-                onChange={(event) => dispatch({ type: "jobPart", workTypeId: id, index, field: "description", text: event.target.value })} />
-              <Button type="button" size="sm" variant="ghost" aria-label={`Quitar repuesto ${index + 1} de ${name}`}
-                onClick={() => dispatch({ type: "jobPartRemove", workTypeId: id, index })}><X className="h-4 w-4" aria-hidden /></Button>
-            </div>
-          ))}
+          {job.parts.map((part, index) => {
+            // Una línea de bodega no se renombra y su cantidad topa en lo reservado; el texto libre sigue como siempre.
+            const reserved = isStockPart(part) ? stock.available.find((candidate) => candidate.allocationId === part.allocationId) : undefined
+            const max = reserved ? stockLineMax(stock.jobs, reserved, part) : null
+            return (
+              <div key={index} className="grid grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-2">
+                <Input aria-label={`Cantidad del repuesto ${index + 1} de ${name}`} inputMode="decimal" value={part.quantity}
+                  onChange={(event) => dispatch({
+                    type: "jobPart", workTypeId: id, index, field: "quantity",
+                    text: reserved && max !== null ? capStockQuantity(event.target.value, { max, wholeOnly: reserved.wholeOnly }) : event.target.value,
+                  })} />
+                <Input aria-label={`Repuesto ${index + 1} de ${name}`} value={part.description} placeholder="Ej: Filtro de aceite" maxLength={300} readOnly={!!reserved}
+                  onChange={(event) => dispatch({ type: "jobPart", workTypeId: id, index, field: "description", text: event.target.value })} />
+                <Button type="button" size="sm" variant="ghost" aria-label={`Quitar repuesto ${index + 1} de ${name}`}
+                  onClick={() => dispatch({ type: "jobPartRemove", workTypeId: id, index })}><X className="h-4 w-4" aria-hidden /></Button>
+                {reserved && max !== null && (
+                  <p className="col-span-3 -mt-1 text-xs text-[var(--color-text-muted)]">De la bodega, reservado para esta OT · hasta {formatQty(max)}</p>
+                )}
+              </div>
+            )
+          })}
+          <AvailablePartChips available={stock.available} left={left} onAdd={(part) => stock.onAdd(id, part)} />
           <Button type="button" size="sm" variant="secondary" className="self-start" onClick={() => dispatch({ type: "jobPartAdd", workTypeId: id })}>
             <Plus className="h-4 w-4" aria-hidden /> Agregar repuesto
           </Button>
@@ -84,12 +108,14 @@ function JobCard({ job, name, error, dispatch }: { job: FlowJob; name: string; e
  * quién lo hizo, aceite, descripción y conductores. Con la OT no se pregunta si
  * el equipo queda en taller ni el Nº de OT en papel: el taller lo lleva la OT.
  */
-export function RecordStepTrabajo({ draft, dispatch, row, catalogs, folio }: {
+export function RecordStepTrabajo({ draft, dispatch, row, catalogs, folio, availableParts = [] }: {
   draft: FlowDraft
   dispatch: React.Dispatch<FlowAction>
   row: FleetRow
   catalogs: TrabajoCatalogs
   folio: string
+  /** Repuestos reservados para la OT y sin usar: los chips «Disponibles para esta OT». */
+  availableParts?: readonly WorkOrderAvailablePart[]
 }) {
   const { errors } = draft
   const nameOf = (id: string) => catalogs.workTypes.find((type) => type.id === id)?.name ?? "Trabajo"
@@ -98,6 +124,16 @@ export function RecordStepTrabajo({ draft, dispatch, row, catalogs, folio }: {
   const chosenDrivers = draft.driverIds.map((id) => catalogs.drivers.find((driver) => driver.id === id)).filter((driver): driver is Named => !!driver)
   const driverOptions = catalogs.drivers.filter((driver) => !draft.driverIds.includes(driver.id)).map((driver) => ({ value: driver.id, label: driver.name }))
 
+  // Un clic en un chip agrega la línea de bodega (o suma 1 a la que ya hay) sin pasar de lo reservado.
+  const stock: StockAids = {
+    available: availableParts,
+    jobs: draft.jobs,
+    onAdd: (workTypeId, part) => {
+      const left = leftByAllocation(availableParts, draft.jobs)[part.allocationId] ?? 0
+      dispatch({ type: "patch", patch: { jobs: draft.jobs.map((job) => (job.workTypeId === workTypeId ? addStockPart(job, part, left) : job)) } })
+    },
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <RecordEquipment row={row} />
@@ -105,7 +141,7 @@ export function RecordStepTrabajo({ draft, dispatch, row, catalogs, folio }: {
       <section aria-labelledby="ot-rec-jobs" className="flex flex-col gap-3">
         <h3 id="ot-rec-jobs" className="text-sm font-semibold">Trabajos realizados <span className="font-normal text-[var(--color-text-muted)]">· uno por tipo de trabajo</span></h3>
         {draft.jobs.map((job) => (
-          <JobCard key={job.workTypeId} job={job} name={nameOf(job.workTypeId)} error={errors[`job:${job.workTypeId}`]} dispatch={dispatch} />
+          <JobCard key={job.workTypeId} job={job} name={nameOf(job.workTypeId)} error={errors[`job:${job.workTypeId}`]} dispatch={dispatch} stock={stock} />
         ))}
         {available.length > 0 && (
           <div role="group" aria-label="Agregar trabajo" className="flex flex-wrap gap-2">

@@ -9,8 +9,11 @@ import {
   OtHeaderSection, OtItemsSection, OtObservationsSection, OtPartsRequestsSection, OtProgressSection, OtRejectionNotice, OtRepairSection, OtWorkPerformedSection,
   OtTransferredNotice, OtVoidedNotice,
 } from "@/components/mantencion/jefatura/ot/ot-sections"
-import { can, requireAnyPermission } from "@/lib/auth/can"
+import { reservedUnusedNotice } from "@/components/mantencion/jefatura/notas-pedido/reserved-unused"
+import { can, canAny, requireAnyPermission } from "@/lib/auth/can"
+import { logger } from "@/lib/logger"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
+import { loadWorkOrderPartsOverview } from "@/lib/services/mantencion/parts-notes/query"
 import { loadWorkOrderRecordForm } from "@/lib/services/mantencion/web-record"
 import { listAssignableMechanics, listExecutionWorksiteOptions, loadWorkOrderDetail, loadWorkOrderEntryCatalogs } from "@/lib/services/mantencion/work-orders/query"
 import { getOperationalSettings } from "@/lib/services/system-settings"
@@ -48,13 +51,25 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
   const canOpenSpareParts = can(session, "repuestos:catalog")
   // Los catálogos sólo se consultan cuando el usuario puede usarlos.
   const needsClassificationForm = detail.canEditRequest || detail.canReclassify
-  const [mechanics, entryCatalogs, recordForm, executionWorksites, settings] = await Promise.all([
+  // Notas de pedido de la OT: quien las ve en la bandeja las abre desde aquí; quien administra libera reservas.
+  const canOpenNotes = canAny(session, "mant:np:view_worksite", "mant:np:manage")
+  const canManageNotes = can(session, "mant:np:manage")
+  // El resumen también alimenta los chips del registro web y el aviso al conformar o anular, así que se pide si se
+  // puede ver o registrar. Si falla, la OT se muestra igual con lo de siempre: no se cae la página por esta sección.
+  const wantsOverview = canOpenNotes || detail.canRegisterRecord
+  const [mechanics, entryCatalogs, recordForm, executionWorksites, settings, partsOverview] = await Promise.all([
     allowed.has("assign") ? listAssignableMechanics() : Promise.resolve(null),
     needsEntryCatalogs ? loadWorkOrderEntryCatalogs() : Promise.resolve(null),
     detail.canRegisterRecord ? loadWorkOrderRecordForm(viewer, detail) : Promise.resolve(null),
     // «Editar solicitud» y «Corregir clasificación» eligen la faena de ejecución y marcan el tipo de acción como obligatorio.
     needsClassificationForm ? listExecutionWorksiteOptions() : Promise.resolve(null),
     needsClassificationForm ? getOperationalSettings() : Promise.resolve(null),
+    wantsOverview
+      ? loadWorkOrderPartsOverview(viewer, detail.id).catch((error: unknown) => {
+          logger.warn("[mantencion-ot] resumen de repuestos falló", error)
+          return null
+        })
+      : Promise.resolve(null),
   ])
   const requestItems = (kind: "anexo" | "mantencion") => detail.items.filter((item) => item.origin === "solicitud" && item.kind === kind).map((item) => item.description)
 
@@ -97,6 +112,8 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
             canReclassify={detail.canReclassify}
             executionWorksites={executionWorksites}
             actionTypeRequired={settings?.mantencionActionTypeRequired === 1}
+            reservedUnused={partsOverview ? reservedUnusedNotice(partsOverview.available) : null}
+            availableParts={partsOverview?.available}
             request={{
               equipmentLabel: equipmentText(detail),
               worksiteId: detail.worksiteId,
@@ -131,7 +148,15 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
           <OtRepairSection detail={detail} />
           <OtItemsSection detail={detail} kind="anexo" />
           <OtItemsSection detail={detail} kind="mantencion" />
-          <OtPartsRequestsSection detail={detail} canOpenRequests={canOpenRequests} canOpenSpareParts={canOpenSpareParts} partsRequestHref={partsRequestHref} />
+          <OtPartsRequestsSection
+            detail={detail}
+            canOpenRequests={canOpenRequests}
+            canOpenSpareParts={canOpenSpareParts}
+            partsRequestHref={partsRequestHref}
+            overview={partsOverview}
+            canOpenNotes={canOpenNotes}
+            canManageNotes={canManageNotes}
+          />
           <OtWorkPerformedSection detail={detail} />
           <OtObservationsSection detail={detail} />
         </div>

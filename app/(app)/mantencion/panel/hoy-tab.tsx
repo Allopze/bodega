@@ -29,6 +29,7 @@ import {
   summarizeMaintenanceWork,
 } from "@/lib/services/mantencion/maintenance-work"
 import { countPendingReview, loadPanelWorksites } from "@/lib/services/mantencion/panel"
+import { listPartsNotes } from "@/lib/services/mantencion/parts-notes/query"
 import { loadReporteEquipos } from "@/lib/services/mantencion/reporte-equipos"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { hasNoEquipmentInScope, PanelEmptyState } from "@/components/mantencion/jefatura/panel/panel-empty"
@@ -76,6 +77,7 @@ export async function renderHoyTab(session: Session, params: SearchParams) {
 
   const canViewOrders = can(session, "mant:ot:view_worksite") || can(session, "mant:ot:view_all")
   const canExport = can(session, "mant:export")
+  const canViewNotes = can(session, "mant:np:view_worksite") || can(session, "mant:np:manage")
 
   const query: MantIndicatorQuery = {
     from: period.from,
@@ -113,7 +115,7 @@ export async function renderHoyTab(session: Session, params: SearchParams) {
   }
   const none = <T,>(): Promise<T | null> => Promise.resolve(null)
 
-  const [series, stats, byStatus, ranking, pautas, records, outOfService, unassignedOrders, pendingReview, reporteEquipos, work, compliance, findings] = await Promise.all([
+  const [series, stats, byStatus, ranking, pautas, records, outOfService, unassignedOrders, pendingReview, pendingPartsNotes, reporteEquipos, work, compliance, findings] = await Promise.all([
     canViewOrders ? track(loadWorkOrderSeries(viewer, query), "órdenes por período") : none<Awaited<ReturnType<typeof loadWorkOrderSeries>>>(),
     canViewOrders ? track(loadWorkOrderPeriodStats(viewer, query), "cifras de órdenes") : none<Awaited<ReturnType<typeof loadWorkOrderPeriodStats>>>(),
     canViewOrders ? track(loadOpenWorkOrdersByStatus(viewer, query.worksiteId, query.vehicleId), "órdenes abiertas por estado") : none<Awaited<ReturnType<typeof loadOpenWorkOrdersByStatus>>>(),
@@ -123,6 +125,10 @@ export async function renderHoyTab(session: Session, params: SearchParams) {
     track(loadOutOfService(viewer, query), "días fuera de servicio"),
     canViewOrders && byFleet ? track(countUnassignedWorkOrders(viewer, query.worksiteId), "órdenes por asignar") : none<number>(),
     byFleet ? track(countPendingReview(viewer, query.worksiteId), "registros por revisar") : none<number>(),
+    // La cifra de la pestaña «Pendientes» de la bandeja: se pide una fila sólo para leer el conteo.
+    canViewNotes && byFleet
+      ? track(listPartsNotes(viewer, { tab: "pendientes", worksiteId: query.worksiteId, page: 1, pageSize: 1 }).then((result) => result.counts.pendientes), "notas de pedido por resolver")
+      : none<number>(),
     byFleet ? track(loadReporteEquipos(viewer, query), "reportes de equipos") : none<Awaited<ReturnType<typeof loadReporteEquipos>>>(),
     track(
       loadMaintenanceWork(viewer, workQuery).then((result) => ({
@@ -221,6 +227,7 @@ export async function renderHoyTab(session: Session, params: SearchParams) {
               inWorkshop={pautas?.inWorkshop ?? null}
               inWorkshopByOrder={pautas?.inWorkshopByOrder ?? null}
               pendingReview={pendingReview}
+              pendingPartsNotes={pendingPartsNotes}
               worksiteId={worksiteId}
             />
           )}
