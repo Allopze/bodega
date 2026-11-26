@@ -73,7 +73,7 @@ function Line({ note, line, canAct, buyHref, canOpenRequests, canOpenOrders }: {
           ))}
         </ul>
       )}
-      {canAct && <NoteLineActions noteId={note.id} line={line} worksiteName={note.worksiteName} buyHref={buyHref} />}
+      {canAct && <NoteLineActions noteId={note.id} line={line} worksiteName={note.worksiteName} buyHref={buyHref} stockOptions={note.stockOptions ?? []} />}
     </li>
   )
 }

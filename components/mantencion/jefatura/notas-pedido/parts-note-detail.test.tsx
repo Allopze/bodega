@@ -118,11 +118,25 @@ describe("PartsNoteDetailView: líneas", () => {
     expect(screen.queryByRole("link", { name: "Comprar" })).toBeNull()
   })
 
-  it("una línea sin repuesto de catálogo no se saca de la bodega: lo dice y deja «Comprar»", () => {
-    view({ note: noteDetail({ lines: [noteLine({ productId: null, freeInWorksite: null })] }) })
+  it("una línea en texto libre sin repuestos con stock en la faena no se saca de la bodega: lo dice y deja «Comprar»", () => {
+    view({ note: noteDetail({ lines: [noteLine({ productId: null, freeInWorksite: null })], stockOptions: [] }) })
     expect((screen.getByRole("button", { name: "Sacar de bodega" }) as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.getByText(/no está en el catálogo/)).toBeTruthy()
+    expect(screen.getByText(/No hay repuestos con stock libre en Biodiversa/)).toBeTruthy()
     expect(screen.getByRole("link", { name: "Comprar" })).toBeTruthy()
+  })
+
+  it("una línea en texto libre se saca de la bodega eligiendo el repuesto entre los que tienen stock (lo encontró la E2E)", async () => {
+    actions.resolveNoteItemFromStockAction.mockResolvedValue({ ok: true, message: "Apartado." })
+    view({ note: noteDetail({
+      lines: [noteLine({ productId: null, productName: null, freeInWorksite: null, description: "Filtro de aceite motor", quantity: 1 })],
+      stockOptions: [{ productId: "p9", name: "Filtro de aceite FA-1", partNumber: "FA-1", unit: "unidad", free: 3 }],
+    }) })
+    fireEvent.click(screen.getByRole("button", { name: "Sacar de bodega" }))
+    const dialog = within(await screen.findByRole("dialog"))
+    expect(dialog.getByText(/El mecánico pidió «Filtro de aceite motor»/)).toBeTruthy()
+    expect(dialog.getByText("3 libres en Biodiversa")).toBeTruthy()
+    fireEvent.click(dialog.getByRole("button", { name: "Sacar de bodega" }))
+    await waitFor(() => expect(actions.resolveNoteItemFromStockAction).toHaveBeenCalledWith({ noteId: "n1", itemId: "i1", productId: "p9", quantity: 1 }))
   })
 })
 
