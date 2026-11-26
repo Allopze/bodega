@@ -80,7 +80,9 @@ test("el catálogo del mecánico trae sólo sus faenas y un registro ajeno queda
 
   const others = await bearerGet<MantCatalogOthers>(page.request, mec2Token, "/api/mantencion/sync/catalogo?alcance=todos")
   expect(others.status).toBe(200)
-  const target = others.body!.equipment.find((equipment) => equipment.worksiteName === "Cholguan" && equipment.unit === "km")
+  // La unidad es del equipo (2026-11-25): los camiones de Cholguan miden en horas, y en Cholguan ya no hay equipos en km.
+  // Lo que se prueba es la faena ajena, no la unidad: sirve cualquier equipo de Cholguan.
+  const target = others.body!.equipment.find((equipment) => equipment.worksiteName === "Cholguan")
   expect(target, "debe haber un equipo de Cholguan en la carga liviana").toBeTruthy()
 
   // Correctiva por API sobre un equipo de otra faena: foto primero, registro después.

@@ -62,9 +62,11 @@ const closeFilter = async (page: Page) => { await page.keyboard.press("Escape");
 
 test("las listas de Código y Frecuencia se acotan a la unidad de la pestaña, y Planificación ofrece las dos", async ({ page }) => {
   // Lo que la base E2E tiene: equipos activos con ficha por unidad, y los intervalos de las pautas que esos equipos usan.
+  // La unidad es la del equipo (`mant_equipment_profiles.unit`) y, si no la fija, la de su tipo: un camión de Cholguan mide en horas
+  // aunque su tipo sea de odómetro (2026-11-25).
   const { equipment, frequencies } = await withSql(async (sql) => ({
     equipment: Object.fromEntries((await sql<Array<{ meter: string; n: number }>>`
-      select t.default_meter_type as meter, count(*)::int as n
+      select coalesce(case p.unit when 'km' then 'odometer' when 'h' then 'hour_meter' end, t.default_meter_type) as meter, count(*)::int as n
         from mant_equipment_profiles p join fuel_vehicles v on v.id = p.vehicle_id
         join fuel_equipment_types t on t.id = v.equipment_type_id join worksites w on w.id = v.worksite_id
        where v.is_active group by 1`).map((item) => [item.meter, item.n])) as Record<string, number>,

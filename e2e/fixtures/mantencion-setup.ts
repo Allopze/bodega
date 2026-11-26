@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import { and, asc, eq, inArray } from "drizzle-orm"
+import { and, asc, eq, inArray, isNull, isNotNull } from "drizzle-orm"
 import * as schema from "../../db/schema"
 import type { DB } from "../../db"
 import { SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "../../lib/auth/system-rbac"
+import { ODOMETER_TRUCK_WORKSITE_CODE, TRUCK_PERFORMANCE_FAMILY } from "../../lib/mantencion/equipment-unit"
 import { seedMantencion } from "../../lib/services/mantencion/seed"
+import { createWorksiteTx } from "../../lib/services/worksite-create"
 
 /**
  * Fixtures del módulo de mantención de equipos para las E2E
@@ -22,6 +24,13 @@ import { seedMantencion } from "../../lib/services/mantencion/seed"
  *   (administrador de contrato de Biodiversa), `admin.contrato.cho@e2e.chome.cl` (el de
  *   Cholguan, que prueba el alcance) y `mecanico.cho@e2e.chome.cl` (mecánico de Cholguan,
  *   que prueba que una OT de Biodiversa se ejecuta desde otra faena).
+ * - La unidad de medida es del equipo (`mant_equipment_profiles.unit`, 2026-11-25) y el fixture la deja
+ *   como en producción: los camiones y tractos de Biodiversa miden en km con la pauta «Camiones y
+ *   tractos»; los de cualquier otra faena, en horas con «Maquinaria pesada» (la que eligió el usuario
+ *   al moverlos); la maquinaria ya mide en horas por su tipo. La regla de alta mira el CÓDIGO de la
+ *   faena (`BIODIVERSA`), así que la faena se crea aquí con ese código y no con el `MANT-<folio>` que
+ *   le pondría la carga inicial. Consecuencia para las specs: todos los equipos de Cholguan y de Teno
+ *   miden en horas; sólo los 8 de Biodiversa miden en km.
  * - Lecturas iniciales que dejan tres equipos de Biodiversa medidos en km
  *   «Próximos» (39.900 km → toca la de 40.000), para que «Le toca mantención»
  *   tenga qué mostrar sin depender de registros previos. Desde 2026-11-22 un
@@ -62,6 +71,11 @@ export async function seedMantencionE2E(db: DB, options: { hashedPassword: strin
   // faena activa genera su programa de Prevención y agranda pantallas de otras suites
   // (capacitación, el selector de faena de MIPER), que dejaban de pasar sólo por eso.
   const ACTIVE = new Set(["Biodiversa", "Cholguan", "Teno"])
+  // Biodiversa nace con el código de producción (`BIODIVERSA`): de él depende que sus camiones y tractos
+  // midan en km. La carga la reutiliza por nombre y sólo le asigna el folio.
+  await db.transaction((tx) => createWorksiteTx(
+    tx, { name: "Biodiversa", code: ODOMETER_TRUCK_WORKSITE_CODE, isActive: true }, { userId: "user-admin-e2e" },
+  ))
   const names = [...new Set([...data.faenas.map((faena) => faena.nombre), ...data.equipos.map((equipo) => equipo.faena)])]
   const dormant = names.filter((name) => !ACTIVE.has(name))
   if (dormant.length) {
@@ -74,7 +88,7 @@ export async function seedMantencionE2E(db: DB, options: { hashedPassword: strin
   // autorizan aquí; las demás ya existen (dadas de baja) y se reutilizan por nombre.
   await seedMantencion(db, data as Parameters<typeof seedMantencion>[1], {
     actorUserId: "user-admin-e2e",
-    faenas: { equivalencias: {}, crear: [...ACTIVE], crearDesactivadas: [] },
+    faenas: { equivalencias: {}, crear: [...ACTIVE].filter((name) => name !== "Biodiversa"), crearDesactivadas: [] },
   })
 
   const [biodiversa] = await db.select({ id: schema.worksites.id }).from(schema.worksites)
@@ -99,18 +113,41 @@ export async function seedMantencionE2E(db: DB, options: { hashedPassword: strin
     }
   }
 
+  // Los camiones y tractos que miden en horas (todos los de fuera de Biodiversa) quedan con «Maquinaria pesada»,
+  // la pauta en horas que eligió el usuario al moverlos (la carga inicial los deja sin pauta porque la de camiones es en km).
+  const [hoursSchedule] = await db.select({ id: schema.mantSchedules.id }).from(schema.mantSchedules)
+    .where(and(eq(schema.mantSchedules.name, "Maquinaria pesada"), eq(schema.mantSchedules.unit, "h"), isNull(schema.mantSchedules.deletedAt)))
+    .limit(1)
+  if (!hoursSchedule) throw new Error("La carga inicial no creó la pauta «Maquinaria pesada»")
+  const trucksInHours = await db
+    .select({ vehicleId: schema.mantEquipmentProfiles.vehicleId })
+    .from(schema.mantEquipmentProfiles)
+    .innerJoin(schema.fuelVehicles, eq(schema.fuelVehicles.id, schema.mantEquipmentProfiles.vehicleId))
+    .innerJoin(schema.fuelEquipmentTypes, eq(schema.fuelEquipmentTypes.id, schema.fuelVehicles.equipmentTypeId))
+    .where(and(
+      eq(schema.fuelEquipmentTypes.performanceFamily, TRUCK_PERFORMANCE_FAMILY),
+      eq(schema.mantEquipmentProfiles.unit, "h"),
+      isNull(schema.mantEquipmentProfiles.scheduleId),
+    ))
+  if (trucksInHours.length) {
+    await db.update(schema.mantEquipmentProfiles)
+      .set({ scheduleId: hoursSchedule.id })
+      .where(inArray(schema.mantEquipmentProfiles.vehicleId, trucksInHours.map((row) => row.vehicleId)))
+  }
+
   // Tres equipos km de Biodiversa quedan «Próximos» (falta 100 km para 40.000).
   const kmVehicles = await db
     .select({ vehicleId: schema.fuelVehicles.id })
     .from(schema.mantEquipmentProfiles)
     .innerJoin(schema.fuelVehicles, eq(schema.fuelVehicles.id, schema.mantEquipmentProfiles.vehicleId))
-    .innerJoin(schema.fuelEquipmentTypes, eq(schema.fuelEquipmentTypes.id, schema.fuelVehicles.equipmentTypeId))
     .where(and(
       eq(schema.fuelVehicles.worksiteId, biodiversa.id),
-      eq(schema.fuelEquipmentTypes.defaultMeterType, "odometer"),
+      eq(schema.mantEquipmentProfiles.unit, "km"),
+      isNotNull(schema.mantEquipmentProfiles.scheduleId),
     ))
     .orderBy(asc(schema.fuelVehicles.code))
     .limit(3)
+  if (kmVehicles.length < 3) throw new Error(`Biodiversa debe tener 3 equipos en km con pauta y tiene ${kmVehicles.length}`)
   // Treinta días atrás: lejos de la medianoche UTC/Chile, la lectura inicial
   // nunca queda «después» del trabajo que registra la prueba hoy.
   const initialDate = new Date(Date.parse(options.now) - 30 * 86_400_000).toISOString().slice(0, 10)
