@@ -83,6 +83,10 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion/sync" },
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion/dispositivo" },
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion" },
+  // «Ir a…» con un folio (`/mantencion/ir?folio=`) lleva a una OT, un registro o una nota: no es
+  // de ningún submódulo y depende sólo del módulo (cada ficha de destino aplica su propio interruptor).
+  // Sin esto caía en el fallback de abajo y apagar el Panel lo bloqueaba.
+  { moduleId: "mantencion_equipos", prefix: "/mantencion/ir" },
   // Fallback: la portada y cualquier rama futura bajo /mantencion. Los prefijos
   // de los ítems de navegación son más largos y ganan por orden.
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/panel", prefix: "/mantencion" },

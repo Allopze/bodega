@@ -203,7 +203,9 @@ Estructura de la app autenticada (`components/layout/app-shell.tsx`):
   `fixed inset-0` de las páginas y rompería el `sticky` del detalle de
   inspección. `components/layout/app-shell.test.tsx` lo congela.
 - **Command palette ⌘K / Ctrl+K** global (lazy), navega a cualquier destino
-  permitido.
+  permitido. También la abre el botón «Ir a…» de la TopBar. Un folio con
+  prefijo (`SOL-`, `OC-`, `OT-`, `MP-`, `MC-`, `NP-`) ofrece ir directo al
+  registro; los de Mantención pasan por `/mantencion/ir`, que aplica el alcance.
 - **Feature toggles**: `enabledModuleIds` oculta módulos deshabilitados en toda
   la navegación.
 
@@ -255,6 +257,20 @@ habilitados.
 Cada área es un icono del rail; al activarla despliega un panel con sus ítems
 (y submenús). El estado activo se resuelve con `isHrefActive` / `findActiveArea`,
 con reglas especiales para los submódulos de Prevención.
+
+- **Grupos plegables** (escritorio, *flyout* del rail y cajón móvil; 2026-11-26):
+  los grupos de un área (Control operacional: Seguimiento, Flota, Mantención,
+  Combustible) se pliegan bajo su rótulo, que es un botón con `aria-expanded`, y
+  abre el de la pantalla actual. Sin pantalla actual en el área, todos abiertos.
+  Un grupo plegado suma los pendientes de sus ítems en su rótulo. Mientras la
+  persona no lo toque, el grupo sigue a la pantalla actual. Alto del rótulo:
+  44px en el teléfono, 36px desde `lg`.
+- **`defaultOpen`** en un ítem con hijos (manifiesto) lo muestra desplegado al
+  cargar («Configuración» de Mantención).
+- **Alias con comodín**: un segmento `*` en `aliases` vale por cualquier
+  segmento (`/flota/*/mantencion` marca «Equipos» en la ficha de mantención de
+  un equipo). Sólo vale para quien ve al dueño del alias; los interruptores de
+  submódulo lo ignoran.
 
 ### Estado de los ítems
 

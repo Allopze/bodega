@@ -6,7 +6,8 @@ import { addDaysToPlainDate, formatDate } from "@/lib/utils"
  *
  * - Antes del corte, los trabajos que no pasaron por una OT se cuentan desde el historial de formularios
  *   (`mant_historical_records`).
- * - Desde el corte, se cuentan desde los registros firmados en la plataforma (`mant_records` sin OT).
+ * - Desde el corte, se cuentan desde los registros firmados en la plataforma (`mant_records` sin una OT que
+ *   cuente: sin OT, o con la OT anulada o sin ingreso a taller; ver `recordCountsOnItsOwnSql`).
  * - Las OT de la plataforma cuentan siempre: nunca estuvieron en los Forms.
  *
  * Así el Panel no cuenta dos veces un trabajo que se cargó en el formulario y en la app durante la

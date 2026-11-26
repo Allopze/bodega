@@ -8,7 +8,7 @@ import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { IDS, seedMantFixtures } from "./mantencion-sync-fixtures"
 
 /**
- * «Repuestos pedidos» de una OT contra Postgres de verdad (plan «Repuestos
+ * «Solicitudes de compra» de una OT contra Postgres de verdad (plan «Repuestos
  * vinculados al equipo y a la OT», tareas 10 a 13): las solicitudes de compra
  * cuyos ítems apuntan a la OT, su OC activa y lo recibido en faena; el predicado
  * «esperando repuesto» que comparten la lista, el panel y el tile; y lo que los

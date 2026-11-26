@@ -221,6 +221,40 @@ describe("Correctivo · unión y paginación", () => {
     const page = await loadCorrectivePage(GLOBAL, filters("2026-12-01", "2026-12-31"), {})
     expect(page.rows[0]!.source).toBe("registro")
   })
+
+  it("un registro con OT cuenta por la OT; si la OT se anula, cuenta el registro (REG4-1)", async () => {
+    // Semana propia (14 al 20-12) y limpieza al final: las demás pruebas leen diciembre completo.
+    await testDb.insert(schema.mantWorkOrders).values({
+      id: "ot-reg4-1", folio: "OT-REG4-1", vehicleId: V.rec, worksiteId: WS, equipmentSnapshot: SNAP("KA-R", "REC-01"),
+      repair: true, maintenance: false, requestDate: "2026-12-14", requestedByUserId: U, requesterName: "Solicitante",
+      repairDescription: "Reparación de frenos", status: "en_ejecucion", assignedToUserId: U, assignedByUserId: U,
+      assignedAt: "2026-12-15T12:00:00Z", workshopKind: "interno", workshopEntryAt: "2026-12-15T12:00:00Z",
+      estimatedDeliveryDate: "2026-12-20", startedAt: "2026-12-15T12:00:00Z", startedByUserId: U, actionType: "correctiva",
+    })
+    await testDb.insert(schema.mantRecords).values({
+      id: "rec-con-ot", folio: "MR-C-2", kind: "C", vehicleId: V.rec, equipmentSnapshot: SNAP("KA-R", "REC-01"), worksiteId: WS,
+      reading: 152_000, unit: "km", workDate: "2026-12-16", registeredBy: U, executorKind: "yo", executorUserId: U,
+      executorName: "Mecánico Nativo", signedAt: "2026-12-16T15:00:00Z", receivedAt: "2026-12-16T15:00:00Z",
+      status: "vigente", review: "pendiente", workOrderId: "ot-reg4-1",
+    })
+    await testDb.insert(schema.mantRecordCorrectives).values({
+      recordId: "rec-con-ot", workTypes: ["Mecánico"], oils: [], description: "Cambio de pastillas", noParts: true, hours: 1, inWorkshop: false,
+    })
+    const week = async () => (await loadCorrectivePage(GLOBAL, filters("2026-12-14", "2026-12-20"), {})).rows.map((row) => `${row.source}:${row.reference}`)
+    try {
+      // Mientras la OT cuenta, el trabajo es la OT y el registro no se repite.
+      expect(await week()).toEqual(["ot:OT-REG4-1"])
+      await testDb.update(schema.mantWorkOrders).set({
+        status: "anulada", voidedAt: "2026-12-17T12:00:00Z", voidedByUserId: U, voidReason: "Se abrió por error",
+      }).where(eq(schema.mantWorkOrders.id, "ot-reg4-1"))
+      // Anulada la OT, el registro firmado es el único rastro del trabajo: no puede desaparecer del Panel.
+      expect(await week()).toEqual(["registro:MR-C-2"])
+    } finally {
+      await testDb.delete(schema.mantRecordCorrectives).where(eq(schema.mantRecordCorrectives.recordId, "rec-con-ot"))
+      await testDb.delete(schema.mantRecords).where(eq(schema.mantRecords.id, "rec-con-ot"))
+      await testDb.delete(schema.mantWorkOrders).where(eq(schema.mantWorkOrders.id, "ot-reg4-1"))
+    }
+  })
 })
 
 describe("Planificación · opciones y A/B", () => {

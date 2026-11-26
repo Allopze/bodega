@@ -330,6 +330,10 @@ describe("module-toggles service", () => {
       expect(resolveModuleRoute("/api/prevencion/cgrd/evidence/acta-1")).toEqual({ moduleId: "prevention", submoduleHref: "/prevencion/cgrd" })
       expect(resolveModuleRoute("/api/cron/billing-sales-sync")).toEqual({ moduleId: "billing", submoduleHref: "/facturacion/sincronizacion" })
       expect(resolveModuleRoute("/api/cron/talana-workers-sync")).toEqual({ moduleId: "admin", submoduleHref: "/admin" })
+      // «Ir a…» con un folio de Mantención depende sólo del módulo; el Historial tiene ítem y toggle propios (2026-11-26).
+      expect(resolveModuleRoute("/mantencion/ir")).toEqual({ moduleId: "mantencion_equipos", submoduleHref: undefined })
+      expect(resolveModuleRoute("/mantencion/registros/historicos/importar")).toEqual({ moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros/historicos" })
+      expect(resolveModuleRoute("/mantencion/registros/rec-1")).toEqual({ moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros" })
       // La app del mecánico salió del menú (PWA aparte): su ruta, su login y su
       // sincronización siguen bajo el interruptor de Mantención de equipos.
       expect(resolveModuleRoute("/m/mantencion")).toEqual({ moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros" })

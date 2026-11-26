@@ -7,7 +7,7 @@ import { itemStatusLabel } from "@/lib/work-queue-labels"
 import type { WorkOrderPartsRequest } from "./types"
 
 /**
- * «Repuestos pedidos» de una OT: las solicitudes de compra cuyos ítems apuntan a
+ * «Solicitudes de compra» de una OT: las solicitudes de compra cuyos ítems apuntan a
  * ella (`purchase_request_items.work_order_id`), con su OC activa y lo que ya
  * llegó a faena. La OT NO lleva repuestos en su documento (decisión 8 del plan
  * «Repuestos vinculados al equipo y a la OT»): esto sólo lee lo que las

@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic"
 /**
  * Entrada de «Configuración» en el menú de Mantención: abre la primera pantalla
  * de configuración que el permiso de la persona deja abrir (Pautas, Marcas y
- * talleres o Dispositivos). Redirigir no es autorización: cada destino vuelve a
+ * talleres o App del mecánico). Redirigir no es autorización: cada destino vuelve a
  * exigir el suyo.
  */
 export default async function MantencionConfiguracionPage() {

@@ -12,6 +12,7 @@ import { FORMS_CUTOVER_DATE } from "@/lib/mantencion/forms-cutover"
 import { nameKey } from "@/lib/mantencion/normalize"
 import type { MantUnit } from "@/lib/mantencion/types"
 import { recordVisibility, recordVisibilitySql, type MantViewer } from "../access"
+import { recordCountsOnItsOwnSql } from "../maintenance-work"
 import { unitFromMeter } from "../fleet"
 import { effectiveMeterSql } from "../unit-sql"
 import { workOrderVisibility, workOrderVisibilitySql } from "../work-orders/access"
@@ -182,7 +183,8 @@ function buildBranches(viewer: MantViewer, filters: LookerFilters, query: Return
     .where(and(
       eq(mantRecords.kind, "C"),
       eq(mantRecords.status, "vigente"),
-      isNull(mantRecords.workOrderId),
+      // Sin una OT que cuente (sin OT, o con la OT anulada o sin ingreso a taller): la misma regla que el Historial (REG4-1).
+      recordCountsOnItsOwnSql(),
       gte(mantRecords.workDate, FORMS_CUTOVER_DATE),
       gte(mantRecords.workDate, filters.from),
       lte(mantRecords.workDate, filters.to),

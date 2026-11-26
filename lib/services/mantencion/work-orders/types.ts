@@ -184,7 +184,7 @@ export interface WorkOrderDetail extends WorkOrderListRow {
   events: WorkOrderEventDetail[]
   linkedRecords: Array<{ id: string; folio: string | null; kind: "P" | "C"; workDate: string; signedAt: string; status: "vigente" | "anulado"; canOpen: boolean }>
   inspectionFinding: { id: string; runId: string; capaActionId: string | null } | null
-  /** Repuestos pedidos para esta OT (solicitudes de compra vinculadas), la más reciente primero. */
+  /** Solicitudes de compra de esta OT (las vinculadas a ella), la más reciente primero. */
   partsRequests: WorkOrderPartsRequest[]
   /** Lo que los registros vigentes enlazados declararon usar, vía `loadWorkOrderLinkedWork`. */
   partsUsed: WorkOrderPartUsed[]

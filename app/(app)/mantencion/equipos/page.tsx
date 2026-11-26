@@ -72,7 +72,7 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
   // Con la lista vacía, «Incorporar los N vehículos de la flota» ya es el llamado del estado vacío: dos iguales no suman.
   const showPendingFleet = pendingFleet > 0 && !(rows.length === 0 && !hasEquipmentListFilters(filters))
   const canExport = can(session, "mant:export")
-  // La app se reparte por QR. Quien administra los dispositivos lo hace desde «Dispositivos» (ítem del menú, con su
+  // La app se reparte por QR. Quien administra los dispositivos lo hace desde «App del mecánico» (ítem del menú, con su
   // propio botón «Instalar app»); la supervisión de faena, que no entra ahí, la reparte desde esta cabecera.
   const canDevices = can(session, "mant:devices:manage")
   const canShareApp = !canDevices && can(session, "mant:records:view_worksite")

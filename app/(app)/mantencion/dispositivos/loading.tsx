@@ -5,7 +5,7 @@ import { SkeletonRow } from "@/components/ui/skeleton"
 export default function Loading() {
   return (
     <PageContainer>
-      <PageHeader title="Dispositivos" breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Dispositivos" }]} />
+      <PageHeader title="App del mecánico" breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "App del mecánico" }]} />
       <div className="flex flex-col gap-2" aria-busy="true" aria-label="Cargando dispositivos">
         {Array.from({ length: 5 }).map((_, index) => <SkeletonRow key={index} cols={4} />)}
       </div>
