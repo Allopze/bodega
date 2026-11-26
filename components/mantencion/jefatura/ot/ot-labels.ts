@@ -27,6 +27,11 @@ export const OT_EVENT_LABELS: Record<OtEventType, string> = {
   voided: "Orden anulada",
   reopened: "Orden reabierta",
   record_linked: "Registro firmado enlazado",
+  parts_note_created: "Nota de pedido enviada",
+  parts_note_resolved: "Nota de pedido resuelta",
+  parts_allocated: "Repuestos reservados para la orden",
+  parts_consumed: "Repuestos usados en el trabajo",
+  parts_released: "Reserva liberada a stock libre",
 }
 
 /**

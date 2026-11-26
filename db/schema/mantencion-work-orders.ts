@@ -232,7 +232,7 @@ export const mantWorkOrderEvents = pgTable("mant_work_order_events", {
 }, (table) => [
   index("mant_work_order_events_order_idx").on(table.workOrderId, table.createdAt),
   uniqueIndex("mant_work_order_events_client_op_unique").on(table.clientOpId),
-  check("mant_work_order_events_type_valid", sql`${table.type} IN ('created', 'edited', 'assigned', 'unassigned', 'taken', 'started', 'entry_updated', 'estimate_changed', 'item_added', 'items_marked', 'finished', 'received', 'rejected', 'conformed', 'voided', 'reopened', 'record_linked')`),
+  check("mant_work_order_events_type_valid", sql`${table.type} IN ('created', 'edited', 'assigned', 'unassigned', 'taken', 'started', 'entry_updated', 'estimate_changed', 'item_added', 'items_marked', 'finished', 'received', 'rejected', 'conformed', 'voided', 'reopened', 'record_linked', 'parts_note_created', 'parts_note_resolved', 'parts_allocated', 'parts_consumed', 'parts_released')`),
 ])
 
 export const mantWorkOrdersRelations = relations(mantWorkOrders, ({ one, many }) => ({

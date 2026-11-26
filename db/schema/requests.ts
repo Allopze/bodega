@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, integer, real, numeric, timestamp, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core"
+import { foreignKey, pgTable, text, integer, real, numeric, timestamp, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, workers, suppliers } from "./worksites"
 import { products, productAttributes } from "./products"
@@ -9,6 +9,7 @@ import { serviceEquipment } from "./service-equipment"
 import { preventionEmergencyResources } from "./prevention/emergency"
 import { fuelVehicles } from "./fuel-vehicles"
 import { mantWorkOrders } from "./mantencion-work-orders"
+import { mantPartsNoteItems } from "./mantencion-parts"
 
 /* ── Purchase Request States ─────────────────────────────────────────────── */
 // draft | submitted | in_review | partially_approved | approved
@@ -94,6 +95,8 @@ export const purchaseRequestItems = pgTable("purchase_request_items", {
    */
   vehicleId:       text("vehicle_id").references(() => fuelVehicles.id),
   workOrderId:     text("work_order_id").references(() => mantWorkOrders.id, { onDelete: "set null" }),
+  /** Línea de la nota de pedido del mecánico que este ítem compra (ADR mantención 0001). Se copia en el split de la OC. */
+  partsNoteItemId: text("parts_note_item_id"),
   /*
    * Precio unitario que estima quien pide. Bajo el umbral de cotizaciones de
    * repuestos (`ops.repuestos.quotation_threshold_clp`) reemplaza a la
@@ -156,6 +159,11 @@ export const purchaseRequestItems = pgTable("purchase_request_items", {
   // Un ítem atiende a un solo sujeto: un vehículo de flota, un instrumento o un
   // recurso de emergencia. Se agrega aparte del CHECK anterior para no
   // reescribirlo (su DROP saldría sin IF EXISTS).
+  // Nombre explícito: el autogenerado pasa de 63 bytes.
+  foreignKey({ columns: [table.partsNoteItemId], foreignColumns: [mantPartsNoteItems.id], name: "purchase_request_items_parts_note_item_fk" }).onDelete("set null"),
+  index("purchase_request_items_parts_note_item_idx").on(table.partsNoteItemId),
+  // La NP es de una OT: el ítem que compra una línea de NP tiene que nombrar la OT.
+  check("purchase_request_items_parts_note_needs_work_order", sql`${table.partsNoteItemId} IS NULL OR ${table.workOrderId} IS NOT NULL`),
   check("purchase_request_items_one_asset_subject", sql`NOT (${table.vehicleId} IS NOT NULL AND (${table.equipmentId} IS NOT NULL OR ${table.emergencyResourceId} IS NOT NULL))`),
 ])
 

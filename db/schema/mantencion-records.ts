@@ -1,11 +1,14 @@
 import { relations, sql } from "drizzle-orm"
-import { boolean, check, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core"
+import { boolean, check, foreignKey, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { fuelVehicles } from "./fuel-vehicles"
 import { users } from "./users"
 import { worksites } from "./worksites"
 import { mantDrivers, mantWorkTypes, mantWorkshops } from "./mantencion-catalogs"
 import { mantSchedules } from "./mantencion-schedules"
 import { mantWorkOrders } from "./mantencion-work-orders"
+import { mantPartsAllocations } from "./mantencion-parts"
+import { products } from "./products"
+import { inventoryMovements } from "./stock"
 
 /** El equipo tal como era al firmar. Editar la ficha después no cambia el documento. */
 export interface MantEquipmentSnapshot {
@@ -179,10 +182,43 @@ export const mantRecordParts = pgTable("mant_record_parts", {
   quantity:    numeric("quantity", { precision: 10, scale: 2, mode: "number" }).notNull(),
   description: text("description").notNull(),
   sortOrder:   integer("sort_order").notNull().default(0),
+  /*
+   * Stock (ADR mantención 0001, 2026-11-26). `source`: `stock` salió de la bodega
+   * de la faena (descuenta con `egreso_mantencion`), `externo` lo trajo otro
+   * (sin movimiento), `texto` = filas previas y teléfonos sin actualizar. Estas
+   * columnas son operativas: el registro firmado no cambia, pero la conciliación
+   * de una línea pendiente sí las escribe.
+   */
+  productId:           text("product_id").references(() => products.id, { onDelete: "restrict" }),
+  source:              text("source").notNull().default("texto"),
+  allocationId:        text("allocation_id").references((): AnyPgColumn => mantPartsAllocations.id, { onDelete: "restrict" }),
+  inventoryMovementId: text("inventory_movement_id"),
+  reversalMovementId:  text("reversal_movement_id"),
+  /** no_aplica | descontado | pendiente_conciliar (faltó stock al sincronizar) | revertido (registro anulado) | sin_movimiento (conciliada sin bodega). */
+  stockStatus:         text("stock_status").notNull().default("no_aplica"),
+  /** Motivo de `pendiente_conciliar` o de la conciliación `sin_movimiento`. */
+  stockNote:           text("stock_note"),
 }, (table) => [
   index("mant_record_parts_record_idx").on(table.recordId),
   index("mant_record_parts_job_idx").on(table.jobId),
+  // Nombres explícitos: los autogenerados pasan de 63 bytes.
+  foreignKey({ columns: [table.inventoryMovementId], foreignColumns: [inventoryMovements.id], name: "mant_record_parts_movement_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.reversalMovementId], foreignColumns: [inventoryMovements.id], name: "mant_record_parts_reversal_fk" }).onDelete("restrict"),
+  index("mant_record_parts_allocation_idx").on(table.allocationId),
+  index("mant_record_parts_pending_idx").on(table.stockStatus).where(sql`${table.stockStatus} = 'pendiente_conciliar'`),
+  uniqueIndex("mant_record_parts_movement_unique").on(table.inventoryMovementId),
+  uniqueIndex("mant_record_parts_reversal_unique").on(table.reversalMovementId),
   check("mant_record_parts_quantity_positive", sql`${table.quantity} > 0`),
+  check("mant_record_parts_source_valid", sql`${table.source} IN ('stock', 'externo', 'texto')`),
+  check("mant_record_parts_stock_product", sql`${table.source} <> 'stock' OR ${table.productId} IS NOT NULL`),
+  check("mant_record_parts_stock_status_valid", sql`
+    (${table.stockStatus} = 'no_aplica' AND ${table.source} <> 'stock' AND ${table.inventoryMovementId} IS NULL AND ${table.reversalMovementId} IS NULL)
+    OR (${table.stockStatus} = 'descontado' AND ${table.source} = 'stock' AND ${table.inventoryMovementId} IS NOT NULL AND ${table.reversalMovementId} IS NULL)
+    OR (${table.stockStatus} = 'pendiente_conciliar' AND ${table.source} = 'stock' AND ${table.inventoryMovementId} IS NULL AND ${table.reversalMovementId} IS NULL)
+    OR (${table.stockStatus} = 'revertido' AND ${table.source} = 'stock' AND ${table.inventoryMovementId} IS NOT NULL AND ${table.reversalMovementId} IS NOT NULL)
+    OR (${table.stockStatus} = 'sin_movimiento' AND ${table.source} = 'stock' AND ${table.inventoryMovementId} IS NULL AND ${table.reversalMovementId} IS NULL
+      AND char_length(trim(coalesce(${table.stockNote}, ''))) >= 5)
+  `),
 ])
 
 export const mantRecordDrivers = pgTable("mant_record_drivers", {

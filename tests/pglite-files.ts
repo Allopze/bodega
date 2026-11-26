@@ -690,4 +690,21 @@ export const pgliteTestFiles = [
   // Camiones de producción a horas en Mantención, Biodiversa en km (2026-11-25).
   "scripts/__tests__/apply-medidor-camiones-2026-11-pglite.test.ts",
   "scripts/__tests__/apply-trinorma-lecturas-preventivas-pglite.test.ts",
+  // ── Notas de pedido y repuestos con stock (ADR mantención 0001, 2026-11-26) ──
+  // Núcleo de reservas: aportar, consumir, rebajar, liberar y revertir.
+  "lib/__tests__/mantencion-parts-allocations-pglite.test.ts",
+
+  // NP · L1 bodega: recepción, guías y anulaciones (suites de la línea debajo de esta ancla).
+
+  // NP · L2 compras: solicitud desde NP y catalogación obligatoria.
+
+  // NP · L3 notas de pedido: servicio, sync y catálogo del teléfono.
+
+  // NP · L4 consumo: registro, anulación, cierre de OT y conciliación.
+
+  // NP · L5 app del mecánico (si alguna suite del cliente usa PGlite).
+
+  // NP · L6 jefatura web.
+
+  // NP · L7 bodega: vistas, trazabilidad y exportaciones.
 ]

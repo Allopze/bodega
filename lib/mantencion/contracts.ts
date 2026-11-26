@@ -121,16 +121,32 @@ export const MANT_MAX_JOBS = 20
 
 const jobHours = z.number().min(0.5, "Mínimo 0,5 horas por trabajo.").max(MANT_JOB_HOURS_MAX).refine((value) => Number.isInteger(value * 2), "Las horas van en pasos de 0,5.")
 
+/**
+ * Un repuesto usado en el trabajo. `source` (ADR mantención 0001, 2026-11-26):
+ * `stock` salió de la bodega de la faena y descuenta (exige `productId` y que el
+ * registro esté enlazado a una OT; `allocationId` es la reserva de esa OT que
+ * eligió el mecánico); `externo` lo trajo otro, sin movimiento. Sin `source` es
+ * el texto libre de siempre: los teléfonos sin actualizar lo siguen mandando así.
+ */
+export const correctivePartSchema = z.object({
+  quantity: z.number().positive().max(100_000),
+  description: z.string().trim().min(1).max(300),
+  source: z.enum(["stock", "externo"]).optional(),
+  productId: id.nullable().optional(),
+  allocationId: id.nullable().optional(),
+}).refine((part) => part.source !== "stock" || Boolean(part.productId), {
+  message: "Elige el repuesto de la bodega.",
+  path: ["productId"],
+})
+export type SyncCorrectivePart = z.infer<typeof correctivePartSchema>
+
 /** Un trabajo de la correctiva: su tipo, sus horas y sus repuestos (o «No se usaron repuestos»). */
 export const correctiveJobSchema = z.object({
   workTypeId: id,
   hours: jobHours,
   /** Con `noParts`, `parts` va vacío; sin él, al menos un repuesto (lo exige el servidor con mensaje). */
   noParts: z.boolean(),
-  parts: z.array(z.object({
-    quantity: z.number().positive().max(100_000),
-    description: z.string().trim().min(1).max(300),
-  })).max(50),
+  parts: z.array(correctivePartSchema).max(50),
 })
 export type SyncCorrectiveJob = z.infer<typeof correctiveJobSchema>
 
@@ -260,6 +276,89 @@ export type SyncWorkOrderResponse =
   | { ok: true; id: string; workOrderId: string; status: OtStatus; receivedAt: string; duplicate: boolean; warnings: SyncWarning[] }
   | { ok: false; code: "rejected" | "invalid"; message: string; field?: string }
 
+// ── Notas de pedido: POST /api/mantencion/sync/notas-pedido ─────────────────
+//
+// El mecánico pide repuestos para una OT asignada (ADR mantención 0001). `id`
+// lo genera el teléfono y es la clave de idempotencia: la misma NP llega tres
+// veces por mala señal y queda una.
+
+export const MANT_PARTS_NOTE_MAX_LINES = 20
+
+export const partsNoteLineSchema = z.object({
+  description: z.string().trim().min(3, "Describe el repuesto (al menos 3 letras).").max(300),
+  quantity: z.number().positive("La cantidad debe ser mayor que cero.").max(100_000),
+  unitOfMeasure: z.string().trim().min(1).max(40),
+  partNumber: z.string().trim().max(80).nullable(),
+  /** Producto del catálogo de repuestos, si se eligió de la lista. */
+  productId: id.nullable(),
+})
+export type SyncPartsNoteLine = z.infer<typeof partsNoteLineSchema>
+
+export const partsNoteSchema = z.object({
+  id: uuid,
+  workOrderId: id,
+  deviceId: uuid,
+  appVersion: z.string().max(40),
+  createdAt: isoDateTime,
+  /** «El equipo está detenido esperando esto»: la solicitud nace con urgencia crítica. */
+  equipmentStopped: z.boolean(),
+  notes: z.string().trim().max(500).nullable(),
+  lines: z.array(partsNoteLineSchema).min(1, "Agrega al menos un repuesto.").max(MANT_PARTS_NOTE_MAX_LINES),
+})
+export type SyncPartsNote = z.infer<typeof partsNoteSchema>
+
+/** Misma semántica de HTTP que `SyncRecordResponse` (409/422 = rechazo definitivo). */
+export type SyncPartsNoteResponse =
+  | { ok: true; id: string; noteId: string; code: string; receivedAt: string; duplicate: boolean }
+  | { ok: false; code: "rejected" | "invalid"; message: string; field?: string }
+
+export type PartsNoteStatus = "enviada" | "en_gestion" | "cerrada" | "anulada"
+
+/**
+ * Etapa legible de una línea de NP, ya calculada por el servidor:
+ * `pedido` (jefatura no la resuelve aún), `en_compra` (hay solicitud y no ha
+ * llegado nada), `en_bodega` (llegó o se apartó del stock de la faena),
+ * `rechazado` (con motivo).
+ */
+export type PartsNoteLineStage = "pedido" | "en_compra" | "en_bodega" | "rechazado"
+
+export interface CatalogPartsNoteLine {
+  id: string
+  description: string
+  quantity: number
+  unit: string
+  partNumber: string | null
+  stage: PartsNoteLineStage
+  /** Lo que llegó a la faena (o se apartó del stock) para esta línea. */
+  arrived: number
+  /** Lo ya usado de ese repuesto en la OT, hasta `arrived` («Usado 1 de 2»). */
+  used: number
+  rejectionReason: string | null
+}
+
+export interface CatalogPartsNote {
+  id: string
+  code: string
+  status: PartsNoteStatus
+  equipmentStopped: boolean
+  createdAt: string
+  lines: CatalogPartsNoteLine[]
+}
+
+/** Repuesto reservado para la OT y todavía sin usar: el chip «Disponibles para esta OT». */
+export interface CatalogPartsAvailable {
+  allocationId: string
+  productId: string
+  name: string
+  partNumber: string | null
+  unit: string
+  /** La unidad va entera (`requiresWholeQuantity`): el stepper avanza de a 1. */
+  wholeOnly: boolean
+  worksiteId: string
+  worksiteName: string
+  remaining: number
+}
+
 // ── Catálogo: órdenes de trabajo ─────────────────────────────────────────────
 
 export interface CatalogWorkOrderItem {
@@ -298,6 +397,10 @@ export interface CatalogWorkOrder {
   items: CatalogWorkOrderItem[]
   /** Último rechazo en recepción, para mostrar «Devuelta: <motivo>». */
   lastRejection: { count: number; reason: string; at: string } | null
+  /** Notas de pedido de esta OT (ADR mantención 0001). Opcional: catálogos de formato < 6 no lo traen. */
+  partsNotes?: CatalogPartsNote[]
+  /** Repuestos reservados para esta OT y sin usar. Opcional, como `partsNotes`. */
+  partsAvailable?: CatalogPartsAvailable[]
   /** Registros firmados enlazados (correctivas o preventivas) desde el último rechazo. */
   linkedRecords: Array<{ id: string; folio: string | null; kind: "P" | "C"; signedAt: string }>
 }

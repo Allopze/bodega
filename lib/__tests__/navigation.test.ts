@@ -306,6 +306,7 @@ describe("sidebar navigation", () => {
       ["Flota", "Indicadores GPS"],
       ["Mantención", "Panel de mantención"],
       ["Mantención", "Órdenes de trabajo"],
+      ["Mantención", "Notas de pedido"],
       ["Mantención", "Registros firmados"],
       ["Mantención", "Equipos"],
       // Lo que se toca poco se pliega bajo un solo padre, sin permisos propios.

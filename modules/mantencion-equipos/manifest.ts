@@ -31,6 +31,10 @@ export const mantencionEquiposModule = {
     "mant:ot:execute",
     "mant:ot:receive",
     "mant:ot:conform",
+    // Notas de pedido de repuestos (2026-11-26, ADR mantención 0001).
+    "mant:np:create",
+    "mant:np:view_worksite",
+    "mant:np:manage",
   ] as const,
 
   permissionMeta: {
@@ -52,6 +56,9 @@ export const mantencionEquiposModule = {
     "mant:ot:execute":            { id: "p-mant-ot-execute", description: "Ejecutar las órdenes de trabajo asignadas (ingreso y salida de taller) desde la app o el PC" },
     "mant:ot:receive":            { id: "p-mant-ot-receive", description: "Registrar la recepción del equipo al salir del taller" },
     "mant:ot:conform":            { id: "p-mant-ot-conform", description: "Registrar la recepción en faena (conformidad) y cerrar la orden de trabajo" },
+    "mant:np:create":             { id: "p-mant-np-create", description: "Pedir repuestos para una orden de trabajo asignada (nota de pedido) desde la app o el PC" },
+    "mant:np:view_worksite":      { id: "p-mant-np-view-worksite", description: "Ver las notas de pedido de repuestos de sus faenas asignadas" },
+    "mant:np:manage":             { id: "p-mant-np-manage", description: "Resolver notas de pedido (sacar de bodega, comprar o rechazar), liberar reservas y conciliar repuestos de sus faenas" },
   },
 
   nav: [
@@ -76,6 +83,15 @@ export const mantencionEquiposModule = {
           href: "/mantencion/ot",
           iconName: "Wrench",
           permissions: ["mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute"],
+          group: "Mantención",
+        },
+        {
+          // Bandeja de las notas de pedido del mecánico (2026-11-26). Quien las
+          // resuelve también las ve.
+          label: "Notas de pedido",
+          href: "/mantencion/notas-pedido",
+          iconName: "Tray",
+          permissions: ["mant:np:view_worksite", "mant:np:manage"],
           group: "Mantención",
         },
         {
@@ -172,5 +188,19 @@ export const mantencionEquiposModule = {
     // Jefatura general: lectura.
     { roleSlug: "jefa_chome", permission: "mant:ot:view_worksite" },
     { roleSlug: "jefa_chome", permission: "mant:ot:view_all" },
+    // ── Notas de pedido de repuestos (2026-11-26) ──
+    // Pide quien ejecuta la OT. Revisan y resuelven los mismos que crean
+    // solicitudes de repuestos (decisión D3), en sus faenas. Permisos nuevos:
+    // `ensureSystemRbac` aplica estos defaults solo, sin `GRANT_ADDITIONS`.
+    { roleSlug: "mecanico", permission: "mant:np:create" },
+    { roleSlug: "supervisor_mantencion", permission: "mant:np:create" },
+    { roleSlug: "jefe_mantencion", permission: "mant:np:create" },
+    { roleSlug: "supervisor_mantencion", permission: "mant:np:view_worksite" },
+    { roleSlug: "jefe_mantencion", permission: "mant:np:view_worksite" },
+    { roleSlug: "admin_contrato", permission: "mant:np:view_worksite" },
+    { roleSlug: "jefa_chome", permission: "mant:np:view_worksite" },
+    { roleSlug: "supervisor_mantencion", permission: "mant:np:manage" },
+    { roleSlug: "jefe_mantencion", permission: "mant:np:manage" },
+    { roleSlug: "admin_contrato", permission: "mant:np:manage" },
   ],
 } as const satisfies ModuleManifest

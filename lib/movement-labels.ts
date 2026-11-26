@@ -23,6 +23,8 @@ export const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   // salió, la entrega estaba mal registrada.
   ingreso_anulacion:     "Reverso por anulación",
   egreso_anulacion:      "Reverso de recepción anulada",
+  // Repuesto usado en una OT, declarado en el registro del mecánico.
+  egreso_mantencion:     "Uso en mantención",
 }
 
 /**
@@ -40,6 +42,7 @@ export const MOVEMENT_TONE_CLASS: Record<string, string> = {
   egreso_traslado:       "text-[var(--color-danger)]",
   retiro_epp_trabajador: "text-[var(--color-danger)]",
   egreso_desecho:        "text-[var(--color-warning-ink)]",
+  egreso_mantencion:     "text-[var(--color-danger)]",
 }
 
 export const MOVEMENT_NEUTRAL_TONE = "text-[var(--color-text-muted)]"

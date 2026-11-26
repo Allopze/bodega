@@ -50,6 +50,11 @@ const EVENT_LABELS: Record<OtEventType, string> = {
   voided: "Anulada",
   reopened: "Reabierta",
   record_linked: "Registro enlazado",
+  parts_note_created: "Nota de pedido enviada",
+  parts_note_resolved: "Nota de pedido resuelta",
+  parts_allocated: "Repuestos reservados",
+  parts_consumed: "Repuestos usados",
+  parts_released: "Reserva liberada",
 }
 
 export async function exportWorkOrders(input: {

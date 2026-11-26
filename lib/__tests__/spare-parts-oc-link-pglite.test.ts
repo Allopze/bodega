@@ -370,14 +370,19 @@ describe("catálogo de repuestos · vincular al armar la OC y precio al emitir",
     })
   })
 
-  describe("los repuestos no tienen existencias en bodega", () => {
-    it("applyMovementTx rechaza un movimiento de un repuesto", async () => {
+  // ADR mantención 0001 (2026-11-26): el repuesto tiene stock por faena; su única
+  // salida operativa es el consumo en una OT.
+  describe("los repuestos tienen stock pero no se entregan a trabajadores", () => {
+    it("applyMovementTx acepta el ingreso de un repuesto y rechaza su entrega a un trabajador", async () => {
+      await testDb.transaction((tx) => applyMovementTx(tx as unknown as Tx, {
+        worksiteId: IDS.wsBio, productId: partA.id, type: "ingreso_oc", quantity: 2, performedBy: IDS.jefe,
+      }))
       await expect(testDb.transaction((tx) => applyMovementTx(tx as unknown as Tx, {
-        worksiteId: IDS.wsBio, productId: partA.id, type: "ingreso_oc", quantity: 1, performedBy: IDS.jefe,
-      }))).rejects.toThrow("Los repuestos no tienen existencias en bodega")
+        worksiteId: IDS.wsBio, productId: partA.id, type: "egreso_entrega", quantity: -1, performedBy: IDS.jefe,
+      }))).rejects.toThrow("Un repuesto sólo sale de bodega al usarse en una orden de trabajo")
       const stock = await testDb.select().from(schema.worksiteStock)
         .where(eq(schema.worksiteStock.productId, partA.id))
-      expect(stock).toHaveLength(0)
+      expect(stock.map((row) => row.quantity)).toEqual([2])
     })
 
     it("un producto de bodega sigue moviéndose como siempre", async () => {
