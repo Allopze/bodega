@@ -157,7 +157,8 @@ export function ObservationBanner({ observations, onOpen }: { observations: Cata
   return (
     <Banner action={<button type="button" className="lnk" onClick={onOpen}>Ver y responder</button>}>
       <strong>{plural(count, "registro observado", "registros observados")}</strong>
-      <div>{observations.length === 1 ? "Tu supervisor dejó una observación. Respóndela para cerrarla." : `Tu supervisor dejó ${observations.length} observaciones. Respóndelas para cerrarlas.`}</div>
+      {/* El título ya dice cuántos registros; el cuerpo no repite la cifra. */}
+      <div>{observations.length === 1 ? "Tu supervisor dejó una observación. Respóndela para cerrarla." : "Tu supervisor dejó observaciones. Respóndelas para cerrarlas."}</div>
     </Banner>
   )
 }

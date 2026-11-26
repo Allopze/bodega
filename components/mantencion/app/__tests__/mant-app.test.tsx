@@ -85,6 +85,8 @@ async function signPreventive() {
   expect(await screen.findByText("PASO 2/5")).toBeTruthy()
   fireEvent.change(screen.getByLabelText("Odómetro actual"), { target: { value: "40010" } })
   expect(await screen.findByText(/toca la de/)).toBeTruthy()
+  expect(screen.getByText(/^Intervalo que toca/)).toBeTruthy()
+  expect(screen.getByRole("button", { name: "Elegir otro intervalo" })).toBeTruthy()
   expect(screen.getByLabelText("Odómetro actual")).toHaveProperty("value", "40.010")
   click("Ver pauta")
 
@@ -311,6 +313,51 @@ describe("App del mecánico (arranque, PIN, preventiva completa y envío)", () =
     expect(await screen.findByRole("button", { name: "Firmar y guardar" })).toBeTruthy()
   })
 
+  it("el inicio pone «Nuevo registro» tras el aviso de observaciones y antes de las listas", async () => {
+    const full = catalog("u-1", [equipment({ readings: [{ value: 39_900, date: "2026-10-01", source: "MP-BIO-0001" }], state: "proxima", remaining: 100, nextReading: 40_000 })])
+    full.workOrders = [workOrder({ status: "en_ejecucion", entry: ENTRY })]
+    full.observations = [
+      { id: "ob-1", recordId: "r-1", folio: "MP-BIO-0001", equipmentCode: "KA-140", text: "Falta la foto del sticker", by: "Alexis", createdAt: "2026-10-27T12:00:00.000Z", response: null },
+      { id: "ob-2", recordId: "r-1", folio: "MP-BIO-0001", equipmentCode: "KA-140", text: "Falta el filtro", by: "Alexis", createdAt: "2026-10-27T12:05:00.000Z", response: null },
+    ]
+    installServer({ online: true, catalog: full })
+    await openAndDefinePin()
+
+    const aviso = screen.getByText("1 registro observado")
+    expect(screen.getByText("Tu supervisor dejó observaciones. Respóndelas para cerrarlas.")).toBeTruthy()
+    const nuevo = screen.getByRole("region", { name: "Nuevo registro" })
+    const toca = screen.getByRole("region", { name: "Le toca mantención" })
+    const ordenes = screen.getByRole("region", { name: "Órdenes de trabajo" })
+    const ultimos = screen.getByRole("region", { name: "Mis últimos registros" })
+    const before = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    // Cabecera y aviso primero; después lo que más se usa; las listas al final.
+    expect(before(screen.getByRole("heading", { level: 1 }), aviso)).toBe(true)
+    expect(before(aviso, nuevo)).toBe(true)
+    expect(before(nuevo, toca)).toBe(true)
+    expect(before(toca, ordenes)).toBe(true)
+    expect(before(ordenes, ultimos)).toBe(true)
+    // El botón de cada tipo sigue dentro de la región.
+    expect(within(nuevo).getByRole("button", { name: /^Mantención preventiva/ })).toBeTruthy()
+    expect(within(nuevo).getByRole("button", { name: /^Mantención correctiva/ })).toBeTruthy()
+  })
+
+  it("en la lectura, otro intervalo se elige con ese nombre y pide su motivo", async () => {
+    installServer({ online: true })
+    await openAndDefinePin()
+    fireEvent.click(within(screen.getByRole("region", { name: "Le toca mantención" })).getByRole("button", { name: /KA-140/ }))
+    expect(await screen.findByText("PASO 2/5")).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Odómetro actual"), { target: { value: "40010" } })
+    expect(await screen.findByText(/toca la de/)).toBeTruthy()
+
+    click("Elegir otro intervalo")
+    const chips = within(screen.getByRole("group", { name: "Intervalo a usar" })).getAllByRole("button")
+    fireEvent.click(chips.find((chip) => chip.getAttribute("aria-pressed") === "false")!)
+    expect(await screen.findByLabelText("¿Por qué usas otro intervalo?")).toBeTruthy()
+    expect(screen.getByText(/Lo elegiste a mano\./)).toBeTruthy()
+    click("Ver pauta")
+    expect(await screen.findByText("Explica por qué usas otro intervalo.")).toBeTruthy()
+  })
+
   it("con varias faenas el encabezado dice «3 faenas» y ofrece verlas; con una dice su nombre", async () => {
     const several = catalog("u-1", [equipment({ readings: [{ value: 39_900, date: "2026-10-01", source: "MP-BIO-0001" }], state: "proxima", remaining: 100, nextReading: 40_000 })])
     several.worksites = [{ id: "ws-bio", name: "Biodiversa" }, { id: "ws-min", name: "Mininco" }, { id: "ws-ara", name: "Arauco" }]
@@ -329,7 +376,7 @@ describe("App del mecánico (arranque, PIN, preventiva completa y envío)", () =
     expect(await screen.findByRole("button", { name: "Mis 3 faenas" })).toBeTruthy()
   })
 
-  it("desde una OT en taller: el equipo queda fijo, no pregunta por el taller, el registro viaja enlazado y «Terminar» sale después", async () => {
+  it("desde una OT en taller: el equipo queda fijo, no pregunta por el taller, el registro viaja enlazado y «Registrar salida de taller» se guarda después", async () => {
     const withOt = catalog("u-1", [equipment({ readings: [{ value: 39_900, date: "2026-10-01", source: "MP-BIO-0001" }], state: "proxima", remaining: 100, nextReading: 40_000 })])
     withOt.workOrders = [workOrder({ status: "en_ejecucion", entry: ENTRY, items: workOrder().items.map((item) => ({ ...item, done: "si" as const })) })]
     installServer({ online: true, catalog: withOt })
@@ -371,12 +418,12 @@ describe("App del mecánico (arranque, PIN, preventiva completa y envío)", () =
     await waitFor(() => expect(calls.filter((call) => call.method === "POST" && call.url.endsWith("/sync/registros"))).toHaveLength(1), { timeout: 5_000 })
     expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/sync/registros"))?.body).toMatchObject({ kind: "C", workOrderId: "ot-1", inWorkshop: false, workshopReason: null, workOrder: null })
 
-    // Con el registro del teléfono ya cuenta como trabajo registrado: «Terminar» se puede guardar.
+    // Con el registro del teléfono ya cuenta como trabajo registrado: la salida se puede guardar.
     click("Volver al inicio")
     fireEvent.click(within(await screen.findByRole("region", { name: "Órdenes de trabajo" })).getByRole("button", { name: /OT-BIO-0001/ }))
-    click(/Terminar \(salida de taller\)/)
+    click("Registrar salida de taller")
     expect(screen.getByText("Todo listo: ítems marcados y trabajo registrado.")).toBeTruthy()
-    click("Terminar y avisar")
+    click("Registrar salida y avisar")
     await waitFor(() => expect(calls.filter((call) => call.method === "POST" && call.url.endsWith("/sync/ot"))).toHaveLength(1), { timeout: 5_000 })
     expect(calls.find((call) => call.url.endsWith("/sync/ot"))?.body).toMatchObject({ action: "finish", workOrderId: "ot-1" })
   })
@@ -396,10 +443,10 @@ describe("App del mecánico (arranque, PIN, preventiva completa y envío)", () =
     fireEvent.click(within(section).getByRole("button", { name: "Abrir la OT de KA-140" }))
 
     expect(await screen.findByRole("heading", { name: "OT-BIO-0001" })).toBeTruthy()
-    // El mismo OtSheet de siempre: ingreso/ítems/fecha/trabajo/terminar, sin acciones nuevas.
+    // El mismo OtSheet de siempre: ingreso/ítems/entrega/trabajo/salida, sin acciones nuevas.
     expect(screen.getByRole("button", { name: "Registrar correctiva" })).toBeTruthy()
     expect(screen.getByRole("button", { name: /Marcar ítems SÍ \/ NO/ })).toBeTruthy()
-    expect(screen.getByRole("button", { name: /Terminar \(salida de taller\)/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Registrar salida de taller" })).toBeTruthy()
   })
 
   it("si la OT del equipo no está entre las del mecánico, no se abre y se avisa", async () => {

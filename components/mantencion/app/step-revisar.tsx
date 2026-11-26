@@ -49,7 +49,7 @@ export function StepRevisar({ draft, row, onChange }: { draft: FlowDraft; row: F
         <dl className="dl">
           <dt>Tipo</dt><dd>Preventiva</dd>
           {draft.workOrderId ? <><dt>Orden de trabajo</dt><dd><span className="mono nw" style={{ fontSize: 15 }}>{findWorkOrder(catalog, draft.workOrderId)?.folio ?? "Enlazada"}</span></dd></> : null}
-          <Row label="Pauta" step={at("lectura")} onChange={onChange}>{draft.intervalValue ? formatReading(draft.intervalValue, unit) : "—"}{manual ? " (elegida a mano)" : ""}</Row>
+          <Row label="Intervalo" step={at("lectura")} onChange={onChange}>{draft.intervalValue ? formatReading(draft.intervalValue, unit) : "—"}{manual ? " (elegido a mano)" : ""}</Row>
           <Row label="Lectura" step={at("lectura")} onChange={onChange}><span className="mono" style={{ fontSize: 15 }}>{formatReading(reading, unit)}</span></Row>
           <Row label="Fecha" step={at("lectura")} onChange={onChange}>{formatDate(draft.workDate)}</Row>
           <Row label="Fotos" step={at("fotos")} onChange={onChange}>{[draft.photos.filtros, draft.photos.sticker].filter(Boolean).length} de 2</Row>

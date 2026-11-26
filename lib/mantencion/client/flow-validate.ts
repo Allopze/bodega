@@ -170,7 +170,7 @@ function validateLectura(draft: FlowDraft, ctx: FlowCtx, errors: FlowErrors): vo
 
   if (draft.kind === "P") {
     if (!analysis.schedule || analysis.schedule.intervals.length === 0) errors.schedule = "Este equipo no tiene pauta asignada: no se puede registrar una preventiva."
-    else if (analysis.manual && draft.intervalReason.trim().length < MIN_NOTE) errors.ivReason = "Explica por qué usas otra pauta."
+    else if (analysis.manual && draft.intervalReason.trim().length < MIN_NOTE) errors.ivReason = "Explica por qué usas otro intervalo."
   }
   if (Object.keys(errors).length > 0 || analysis.value === null) return
   // Avisos que se confirman una vez: el salto de lectura (regla 3) y la preventiva repetida (regla 7).

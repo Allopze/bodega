@@ -25,11 +25,11 @@ type Mode = "main" | "entry" | "estimate" | "items" | "finish"
 const ACTION_LABEL: Record<WorkOrderOpRequest["action"], string> = {
   take: "Tomar la OT",
   start: "Ingreso a taller",
-  estimate: "Fecha estimada de entrega",
+  estimate: "Entrega estimada",
   items: "Marcas de ítems",
-  finish: "Terminar",
+  finish: "Registrar salida",
 }
-const TITLES: Record<Mode, string | null> = { main: null, entry: "Ingreso a taller", estimate: "Fecha de entrega", items: "Ítems de la OT", finish: "Terminar la OT" }
+const TITLES: Record<Mode, string | null> = { main: null, entry: "Ingreso a taller", estimate: "Entrega estimada", items: "Ítems de la OT", finish: "Registrar salida de taller" }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -44,7 +44,7 @@ function doneText(done: "si" | "no" | null): string {
   return done === "si" ? "SÍ" : done === "no" ? "NO" : "Sin marcar"
 }
 
-/** Cambiar la fecha estimada de entrega: el motivo es obligatorio, queda en el historial de la OT. */
+/** Cambiar la entrega estimada: el motivo es obligatorio, queda en el historial de la OT. */
 function EstimateForm({ view, saving, error, onSubmit, onBack }: { view: OtView; saving: boolean; error: string | null; onSubmit: (body: OtOpBody) => void; onBack: () => void }) {
   const current = view.ot.entry?.estimatedDeliveryDate ?? ""
   const entryDay = view.ot.entry ? todayInChile(new Date(view.ot.entry.entryAt)) : undefined
@@ -65,9 +65,9 @@ function EstimateForm({ view, saving, error, onSubmit, onBack }: { view: OtView;
   }
   return (
     <>
-      <p className="hint" style={{ marginTop: 0 }}>Fecha actual: <strong>{current ? formatDate(current) : "sin fecha"}</strong></p>
+      <p className="hint" style={{ marginTop: 0 }}>Entrega estimada actual: <strong>{current ? formatDate(current) : "sin fecha"}</strong></p>
       <div>
-        <Label htmlFor="ot-nueva-fecha">Nueva fecha estimada de entrega</Label>
+        <Label htmlFor="ot-nueva-fecha">Nueva entrega estimada</Label>
         <input id="ot-nueva-fecha" type="date" className={errors.date ? "inp bad" : "inp"} value={date} min={entryDay} aria-invalid={Boolean(errors.date)} onChange={(event) => { setDate(event.target.value); setErrors({}) }} />
         <FieldError message={errors.date} />
       </div>
@@ -83,7 +83,7 @@ function EstimateForm({ view, saving, error, onSubmit, onBack }: { view: OtView;
   )
 }
 
-/** «Terminar» = salida de taller: fecha y hora. Dice qué falta antes de poder terminar. */
+/** «Registrar salida de taller»: fecha y hora. Dice qué falta antes de poder registrarla. */
 function FinishForm({ view, saving, error, onSubmit, onBack }: { view: OtView; saving: boolean; error: string | null; onSubmit: (body: OtOpBody) => void; onBack: () => void }) {
   const [initialExitAt] = useState(nowLocalValue)
   const [exitAt, setExitAt] = useState(initialExitAt)
@@ -94,7 +94,7 @@ function FinishForm({ view, saving, error, onSubmit, onBack }: { view: OtView; s
   const entryAt = view.ot.entry ? new Date(view.ot.entry.entryAt) : null
 
   const submit = () => {
-    if (view.finishBlockers.length > 0) { setProblem(`Todavía no puedes terminarla: ${view.finishBlockers[0]?.toLowerCase()}.`); return }
+    if (view.finishBlockers.length > 0) { setProblem(`Todavía no puedes registrar la salida: ${view.finishBlockers[0]?.toLowerCase()}.`); return }
     const when = exitAt ? new Date(exitAt) : null
     if (!when || Number.isNaN(when.getTime())) { setProblem("Indica la fecha y la hora de salida."); return }
     if (isFuture(when)) { setProblem("La salida no puede ser en el futuro."); return }
@@ -105,7 +105,7 @@ function FinishForm({ view, saving, error, onSubmit, onBack }: { view: OtView; s
     <>
       {view.finishBlockers.length > 0 ? (
         <Banner>
-          <strong>Antes de terminar</strong>
+          <strong>Antes de registrar la salida</strong>
           <ul style={{ margin: "6px 0 0", paddingLeft: 20 }}>{view.finishBlockers.map((text) => <li key={text} style={{ display: "list-item", listStyle: "disc" }}>{text}</li>)}</ul>
         </Banner>
       ) : <p className="hint" style={{ marginTop: 0 }}>Todo listo: ítems marcados y trabajo registrado.</p>}
@@ -118,7 +118,7 @@ function FinishForm({ view, saving, error, onSubmit, onBack }: { view: OtView; s
         <textarea id="ot-nota-salida" className="inp" rows={2} maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} />
       </div>
       <FieldError message={problem ?? error ?? undefined} />
-      <button type="button" className="btnp" onClick={submit} disabled={saving}>Terminar y avisar</button>
+      <button type="button" className="btnp" onClick={submit} disabled={saving}>Registrar salida y avisar</button>
       <button type="button" className="btns wide" onClick={() => confirmThen(onBack)} disabled={saving}>Volver</button>
     </>
   )
@@ -127,8 +127,8 @@ function FinishForm({ view, saving, error, onSubmit, onBack }: { view: OtView; s
 /**
  * Una OT en la mano del mecánico. Lo que puede hacer depende del estado
  * (`view.flags`, las mismas guardias del servidor): registrar el ingreso a
- * taller, marcar los ítems, cambiar la fecha de entrega, registrar el
- * trabajo con la correctiva o preventiva de siempre, y terminar. Todo se guarda
+ * taller, marcar los ítems, cambiar la entrega estimada, registrar el
+ * trabajo con la correctiva o preventiva de siempre, y registrar la salida. Todo se guarda
  * en el teléfono y se envía solo; sin confirmaciones en lo rutinario.
  */
 export function OtSheet({ view, onClose, onRegister, onHistory }: {
@@ -156,9 +156,9 @@ export function OtSheet({ view, onClose, onRegister, onHistory }: {
   return (
     <Sheet title={title} onClose={onClose} stable>
       {mode === "entry" ? <OtEntryForm view={view} saving={op.saving} error={op.error} onSubmit={(body) => { void run(body, "Ingreso registrado.") }} onBack={() => go("main")} /> : null}
-      {mode === "estimate" ? <EstimateForm view={view} saving={op.saving} error={op.error} onSubmit={(body) => { void run(body, "Fecha de entrega actualizada.") }} onBack={() => go("main")} /> : null}
+      {mode === "estimate" ? <EstimateForm view={view} saving={op.saving} error={op.error} onSubmit={(body) => { void run(body, "Entrega estimada actualizada.") }} onBack={() => go("main")} /> : null}
       {mode === "items" ? <OtItemsEditor view={view} saving={op.saving} error={op.error} onSubmit={(body) => { void run(body, "Ítems guardados.") }} onBack={() => go("main")} /> : null}
-      {mode === "finish" ? <FinishForm view={view} saving={op.saving} error={op.error} onSubmit={(body) => { void run(body, "OT terminada.") }} onBack={() => go("main")} /> : null}
+      {mode === "finish" ? <FinishForm view={view} saving={op.saving} error={op.error} onSubmit={(body) => { void run(body, "Salida registrada.") }} onBack={() => go("main")} /> : null}
       {mode === "main" ? (
         <>
           <div>
@@ -167,7 +167,7 @@ export function OtSheet({ view, onClose, onRegister, onHistory }: {
             {onHistory ? <button type="button" className="lnk" style={{ marginTop: 4 }} onClick={() => onHistory(ot.vehicleId)}>Historial del equipo</button> : null}
             {ot.outOfWorksite ? <p className="hint">Equipo de otra faena ({ot.worksiteName}). Puedes trabajarla igual.</p> : null}
           </div>
-          {view.returnedReason ? <Banner><strong>Devuelta: {view.returnedReason}</strong><div>Corrige lo que falta, registra el trabajo de nuevo y termina otra vez.</div></Banner> : null}
+          {view.returnedReason ? <Banner><strong>Devuelta: {view.returnedReason}</strong><div>Corrige lo que falta, registra el trabajo de nuevo y registra la salida otra vez.</div></Banner> : null}
           {view.rejected.map((rejected) => (
             <Banner key={rejected.id} action={<button type="button" className="lnk" onClick={() => { void discardRejectedOtOp(rejected.id) }}>Entendido</button>}>
               <strong>No se pudo enviar: {ACTION_LABEL[rejected.action]}</strong>
@@ -238,8 +238,8 @@ export function OtSheet({ view, onClose, onRegister, onHistory }: {
               <button type="button" className="btns wide" onClick={() => onRegister("C", view)}>Registrar correctiva</button>
               <button type="button" className="btns wide" onClick={() => onRegister("P", view)}>Registrar preventiva</button>
               <button type="button" className="btns wide" onClick={() => go("items")}>Marcar ítems SÍ / NO{view.unmarked > 0 ? ` (${view.unmarked})` : ""}</button>
-              <button type="button" className="btns wide" onClick={() => go("estimate")}>Cambiar fecha de entrega</button>
-              <button type="button" className="btnp" onClick={() => go("finish")}>Terminar (salida de taller)</button>
+              <button type="button" className="btns wide" onClick={() => go("estimate")}>Cambiar entrega estimada</button>
+              <button type="button" className="btnp" onClick={() => go("finish")}>Registrar salida de taller</button>
             </>
           ) : null}
           <FieldError message={op.error ?? undefined} />

@@ -163,12 +163,12 @@ test.describe("Orden de trabajo (OT)", () => {
     await app.getByRole("button", { name: "Volver al inicio", exact: true }).click()
   }
 
-  /** «Terminar (salida de taller)» desde la hoja de la OT; deja la hoja cerrada y la cola vacía. */
+  /** «Registrar salida de taller» desde la hoja de la OT; deja la hoja cerrada y la cola vacía. */
   async function terminarEnApp() {
     const hoja = app.getByRole("dialog")
-    await hoja.getByRole("button", { name: /^Terminar \(salida de taller\)/ }).click()
+    await hoja.getByRole("button", { name: /^Registrar salida de taller/ }).click()
     await expect(hoja.getByText("Todo listo: ítems marcados y trabajo registrado.")).toBeVisible()
-    await hoja.getByRole("button", { name: "Terminar y avisar", exact: true }).click()
+    await hoja.getByRole("button", { name: "Registrar salida y avisar", exact: true }).click()
     await esperarEstado(folio, "trabajo_terminado")
   }
 
@@ -295,7 +295,7 @@ test.describe("Orden de trabajo (OT)", () => {
     const sugerida = await hoja.getByText(/Última lectura del [^:]+: [\d.]+/).innerText().catch(() => "")
     lectura = Number(/: ([\d.]+)/.exec(sugerida)?.[1]?.replace(/\./g, "") ?? "40000") + 5
     await hoja.getByLabel("Odómetro al ingresar").fill(String(lectura))
-    await hoja.getByLabel("Fecha estimada de entrega").fill(chileDay(3))
+    await hoja.getByLabel("Entrega estimada").fill(chileDay(3))
     await hoja.getByRole("button", { name: "Registrar ingreso", exact: true }).click()
     await esperarEstado(folio, "en_ejecucion")
     await expect(hoja.getByText("Ingreso", { exact: true })).toBeVisible()
@@ -310,8 +310,8 @@ test.describe("Orden de trabajo (OT)", () => {
     await expect(hoja.getByText("todos marcados")).toBeVisible({ timeout: 30_000 })
 
     // Terminar sin trabajo registrado: la app dice qué falta antes de enviar nada.
-    await hoja.getByRole("button", { name: /^Terminar \(salida de taller\)/ }).click()
-    await expect(hoja.getByText("Antes de terminar")).toBeVisible()
+    await hoja.getByRole("button", { name: /^Registrar salida de taller/ }).click()
+    await expect(hoja.getByText("Antes de registrar la salida")).toBeVisible()
     await hoja.getByRole("button", { name: "Volver", exact: true }).click()
 
     // Correctiva enlazada: equipo fijo, sin «¿queda en taller?».

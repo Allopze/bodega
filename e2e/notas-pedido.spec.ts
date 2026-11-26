@@ -137,7 +137,7 @@ test.describe("Notas de pedido de repuestos", () => {
     const sugerida = await ingreso.getByText(/Última lectura del [^:]+: [\d.]+/).innerText().catch(() => "")
     lectura = Number(/: ([\d.]+)/.exec(sugerida)?.[1]?.replace(/\./g, "") ?? "40000") + 5
     await ingreso.getByLabel(/^Odómetro al ingresar|^Horómetro al ingresar/).fill(String(lectura))
-    await ingreso.getByLabel("Fecha estimada de entrega").fill(chileDay(3))
+    await ingreso.getByLabel("Entrega estimada").fill(chileDay(3))
     await ingreso.getByRole("button", { name: "Registrar ingreso", exact: true }).click()
     await esperarEstado(folio, "en_ejecucion")
     await expect(sheet.getByText("Ingreso", { exact: true })).toBeVisible()
@@ -405,11 +405,11 @@ test.describe("Notas de pedido de repuestos", () => {
     await expect(filaRepuesto(sheet, REPUESTO.name)).toContainText("Llegó · 1 disponible")
     await registrarCorrectiva({ descripcion: "QA_NP Se limpió el circuito, sin repuestos", usarBodega: false })
     const hoja = await abrirOtEnApp()
-    await hoja.getByRole("button", { name: /^Terminar \(salida de taller\)/ }).click()
+    await hoja.getByRole("button", { name: /^Registrar salida de taller/ }).click()
     // La hoja cambia de título al entrar al formulario de salida.
-    const terminar = app.getByRole("dialog", { name: "Terminar la OT", exact: true })
+    const terminar = app.getByRole("dialog", { name: "Registrar salida de taller", exact: true })
     await expect(terminar.getByText("Todo listo: ítems marcados y trabajo registrado.")).toBeVisible()
-    await terminar.getByRole("button", { name: "Terminar y avisar", exact: true }).click()
+    await terminar.getByRole("button", { name: "Registrar salida y avisar", exact: true }).click()
     await esperarEstado(folio, "trabajo_terminado")
     await cerrarOtEnApp(hoja)
     expect((await registrosDeLaOt(otId)).map((registro) => registro.status)).toEqual(["anulado", "vigente"])
