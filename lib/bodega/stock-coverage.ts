@@ -13,9 +13,11 @@
  *
  * Decisiones, todas de la auditoría o de sus riesgos de interpretación:
  *
- * - **Consumo** = entregas (`egreso_entrega`) y bajas (`egreso_desecho`). La
- *   salida por guía (`egreso_traslado`) no es consumo final: el producto sigue
- *   existiendo en otra faena. El reverso de una entrega anulada resta.
+ * - **Consumo** = entregas (`egreso_entrega`), bajas (`egreso_desecho`) y el uso
+ *   de un repuesto en una OT (`egreso_mantencion`). La salida por guía
+ *   (`egreso_traslado`) no es consumo final: el producto sigue existiendo en
+ *   otra faena. El reverso de una entrega o de un registro de mantención
+ *   anulados resta.
  * - **Sin consumo** nunca es infinito: es su propia banda.
  * - **Pocas salidas o poca historia** (demanda irregular de EPP, producto nuevo)
  *   no dan una cifra: «datos insuficientes», con el n a la vista. Una cobertura

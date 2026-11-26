@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/table"
 import { StateBadge } from "@/components/states/state-badge"
 import { formatQty, formatDate } from "@/lib/utils"
+import { kardexTypeLabel } from "@/lib/bodega/kardex-labels"
 import type { ReactNode } from "react"
 import type { ItemDetailData } from "@/lib/services/trazabilidad-item"
 
@@ -230,7 +231,51 @@ export function DeliveriesTable({ deliveries, item }: { deliveries: TablesProps[
   )
 }
 
-export function InventoryMovementsTable({ movements, item }: { movements: TablesProps["inventoryMovements"]; item: TablesProps["item"] }) {
+/**
+ * De dónde salió el repuesto usado en una OT (o su reverso): la OT, el registro firmado y la nota de
+ * pedido. Cada folio es enlace sólo si quien mira puede abrir esa pantalla; si no, se lee igual.
+ */
+function MaintenanceReference({
+  maintenance, canOpenWorkOrder, canOpenRecord,
+}: {
+  maintenance: NonNullable<TablesProps["inventoryMovements"][number]["maintenance"]>
+  canOpenWorkOrder: boolean
+  canOpenRecord: boolean
+}) {
+  const folio = (text: string) => <span className="font-mono font-semibold text-[var(--color-text)]">{text}</span>
+  const linked = (href: string, enabled: boolean, label: string, text: string) => enabled ? (
+    <Link href={href} className="inline-flex items-center gap-1 text-[var(--color-text-muted)] underline-offset-2 hover:text-[var(--color-text)] hover:underline">
+      {label} {folio(text)}
+      <ArrowSquareOut size={11} aria-hidden className="shrink-0" />
+    </Link>
+  ) : (
+    <span className="text-[var(--color-text-muted)]">{label} {folio(text)}</span>
+  )
+  return (
+    <span className="flex flex-col gap-0.5">
+      {maintenance.workOrderId && maintenance.workOrderFolio && (
+        linked(`/mantencion/ot/${encodeURIComponent(maintenance.workOrderId)}`, canOpenWorkOrder, "OT", maintenance.workOrderFolio)
+      )}
+      {maintenance.recordFolio && (
+        linked(`/mantencion/registros/${encodeURIComponent(maintenance.recordId)}`, canOpenRecord, "Registro", maintenance.recordFolio)
+      )}
+      {maintenance.noteCodes.length > 0 && (
+        <span className="text-[var(--color-text-muted)]">
+          {maintenance.noteCodes.length === 1 ? "Nota de pedido" : "Notas de pedido"} {folio(maintenance.noteCodes.join(", "))}
+        </span>
+      )}
+    </span>
+  )
+}
+
+export function InventoryMovementsTable({
+  movements, item, canOpenWorkOrder = false, canOpenRecord = false,
+}: {
+  movements: TablesProps["inventoryMovements"]
+  item: TablesProps["item"]
+  canOpenWorkOrder?: boolean
+  canOpenRecord?: boolean
+}) {
   if (movements.length === 0) return null
   return (
     <SectionTable
@@ -254,17 +299,19 @@ export function InventoryMovementsTable({ movements, item }: { movements: Tables
             {movements.map((m) => (
               <TableRow key={m.id}>
                 <TableCell>
-                  <MovementTypeBadge type={m.type} />
+                  <MovementTypeBadge type={m.type} label={kardexTypeLabel(m.type, m.referenceType)} />
                 </TableCell>
                 <TableCellNum className={m.quantity < 0 ? "text-[var(--color-danger-ink)] text-xs" : "text-xs"}>
                   {m.quantity > 0 ? "+" : ""}{formatQty(m.quantity, item.unitOfMeasure)}
                 </TableCellNum>
                 <TableCell className="text-xs">
-                  {m.referenceType && m.referenceId
-                    ? `${m.referenceType.replace(/_/g, " ")} ${m.referenceId}`
-                    : m.reason
-                      ? m.reason
-                      : "—"}
+                  {m.maintenance
+                    ? <MaintenanceReference maintenance={m.maintenance} canOpenWorkOrder={canOpenWorkOrder} canOpenRecord={canOpenRecord} />
+                    : m.referenceType && m.referenceId
+                      ? `${m.referenceType.replace(/_/g, " ")} ${m.referenceId}`
+                      : m.reason
+                        ? m.reason
+                        : "—"}
                 </TableCell>
                 <TableCell className="text-xs">{m.performedByName ?? "—"}</TableCell>
                 <TableCell className="text-xs">{formatDate(m.performedAt)}</TableCell>
@@ -349,7 +396,7 @@ function LocationBadge({ locationType }: { locationType: string }) {
   )
 }
 
-function MovementTypeBadge({ type }: { type: string }) {
+function MovementTypeBadge({ type, label }: { type: string; label: string }) {
   return (
     <span className={[
       "inline-flex items-center rounded-[var(--radius-full)] px-2 py-0.5 text-xs font-medium",
@@ -359,7 +406,7 @@ function MovementTypeBadge({ type }: { type: string }) {
         ? "bg-[var(--color-primary-tint)] text-[var(--color-primary)]"
         : "bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
     ].join(" ")}>
-      {type}
+      {label}
     </span>
   )
 }

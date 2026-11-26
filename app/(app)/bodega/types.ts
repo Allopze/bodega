@@ -14,6 +14,12 @@ export interface WorksiteStockWithProduct {
   updatedAt: string
   /** Cuántos días alcanza el saldo al ritmo de los últimos 90 días (CHART-035a). Sin él la tabla no dibuja la columna. */
   coverage?: StockCoverage
+  /** Un repuesto de catálogo: tiene «Reservado OT» y «Libre», y no se entrega a un trabajador. */
+  isSparePart?: boolean
+  /** Sólo repuestos: lo apartado para órdenes de trabajo abiertas y aún sin usar. */
+  reserved?: number
+  /** Sólo repuestos: `quantity − reserved`, nunca negativo. */
+  free?: number
   product: { name: string; sku: string | null; unitOfMeasure: string } | null
   worksite: { name: string } | null
 }
@@ -38,6 +44,9 @@ export interface InventoryMovementWithRelations {
   /** Folio del documento de bodega (AJU, DES, DEV, CON) cuando el movimiento
    *  nace de uno. Los demás orígenes lo llevan escrito en el motivo o la nota. */
   documentFolio?: string | null
+  /** Sólo el uso de un repuesto en una OT y su reverso: la OT del registro al que apunta el movimiento. */
+  workOrderId?: string | null
+  workOrderFolio?: string | null
   /** Quién lo registró. Es lo primero que se pregunta cuando un saldo no cuadra. */
   performedByName?: string | null
   product: { name: string } | null

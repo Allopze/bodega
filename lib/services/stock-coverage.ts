@@ -34,9 +34,10 @@ export const stockConsumptionKey = (worksiteId: string, productId: string): stri
  *
  * Se mide con el **efecto** sobre el saldo (`stock_before - stock_after`) y no con
  * `quantity`: `egreso_desecho` guarda su signo, `egreso_entrega` depende del flujo
- * y una baja que se recorta al saldo disponible sólo restó lo que había. El
- * reverso de una entrega anulada (`ingreso_anulacion`) resta del consumo: ese
- * material nunca salió. La salida por guía (`egreso_traslado`) no cuenta: el
+ * y una baja que se recorta al saldo disponible sólo restó lo que había. El uso de
+ * un repuesto en una OT (`egreso_mantencion`) es consumo. El reverso de una entrega
+ * o de un registro de mantención anulados (`ingreso_anulacion`) resta del consumo:
+ * ese material nunca salió. La salida por guía (`egreso_traslado`) no cuenta: el
  * producto sigue existiendo en otra faena.
  */
 export async function getStockConsumption(
@@ -47,7 +48,9 @@ export async function getStockConsumption(
   const nowIso = now.toISOString()
   const sinceIso = new Date(now.getTime() - COVERAGE_WINDOW_DAYS * DAY_MS).toISOString()
   const inWindow = sql`${inventoryMovements.performedAt} >= ${sinceIso}::timestamptz`
-  const isExit = sql`${inventoryMovements.type} in ('egreso_entrega', 'egreso_desecho')`
+  // `egreso_mantencion` (repuesto usado en una OT) es consumo como una entrega: su reverso al anular el
+  // registro llega como `ingreso_anulacion` y resta, igual que el de una entrega anulada.
+  const isExit = sql`${inventoryMovements.type} in ('egreso_entrega', 'egreso_desecho', 'egreso_mantencion')`
   const exitEffect = sql`greatest(${inventoryMovements.stockBefore} - ${inventoryMovements.stockAfter}, 0)`
   const reversalEffect = sql`greatest(${inventoryMovements.stockAfter} - ${inventoryMovements.stockBefore}, 0)`
   const reverses = sql`${inventoryMovements.type} = 'ingreso_anulacion'`

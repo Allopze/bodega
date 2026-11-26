@@ -709,4 +709,5 @@ export const pgliteTestFiles = [
   // NP · L6 jefatura web.
 
   // NP · L7 bodega: vistas, trazabilidad y exportaciones.
+  "lib/__tests__/bodega-repuestos-vistas-pglite.test.ts",
 ]
