@@ -148,7 +148,7 @@ async function validatePreventive(
   }
 
   // El servidor recalcula la sugerencia: lo que declaró el teléfono no cuenta (regla 4).
-  const suggested = suggestInterval(snapshot.intervals, input.reading)
+  const suggested = suggestInterval(snapshot.intervals, input.reading, snapshot.cyclic)
   const manualReason = input.manualScheduleReason?.trim() ?? ""
   const manual = input.intervalValue !== suggested.intervalValue
   if (manual && manualReason.length < 3) {

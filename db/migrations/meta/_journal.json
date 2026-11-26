@@ -2829,6 +2829,13 @@
       "when": 1795701125084,
       "tag": "0403_repuestos_stock_notas_pedido",
       "breakpoints": true
+    },
+    {
+      "idx": 404,
+      "version": "7",
+      "when": 1795724825943,
+      "tag": "0404_mant_schedule_cyclic",
+      "breakpoints": true
     }
   ]
 }

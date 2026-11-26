@@ -45,6 +45,8 @@ export interface FleetRow {
   scheduleName: string | null
   /** Intervalos activos de su pauta, ordenados. */
   intervals: number[]
+  /** Pauta cíclica (ver `suggestInterval`). */
+  cyclic: boolean
   retired: boolean
   retiredReason: string | null
   initialReading: { value: number; date: string } | null
@@ -246,6 +248,7 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
     if (!unit) continue
     const published = row.scheduleId ? snapshotBySchedule.get(row.scheduleId) : undefined
     const intervals = published?.intervals ?? []
+    const cyclic = published?.cyclic === true
     const readings: MantReading[] = (readingsByVehicle.get(row.vehicleId) ?? [])
       .map((item) => ({ value: item.reading, date: item.workDate, source: item.folio ?? "Registro sin folio" }))
     const initial = row.initialReading != null && row.initialReadingDate
@@ -273,6 +276,7 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
     const status = equipmentStatus({
       retired: !row.isActive,
       intervals: row.scheduleId && intervals.length ? intervals : null,
+      cyclic,
       readings,
       initial: initial ? { ...initial, source: "Lectura inicial" } : null,
       lastPreventive: last,
@@ -292,6 +296,7 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
       ? equipmentStatus({
           retired: false,
           intervals,
+          cyclic,
           readings: [{ value: estimate.value, date: todayInChile(estimate.at), source: MANT_GPS_SOURCE_LABEL[estimate.source] }],
           initial: initial ? { ...initial, source: "Lectura inicial" } : null,
           lastPreventive: last,
@@ -314,6 +319,7 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
       scheduleId: row.scheduleId,
       scheduleName: published?.name ?? row.scheduleName,
       intervals,
+      cyclic,
       retired: !row.isActive,
       retiredReason: row.retiredReason,
       initialReading: initial,

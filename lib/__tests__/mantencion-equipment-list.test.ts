@@ -16,7 +16,7 @@ function row(code: string, state: MantEquipmentState, overrides: Partial<FleetRo
   return {
     vehicleId: `v-${code}`, code, plate: `PL-${code}`, noPlate: false, typeId: "t-camion", typeName: "Camión", unit: "km",
     brandId: "b-scania", brandName: "Scania", model: "R450", year: 2021, worksiteId: "ws-1", worksiteName: "Cholguán",
-    scheduleId: "s-1", scheduleName: "Camiones y tractos", intervals: [10000, 20000], retired: state === "baja", retiredReason: null,
+    scheduleId: "s-1", scheduleName: "Camiones y tractos", intervals: [10000, 20000], cyclic: false, retired: state === "baja", retiredReason: null,
     initialReading: null, readings: [], recentPreventives: [],
     status: { state, currentReading: null, nextReading: null, remaining, nextIntervalValue: null, lastPreventive: null },
     gpsStatus: null,

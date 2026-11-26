@@ -1,0 +1,1 @@
+ALTER TABLE "mant_schedules" ADD COLUMN "cyclic" boolean DEFAULT false NOT NULL;

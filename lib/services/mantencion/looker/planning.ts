@@ -27,7 +27,7 @@ export function toPlanningRow(row: FleetRow, period: { from: string; to: string 
   const last = row.status.lastPreventive
   const signed = signedPreventive(row)
   const base = row.intervals.length ? row.intervals[0]! : null
-  const programmed = last && row.intervals.length ? suggestInterval(row.intervals, last.reading).point : null
+  const programmed = last && row.intervals.length ? suggestInterval(row.intervals, last.reading, row.cyclic).point : null
   const real = last?.reading ?? null
   const current = row.status.currentReading?.value ?? null
   const frequency = last?.intervalValue && last.intervalValue > 0 ? last.intervalValue : null

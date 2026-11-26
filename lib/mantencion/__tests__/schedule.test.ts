@@ -171,3 +171,44 @@ describe("checkItemResults", () => {
       .toEqual({ ok: false, message: "La pauta enviada no corresponde a la versión usada." })
   })
 })
+
+describe("pauta cíclica (2026-11-26)", () => {
+  const A = [300, 600, 900, 1_200]
+  const B = [40_000, 80_000, 120_000]
+  const C = [300, 600, 900]
+  /** Fórmula del encargo: hito = ((lectura / frecuencia − 1) mod cantidad) + 1. */
+  const formula = (intervals: number[], reading: number) => intervals[((reading / intervals[0]! - 1) % intervals.length)]
+
+  it("el hito vuelve al primero al cerrar el ciclo", () => {
+    expect(suggestInterval(A, 1_500, true)).toEqual({ index: 0, intervalValue: 300, point: 1_500 })
+    expect(suggestInterval(A, 2_400, true)).toMatchObject({ intervalValue: 1_200 })
+    expect(suggestInterval(B, 160_000, true)).toEqual({ index: 0, intervalValue: 40_000, point: 160_000 })
+    expect(suggestInterval(B, 240_000, true)).toMatchObject({ intervalValue: 120_000 })
+    expect(suggestInterval(C, 1_200, true)).toEqual({ index: 0, intervalValue: 300, point: 1_200 })
+    expect(suggestInterval(C, 1_800, true)).toMatchObject({ intervalValue: 900 })
+  })
+
+  it("coincide con la fórmula del encargo en varias vueltas", () => {
+    for (const intervals of [A, B, C]) {
+      for (let step = 1; step <= intervals.length * 4; step++) {
+        const reading = step * intervals[0]!
+        expect(suggestInterval(intervals, reading, true).intervalValue).toBe(formula(intervals, reading))
+      }
+    }
+  })
+
+  it("redondea la lectura al hito base igual que la regla 4", () => {
+    expect(suggestInterval(B, 158_700, true)).toMatchObject({ point: 160_000, intervalValue: 40_000 })
+    expect(suggestInterval(A, 100, true)).toMatchObject({ point: 300, intervalValue: 300 })
+  })
+
+  it("sin marcar, la pauta sigue con la regla 4 (las pautas existentes no cambian)", () => {
+    expect(suggestInterval(A, 1_800)).toMatchObject({ intervalValue: 900 })
+    expect(suggestInterval(B, 160_000)).toMatchObject({ intervalValue: 80_000 })
+    expect(suggestInterval(A, 1_800, true)).toMatchObject({ intervalValue: 600 })
+  })
+
+  it("una posición que no es un hito (pauta editada con saltos irregulares) cae a la regla 4", () => {
+    expect(suggestInterval([300, 700, 1_000], 1_600, true)).toMatchObject({ point: 1_500, intervalValue: 300 })
+  })
+})

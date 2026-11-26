@@ -14,6 +14,8 @@ export interface StatusInput {
   retired: boolean
   /** Intervalos activos de la pauta asignada; `null` = sin pauta. */
   intervals: readonly number[] | null
+  /** Pauta cíclica (ver `suggestInterval`). */
+  cyclic?: boolean
   readings: readonly MantReading[]
   initial: MantReading | null
   /**
@@ -51,7 +53,7 @@ export function equipmentStatus(input: StatusInput): MantEquipmentStatus {
   const base = baseInterval(input.intervals)
   if (!input.lastPreventive && current.value >= base) return { state: "sin_preventiva", ...empty }
   const nextReading = input.lastPreventive
-    ? suggestInterval(input.intervals, input.lastPreventive.reading).point + base
+    ? suggestInterval(input.intervals, input.lastPreventive.reading, input.cyclic).point + base
     : base
   const remaining = nextReading - current.value
   const state: MantEquipmentState = remaining <= 0 ? "vencida" : remaining <= base * NEXT_THRESHOLD ? "proxima" : "al_dia"
@@ -60,7 +62,7 @@ export function equipmentStatus(input: StatusInput): MantEquipmentStatus {
     currentReading: current,
     nextReading,
     remaining,
-    nextIntervalValue: suggestInterval(input.intervals, nextReading).intervalValue,
+    nextIntervalValue: suggestInterval(input.intervals, nextReading, input.cyclic).intervalValue,
     lastPreventive: input.lastPreventive,
   }
 }
