@@ -17,7 +17,7 @@ import {
   buildEditPayload, hiddenFieldMessage, OtRequestFields, visibleFieldKeys, type FormValues,
 } from "./ot-request-fields"
 
-/** Lo guardado de la solicitud: con esto se precarga el formulario de «Editar solicitud». */
+/** Lo guardado de la solicitud: con esto se precarga el formulario de «Editar orden». */
 export interface OtRequestSnapshot {
   equipmentLabel: string
   /** Faena del equipo (la de imputación): no se cambia aquí y no se ofrece como faena de ejecución. */
@@ -60,7 +60,7 @@ function toFormValues(request: OtRequestSnapshot): FormValues {
 }
 
 /**
- * «Editar solicitud»: el formulario de «Nueva orden» con lo guardado precargado, mientras la OT está «Por
+ * «Editar orden»: el formulario de «Nueva orden» con lo guardado precargado, mientras la OT está «Por
  * asignar» o «Asignada» (`canEditRequest`; el servidor lo vuelve a comprobar). Envía la `version` que vio al
  * abrirse: si otra sesión cambió la OT, el error («cambió en otra sesión») queda en el formulario y lo escrito
  * no se pierde ni pisa en silencio lo de la otra sesión; se cierra y se vuelve a abrir para ver lo nuevo.
@@ -99,7 +99,7 @@ export function EditOtSheet({
     operation.run(
       () => editWorkOrderAction(buildEditPayload(values, { workOrderId, expectedVersion })),
       (result) => {
-        toast.success(result.message ?? "Solicitud actualizada")
+        toast.success(result.message ?? "Orden actualizada")
         onOpenChange(false)
         router.refresh()
       },
@@ -115,9 +115,9 @@ export function EditOtSheet({
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
           <SheetHeader>
             <div>
-              <SheetTitle>Editar la solicitud de {folio}</SheetTitle>
+              <SheetTitle>Editar la orden {folio}</SheetTitle>
               <SheetDescription>
-                Corrige lo que se pidió mientras la orden no entra a taller. El cambio queda en el historial.
+                Corrige lo que se pidió mientras la orden no entra a taller. El cambio queda en los movimientos de la orden.
               </SheetDescription>
             </div>
             <SheetCloseButton />
@@ -131,7 +131,7 @@ export function EditOtSheet({
               <Field label="Equipo" htmlFor="ot-equipo-edicion" helper="El equipo no se cambia: para otro equipo, anula la orden y crea una nueva.">
                 <Input id="ot-equipo-edicion" value={request.equipmentLabel} readOnly />
               </Field>
-              <Field label="Faena de imputación" htmlFor="ot-faena-imputacion" helper="Es la faena del equipo y no se cambia aquí: el folio y los costos se imputan a ella.">
+              <Field label="Faena de imputación" htmlFor="ot-faena-imputacion" helper="Es la faena del equipo y no se cambia aquí: el folio se imputa a ella.">
                 <Input id="ot-faena-imputacion" value={request.worksiteName} readOnly />
               </Field>
               <OtRequestFields
@@ -140,6 +140,7 @@ export function EditOtSheet({
                 fieldError={fieldError}
                 actionTypeRequired={actionTypeRequired}
                 executionOptions={executionOptions}
+                editing
               />
             </FieldGroup>
           </SheetBody>

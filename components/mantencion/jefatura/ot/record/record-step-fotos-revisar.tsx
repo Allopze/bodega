@@ -179,7 +179,7 @@ export function RecordStepRevisar({ draft, dispatch, row, catalogs, folio, userN
         <RecordEquipment row={row} />
         <dl>
           <Row label="Tipo">Preventiva · <span className="font-mono">{folio}</span></Row>
-          <Row label="Pauta" onChange={go("lectura")}>{draft.intervalValue ? formatReading(draft.intervalValue, unit) : "—"}{manual ? " (elegida a mano)" : ""}</Row>
+          <Row label="Intervalo" onChange={go("lectura")}>{draft.intervalValue ? formatReading(draft.intervalValue, unit) : "—"}{manual ? " (elegido a mano)" : ""}</Row>
           <Row label="Lectura" onChange={go("lectura")}><span className="font-mono tabular-nums">{formatReading(reading, unit)}</span></Row>
           <Row label="Fecha" onChange={go("lectura")}>{formatDate(draft.workDate)}</Row>
           <Row label="Ítems" onChange={go("pauta")}>{count("R")} realizados · {count("NR")} no realizados · {count("NA")} no aplican</Row>

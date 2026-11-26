@@ -118,7 +118,7 @@ function stagesOf(detail: WorkOrderDetail): Stage[] {
 export function OtProgressSection({ detail }: { detail: WorkOrderDetail }) {
   const stages = stagesOf(detail)
   return (
-    <SectionCard title="Avance" description="Dónde está la orden y qué sigue.">
+    <SectionCard title="Avance">
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span data-testid="ot-estado"><MetaBadge meta={OT_STATE_META[detail.status]} size="sm" /></span>
         <p className="text-sm text-[var(--color-text)]">{nextStepText(detail)}</p>
@@ -151,10 +151,10 @@ export function OtProgressSection({ detail }: { detail: WorkOrderDetail }) {
   )
 }
 
-/** Orden de trabajo: tipo, fecha, solicitante, mecánico y quién la creó. El folio, el equipo y la faena ya están en el título de la página. */
+/** «Datos de la orden»: tipo, fecha, solicitante, mecánico y quién la creó. El folio, el equipo y la faena ya están en el título de la página. */
 export function OtHeaderSection({ detail }: { detail: WorkOrderDetail }) {
   return (
-    <SectionCard title="Orden de trabajo">
+    <SectionCard title="Datos de la orden">
       <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2" role="group" aria-label="Tipo de trabajo">
         <PaperCheck checked={detail.repair} label="Reparación" />
         <PaperCheck checked={detail.maintenance} label="Mantención" />
@@ -174,7 +174,7 @@ export function OtHeaderSection({ detail }: { detail: WorkOrderDetail }) {
         <DetailItem layout="stacked" label="Faena de imputación" value={detail.worksiteName} />
         {detail.executionWorksiteName && <DetailItem layout="stacked" label="Faena de ejecución" value={detail.executionWorksiteName} />}
         <DetailItem layout="stacked" label="Horas hombre" value={laborHoursText(detail.laborHours)} mono />
-        <DetailItem layout="stacked" label="Días detenido" value={daysStoppedText(detail.daysStopped)} mono />
+        <DetailItem layout="stacked" label="Días en taller" value={daysStoppedText(detail.daysStopped)} mono />
       </dl>
     </SectionCard>
   )
@@ -264,7 +264,7 @@ function quantityText(line: Pick<WorkOrderPartsRequest, "quantity" | "unitOfMeas
 /**
  * «Repuestos»: todo lo que pasa con los repuestos de la OT en un solo lugar. Con el resumen
  * (`overview`, de `loadWorkOrderPartsOverview`) abre con las notas de pedido del mecánico y su avance por
- * línea y con lo reservado sin usar («Liberar» sólo con `mant:np:manage`); sigue con «Repuestos pedidos»,
+ * línea y con lo reservado sin usar («Liberar» sólo con `mant:np:manage`); sigue con «Solicitudes de compra»,
  * las solicitudes de compra vinculadas y su avance, y cierra con lo que los registros enlazados declararon
  * usar, con su estado de stock (Descontado, Pendiente de conciliar…). Sin el resumen —quien no ve las notas
  * de pedido— queda lo de siempre. Es INFORMACIÓN: la OT no lleva repuestos en su documento. El código de la
@@ -296,40 +296,33 @@ export function OtPartsRequestsSection({
   const lines = detail.partsRequests
   const today = todayInChile()
   const orderLink = partsRequestHref
-    ? <Button asChild variant="secondary" size="sm"><Link href={partsRequestHref}>Pedir repuestos</Link></Button>
+    ? <Button asChild variant="secondary" size="sm"><Link href={partsRequestHref}>Solicitar compra</Link></Button>
     : null
   const openableIds = detail.linkedRecords.filter((record) => record.canOpen).map((record) => record.id)
   const openable = new Set(openableIds)
-  // Con notas de pedido o reservas, «Sin repuestos pedidos» sería falso: lo que falta son solicitudes de compra.
   const hasNotes = !!overview && (overview.notes.length > 0 || overview.available.some((part) => part.remaining > 0))
 
   return (
-    <SectionCard
-      title="Repuestos"
-      description={overview ? "Notas de pedido, reservas, compras y consumo de esta orden." : "Solicitudes de compra vinculadas a esta orden y su avance."}
-      action={lines.length > 0 ? orderLink : null}
-    >
+    <SectionCard title="Repuestos" action={lines.length > 0 ? orderLink : null}>
       {overview && <div className={hasNotes ? "mb-4" : undefined}><OtPartsOverview workOrderId={detail.id} overview={overview} canOpenNotes={canOpenNotes} canManage={canManageNotes} /></div>}
       {/* Siempre presente (también sin solicitudes): es el nombre con que se encuentra la tabla de compras. */}
-      <h3 className="mb-1.5 text-sm font-semibold text-[var(--color-text)]">Repuestos pedidos</h3>
+      <h3 className="mb-1.5 text-sm font-semibold text-[var(--color-text)]">Solicitudes de compra</h3>
       {lines.length === 0 ? (
         orderLink ? (
           <EmptyState
             compact
             as="p"
-            title={hasNotes ? "Sin solicitudes de compra" : "Sin repuestos pedidos"}
-            description={hasNotes
-              ? "Si hay que comprar algún repuesto de esta orden, pídelo desde aquí: la solicitud queda vinculada a la OT y al equipo."
-              : "Si esta orden necesita repuestos, pídelos desde aquí: la solicitud queda vinculada a la OT y al equipo."}
+            title="Sin solicitudes de compra"
+            description="Si hay que comprar un repuesto para esta orden, solicítalo desde aquí: la solicitud queda vinculada a la OT y al equipo."
             action={orderLink}
           />
         ) : (
-          <Pending>{hasNotes ? "Aún no hay solicitudes de compra para esta orden." : "Nadie ha pedido repuestos para esta orden."}</Pending>
+          <Pending>Aún no hay solicitudes de compra para esta orden.</Pending>
         )
       ) : (
         <>
           {/* Bajo md, tarjetas: a 390 px la tabla partía el SKU en cuatro renglones y cortaba el estado. */}
-          <ul aria-label="Repuestos pedidos" className="flex flex-col gap-2 md:hidden">
+          <ul aria-label="Solicitudes de compra" className="flex flex-col gap-2 md:hidden">
             {lines.map((line) => (
               <li key={line.itemId}>
                 <ResponsiveDataListCard
@@ -355,7 +348,7 @@ export function OtPartsRequestsSection({
             ))}
           </ul>
           <div className="hidden md:block">
-            <TableRoot aria-label="Repuestos pedidos" framed={false} className="-mx-5 w-auto">
+            <TableRoot aria-label="Solicitudes de compra" framed={false} className="-mx-5 w-auto">
               <Table>
                 <TableHeader>
                   <TableRow>

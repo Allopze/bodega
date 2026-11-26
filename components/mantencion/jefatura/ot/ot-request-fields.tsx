@@ -12,7 +12,7 @@ import { OtItemListEditor } from "./ot-item-list-editor"
 
 /**
  * Los campos de la solicitud de una OT, compartidos por «Nueva orden» (`new-ot-sheet.tsx`) y «Editar
- * solicitud» (`edit-ot-sheet.tsx`): el mismo formulario, con lo guardado precargado al editar. Lo que sólo
+ * orden» (`edit-ot-sheet.tsx`): el mismo formulario, con lo guardado precargado al editar. Lo que sólo
  * existe al crear (equipo y mecánico) queda en cada hoja.
  */
 
@@ -43,6 +43,36 @@ export function checksForActionType(type: ActionType): { repair: boolean; mainte
 /** Líneas sin texto fuera: la lista guarda también las que se están escribiendo. */
 function cleanItems(items: string[]): string[] {
   return items.map((item) => item.trim()).filter(Boolean)
+}
+
+export interface DiscardNotices {
+  /** Qué se borra al guardar porque Reparación quedó desmarcada; `null` si no hay nada que perder. */
+  repair: string | null
+  /** Idem para Mantención. */
+  maintenance: string | null
+}
+
+/**
+ * Lo que `requestPayload` descarta al guardar y el formulario ya no muestra: la descripción y los trabajos anexos
+ * de una Reparación desmarcada, las mantenciones solicitadas de una Mantención desmarcada (OT4-6). Se dice junto
+ * a la casilla, antes de guardar: quien la desmarca a mano sabe qué pierde, sin un diálogo de confirmación.
+ */
+export function discardNotices(values: Pick<FormValues, "repair" | "maintenance" | "repairDescription" | "annexItems" | "maintenanceItems">): DiscardNotices {
+  let repair: string | null = null
+  if (!values.repair) {
+    const annex = cleanItems(values.annexItems).length
+    const parts = [
+      values.repairDescription.trim() ? "la descripción" : null,
+      annex === 1 ? "1 trabajo anexo" : annex > 1 ? `${annex} trabajos anexos` : null,
+    ].filter((part): part is string => part !== null)
+    if (parts.length > 0) repair = `Al guardar se ${parts.length > 1 || annex > 1 ? "borran" : "borra"} ${parts.join(" y ")}.`
+  }
+  let maintenance: string | null = null
+  if (!values.maintenance) {
+    const lines = cleanItems(values.maintenanceItems).length
+    if (lines > 0) maintenance = `Al guardar se ${lines > 1 ? "borran" : "borra"} ${lines === 1 ? "1 mantención solicitada" : `${lines} mantenciones solicitadas`}.`
+  }
+  return { repair, maintenance }
 }
 
 /**
@@ -113,19 +143,36 @@ export interface OtRequestFieldsProps {
   actionTypeRequired?: boolean
   /** Faenas elegibles como «Faena de ejecución» (sin la del equipo). Sin ellas, el campo no se ofrece. */
   executionOptions: Array<{ value: string; label: string }>
+  /**
+   * «Editar orden»: elegir el tipo de acción NO toca Reparación ni Mantención (hacerlo borraba, al guardar, la
+   * descripción y los trabajos anexos de una OT ya pedida: OT4-6) y desmarcar un tipo con contenido avisa qué se
+   * pierde. En el alta, el tipo sigue prellenando las casillas.
+   */
+  editing?: boolean
 }
 
 /** De «Tipo de acción» a «Observaciones», en el orden del talonario. */
-export function OtRequestFields({ values, setValues, fieldError, actionTypeRequired, executionOptions }: OtRequestFieldsProps) {
+export function OtRequestFields({ values, setValues, fieldError, actionTypeRequired, executionOptions, editing = false }: OtRequestFieldsProps) {
   const set = <K extends keyof FormValues>(key: K, value: FormValues[K]) => setValues((current) => ({ ...current, [key]: value }))
   const toggleSpecialty = (specialty: Specialty, checked: boolean) => setValues((current) => ({
     ...current,
     specialties: SPECIALTIES.filter((value) => (value === specialty ? checked : current.specialties.includes(value))),
   }))
 
+  const notices = editing ? discardNotices(values) : { repair: null, maintenance: null }
+  const discardText = [notices.repair, notices.maintenance].filter((text): text is string => text !== null)
+
   return (
     <>
-      <Field label="Tipo de acción" htmlFor="ot-tipo-accion" required={actionTypeRequired} error={fieldError("actionType")} helper="Al elegirla se marca Reparación (correctiva) o Mantención (preventiva y predictiva); puedes ajustarlas.">
+      <Field
+        label="Tipo de acción"
+        htmlFor="ot-tipo-accion"
+        required={actionTypeRequired}
+        error={fieldError("actionType")}
+        helper={editing
+          ? "Elegirlo no cambia lo marcado en «Tipo de trabajo»."
+          : "Al elegirla se marca Reparación (correctiva) o Mantención (preventiva y predictiva); puedes ajustarlas."}
+      >
         <OptionSelect
           id="ot-tipo-accion"
           emptyLabel={actionTypeRequired ? undefined : "Sin definir"}
@@ -134,7 +181,8 @@ export function OtRequestFields({ values, setValues, fieldError, actionTypeRequi
           value={values.actionType}
           onValueChange={(value) => setValues((current) => {
             const type = (ACTION_TYPES as readonly string[]).includes(value) ? (value as ActionType) : ""
-            return type ? { ...current, actionType: type, ...checksForActionType(type) } : { ...current, actionType: "" }
+            if (!type) return { ...current, actionType: "" }
+            return editing ? { ...current, actionType: type } : { ...current, actionType: type, ...checksForActionType(type) }
           })}
         />
       </Field>
@@ -162,6 +210,10 @@ export function OtRequestFields({ values, setValues, fieldError, actionTypeRequi
           <Checkbox id="ot-mantencion" label="Mantención" checked={values.maintenance} onChange={(event) => set("maintenance", event.target.checked)} />
         </div>
         {fieldError("repair", "maintenance") && <p role="alert" className="text-xs text-[var(--color-danger)]">{fieldError("repair", "maintenance")}</p>}
+        {/* Región viva siempre presente: el aviso aparece al desmarcar y un lector de pantalla lo anuncia. */}
+        <div role="status" className="flex flex-col gap-1 empty:hidden">
+          {discardText.map((text) => <p key={text} className="text-xs text-[var(--color-warning-ink)]">{text}</p>)}
+        </div>
       </fieldset>
 
       <div className="grid gap-4 sm:grid-cols-2">

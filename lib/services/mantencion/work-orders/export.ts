@@ -14,6 +14,8 @@ import type { ReportCell, ReportData, ReportSheet } from "@/lib/reports/export-m
 import { todayInChile } from "@/lib/utils"
 import { viewerFromSession } from "../access"
 import { ACTION_TYPE_LABELS, SPECIALTY_LABELS, workOrderActionType } from "@/lib/mantencion/action-type"
+// Los rótulos de evento salen de la misma tabla que la ficha de la OT (OT4-9): una sola fuente para las dos.
+import { otEventLabel } from "@/components/mantencion/jefatura/ot/ot-labels"
 import { daysStopped, specialtiesOf, workOrdersWhere, type WorkOrderListFilters } from "./query"
 import { loadWorkOrderPartsRows } from "./export-parts"
 
@@ -34,30 +36,6 @@ export type WorkOrderExportOutcome =
 /** En el libro, «No informado» (no «Sin clasificar») cuando no se puede saber: así lo pide Trinorma para las OT anteriores. */
 const ACTION_TYPE_LABELS_EXPORT = { ...ACTION_TYPE_LABELS, sin_clasificar: "No informado" } as const
 const yesNo = (value: boolean) => (value ? "Sí" : "No")
-const EVENT_LABELS: Record<OtEventType, string> = {
-  created: "Creada",
-  edited: "Solicitud editada",
-  assigned: "Asignada",
-  unassigned: "Desasignada",
-  taken: "Tomada por el mecánico",
-  started: "Ingreso a taller",
-  entry_updated: "Ingreso corregido",
-  estimate_changed: "Fecha estimada cambiada",
-  item_added: "Ítem agregado",
-  items_marked: "Ítems marcados",
-  finished: "Salida de taller",
-  received: "Equipo recibido",
-  rejected: "Devuelta a taller",
-  conformed: "Conformidad en faena",
-  voided: "Anulada",
-  reopened: "Reabierta",
-  record_linked: "Registro enlazado",
-  parts_note_created: "Nota de pedido enviada",
-  parts_note_resolved: "Nota de pedido resuelta",
-  parts_allocated: "Repuestos reservados",
-  parts_consumed: "Repuestos usados",
-  parts_released: "Reserva liberada",
-}
 
 export async function exportWorkOrders(input: {
   session: Session
@@ -191,7 +169,7 @@ export async function exportWorkOrders(input: {
       headers: [...leadHeaders, "Evento", "Estado anterior", "Estado nuevo", "Motivo", "Por", "Fecha"],
       rows: events.map(({ event, actorName }) => [
         ...lead(event.workOrderId),
-        EVENT_LABELS[event.type as OtEventType] ?? event.type,
+        otEventLabel({ type: event.type as OtEventType, changeSet: event.changeSet }),
         event.fromStatus ? OT_STATUS_LABELS[event.fromStatus as OtStatus] : "",
         event.toStatus ? OT_STATUS_LABELS[event.toStatus as OtStatus] : "",
         event.reason ?? "",

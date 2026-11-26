@@ -168,7 +168,7 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
               </Field>
 
               {chosen && (
-                <Field label="Faena de imputación" htmlFor="ot-faena-imputacion" helper="Es la faena del equipo y no se cambia aquí: el folio y los costos se imputan a ella.">
+                <Field label="Faena de imputación" htmlFor="ot-faena-imputacion" helper="Es la faena del equipo y no se cambia aquí: el folio se imputa a ella.">
                   <Input id="ot-faena-imputacion" value={chosen.worksiteName} readOnly />
                 </Field>
               )}

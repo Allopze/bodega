@@ -28,8 +28,8 @@ export function RecordEquipment({ row }: { row: FleetRow }) {
   )
 }
 
-/** Aviso que se confirma en la misma pantalla (salto de lectura, preventiva repetida): no tapa lo que se corrige. */
-function AskCallout({ title, children, confirm, revise }: {
+/** Aviso que se confirma en la misma pantalla (salto de lectura, preventiva repetida): no tapa lo que se corrige. También lo usa «Registrar ingreso» de la OT. */
+export function AskCallout({ title, children, confirm, revise }: {
   title: string
   children?: React.ReactNode
   confirm: { label: string; onClick: () => void }
@@ -46,13 +46,13 @@ function AskCallout({ title, children, confirm, revise }: {
   )
 }
 
-/** «Pauta que corresponde»: qué toca según la lectura y, si hace falta, otra pauta con su motivo. */
+/** «Intervalo que toca»: qué toca según la lectura y, si hace falta, otro intervalo con su motivo. */
 function PautaPanel({ draft, dispatch, row, analysis }: { draft: FlowDraft; dispatch: React.Dispatch<FlowAction>; row: FleetRow; analysis: LectureAnalysis }) {
   const { schedule, suggestion, intervalValue, manual, value } = analysis
   const unit = row.eq.unit
   if (!schedule || schedule.intervals.length === 0) {
     return (
-      <Callout tone="warning" title="Pauta que corresponde">
+      <Callout tone="warning" title="Intervalo que toca">
         Este equipo no tiene pauta asignada: no se puede registrar una preventiva. Registra una correctiva o pide a la jefatura que le asigne una pauta.
         {draft.errors.schedule && <p role="alert" className="mt-1 font-semibold">{draft.errors.schedule}</p>}
       </Callout>
@@ -61,8 +61,8 @@ function PautaPanel({ draft, dispatch, row, analysis }: { draft: FlowDraft; disp
   if (value === null || !suggestion || intervalValue === null) {
     return (
       <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] p-3 text-sm">
-        <p className="font-semibold">Pauta que corresponde · {schedule.name}</p>
-        <p className="mt-1 text-[var(--color-text-muted)]">Escribe la lectura y te decimos qué pauta toca.</p>
+        <p className="font-semibold">Intervalo que toca · {schedule.name}</p>
+        <p className="mt-1 text-[var(--color-text-muted)]">Escribe la lectura para ver qué intervalo toca.</p>
       </div>
     )
   }
@@ -70,19 +70,19 @@ function PautaPanel({ draft, dispatch, row, analysis }: { draft: FlowDraft; disp
   const open = draft.intervalOpen || manual
   return (
     <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] p-3 text-sm">
-      <p className="font-semibold">Pauta que corresponde · {schedule.name}</p>
+      <p className="font-semibold">Intervalo que toca · {schedule.name}</p>
       <p className="mt-1 flex items-baseline justify-between gap-2">
         <span className="font-mono text-lg font-semibold tabular-nums">{formatReading(intervalValue, unit)}</span>
         <span className="text-xs text-[var(--color-text-muted)]">{analysis.items.length} ítems</span>
       </p>
       <p className="mt-1 text-[var(--color-text-muted)]">
         {manual
-          ? `Elegida a mano. Por la lectura correspondía la de ${formatReading(suggestion.intervalValue, unit)}.`
+          ? `Lo elegiste a mano. Por la lectura correspondía la de ${formatReading(suggestion.intervalValue, unit)}.`
           : `Lectura ${formatReading(value, unit)} → toca la de ${formatReading(intervalValue, unit)}${last ? ` (${lastPreventiveLabel(last)}: ${formatReading(last.intervalValue, unit)}, ${formatDate(last.date)}${preventiveSupportText(last) ? `; ${preventiveSupportText(last, { midSentence: true })}` : ""})` : ""}.`}
       </p>
       {open ? (
         <div className="mt-2 flex flex-col gap-3">
-          <div role="group" aria-label="Pauta a usar" className="flex flex-wrap gap-2">
+          <div role="group" aria-label="Intervalo a usar" className="flex flex-wrap gap-2">
             {schedule.intervals.map((interval, index) => (
               <Button
                 key={interval}
@@ -97,7 +97,7 @@ function PautaPanel({ draft, dispatch, row, analysis }: { draft: FlowDraft; disp
             ))}
           </div>
           {manual ? (
-            <Field label="¿Por qué usas otra pauta?" htmlFor="ot-rec-ivreason" error={draft.errors.ivReason} required>
+            <Field label="¿Por qué usas otro intervalo?" htmlFor="ot-rec-ivreason" error={draft.errors.ivReason} required>
               <Input id="ot-rec-ivreason" value={draft.intervalReason} placeholder="Ej: la anterior quedó incompleta" maxLength={500}
                 onChange={(event) => dispatch({ type: "patch", patch: { intervalReason: event.target.value } })} />
             </Field>
@@ -109,7 +109,7 @@ function PautaPanel({ draft, dispatch, row, analysis }: { draft: FlowDraft; disp
         </div>
       ) : (
         <Button type="button" variant="link" size="sm" className="mt-1 px-0" onClick={() => dispatch({ type: "patch", patch: { intervalOpen: true } })}>
-          Elegir otra pauta
+          Elegir otro intervalo
         </Button>
       )}
     </div>

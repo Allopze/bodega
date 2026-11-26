@@ -20,6 +20,7 @@ import { OptionSelect } from "@/components/ui/option-select"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation, type OperationResult } from "@/lib/hooks/use-operation"
 import { ACTION_TYPES, ACTION_TYPE_LABELS, SPECIALTIES, SPECIALTY_LABELS, type ActionType, type Specialty } from "@/lib/mantencion/action-type"
+import { parseReadingInput } from "@/lib/mantencion/format"
 import { OT_ITEM_KIND_LABELS, OT_ITEM_MAX_PER_KIND, OT_LABOR_HOURS_MAX, type OtItemKind } from "@/lib/mantencion/work-order-states"
 import type { MantUnit } from "@/lib/mantencion/types"
 import type { WorkOrderDetail, WorkOrderItemDetail } from "@/lib/services/mantencion/work-orders/types"
@@ -27,6 +28,8 @@ import { toast } from "@/lib/toast"
 import { chileLocalDateTimeToUtc, chileWallClockDate } from "@/lib/utils"
 import { isValidReason, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 import { reservedUnusedText, type ReservedUnusedNotice } from "../notas-pedido/reserved-unused"
+import { checkEntryReading, lastReadingText, readingToText, type EntryReadings } from "./ot-entry-reading"
+import { AskCallout } from "./record/record-step-lectura"
 
 /** Datos que viajan con toda acción sobre una OT existente. */
 export interface OtBase {
@@ -130,13 +133,15 @@ export function AssignDialog({
 type Entry = NonNullable<WorkOrderDetail["entry"]>
 
 export function EntryDialog({
-  open, onOpenChange, base, folio, unit, entry, catalogs, correcting,
+  open, onOpenChange, base, folio, unit, entry, catalogs, correcting, readings = null,
 }: DialogProps & {
   unit: MantUnit
   entry: Entry | null
   catalogs: { workshops: Array<{ id: string; name: string }>; drivers: Array<{ id: string; name: string }> }
   /** Ya hay un ingreso: el diálogo lo corrige en vez de registrarlo. */
   correcting: boolean
+  /** Las lecturas del equipo, para decir la última y validar la que se escribe. `null` = no se pudieron cargar. */
+  readings?: EntryReadings | null
 }) {
   const [workshopKind, setWorkshopKind] = React.useState<"interno" | "externo">(entry?.workshopKind ?? "interno")
   const [workshopId, setWorkshopId] = React.useState(entry?.workshopId ?? "")
@@ -144,16 +149,26 @@ export function EntryDialog({
   const [operatorDriverId, setOperatorDriverId] = React.useState<string | null>(entry?.operatorDriverId ?? null)
   const [operatorName, setOperatorName] = React.useState(entry?.operatorName ?? "")
   const [entryAt, setEntryAt] = React.useState(entry ? isoToChileLocal(entry.entryAt) : chileNowLocal())
-  const [odometer, setOdometer] = React.useState(entry?.odometer != null ? String(entry.odometer) : "")
-  const [hourmeter, setHourmeter] = React.useState(entry?.hourmeter != null ? String(entry.hourmeter) : "")
+  // Sólo la lectura de la unidad del equipo: la otra no se pide ni se envía (el servidor la descartaba en silencio).
+  const [readingText, setReadingText] = React.useState(() => readingToText(unit === "km" ? entry?.odometer : entry?.hourmeter))
   const [estimate, setEstimate] = React.useState(entry?.estimatedDeliveryDate ?? "")
+  // Los errores no se muestran mientras se tipea («8» baja de 7.501 camino a «8100»): al salir del campo o al enviar.
+  const [readingTouched, setReadingTouched] = React.useState(false)
+  const [attempted, setAttempted] = React.useState(false)
+  const [ackJump, setAckJump] = React.useState<{ reading: number; workDate: string } | null>(null)
+  const readingRef = React.useRef<HTMLInputElement>(null)
   const op = useOtAction(() => onOpenChange(false))
 
-  const readingRaw = unit === "km" ? odometer : hourmeter
-  const readingOk = readingRaw.trim() !== "" && Number.isFinite(Number(readingRaw.replace(",", ".")))
-  const valid = !!entryAt && !!estimate && readingOk && (workshopKind === "interno" || !!workshopId)
+  const typed = parseReadingInput(readingText)
+  const workDate = entryAt.slice(0, 10)
+  const result = checkEntryReading({ text: readingText, unit, workDate, known: readings })
+  const jump = result.ok ? result.jump : null
+  const jumpPending = !!jump && result.ok && !(ackJump?.reading === result.value && ackJump.workDate === workDate)
+  const readingError = !result.ok && (readingTouched || attempted) ? result.message : undefined
+  const meter = unit === "km" ? "Odómetro" : "Horómetro"
+  // La lectura no desactiva el botón: si no se entiende o choca, el motivo se dice junto al campo.
+  const valid = !!entryAt && !!estimate && (workshopKind === "interno" || !!workshopId)
 
-  const toNumber = (raw: string) => (raw.trim() === "" ? null : Number(raw.replace(",", ".")))
   const driverOptions = catalogs.drivers.map((driver) => ({ value: driver.id, label: driver.name }))
   const operatorValue = operatorDriverId ?? operatorName
 
@@ -163,8 +178,7 @@ export function EntryDialog({
     else { setOperatorDriverId(null); setOperatorName(value) }
   }
 
-  function submit(event: React.FormEvent) {
-    event.preventDefault()
+  function send(reading: number) {
     const input = {
       ...base,
       entry: {
@@ -174,18 +188,27 @@ export function EntryDialog({
         operatorDriverId,
         operatorName: operatorName.trim() || null,
         entryAt: chileLocalDateTimeToUtc(entryAt),
-        odometer: toNumber(odometer),
-        hourmeter: toNumber(hourmeter),
+        odometer: unit === "km" ? reading : null,
+        hourmeter: unit === "km" ? null : reading,
         estimatedDeliveryDate: estimate,
       },
     }
     op.run(() => (correcting ? updateWorkOrderEntryAction(input) : startWorkOrderAction(input)), correcting ? "Ingreso corregido" : "Ingreso a taller registrado")
   }
 
+  function submit(event: React.FormEvent) {
+    event.preventDefault()
+    setAttempted(true)
+    if (!result.ok) { readingRef.current?.focus(); return }
+    // Un salto de lectura se confirma: el aviso queda en pantalla con «Sí, está bien» y «Corregir la lectura».
+    if (jumpPending) return
+    send(result.value)
+  }
+
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!op.pending) onOpenChange(next) }}>
       <DialogContent>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} noValidate>
           <DialogHeader>
             <DialogTitle>{correcting ? "Corregir el ingreso de" : "Registrar ingreso de"} {folio}</DialogTitle>
             <DialogDescription>Al ingresar, el equipo pasa a mantención si estaba operativo.</DialogDescription>
@@ -216,16 +239,40 @@ export function EntryDialog({
               <DateTimePicker id="ot-entry-at" value={entryAt} onChange={setEntryAt} />
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Kilómetro" htmlFor="ot-entry-km" required={unit === "km"}>
-                <Input id="ot-entry-km" inputMode="decimal" value={odometer} onChange={(event) => setOdometer(event.target.value)} />
+              <Field
+                label={`${meter} al ingresar`}
+                htmlFor="ot-entry-reading"
+                required
+                error={readingError}
+                helper={lastReadingText(readings, unit) ?? undefined}
+              >
+                <Input
+                  ref={readingRef}
+                  id="ot-entry-reading"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="0"
+                  value={typed.text}
+                  error={!!readingError}
+                  onChange={(event) => setReadingText(parseReadingInput(event.target.value).stored)}
+                  onBlur={() => setReadingTouched(true)}
+                />
               </Field>
-              <Field label="Horómetro" htmlFor="ot-entry-h" required={unit === "h"}>
-                <Input id="ot-entry-h" inputMode="decimal" value={hourmeter} onChange={(event) => setHourmeter(event.target.value)} />
+              <Field label="Entrega estimada" htmlFor="ot-entry-estimate" required helper="Se puede cambiar después; cada cambio queda en los movimientos de la orden.">
+                <DatePicker id="ot-entry-estimate" value={estimate} onChange={setEstimate} min={entryAt.slice(0, 10)} ariaLabel="Entrega estimada" />
               </Field>
             </div>
-            <Field label="Entrega estimada" htmlFor="ot-entry-estimate" required helper="Se puede cambiar después; cada cambio queda en el historial.">
-              <DatePicker id="ot-entry-estimate" value={estimate} onChange={setEstimate} min={entryAt.slice(0, 10)} ariaLabel="Fecha estimada de entrega" />
-            </Field>
+            {attempted && jumpPending && result.ok && jump && (
+              <AskCallout
+                title={jump.question}
+                confirm={{
+                  label: "Sí, está bien",
+                  // Confirmar y enviar en un solo gesto, como en el registro desde el PC; si falta otro dato, sólo se confirma.
+                  onClick: () => { setAckJump({ reading: result.value, workDate }); if (valid) send(result.value) },
+                }}
+                revise={{ label: "Corregir la lectura", onClick: () => readingRef.current?.focus() }}
+              />
+            )}
           </div>
           <ErrorLine message={op.message} />
           <Footer pending={op.pending} onCancel={() => onOpenChange(false)} submitLabel={correcting ? "Guardar corrección" : "Registrar ingreso"} disabled={!valid} />
@@ -235,7 +282,7 @@ export function EntryDialog({
   )
 }
 
-// ── Fecha estimada de entrega ────────────────────────────────────────────────
+// ── Entrega estimada ─────────────────────────────────────────────────────────
 
 export function EstimateDialog({ open, onOpenChange, base, folio, current }: DialogProps & { current: string | null }) {
   const [estimate, setEstimate] = React.useState(current ?? "")
@@ -253,11 +300,11 @@ export function EstimateDialog({ open, onOpenChange, base, folio, current }: Dia
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>Cambiar la entrega estimada de {folio}</DialogTitle>
-            {current && <DialogDescription>El cambio queda en el historial con su motivo.</DialogDescription>}
+            {current && <DialogDescription>El cambio queda en los movimientos de la orden, con su motivo.</DialogDescription>}
           </DialogHeader>
           <div className="flex flex-col gap-4">
-            <Field label="Nueva fecha estimada" htmlFor="ot-estimate-date" required>
-              <DatePicker id="ot-estimate-date" value={estimate} onChange={setEstimate} ariaLabel="Nueva fecha estimada de entrega" />
+            <Field label="Nueva entrega estimada" htmlFor="ot-estimate-date" required>
+              <DatePicker id="ot-estimate-date" value={estimate} onChange={setEstimate} ariaLabel="Nueva entrega estimada" />
             </Field>
             {current && (
               <Field label="Motivo del cambio" htmlFor="ot-estimate-reason" required helper={`Al menos ${REASON_MIN_LENGTH} caracteres.`}>
@@ -550,8 +597,8 @@ export interface OtClassificationSnapshot {
 }
 
 /**
- * «Corregir clasificación» (sólo jefatura): para una OT que ya no admite «Editar solicitud» (en taller, por
- * recibir, por conformidad o cerrada). Precarga lo guardado, pide un motivo y deja el cambio en el historial.
+ * «Corregir tipo de acción» (sólo jefatura): para una OT que ya no admite «Editar orden» (en taller, por
+ * recibir, por conformidad o cerrada). Precarga lo guardado, pide un motivo y deja el cambio en los movimientos.
  * Envía la versión del momento de abrir: un conflicto («cambió en otra sesión») queda dentro del diálogo y no
  * pisa en silencio lo de la otra sesión.
  */
@@ -595,7 +642,7 @@ export function ReclassifyDialog({
       executionWorksiteId: executionWorksiteId || null,
       ...(classification.hasExit ? { laborHours: hours } : {}),
       reason: reason.trim(),
-    }), "Clasificación corregida")
+    }), "Tipo de acción corregido")
   }
 
   return (
@@ -603,9 +650,9 @@ export function ReclassifyDialog({
       <DialogContent>
         <form onSubmit={submit} noValidate>
           <DialogHeader>
-            <DialogTitle>Corregir la clasificación de {folio}</DialogTitle>
+            <DialogTitle>Corregir el tipo de acción de {folio}</DialogTitle>
             <DialogDescription>
-              Estos datos alimentan el Panel y el Excel; el cambio queda en el historial con su motivo.
+              Estos datos alimentan el Panel y el Excel; el cambio queda en los movimientos de la orden, con su motivo.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">

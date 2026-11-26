@@ -65,11 +65,11 @@ const MANAGE: Permission[] = ["mant:ot:manage"]
 const EXECUTE: Permission[] = ["mant:ot:execute", "mant:ot:manage"]
 
 export async function editWorkOrderAction(input: unknown): Promise<WorkOrderActionState> {
-  return run(input, editWorkOrderSchema, ["mant:ot:manage", "mant:ot:create"], "No se pudo guardar la solicitud.", (actor, data) => editWorkOrderRequest(actor, data))
+  return run(input, editWorkOrderSchema, ["mant:ot:manage", "mant:ot:create"], "No se pudo guardar la orden.", (actor, data) => editWorkOrderRequest(actor, data))
 }
-/** Corrige tipo de acción, especialidades, faena de ejecución y horas hombre de una OT que ya no admite «Editar solicitud»: sólo la jefatura, con motivo. */
+/** Corrige tipo de acción, especialidades, faena de ejecución y horas hombre de una OT que ya no admite «Editar orden»: sólo la jefatura, con motivo. */
 export async function reclassifyWorkOrderAction(input: unknown): Promise<WorkOrderActionState> {
-  return run(input, reclassifyWorkOrderSchema, MANAGE, "No se pudo corregir la clasificación.", (actor, data) => reclassifyWorkOrder(actor, data))
+  return run(input, reclassifyWorkOrderSchema, MANAGE, "No se pudo corregir el tipo de acción.", (actor, data) => reclassifyWorkOrder(actor, data))
 }
 export async function assignWorkOrderAction(input: unknown): Promise<WorkOrderActionState> {
   return run(input, assignWorkOrderSchema, MANAGE, "No se pudo asignar la orden de trabajo.", (actor, data) => assignWorkOrder(actor, data))
@@ -85,7 +85,7 @@ export async function updateWorkOrderEntryAction(input: unknown): Promise<WorkOr
   return run(input, updateWorkOrderEntrySchema, EXECUTE, "No se pudo corregir el ingreso a taller.", (actor, data) => updateWorkOrderEntry(actor, data))
 }
 export async function changeWorkOrderEstimateAction(input: unknown): Promise<WorkOrderActionState> {
-  return run(input, changeWorkOrderEstimateSchema, EXECUTE, "No se pudo cambiar la fecha estimada.", (actor, data) => changeWorkOrderEstimate(actor, data))
+  return run(input, changeWorkOrderEstimateSchema, EXECUTE, "No se pudo cambiar la entrega estimada.", (actor, data) => changeWorkOrderEstimate(actor, data))
 }
 export async function markWorkOrderItemsAction(input: unknown): Promise<WorkOrderActionState> {
   return run(input, markWorkOrderItemsSchema, EXECUTE, "No se pudieron guardar los ítems.", (actor, data) => markWorkOrderItems(actor, data))

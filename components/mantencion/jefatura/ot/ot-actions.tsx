@@ -20,6 +20,7 @@ import { EditOtSheet, type OtRequestSnapshot } from "./edit-ot-sheet"
 import {
   AssignDialog, EntryDialog, EstimateDialog, FinishDialog, ItemsDialog, ReasonDialog, ReceiptDialog, ReclassifyDialog, type OtBase,
 } from "./ot-action-dialogs"
+import type { EntryReadings } from "./ot-entry-reading"
 import { OtRecordSheet, type RecordKind } from "./record/ot-record-sheet"
 
 /**
@@ -42,12 +43,17 @@ export interface OtActionsProps {
   mechanics: Array<{ id: string; name: string; worksiteNames: string[] }> | null
   /** Sólo se carga cuando se puede registrar o corregir el ingreso. */
   entryCatalogs: { workshops: Array<{ id: string; name: string }>; drivers: Array<{ id: string; name: string }> } | null
+  /**
+   * Las lecturas del equipo, para que «Registrar ingreso» diga la última y valide la que se escribe como la app. Se
+   * carga con `entryCatalogs`; `null` si no se pudo cargar (el diálogo igual lee bien el número, sin compararlo).
+   */
+  entryReadings?: EntryReadings | null
   /** Quien actúa: «Recibió» por defecto al recibir el equipo. */
   actorName: string
   pdfHref: string
   /**
    * El PDF exige `mant:ot:view_worksite|view_all` (la hoja imprimible expone el
-   * trabajo enlazado), así que el ítem se dibuja sólo para quien puede pedirlo.
+   * trabajo enlazado), así que el botón se dibuja sólo para quien puede pedirlo.
    */
   canDownloadPdf: boolean
   /** Tipo de la OT: qué registro se ofrece (reparación → correctiva, mantención → preventiva). */
@@ -59,17 +65,17 @@ export interface OtActionsProps {
   recordForm: WorkOrderRecordForm | null
   actorUserId: string
   /**
-   * Destino de «Pedir repuestos» (`/solicitudes/nueva?tipo=repuestos&ot=<id>`), que
+   * Destino de «Solicitar compra» (`/solicitudes/nueva?tipo=repuestos&ot=<id>`), que
    * precarga equipo, faena y OT. La página lo calcula con `repuestos:create` y la OT
    * no cerrada ni anulada; `null` oculta la acción. Es presentación: la página de
    * solicitudes vuelve a validar permiso, alcance y estado de la OT.
    */
   partsRequestHref: string | null
-  /** «Editar solicitud»: estados «Por asignar» y «Asignada», jefatura o quien creó la OT (`detail.canEditRequest`). */
+  /** «Editar orden»: estados «Por asignar» y «Asignada», jefatura o quien creó la OT (`detail.canEditRequest`). */
   canEditRequest: boolean
-  /** «Corregir clasificación»: jefatura, cualquier estado menos anulada, sólo cuando no aplica «Editar solicitud» (`detail.canReclassify`). */
+  /** «Corregir tipo de acción»: jefatura, cualquier estado menos anulada, sólo cuando no aplica «Editar orden» (`detail.canReclassify`). */
   canReclassify: boolean
-  /** Lo guardado de la solicitud y la clasificación: precarga «Editar solicitud», «Corregir clasificación» y la salida. */
+  /** Lo guardado de la solicitud y la clasificación: precarga «Editar orden», «Corregir tipo de acción» y la salida. */
   request: OtRequestSnapshot
   /** Faenas elegibles como «Faena de ejecución»; sólo se cargan si se puede editar o corregir (`null` si no). */
   executionWorksites: Array<{ id: string; name: string }> | null
@@ -116,15 +122,16 @@ type DialogName = "edit" | "reclassify" | "assign" | "entry" | "estimate" | "ite
  * en el historial.
  *
  * A la vista quedan la acción de la etapa (ingreso, salida, recepción,
- * conformidad), asignar una OT por asignar, marcar ítems, rechazar y reabrir.
- * En taller, mientras falta el registro que exige la salida, la acción de la
- * etapa es «Registrar trabajo» (correctiva o preventiva, desde el PC) y la
- * salida queda secundaria; con el registro hecho, «Registrar otra…» pasa al menú.
- * El resto (reasignar, desasignar, editar la solicitud o corregir su
- * clasificación, cambiar la fecha estimada, corregir el
- * ingreso, pedir repuestos, el PDF y anular) va en «Más acciones»: con todo a la
- * vista, una OT en taller llegaba a siete botones y apretaba el título en la barra
- * superior.
+ * conformidad), asignar una OT por asignar, marcar ítems, rechazar, reabrir y
+ * «Descargar PDF» (secundaria, igual que en el registro: antes se escondía en el
+ * menú y no se encontraba). En taller, mientras falta el registro que exige la
+ * salida, la acción de la etapa es «Registrar trabajo» (correctiva o preventiva,
+ * desde el PC) y la salida queda secundaria; con el registro hecho, «Registrar
+ * otra…» pasa al menú. El resto (reasignar, desasignar, editar la orden o corregir
+ * su tipo de acción, cambiar la entrega estimada, corregir el ingreso, solicitar
+ * compra y anular) va en «Más acciones», que no se dibuja si no tiene nada: con
+ * todo a la vista, una OT en taller llegaba a siete botones y apretaba el título
+ * en la barra superior.
  */
 export function OtActions(props: OtActionsProps) {
   const router = useRouter()
@@ -143,6 +150,14 @@ export function OtActions(props: OtActionsProps) {
     : []
   const recordFirst = !!recordForm && props.needsLinkedRecord
   const direct = options.length === 1 && !options[0]?.disabled ? options[0] : null
+  // «Más acciones» sólo existe si tiene algo: una OT cerrada de quien sólo puede descargar el PDF no lleva un menú vacío.
+  const canAssignFromMenu = allowed.has("assign") && props.status !== "solicitada"
+  const showReclassify = !props.canEditRequest && props.canReclassify
+  const showCorrectEntry = editExecution && !!props.entry && !!props.entryCatalogs
+  const moreRecordOptions = !!recordForm && !recordFirst ? options.filter((option) => !option.disabled) : []
+  const hasRoutineItems = canAssignFromMenu || allowed.has("unassign") || props.canEditRequest || showReclassify || editExecution
+    || showCorrectEntry || moreRecordOptions.length > 0 || !!props.partsRequestHref
+  const hasMenu = hasRoutineItems || allowed.has("void")
 
   function unassign() {
     unassignOp.run(
@@ -213,53 +228,55 @@ export function OtActions(props: OtActionsProps) {
         </Button>
       )}
 
+      {props.canDownloadPdf && (
+        <Button asChild variant="secondary" size="sm">
+          <a href={props.pdfHref} download>
+            <FilePdf className="mr-1 h-4 w-4 shrink-0" aria-hidden />
+            Descargar PDF
+          </a>
+        </Button>
+      )}
+
       {/* No modal: los ítems abren diálogos. Un menú modal deja `pointer-events: none`
           en el body justo cuando monta el diálogo, y la página quedaba sin responder. */}
-      <DropdownMenu modal={false}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" loading={unassignOp.pending}>
-            Más acciones
-            <CaretDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {allowed.has("assign") && props.status !== "solicitada" && (
-            <DropdownMenuItem onSelect={() => setDialog("assign")}>{props.assignedToUserId ? "Reasignar" : "Asignar"}</DropdownMenuItem>
-          )}
-          {allowed.has("unassign") && <DropdownMenuItem onSelect={unassign}>Desasignar</DropdownMenuItem>}
-          {props.canEditRequest && <DropdownMenuItem onSelect={() => setDialog("edit")}>Editar solicitud</DropdownMenuItem>}
-          {!props.canEditRequest && props.canReclassify && <DropdownMenuItem onSelect={() => setDialog("reclassify")}>Corregir clasificación</DropdownMenuItem>}
-          {editExecution && <DropdownMenuItem onSelect={() => setDialog("estimate")}>Cambiar entrega estimada</DropdownMenuItem>}
-          {editExecution && props.entry && props.entryCatalogs && (
-            <DropdownMenuItem onSelect={() => setDialog("entry")}>Corregir ingreso</DropdownMenuItem>
-          )}
-          {!!recordForm && !recordFirst && options.filter((option) => !option.disabled).map((option) => (
-            <DropdownMenuItem key={option.kind} onSelect={() => setRecordKind(option.kind)}>Registrar otra {KIND_TEXT[option.kind].toLowerCase()}</DropdownMenuItem>
-          ))}
-          {props.partsRequestHref && (
-            <DropdownMenuItem asChild>
-              <Link href={props.partsRequestHref} className="flex items-center gap-2">
-                <Package className="h-4 w-4 shrink-0" aria-hidden /> Pedir repuestos
-              </Link>
-            </DropdownMenuItem>
-          )}
-          {props.canDownloadPdf && (
-            <DropdownMenuItem asChild>
-              <a href={props.pdfHref} download className="flex items-center gap-2">
-                <FilePdf className="h-4 w-4 shrink-0" aria-hidden /> Descargar PDF
-              </a>
-            </DropdownMenuItem>
-          )}
-          {allowed.has("void") && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-[var(--color-danger-ink)]" onSelect={() => { voidOp.setMessage(""); setDialog("void") }}>
-                Anular
+      {hasMenu && (
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" loading={unassignOp.pending}>
+              Más acciones
+              <CaretDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {canAssignFromMenu && (
+              <DropdownMenuItem onSelect={() => setDialog("assign")}>{props.assignedToUserId ? "Reasignar" : "Asignar"}</DropdownMenuItem>
+            )}
+            {allowed.has("unassign") && <DropdownMenuItem onSelect={unassign}>Desasignar</DropdownMenuItem>}
+            {props.canEditRequest && <DropdownMenuItem onSelect={() => setDialog("edit")}>Editar orden</DropdownMenuItem>}
+            {showReclassify && <DropdownMenuItem onSelect={() => setDialog("reclassify")}>Corregir tipo de acción</DropdownMenuItem>}
+            {editExecution && <DropdownMenuItem onSelect={() => setDialog("estimate")}>Cambiar entrega estimada</DropdownMenuItem>}
+            {showCorrectEntry && <DropdownMenuItem onSelect={() => setDialog("entry")}>Corregir ingreso</DropdownMenuItem>}
+            {moreRecordOptions.map((option) => (
+              <DropdownMenuItem key={option.kind} onSelect={() => setRecordKind(option.kind)}>Registrar otra {KIND_TEXT[option.kind].toLowerCase()}</DropdownMenuItem>
+            ))}
+            {props.partsRequestHref && (
+              <DropdownMenuItem asChild>
+                <Link href={props.partsRequestHref} className="flex items-center gap-2">
+                  <Package className="h-4 w-4 shrink-0" aria-hidden /> Solicitar compra
+                </Link>
               </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+            )}
+            {allowed.has("void") && (
+              <>
+                {hasRoutineItems && <DropdownMenuSeparator />}
+                <DropdownMenuItem className="text-[var(--color-danger-ink)]" onSelect={() => { voidOp.setMessage(""); setDialog("void") }}>
+                  Anular
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       {unassignOp.message && <p role="alert" className="basis-full text-sm text-[var(--color-danger-ink)]">{unassignOp.message}</p>}
 
@@ -293,7 +310,7 @@ export function OtActions(props: OtActionsProps) {
         <AssignDialog {...dialogProps} mechanics={props.mechanics} currentUserId={props.assignedToUserId} />
       )}
       {dialog === "entry" && props.entryCatalogs && (
-        <EntryDialog {...dialogProps} unit={props.unit} entry={props.entry} catalogs={props.entryCatalogs} correcting={!!props.entry} />
+        <EntryDialog {...dialogProps} unit={props.unit} entry={props.entry} catalogs={props.entryCatalogs} correcting={!!props.entry} readings={props.entryReadings ?? null} />
       )}
       {dialog === "estimate" && <EstimateDialog {...dialogProps} current={props.estimatedDeliveryDate} />}
       {dialog === "items" && <ItemsDialog {...dialogProps} items={props.items} />}

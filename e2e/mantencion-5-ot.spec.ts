@@ -219,12 +219,16 @@ test.describe("Orden de trabajo (OT)", () => {
     await expect(textoVisible(page, new RegExp(`${NOMBRE_MECANICO_BIO}.*desde`))).toBeVisible()
     await expect(textoVisible(page, ITEM_ANEXO)).toBeVisible()
     await expect(textoVisible(page, ITEM_MANTENCION)).toBeVisible()
-    await expect(page.getByRole("list", { name: "Historial de la orden de trabajo" }).getByText("Orden solicitada")).toBeVisible()
-    await expect(page.getByRole("list", { name: "Historial de la orden de trabajo" }).getByText("Mecánico asignado")).toBeVisible()
-    // Reasignar es de la jefatura: el administrador de contrato no lo ve.
-    await page.getByRole("button", { name: /^Más acciones/ }).click()
-    await expect(page.getByRole("menuitem", { name: "Reasignar", exact: true })).toHaveCount(0)
-    await page.keyboard.press("Escape")
+    await expect(page.getByRole("list", { name: "Movimientos de la orden de trabajo" }).getByText("Orden solicitada")).toBeVisible()
+    await expect(page.getByRole("list", { name: "Movimientos de la orden de trabajo" }).getByText("Mecánico asignado")).toBeVisible()
+    // Reasignar es de la jefatura: el administrador de contrato no lo ve. «Más acciones» sólo existe si tiene algo
+    // (el PDF salió del menú), así que se abre únicamente cuando está.
+    const masAcciones = page.getByRole("button", { name: /^Más acciones/ })
+    if (await masAcciones.count()) {
+      await masAcciones.click()
+      await expect(page.getByRole("menuitem", { name: "Reasignar", exact: true })).toHaveCount(0)
+      await page.keyboard.press("Escape")
+    }
 
     // La lista la muestra «Asignada».
     await page.goto("/mantencion/ot")
@@ -351,7 +355,7 @@ test.describe("Orden de trabajo (OT)", () => {
     await expectEstadoEnFicha(page, "En taller")
     await expect(page.getByText("Esta orden fue devuelta una vez")).toBeVisible()
     await expect(page.getByText(`Motivo: ${MOTIVO_RECHAZO}`).first()).toBeVisible()
-    const historial = page.getByRole("list", { name: "Historial de la orden de trabajo" })
+    const historial = page.getByRole("list", { name: "Movimientos de la orden de trabajo" })
     await expect(historial.getByText("Rechazada")).toBeVisible()
     await expect(historial.getByText(MOTIVO_RECHAZO)).toBeVisible()
     expect((await estadoOt(folio))?.rejectionCount).toBe(1)
@@ -433,7 +437,7 @@ test.describe("Orden de trabajo (OT)", () => {
       await expect(page.getByRole("button", { name: accion, exact: true })).toHaveCount(0)
     }
 
-    const historial = page.getByRole("list", { name: "Historial de la orden de trabajo" })
+    const historial = page.getByRole("list", { name: "Movimientos de la orden de trabajo" })
     for (const evento of ["Orden solicitada", "Mecánico asignado", "Ingreso a taller", "Rechazada", "Conformidad en faena"]) {
       await expect(historial.getByText(evento).first()).toBeVisible()
     }
@@ -441,14 +445,13 @@ test.describe("Orden de trabajo (OT)", () => {
     // Los dos registros de mantención (el de antes y el de después del rechazo) quedan enlazados.
     // Desde la concesión del 2026-11-21 el administrador de contrato ve los registros de su faena
     // (`mant:records:view_worksite`): los folios se abren.
-    const enlazados = page.getByRole("complementary", { name: "Historial y registros enlazados" })
+    const enlazados = page.getByRole("complementary", { name: "Movimientos y registros enlazados" })
     await expect(enlazados.getByText(/^MC-BIO-\d{4}$/)).toHaveCount(2)
     await expect(enlazados.getByText(/sin acceso para abrirlo/)).toHaveCount(0)
 
-    // PDF: el botón descarga un PDF de verdad.
+    // PDF: «Descargar PDF» está a la vista (ya no en «Más acciones») y descarga un PDF de verdad.
     const descarga = page.waitForEvent("download", { timeout: 90_000 })
-    await page.getByRole("button", { name: /^Más acciones/ }).click()
-    await page.getByRole("menuitem", { name: "Descargar PDF" }).click()
+    await page.getByRole("link", { name: "Descargar PDF" }).click()
     const archivo = await descarga
     expect(archivo.suggestedFilename()).toMatch(/\.pdf$/i)
     const respuesta = await page.request.get(`/api/mantencion/ot/${otId}/pdf`)
