@@ -496,6 +496,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-schedules-pglite.test.ts",
   // Mantención de equipos: lista de registros por alcance, filtros, indicadores, panel, Excel y PDF archivado (L3).
   "lib/__tests__/mantencion-records-pglite.test.ts",
+  // Pautas preventivas de los formularios externos (2026-11-26): seed, idempotencia y ciclo de hitos.
+  "lib/__tests__/mantencion-pautas-preventivas-pglite.test.ts",
   // «Marcar como revisados» en lote de Registros firmados: alcance, anulados, ya revisados, tope y bitácora.
   "lib/__tests__/mantencion-records-review-batch-pglite.test.ts",
   // Mantención de equipos: hoja de vida de la ficha (alcance, anuladas, totales), seguro y Excel del historial.

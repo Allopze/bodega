@@ -22,6 +22,7 @@ function row(overrides: Partial<FleetRow> = {}): FleetRow {
     scheduleId: "s-1",
     scheduleName: "Camiones",
     intervals: [10_000, 40_000],
+    cyclic: false,
     retired: false,
     retiredReason: null,
     initialReading: null,

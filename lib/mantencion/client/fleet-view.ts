@@ -99,7 +99,7 @@ export function buildRow(eq: CatalogEquipment, schedule: MantScheduleSnapshot | 
   }
 
   const status: MantEquipmentStatus = mine.length > 0 && schedule
-    ? equipmentStatus({ retired: false, intervals: schedule.intervals, readings, initial, lastPreventive })
+    ? equipmentStatus({ retired: false, intervals: schedule.intervals, cyclic: schedule.cyclic, readings, initial, lastPreventive })
     : {
         state: eq.state,
         currentReading: currentReading(readings, initial),

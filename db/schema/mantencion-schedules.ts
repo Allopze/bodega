@@ -19,6 +19,12 @@ export const mantSchedules = pgTable("mant_schedules", {
   nameKey:   text("name_key").notNull(),
   unit:      text("unit").notNull(),
   origin:    text("origin"),
+  /**
+   * Pauta cíclica (2026-11-26): el ciclo es el MAYOR intervalo activo y la secuencia de servicios
+   * vuelve al primero al terminarlo (300, 600, 900, 1.200, 1.500 = 300…). Sin marcar rige la regla 4
+   * (el mayor intervalo que divide la lectura). Ver `suggestInterval`.
+   */
+  cyclic:    boolean("cyclic").notNull().default(false),
   version:   integer("version").notNull().default(1),
   deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "string" }),
   deletedBy: text("deleted_by").references(() => users.id, { onDelete: "set null" }),

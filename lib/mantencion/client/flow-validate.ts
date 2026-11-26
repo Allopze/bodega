@@ -102,7 +102,7 @@ export function analyzeLecture(draft: FlowDraft, row: FleetRow | null): LectureA
   const jump = check.ok ? check.jump : null
   if (draft.kind !== "P" || !schedule || schedule.intervals.length === 0) return { ...empty, check, jump }
 
-  const suggestion = suggestInterval(schedule.intervals, value)
+  const suggestion = suggestInterval(schedule.intervals, value, schedule.cyclic)
   const chosen = draft.intervalIndex !== null && draft.intervalIndex < schedule.intervals.length ? draft.intervalIndex : suggestion.index
   const intervalValue = schedule.intervals[chosen] ?? suggestion.intervalValue
   const duplicate = findDuplicatePreventive({

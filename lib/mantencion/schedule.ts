@@ -9,12 +9,30 @@ import type { MantChecklistItem, MantScheduleSnapshot, MantSuggestion } from "./
  * `max(b, round(L / b) × b)` y se elige el MAYOR intervalo que divide exacto
  * al punto; si ninguno lo divide, la base. 5.400 h en maquinaria (300/600/900/
  * 1.200) → punto 5.400 → 900 h.
+ *
+ * Pauta cíclica (`cyclic`, 2026-11-26): el ciclo es el mayor intervalo y la secuencia vuelve al
+ * primero al cerrarlo. El punto se lleva al ciclo (`punto mod ciclo`, 0 = el ciclo completo) y se
+ * elige el intervalo igual a esa posición: 1.500 h → 300 y 1.800 h → 600 en 300/600/900/1.200;
+ * 160.000 km → 40.000 en 40/80/120 mil. Con intervalos b, 2b … nb es la fórmula
+ * `((punto / b − 1) mod n) + 1`. Si la posición no coincide con un intervalo (pauta editada con
+ * saltos irregulares) se aplica la regla 4 sobre esa posición.
  */
-export function suggestInterval(intervals: readonly number[], reading: number): MantSuggestion {
+export function suggestInterval(intervals: readonly number[], reading: number, cyclic = false): MantSuggestion {
   if (intervals.length === 0) throw new Error("La pauta no tiene intervalos")
   const sorted = [...intervals].sort((a, b) => a - b)
   const base = sorted[0]!
   const point = Math.max(base, Math.round(reading / base) * base)
+  if (cyclic) {
+    const cycle = sorted[sorted.length - 1]!
+    const position = point % cycle === 0 ? cycle : point % cycle
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      if (sorted[i] === position) return { index: i, intervalValue: position, point }
+    }
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      if (position % sorted[i]! === 0) return { index: i, intervalValue: sorted[i]!, point }
+    }
+    return { index: 0, intervalValue: base, point }
+  }
   for (let i = sorted.length - 1; i >= 0; i--) {
     const value = sorted[i]!
     if (point % value === 0) return { index: i, intervalValue: value, point }

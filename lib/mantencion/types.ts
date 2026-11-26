@@ -35,6 +35,8 @@ export interface MantScheduleSnapshot {
   unit: MantUnit
   version: number
   intervals: number[]
+  /** Pauta cíclica (ver `suggestInterval`). Ausente en snapshots anteriores a 2026-11-26 = no cíclica. */
+  cyclic?: boolean
   groups: Array<{
     name: string
     items: Array<{ key: string; name: string; applies: boolean[] }>

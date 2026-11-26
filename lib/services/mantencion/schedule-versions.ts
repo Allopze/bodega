@@ -52,6 +52,7 @@ export async function buildScheduleSnapshot(client: Reader, scheduleId: string, 
     unit: schedule.unit as MantUnit,
     version,
     intervals: intervals.map((interval) => interval.value),
+    cyclic: schedule.cyclic,
     groups: groups
       .map((group) => ({
         name: group.name,

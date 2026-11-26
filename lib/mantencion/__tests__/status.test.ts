@@ -228,3 +228,20 @@ describe("regla 11 · equipo en taller", () => {
     expect(workshopState({ ...base, inWorkshop: false, entryDate: null }, today)).toMatchObject({ inWorkshop: false, stale: false, daysStopped: null })
   })
 })
+
+describe("estado con pauta cíclica (2026-11-26)", () => {
+  const reading = (value: number): MantReading => ({ value, date: "2026-11-20", source: "MP-0001" })
+  const last = (value: number, intervalValue: number): MantPreventiveSummary => ({ reading: value, date: "2026-11-20", intervalValue })
+
+  it("tras el último hito la próxima vuelve al primero", () => {
+    expect(equipmentStatus({ retired: false, intervals: [40_000, 80_000, 120_000], cyclic: true, readings: [reading(120_000)], initial: null, lastPreventive: last(120_000, 120_000) }))
+      .toMatchObject({ nextReading: 160_000, nextIntervalValue: 40_000 })
+    expect(equipmentStatus({ retired: false, intervals: [300, 600, 900], cyclic: true, readings: [reading(900)], initial: null, lastPreventive: last(900, 900) }))
+      .toMatchObject({ nextReading: 1_200, nextIntervalValue: 300 })
+  })
+
+  it("sin `cyclic` el mismo equipo sigue la regla 4", () => {
+    expect(equipmentStatus({ retired: false, intervals: [40_000, 80_000, 120_000], readings: [reading(120_000)], initial: null, lastPreventive: last(120_000, 120_000) }))
+      .toMatchObject({ nextReading: 160_000, nextIntervalValue: 80_000 })
+  })
+})
