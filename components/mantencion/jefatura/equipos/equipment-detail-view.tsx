@@ -25,7 +25,7 @@ import type { EquipmentDetailData, EquipmentEditData } from "./equipment-detail-
  * 2026-11-15). La cabecera y las pestañas son las de la ficha (`header`, `tabs`, y «Editar
  * vehículo» en `fichaActions`); las demás acciones son las de Mantención. Se abre en modo LECTURA
  * —estado de mantención (con el taller y las lecturas), plan de mantención, historial de cambios,
- * compras vinculadas, seguro y hoja de vida— y «Editar mantención» cambia la columna principal por
+ * compras vinculadas, seguro, historial de mantenciones y órdenes de trabajo— y «Editar mantención» cambia la columna principal por
  * el formulario de la pauta, la lectura inicial y la baja. La identidad del equipo se edita sólo en
  * «Editar vehículo» (paso 4b). Las acciones viven en `PageHeader` (regla de layout 5); por eso
  * este componente de cliente es quien lo rinde.
@@ -144,7 +144,7 @@ export function EquipmentDetailView({
           {showInsurance && !insuranceFirst && insurance}
         </div>
       </div>
-      {/* Ancho completo: la hoja de vida tiene ocho columnas y no cabe en la columna lateral. */}
+      {/* Ancho completo: el historial de mantenciones y las órdenes de trabajo no caben en la columna lateral. */}
       <div className="mt-5">
         <EquipmentLifeSection life={data.life} code={data.code} />
       </div>

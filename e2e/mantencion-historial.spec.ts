@@ -208,6 +208,24 @@ test("la hoja de vida del equipo muestra su línea de tiempo y lleva al historia
   // 33 trabajos del camión X1 (los 30 de octubre y los 3 de septiembre de la ficha), de a 10 en la hoja de vida; el más reciente (31-10) va primero y bajo el año 2026.
   await expect(page.getByRole("heading", { name: "2026", exact: true })).toBeVisible()
   await expect(page.getByRole("link", { name: /Correctiva, 31-10-2026, Formulario: QA_ Trabajo masivo 30/ })).toBeVisible()
+  // Una sola tarjeta de historial (2026-11-26): debajo iba otra, «Hoja de vida», que sólo leía lo firmado en la app y
+  // decía «Este equipo aún no tiene mantenciones» bajo estos mismos 33 trabajos.
+  await expect(page.getByRole("heading", { name: "Historial de mantenciones", exact: true })).toHaveCount(1)
+  await expect(page.getByRole("heading", { name: "Hoja de vida", exact: true })).toHaveCount(0)
+  await expect(page.getByText(/aún no tiene mantenciones/)).toHaveCount(0)
+  // «Exportar historial» baja lo mismo que muestra la tarjeta. El camión X1 no tiene nada firmado: antes respondía
+  // «Este equipo todavía no tiene mantenciones que puedas exportar».
+  const [download] = await Promise.all([
+    page.waitForEvent("download", { timeout: 30_000 }),
+    page.getByRole("button", { name: "Exportar historial", exact: true }).filter({ visible: true }).click(),
+  ])
+  expect(download.suggestedFilename()).toMatch(new RegExp(`^historial-${EX.bulk.code}-\\d{4}-\\d{2}-\\d{2}\\.xlsx$`))
+  const book = await readBook(download)
+  expect([...book.keys()]).toEqual(["Historial", "Metadatos"])
+  const sheet = book.get("Historial")!
+  expect(sheet.rows).toHaveLength(EX.bulkRows + FICHA.length)
+  expect(field(sheet, sheet.rows[0]!, "Trabajo")).toBe("QA_ Trabajo masivo 30")
+  expect(sheet.rows.every((cells) => field(sheet, cells, "Origen") === "Formulario")).toBe(true)
   const all = page.getByRole("link", { name: "Ver todo el historial de este equipo", exact: true })
   await expect(all).toHaveAttribute("href", new RegExp(`/mantencion/registros/historicos\\?equipo=${EX.bulk.id}&periodo=todo`))
   await all.click()

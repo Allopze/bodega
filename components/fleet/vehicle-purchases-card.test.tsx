@@ -22,6 +22,8 @@ describe("«Repuestos y servicios comprados»", () => {
     render(<VehiclePurchasesCard records={[]} canOpenRequests canOpenOrders newRequestHref={NEW_REQUEST} />)
     expect(screen.getByRole("heading", { name: "Repuestos y servicios comprados" })).toBeDefined()
     expect(screen.getByText("Sin compras vinculadas")).toBeDefined()
+    // El vacío es texto dentro de la tarjeta, no un segundo encabezado al nivel de su título.
+    expect(screen.queryByRole("heading", { name: "Sin compras vinculadas" })).toBeNull()
     // El único botón es el del estado vacío: no se repite en la cabecera.
     const links = screen.getAllByRole("link", { name: "Pedir repuestos" })
     expect(links).toHaveLength(1)

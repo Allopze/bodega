@@ -111,7 +111,7 @@ async function insertHistorical(sourceKey: string, vehicleId: string | null, wor
 const sheetFolios = async (base64: string) => {
   const book = new ExcelJS.Workbook()
   await book.xlsx.load(Buffer.from(base64, "base64") as unknown as ArrayBuffer)
-  const sheet = book.getWorksheet("Historial")!
+  const sheet = book.getWorksheet("Registros firmados")!
   const folios: string[] = []
   sheet.eachRow((row, index) => { if (index > 1) folios.push(String(row.getCell(1).value ?? "")) })
   return folios.sort()

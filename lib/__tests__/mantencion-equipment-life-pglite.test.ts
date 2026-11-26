@@ -32,6 +32,7 @@ const { recordVisibility, recordVisibilitySql, viewerFromSession } = await impor
 const { loadEquipmentInsurance, loadLifeRows, loadLifeTotals, loadOpenWorkOrdersSummary, insuranceState, INSURANCE_WARNING_DAYS } = await import("@/lib/services/mantencion/equipment-life")
 const { expiryState } = await import("@/lib/expiry")
 const { exportEquipmentHistory } = await import("@/lib/services/mantencion/export-equipment-history")
+const { HISTORY_EXPORT_HEADERS } = await import("@/lib/services/mantencion/export-history")
 
 async function sessionOf(userId: string): Promise<Session> {
   const rbac = await getUserRbacById(userId, true)
@@ -217,12 +218,22 @@ describe("libro de Excel del historial", () => {
     return { outcome, workbook }
   }
 
-  it("trae Historial, Ítems de preventivas, Repuestos y Metadatos, con fechas reales y la anulada marcada", async () => {
+  it("abre con el Historial de la ficha y sigue con Registros firmados, Ítems de preventivas, Repuestos y Metadatos", async () => {
     const { outcome, workbook } = await workbookOf(IDS.jefe)
     expect(outcome.ok).toBe(true)
     expect(outcome.ok && outcome.data.filename).toMatch(/^historial-KA-135-\d{4}-\d{2}-\d{2}\.xlsx$/)
-    expect(workbook!.worksheets.map((sheet) => sheet.name)).toEqual(["Historial", "Ítems de preventivas", "Repuestos", "Metadatos"])
-    const sheet = workbook!.getWorksheet("Historial")!
+    expect(workbook!.worksheets.map((sheet) => sheet.name)).toEqual(["Historial", "Registros firmados", "Ítems de preventivas", "Repuestos", "Metadatos"])
+    // «Historial» = la tarjeta «Historial de mantenciones» de la ficha: mismas columnas que el Historial de
+    // mantenciones y sin la anulada (encabezado + las tres vigentes).
+    const work = workbook!.getWorksheet("Historial")!
+    expect((work.getRow(1).values as unknown[]).slice(1)).toEqual([...HISTORY_EXPORT_HEADERS])
+    expect(work.rowCount).toBe(4)
+    expect(Array.from({ length: 3 }, (_, i) => work.getRow(i + 2).getCell(4).value)).toEqual(["Registro firmado", "Registro firmado", "Registro firmado"])
+  })
+
+  it("«Registros firmados» trae el detalle de lo firmado, con fechas reales y la anulada marcada", async () => {
+    const { workbook } = await workbookOf(IDS.jefe)
+    const sheet = workbook!.getWorksheet("Registros firmados")!
     expect(sheet.rowCount).toBe(5)
     expect(sheet.views[0]).toMatchObject({ state: "frozen", ySplit: 1 })
     expect(sheet.autoFilter).toBeTruthy()
@@ -248,10 +259,30 @@ describe("libro de Excel del historial", () => {
     expect(workbook!.getWorksheet("Repuestos")!.rowCount).toBe(2)
   })
 
+  // Regresión (2026-11-26): un equipo con años de formularios y nada firmado en la app respondía «Este equipo
+  // todavía no tiene mantenciones que puedas exportar» bajo una tarjeta que los mostraba.
+  it("un equipo sólo con formularios exporta su Historial, sin hojas de firmados vacías", async () => {
+    await testDb.insert(schema.mantHistoricalRecords).values({
+      sourceKey: "f".repeat(64), fingerprint: "huella-mq01", sourceFile: "consolidado.xlsx", sourceSheet: "MANTENCIONES", sourceRow: 7,
+      submittedAt: "2025-08-15T10:00:00", worksiteText: "BIODIVERSA", worksiteId: IDS.wsBio, equipmentText: "MQ-01", vehicleId: IDS.machineBio,
+      equipmentMatch: "linked", orderText: "", kindText: "CORRECTIVA", readingText: "13939", description: "MONTAR Y TENSAR ORUGA",
+      entryDate: "2025-08-15", hoursText: "", fields: [], importedBy: IDS.jefe,
+    })
+    const { outcome, workbook } = await workbookOf(IDS.jefe, IDS.machineBio)
+    expect(outcome.ok).toBe(true)
+    expect(workbook!.worksheets.map((sheet) => sheet.name)).toEqual(["Historial", "Metadatos"])
+    const row = workbook!.getWorksheet("Historial")!.getRow(2)
+    const headers = [...HISTORY_EXPORT_HEADERS] as string[]
+    expect(row.getCell(headers.indexOf("Origen") + 1).value).toBe("Formulario")
+    expect(row.getCell(headers.indexOf("Trabajo") + 1).value).toBe("MONTAR Y TENSAR ORUGA")
+    expect(row.getCell(headers.indexOf("Lectura") + 1).value).toBe("13939")
+  })
+
   it("un supervisor sólo exporta lo que ve, y no puede exportar un equipo de otra faena", async () => {
     const { workbook } = await workbookOf(IDS.supBio)
     // Encabezado + las cuatro mantenciones del equipo, la de Cholguán incluida (la historia sigue al equipo).
-    expect(workbook!.getWorksheet("Historial")!.rowCount).toBe(5)
+    expect(workbook!.getWorksheet("Registros firmados")!.rowCount).toBe(5)
+    expect(workbook!.getWorksheet("Historial")!.rowCount).toBe(4)
     const foreign = await workbookOf(IDS.supBio, IDS.truckCho)
     expect(foreign.outcome).toMatchObject({ ok: false })
   })
