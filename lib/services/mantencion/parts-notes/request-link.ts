@@ -1,7 +1,9 @@
 import { and, asc, eq, inArray } from "drizzle-orm"
 import type { Tx } from "@/db"
-import { mantPartsNoteItems, mantPartsNotes } from "@/db/schema"
+import { mantPartsNoteItems, mantPartsNotes, mantWorkOrders } from "@/db/schema"
 import { PartsValidationError } from "../parts/types"
+import { lockWorkOrdersShare } from "./context"
+import { autoRejectionReason, autoRejectionTrail, rejectLineTx, workOrderEndOf } from "./line-rejection"
 import { loadPurchases } from "./lines"
 import { allPurchasesDead, recalcNoteStatusTx } from "./status"
 import { writeTrail } from "./trail"
@@ -11,10 +13,18 @@ import { writeTrail } from "./trail"
  * que las compra (`purchase_request_items.parts_note_item_id`). Corre dentro de la
  * transacción de la solicitud; las líneas se toman `FOR NO KEY UPDATE`, ordenadas por
  * id (no chocan con la FK de las reservas ni de las solicitudes, que piden `KEY SHARE`).
+ * Antes de las líneas se toman sus OT `FOR SHARE` (orden global de bloqueo): cerrar o
+ * anular una OT rechaza sus líneas pendientes y no se cruza con esta transacción.
  */
 
-/** Líneas con su NP, tomadas con el bloqueo. */
-function lockLines(tx: Tx, itemIds: readonly string[]) {
+/** Líneas con su NP y el estado de su OT, tomadas con el bloqueo (la OT va primero). */
+async function lockLines(tx: Tx, itemIds: readonly string[]) {
+  const owners = await tx
+    .select({ workOrderId: mantPartsNotes.workOrderId })
+    .from(mantPartsNoteItems)
+    .innerJoin(mantPartsNotes, eq(mantPartsNotes.id, mantPartsNoteItems.noteId))
+    .where(inArray(mantPartsNoteItems.id, [...itemIds]))
+  await lockWorkOrdersShare(tx, owners.map((row) => row.workOrderId))
   return tx
     .select({
       itemId: mantPartsNoteItems.id,
@@ -24,10 +34,13 @@ function lockLines(tx: Tx, itemIds: readonly string[]) {
       code: mantPartsNotes.code,
       noteStatus: mantPartsNotes.status,
       workOrderId: mantPartsNotes.workOrderId,
+      workOrderStatus: mantWorkOrders.status,
+      workOrderVoidReason: mantWorkOrders.voidReason,
       worksiteId: mantPartsNotes.worksiteId,
     })
     .from(mantPartsNoteItems)
     .innerJoin(mantPartsNotes, eq(mantPartsNotes.id, mantPartsNoteItems.noteId))
+    .innerJoin(mantWorkOrders, eq(mantWorkOrders.id, mantPartsNotes.workOrderId))
     .where(inArray(mantPartsNoteItems.id, [...itemIds]))
     .orderBy(asc(mantPartsNoteItems.id))
     .for("no key update", { of: mantPartsNoteItems })
@@ -82,6 +95,10 @@ export async function linkNoteItemsToRequestTx(tx: Tx, input: { links: Array<{ n
  * rechazada) vuelve a «pendiente», sin quien la resolvió, para que jefatura la gestione de
  * nuevo; se recalcula el estado de la NP y la OT recibe el evento. Con un comprador vivo, o
  * con una línea en otro estado, no hace nada.
+ *
+ * Si la OT ya se cerró o se anuló nadie va a gestionar la línea: en vez de volver a «pendiente»
+ * (y dejar la NP otra vez en «Pendientes» por una orden terminada) se rechaza sola, con el
+ * mismo motivo que las líneas pendientes al terminar la OT (NP4-7).
  */
 export async function unlinkNoteItemsFromRequestTx(tx: Tx, input: { noteItemIds: string[]; actorUserId: string }): Promise<void> {
   const itemIds = [...new Set(input.noteItemIds)]
@@ -94,6 +111,14 @@ export async function unlinkNoteItemsFromRequestTx(tx: Tx, input: { noteItemIds:
   for (const row of rows) {
     const liveness = (purchases.get(row.itemId) ?? []).map((purchase) => ({ itemStatus: purchase.status, requestStatus: purchase.requestStatus }))
     if (!allPurchasesDead(liveness)) continue
+    const end = workOrderEndOf(row.workOrderStatus, row.workOrderVoidReason)
+    if (end) {
+      await rejectLineTx(tx, {
+        itemId: row.itemId, noteId: row.noteId, code: row.code, noteWorksiteId: row.worksiteId, workOrderId: row.workOrderId, resolution: "en_compra",
+      }, { reason: autoRejectionReason(end), actor: { userId: input.actorUserId }, extra: { ...autoRejectionTrail(end), previousResolution: "en_compra" } })
+      touched.add(row.noteId)
+      continue
+    }
     await tx.update(mantPartsNoteItems).set({
       resolution: "pendiente", resolutionReason: null, resolvedByUserId: null, resolvedAt: null,
     }).where(and(eq(mantPartsNoteItems.id, row.itemId), eq(mantPartsNoteItems.resolution, "en_compra")))

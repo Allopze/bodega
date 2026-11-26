@@ -8,8 +8,9 @@ import { formatQty, requiresWholeQuantity } from "@/lib/utils"
 import type { MantViewer } from "../access"
 import { addToAllocationTx, freeStockTx, lockForStockTx } from "../parts/allocations"
 import type { PartsActionResult } from "../parts/types"
-import { assertCanManage, guarded, loadItemContext, loadNoteContext, NOT_FOUND_ITEM, NOT_FOUND_NOTE, NoteRefusal, requireReason, type NoteItemContext } from "./context"
+import { assertCanManage, guarded, loadItemContext, loadNoteContext, lockWorkOrdersShare, NOT_FOUND_ITEM, NOT_FOUND_NOTE, NoteRefusal, requireReason, type NoteItemContext } from "./context"
 import { loadPurchases } from "./lines"
+import { rejectLineTx } from "./line-rejection"
 import { notifyPartsNoteItemRejected } from "./notifications"
 import { allPurchasesDead, isResolvableLine, recalcNoteStatusTx } from "./status"
 import { writeTrail } from "./trail"
@@ -22,8 +23,10 @@ import { writeTrail } from "./trail"
  * Bloqueo: la fila de la línea se toma `FOR NO KEY UPDATE` (no choca con las FK de
  * las reservas ni de las solicitudes, que sólo piden `KEY SHARE`). El stock sigue el
  * orden global de `parts/allocations.ts`: OT (`FOR SHARE`) → faena → filas de stock.
- * Todo rechazo ocurre antes de escribir. Cada escritura deja evento en la OT, estado
- * de la NP recalculado y auditoría.
+ * Rechazar y anular toman la OT `FOR SHARE` antes que la línea o la NP: cerrar o anular
+ * la OT (`FOR UPDATE`) rechaza sus líneas pendientes (`line-rejection.ts`) y así no se
+ * cruzan. Todo rechazo ocurre antes de escribir. Cada escritura deja evento en la OT,
+ * estado de la NP recalculado y auditoría.
  */
 
 const OPEN: readonly string[] = OT_OPEN_STATUSES
@@ -107,7 +110,9 @@ export async function resolveNoteItemFromStock(viewer: MantViewer, input: { item
           ...(line.productId && line.productId !== input.productId ? { previousProductId: line.productId } : {}),
         },
       })
-      return { ok: true, message: `Se apartaron ${formatQty(quantity)} de «${product.name}» del stock de ${line.vehicleWorksiteName} para la orden ${line.workOrderFolio}.` }
+      // Una sola unidad va en singular; cualquier otra cantidad (también 0,5 o 1,5) en plural.
+      const reserved = quantity === 1 ? "Se reservó" : "Se reservaron"
+      return { ok: true, message: `${reserved} ${formatQty(quantity)} de «${product.name}» del stock de ${line.vehicleWorksiteName} para la orden ${line.workOrderFolio}.` }
     })
   })
 }
@@ -122,20 +127,13 @@ export async function rejectNoteItem(viewer: MantViewer, input: { itemId: string
     assertCanManage(viewer, first)
 
     return db.transaction(async (tx): Promise<PartsActionResult> => {
+      // La OT primero (orden global de bloqueo): cerrarla o anularla rechaza sus líneas pendientes y espera acá, no entre medio.
+      await lockWorkOrdersShare(tx, [first.workOrderId])
       const line = await loadItemContext(tx, input.itemId, { lock: true })
       if (!line) throw new NoteRefusal(NOT_FOUND_ITEM)
       const blocked = await whyNotResolvable(tx, line)
       if (blocked) throw new NoteRefusal(blocked)
-      await tx.update(mantPartsNoteItems).set({
-        resolution: "rechazada", resolutionReason: reason, resolvedByUserId: viewer.userId, resolvedAt: new Date().toISOString(),
-      }).where(eq(mantPartsNoteItems.id, line.itemId))
-      await recalcNoteStatusTx(tx, line.noteId)
-      await writeTrail(tx, {
-        workOrderId: line.workOrderId, worksiteId: line.noteWorksiteId, noteId: line.noteId, code: line.code,
-        actor: viewer, action: "update", reason,
-        oldState: { itemId: line.itemId, resolution: line.resolution },
-        changeSet: { itemId: line.itemId, resolution: "rechazada", reason },
-      })
+      await rejectLineTx(tx, line, { reason, actor: viewer })
       pending.notice = {
         noteId: line.noteId, noteItemId: line.itemId, code: line.code, workOrderId: line.workOrderId,
         description: line.description, reason, authorUserId: line.requestedByUserId, actorUserId: viewer.userId,
@@ -156,6 +154,8 @@ export async function voidPartsNote(viewer: MantViewer, input: { noteId: string;
     assertCanManage(viewer, first)
 
     return db.transaction(async (tx): Promise<PartsActionResult> => {
+      // La OT primero (orden global de bloqueo), como en `rejectNoteItem`.
+      await lockWorkOrdersShare(tx, [first.workOrderId])
       const note = await loadNoteContext(tx, input.noteId, { lock: true })
       if (!note) throw new NoteRefusal(NOT_FOUND_NOTE)
       if (note.status === "anulada") throw new NoteRefusal(`La nota ${note.code} ya está anulada.`)

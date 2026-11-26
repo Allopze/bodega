@@ -17,6 +17,7 @@ import { activateWorkOrderCapaEvidence, supersedeWorkOrderCapaEvidence } from ".
 import { accessFactsOf, applyChange, assertNotFuture, CLIENT_OP_EVENTS, linkedRecordState, planFor, refuse, runLocked, type LockedResult, type OtRow } from "./core"
 import { checkClassification, checkRequestFields, itemRows, normalizeItems } from "./create"
 import { releaseWorkOrderAllocationsTx } from "../parts"
+import { rejectOpenLinesOfWorkOrderTx } from "../parts-notes/line-rejection"
 import { findAssignableMechanic } from "./mechanics"
 import { markVehicleInWorkshop, markVehicleOutOfWorkshop } from "./vehicle-status"
 import type { WorkOrderActor } from "./types"
@@ -470,6 +471,9 @@ export async function conformWorkOrder(actor: WorkOrderActor, input: Base & { fa
       actorUserId: actor.userId,
       conformedOn: todayInChile(receivedAt),
     })
+    // Las líneas de nota de pedido que nadie alcanzó a resolver ya no tienen a quién llegar: se rechazan solas, con el motivo,
+    // en esta misma transacción (NP4-7). Antes de liberar las reservas: la OT, luego las filas de la nota, luego las reservas.
+    await rejectOpenLinesOfWorkOrderTx(ctx.tx, { workOrderId: row.id, actor: { userId: actor.userId }, end: { kind: "cerrada" } })
     // Lo reservado para la OT y no usado pasa a stock libre de la faena (ADR mantención 0001, D5). Con la OT ya bloqueada `FOR UPDATE`.
     await releaseWorkOrderAllocationsTx(ctx.tx, { workOrderId: row.id, actorUserId: actor.userId, reason: "OT cerrada" })
     return { row, notify: [planFor(row, "closed", actor)] }
@@ -493,6 +497,8 @@ export async function voidWorkOrder(actor: WorkOrderActor, input: Base & { reaso
     if (wasInWorkshop) {
       await markVehicleOutOfWorkshop(ctx.tx, { vehicleId: row.vehicleId, folio: row.folio, workOrderId: row.id, actorUserId: actor.userId, reason: "OT anulada" })
     }
+    // Las líneas de nota de pedido sin resolver se rechazan solas con el motivo de la anulación, en esta misma transacción (NP4-7).
+    await rejectOpenLinesOfWorkOrderTx(ctx.tx, { workOrderId: row.id, actor: { userId: actor.userId }, end: { kind: "anulada", reason } })
     // Anulada, la OT ya no usará lo reservado: pasa a stock libre de la faena (ADR mantención 0001, D5).
     await releaseWorkOrderAllocationsTx(ctx.tx, { workOrderId: row.id, actorUserId: actor.userId, reason: `OT anulada: ${reason}` })
     // Al mecánico asignado (que ya cuenta con ella) y a quien la solicitó.

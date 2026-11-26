@@ -33,8 +33,10 @@ import { vehicleNowInWorksitesSql, workOrderVisibility, workOrderVisibilitySql }
  *   Una respuesta de Forms posterior al corte queda guardada como evidencia, pero no entra en las cifras;
  * - `ot`: `mant_work_orders` no anuladas **que ya entraron a taller** (`workshop_entry_at` no nulo): una OT
  *   «Por asignar» o «Asignada» todavía no es un trabajo hecho. Su fecha es el día de ingreso (hora de Chile);
- * - `registro`: `mant_records` vigentes, **sin OT** (`work_order_id` nulo) y **desde el corte** (`work_date` >=
- *   01-12-2026). Lo que tiene OT ya se cuenta por la OT; antes del corte lo cuenta el historial.
+ * - `registro`: `mant_records` vigentes, **sin OT que cuente** y **desde el corte** (`work_date` >= 01-12-2026).
+ *   Mientras su OT cuenta (no anulada y con ingreso a taller) el trabajo es la OT y el registro no se repite; si la
+ *   OT se anuló, o nunca entró a taller, el registro firmado es el único rastro del trabajo y cuenta por sí mismo
+ *   (`recordCountsOnItsOwnSql`, el complemento exacto del predicado de las OT). Antes del corte lo cuenta el historial.
  *
  * Reglas:
  * - Fecha del trabajo: historial → ingreso a taller (`entry_date`) o, si falta, el día de envío del formulario;
@@ -158,9 +160,9 @@ interface RowFilter {
   /** Predicado de visibilidad de los registros firmados; `null` = no se leen. */
   recordVisibility: SQL | null
   /**
-   * `panel` aplica el corte de los formularios (historial < corte, registros >= corte y sin OT);
+   * `panel` aplica el corte de los formularios (historial < corte, registros >= corte y sin OT que cuente);
    * `fact` es «¿hubo trabajo en el equipo?»: sin corte y con todos los registros vigentes;
-   * `timeline` es la hoja de vida de un equipo: sin corte, y los registros con OT no se repiten (ya los cuenta la OT).
+   * `timeline` es la hoja de vida de un equipo: sin corte, y los registros cuya OT cuenta no se repiten (ya los cuenta la OT).
    */
   mode: "panel" | "fact" | "timeline"
   /** Agrega `detail` a cada fila. Sin esto, las columnas de texto largo ni se leen. */
@@ -315,6 +317,8 @@ async function loadOrderRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantWorkOrders.vehicleId))
     .innerJoin(worksites, eq(worksites.id, mantWorkOrders.worksiteId))
     .where(and(
+      // Estas dos condiciones definen qué OT cuenta como trabajo. Su complemento exacto, en `recordCountsOnItsOwnSql`,
+      // decide qué registros cuentan por sí mismos: si una cambia, la otra cambia con ella.
       ne(mantWorkOrders.status, "anulada"),
       // Sólo las OT que ya entraron a taller son trabajo hecho; la fecha es el día de ingreso.
       isNotNull(mantWorkOrders.workshopEntryAt),
@@ -359,7 +363,25 @@ async function loadOrderRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
   })
 }
 
-/** Los registros firmados de la plataforma como trabajos (ver la cabecera del archivo para el corte y el «sin OT»). */
+/**
+ * ¿El registro firmado cuenta como trabajo propio? Sí cuando no tiene OT, o cuando su OT NO cuenta como trabajo:
+ * es el complemento exacto del predicado de `loadOrderRows` (OT no anulada y con ingreso a taller). Así cada
+ * trabajo se cuenta una sola vez y ninguno se pierde: mientras la OT cuenta, ella es el trabajo y su registro no
+ * se repite; si la OT se anula después de que el mecánico firmó (REG4-1), o nunca entró a taller, el registro
+ * vigente es el único rastro de lo que se hizo y no puede desaparecer del Historial, del Panel ni del Excel.
+ *
+ * Es sólo del estado de la OT (no de quién la ve ni de su fecha): se aplica sobre `mant_records`.
+ */
+export function recordCountsOnItsOwnSql(): SQL {
+  return sql`(${mantRecords.workOrderId} IS NULL OR NOT EXISTS (
+    SELECT 1 FROM ${mantWorkOrders} AS wo_counted
+    WHERE wo_counted.id = ${mantRecords.workOrderId}
+      AND wo_counted.status <> 'anulada'
+      AND wo_counted.workshop_entry_at IS NOT NULL
+  ))`
+}
+
+/** Los registros firmados de la plataforma como trabajos (ver la cabecera del archivo para el corte y el «sin OT que cuente»). */
 async function loadRecordRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> {
   if (!filter.recordVisibility) return []
   const detail = !!filter.detail
@@ -392,11 +414,12 @@ async function loadRecordRows(filter: RowFilter): Promise<MaintenanceWorkRow[]> 
       eq(mantRecords.status, "vigente"),
       filter.recordVisibility,
       sql`${mantRecords.workDate} >= ${filter.from} AND ${mantRecords.workDate} <= ${filter.to}`,
-      // Lo que tiene OT ya se cuenta por la OT; antes del corte, por el historial. La hoja de vida de un equipo
-      // (`timeline`) no tiene corte, pero tampoco repite lo que ya muestra su OT.
+      // Lo que tiene una OT que cuenta ya se cuenta por la OT; antes del corte, por el historial. La hoja de vida de
+      // un equipo (`timeline`) no tiene corte, pero tampoco repite lo que ya muestra su OT. Con la OT anulada (o sin
+      // ingreso a taller) el registro cuenta por sí mismo, en los dos modos (REG4-1).
       filter.mode === "panel"
-        ? sql`${mantRecords.workOrderId} IS NULL AND ${mantRecords.workDate} >= ${FORMS_CUTOVER_DATE}`
-        : filter.mode === "timeline" ? sql`${mantRecords.workOrderId} IS NULL` : undefined,
+        ? and(recordCountsOnItsOwnSql(), sql`${mantRecords.workDate} >= ${FORMS_CUTOVER_DATE}`)
+        : filter.mode === "timeline" ? recordCountsOnItsOwnSql() : undefined,
       workScope(filter, mantRecords.worksiteId, (ids) => equipmentCurrentlyInWorksites(mantRecords.vehicleId, ids)),
       filter.vehicleIds ? inArray(mantRecords.vehicleId, filter.vehicleIds.length ? [...filter.vehicleIds] : ["__none__"]) : undefined,
     ))
@@ -527,8 +550,9 @@ const TIMELINE_TO = "9999-12-31"
 
 /**
  * La línea de tiempo de un equipo: historial (sin pruebas, de cualquier fecha), OT que entraron a taller y registros
- * sin OT, de cualquier fecha. Es la evidencia de UN equipo, no una cifra del Panel: no aplica el corte de los
- * formularios, así que una respuesta posterior al 01-12-2026 o un registro anterior a él también aparecen.
+ * sin OT que cuente (sin OT, o con una OT anulada o sin ingreso), de cualquier fecha. Es la evidencia de UN equipo,
+ * no una cifra del Panel: no aplica el corte de los formularios, así que una respuesta posterior al 01-12-2026
+ * o un registro anterior a él también aparecen.
  */
 export async function loadEquipmentTimeline(viewer: MantViewer, vehicleId: string, options: { limit?: number; today?: string } = {}): Promise<EquipmentTimeline> {
   const query: MaintenanceWorkQuery = { from: TIMELINE_FROM, to: TIMELINE_TO, vehicleId, ...(options.today ? { today: options.today } : {}) }
