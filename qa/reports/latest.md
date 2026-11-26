@@ -1,3 +1,56 @@
+# Mantención: arreglos de la auditoría y de encontrabilidad — 2026-11-26
+
+Rama `fix/mantencion-encontrabilidad` sobre `290ec0387`, **sin fusionar ni desplegar**. Detalle: [mantencion-arreglos-2026-11-26.md](mantencion-arreglos-2026-11-26.md).
+
+- **FIXED:**
+  - **Datos:** OT4-6, OTN-6, REG4-1 (Historial y Panel) y NP4-7 (D13 del ADR 0001).
+  - **Encontrabilidad:**
+    - menú de escritorio con grupos plegados e ítem para el Historial;
+    - folios en «Ir a…» y en las búsquedas;
+    - pestañas por unidad que conservan el período y la faena;
+    - «En taller», «con respuesta», enlaces a Bodega y el PDF de la OT a la vista;
+    - un nombre por concepto.
+- **PASS:**
+  - `typecheck` y `lint`;
+  - `test:pglite` completo;
+  - `test:fast` salvo 2 pruebas ajenas a la rama: una ya falla en la base y la otra es intermitente;
+  - E2E aislada: 257 pruebas y `5-ot` 8 de 8;
+  - navegador en escritorio y teléfono, sin errores ni desborde.
+- **COVERAGE GAP:** 7 specs E2E siguen rojos igual que en la base, por el fixture km/h, y 61 pruebas no corren detrás de ellos. Se cubrieron en el navegador.
+- **Abierto:**
+  - OT-1 y NP4-1;
+  - «Mis pendientes» (faltan sus decisiones);
+  - NP4-2, NP4-3, NP4-4 y NP4-6;
+  - «Marcas y talleres».
+
+# Mantención: auditoría de lógica y UI/UX — 2026-11-26
+
+Auditoría de sólo lectura del submódulo de Mantención sobre `main` `edc9b2fb3`, sin cambios de código. Siete líneas de
+lectura (Sonnet), verificación propia y recorrido en navegador sobre una base E2E desechable. El detalle está en
+[mantencion-auditoria-2026-11-26.md](mantencion-auditoria-2026-11-26.md).
+
+- **PRODUCT BUG (reproducidos):**
+  - «Editar solicitud» borra la descripción y los ítems de la reparación al cambiar el tipo de acción (OT4-6);
+  - el ingreso a taller desde el PC guarda «8.100» h como 8,1 y no compara con la lectura anterior (OTN-6);
+  - anular una OT en taller hace desaparecer su registro firmado del Historial y del Panel (REG4-1) y deja sus notas de
+    pedido en «Pendientes» (NP4-7).
+- **FUNCTIONAL FINDING · notas de pedido (sin desplegar):**
+  - línea con la compra rechazada, sin acciones (NP4-1, lectura);
+  - «Pendientes» y la cifra del Panel no cuentan las notas a medio resolver (NP4-2);
+  - sacar de bodega menos de lo pedido cierra la línea (NP4-3), liberar no cambia la nota (NP4-4) y la nota no se puede
+    anular después (NP4-6): los tres reproducidos.
+- **UX FINDING / INCONSISTENCY:**
+  - el período no filtra Planificación y cambiar de pestaña borra período y faena;
+  - «Máquinas» lista camiones;
+  - el Historial se desborda a 390 px (49 y 549 px) y no tiene ítem de menú;
+  - dos gráficos con las etiquetas del eje encimadas;
+  - «Sacar de bodega» reserva y la línea queda «En bodega» y «Sacada de la bodega» a la vez.
+- **PASS:** 52 rutas en escritorio sin errores de consola ni de red, un `h1` y sin desborde; axe WCAG 2.1 A/AA con 0
+  violaciones; alcance por faena verificado como supervisor, administrador de contrato y mecánico.
+- **AUTOMATION WARNING:** no se usó `bodega_dev` (el inicio de sesión QA quedó bloqueado): los datos son sintéticos.
+- **COVERAGE GAP:** traslados, rechazo de compras, cola de la app, descargas e importaciones no se ejercitaron; sin
+  puertas (no hubo cambios de código).
+
 # Notas de pedido y repuestos con stock — verificación, 2026-11-26
 
 El mecánico pide repuestos para su OT con una nota de pedido. Jefatura los saca de la bodega, los compra o los rechaza. El
