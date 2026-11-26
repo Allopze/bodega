@@ -5,9 +5,11 @@
  * vez por OT y recepción, después del commit. Una recepción parcial, la
  * llegada a oficina y las líneas sin OT no avisan a mantención.
  *
- * Catálogo de repuestos (2026-11-09): el repuesto de catálogo es de consumo
- * directo, así que su recepción no mueve stock ni kárdex y deja el ítem
- * `delivered` (la OT deja de esperarlo). Está al final de este archivo.
+ * Repuestos con stock (ADR mantención 0001, 2026-11-26): el repuesto de catálogo
+ * YA NO es de consumo directo. Al recibirse entra al stock y su kárdex; el ítem de
+ * solicitud igual queda `delivered` (D10: la OT deja de esperarlo) y, con OT abierta,
+ * el stock queda reservado para ella. Está al final de este archivo; el recorrido
+ * completo (guías, anulaciones, reservas) vive en `np-receiving-stock-pglite.test.ts`.
  */
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
@@ -221,7 +223,7 @@ describe("recepción de repuestos vinculados a una OT", () => {
     expect(first!.status).toBe("purchased")
   })
 
-  describe("repuesto de catálogo: consumo directo (sin stock ni kárdex)", () => {
+  describe("repuesto de catálogo: entra al stock y se reserva (ADR mantención 0001)", () => {
     let sparePartId = ""
     let plainProductId = ""
 
@@ -256,8 +258,13 @@ describe("recepción de repuestos vinculados a una OT", () => {
         .where(eq(schema.mantWorkOrders.id, workOrderId))
       return row?.waiting === true
     }
+    const allocationsOf = (workOrderId: string) => testDb.select().from(schema.mantPartsAllocations).where(eq(schema.mantPartsAllocations.workOrderId, workOrderId))
+    const officeIdOf = "ws-oficina-p"
+    const ensureOffice = () => testDb.insert(schema.worksites).values({
+      id: officeIdOf, name: "Oficina CHOME", code: "OF-P", isActive: true, createdAt: now, updatedAt: now,
+    }).onConflictDoNothing()
 
-    it("la recepción completa en faena deja el ítem entregado, sin filas de stock ni de kárdex, y la OT deja de esperar el repuesto", async () => {
+    it("la recepción completa en faena ingresa stock y kárdex, reserva para la OT y deja el ítem entregado; la OT deja de esperar el repuesto", async () => {
       const ot = await newWorkOrder()
       const { orderId, ocItemIds } = await seedOrder([{ quantity: 2, workOrderId: ot, productId: sparePartId }])
       expect(await waiting(ot)).toBe(true)
@@ -268,10 +275,13 @@ describe("recepción de repuestos vinculados a una OT", () => {
       })
       await settle()
 
+      // D10: para Compras el ciclo termina al llegar a faena, igual que antes.
       expect(await itemStatus(ocItemIds[0]!)).toBe("delivered")
-      expect(await stockRows(sparePartId)).toEqual([])
-      expect(await movementRows(sparePartId)).toEqual([])
-      // La recepción sí queda registrada: la línea de OC cuenta lo recibido.
+      // D1: el repuesto entra al stock de la faena y deja su ingreso en el kárdex.
+      expect(await stockRows(sparePartId)).toMatchObject([{ worksiteId: IDS.wsBio, quantity: 2 }])
+      expect(await movementRows(sparePartId)).toMatchObject([{ type: "ingreso_oc", quantity: 2, referenceType: "receipt", referenceId: receiptId }])
+      // D5: queda reservado para la OT.
+      expect(await allocationsOf(ot)).toMatchObject([{ productId: sparePartId, worksiteId: IDS.wsBio, status: "activa" }])
       const [line] = await testDb.select().from(schema.purchaseOrderItems).where(eq(schema.purchaseOrderItems.id, ocItemIds[0]!))
       expect(line!.quantityReceived).toBe(2)
       const receiptLines = await testDb.select().from(schema.receiptItems).where(eq(schema.receiptItems.receiptId, receiptId))
@@ -286,7 +296,7 @@ describe("recepción de repuestos vinculados a una OT", () => {
       expect(notifyWorkOrderPartsReceived).toHaveBeenCalledWith({ workOrderId: ot, receiptId, actorUserId: IDS.mecBio, itemCount: 1 })
     })
 
-    it("control: un producto físico común recibido en faena sí ingresa stock y kárdex y queda «recibido» para su entrega", async () => {
+    it("control: un producto físico común recibido en faena sí ingresa stock y kárdex, queda «recibido» para su entrega y no se reserva", async () => {
       const ot = await newWorkOrder()
       const { orderId, ocItemIds } = await seedOrder([{ quantity: 3, workOrderId: ot, productId: plainProductId }])
 
@@ -298,10 +308,12 @@ describe("recepción de repuestos vinculados a una OT", () => {
       expect(await itemStatus(ocItemIds[0]!)).toBe("received")
       expect(await stockRows(plainProductId)).toMatchObject([{ worksiteId: IDS.wsBio, quantity: 3 }])
       expect(await movementRows(plainProductId)).toMatchObject([{ type: "ingreso_oc", quantity: 3 }])
+      expect(await allocationsOf(ot)).toEqual([])
     })
 
-    it("una recepción parcial deja el ítem en «recibido parcial» y la OT sigue esperando; el saldo lo entrega, todo sin stock", async () => {
+    it("una recepción parcial deja el ítem en «recibido parcial» y la OT sigue esperando; el saldo lo entrega, y cada una ingresa su parte", async () => {
       const ot = await newWorkOrder()
+      const sparePartBefore = (await movementRows(sparePartId)).length
       const { orderId, ocItemIds } = await seedOrder([{ quantity: 4, workOrderId: ot, productId: sparePartId }])
 
       await registerReceipt({
@@ -310,6 +322,7 @@ describe("recepción de repuestos vinculados a una OT", () => {
       })
       expect(await itemStatus(ocItemIds[0]!)).toBe("partially_received")
       expect(await waiting(ot)).toBe(true)
+      expect(Number((await allocationsOf(ot))[0]!.quantity)).toBe(1)
 
       await registerReceipt({
         purchaseOrderId: orderId, receivedBy: IDS.mecBio, stage: "faena", worksiteId: IDS.wsBio,
@@ -317,56 +330,56 @@ describe("recepción de repuestos vinculados a una OT", () => {
       })
       expect(await itemStatus(ocItemIds[0]!)).toBe("delivered")
       expect(await waiting(ot)).toBe(false)
-      expect(await stockRows(sparePartId)).toEqual([])
-      expect(await movementRows(sparePartId)).toEqual([])
+      expect(Number((await allocationsOf(ot))[0]!.quantity)).toBe(4)
+      const movements = await movementRows(sparePartId)
+      expect(movements).toHaveLength(sparePartBefore + 2)
+      expect(movements.slice(sparePartBefore).map((movement) => movement.quantity)).toEqual([1, 3])
     })
 
-    it("vía oficina: la llegada a oficina no ingresa stock ni prepara guía de despacho, y la recepción en faena lo deja entregado", async () => {
-      await testDb.insert(schema.worksites).values({
-        id: "ws-oficina-p", name: "Oficina CHOME", code: "OF-P", isActive: true, createdAt: now, updatedAt: now,
-      }).onConflictDoNothing()
+    it("vía oficina: la llegada a oficina ingresa el repuesto al stock de la oficina y prepara su guía; la faena ya no se recibe por esta vía", async () => {
+      await ensureOffice()
       const ot = await newWorkOrder()
       const { orderId, ocItemIds } = await seedOrder([{ quantity: 1, workOrderId: ot, productId: sparePartId }], "via_oficina")
 
-      await registerReceipt({
+      const officeReceipt = await registerReceipt({
         purchaseOrderId: orderId, receivedBy: IDS.mecBio, stage: "office",
         items: [{ purchaseOrderItemId: ocItemIds[0]!, quantityReceived: 1 }],
       })
       expect(await itemStatus(ocItemIds[0]!)).toBe("office_received")
-      expect(await stockRows(sparePartId)).toEqual([])
-      expect(await movementRows(sparePartId)).toEqual([])
-      // Sin stock en la oficina no hay qué trasladar: una guía de despacho sería imposible de despachar.
-      expect(await testDb.select().from(schema.dispatchGuides).where(eq(schema.dispatchGuides.purchaseOrderId, orderId))).toEqual([])
+      expect((await stockRows(sparePartId)).filter((row) => row.worksiteId === officeIdOf)).toMatchObject([{ quantity: 1 }])
+      // En la oficina no hay reserva: nace al despachar la guía (D11).
+      expect(await allocationsOf(ot)).toEqual([])
+      // Con stock en la oficina hay qué trasladar: la guía existe y lleva el repuesto.
+      const guides = await testDb.select().from(schema.dispatchGuides).where(eq(schema.dispatchGuides.purchaseOrderId, orderId))
+      expect(guides).toMatchObject([{ status: "draft", receiptId: officeReceipt }])
 
-      await registerReceipt({
+      await expect(registerReceipt({
         purchaseOrderId: orderId, receivedBy: IDS.mecBio, stage: "faena", worksiteId: IDS.wsBio,
         items: [{ purchaseOrderItemId: ocItemIds[0]!, quantityReceived: 1 }],
-      })
-      expect(await itemStatus(ocItemIds[0]!)).toBe("delivered")
-      expect(await stockRows(sparePartId)).toEqual([])
-      expect(await movementRows(sparePartId)).toEqual([])
-      expect(await waiting(ot)).toBe(false)
+      })).rejects.toThrow(/cotejarse con la guía/)
     })
 
-    it("anular la recepción de oficina de un repuesto no busca stock que nunca ingresó", async () => {
-      await testDb.insert(schema.worksites).values({
-        id: "ws-oficina-p", name: "Oficina CHOME", code: "OF-P", isActive: true, createdAt: now, updatedAt: now,
-      }).onConflictDoNothing()
+    it("anular la recepción de oficina de un repuesto revierte el stock que ingresó y borra su guía en borrador", async () => {
+      await ensureOffice()
       const ot = await newWorkOrder()
       const { orderId, ocItemIds } = await seedOrder([{ quantity: 2, workOrderId: ot, productId: sparePartId }], "via_oficina")
+      const officeBefore = (await stockRows(sparePartId)).find((row) => row.worksiteId === officeIdOf)?.quantity ?? 0
       const receiptId = await registerReceipt({
         purchaseOrderId: orderId, receivedBy: IDS.mecBio, stage: "office",
         items: [{ purchaseOrderItemId: ocItemIds[0]!, quantityReceived: 2 }],
       })
+      expect((await stockRows(sparePartId)).find((row) => row.worksiteId === officeIdOf)?.quantity).toBe(officeBefore + 2)
 
-      // Sin la excepción del repuesto el reverso exigiría 2 unidades en la oficina y fallaría con «quedan 0».
       const result = await voidReceipt({ receiptId, reason: "Se registró contra la orden equivocada", voidedBy: IDS.jefe })
 
-      expect(result.reversedMovements).toBe(0)
+      expect(result.reversedMovements).toBe(1)
       const [line] = await testDb.select().from(schema.purchaseOrderItems).where(eq(schema.purchaseOrderItems.id, ocItemIds[0]!))
       expect(line!.quantityOfficeReceived).toBe(0)
       expect(await itemStatus(ocItemIds[0]!)).toBe("purchased")
-      expect(await movementRows(sparePartId)).toEqual([])
+      expect((await stockRows(sparePartId)).find((row) => row.worksiteId === officeIdOf)?.quantity).toBe(officeBefore)
+      expect((await movementRows(sparePartId)).filter((movement) => movement.referenceId === receiptId).map((movement) => movement.type).sort())
+        .toEqual(["egreso_anulacion", "ingreso_oc"])
+      expect(await testDb.select().from(schema.dispatchGuides).where(eq(schema.dispatchGuides.purchaseOrderId, orderId))).toEqual([])
     })
   })
 })

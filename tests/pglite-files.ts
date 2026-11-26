@@ -695,6 +695,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-parts-allocations-pglite.test.ts",
 
   // NP · L1 bodega: recepción, guías y anulaciones (suites de la línea debajo de esta ancla).
+  "lib/__tests__/np-receiving-stock-pglite.test.ts",
 
   // NP · L2 compras: solicitud desde NP y catalogación obligatoria.
 

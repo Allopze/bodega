@@ -80,21 +80,24 @@ export function describeStageProgress(
 }
 
 /**
- * Qué hace la recepción en faena con el stock. Un repuesto de catálogo es de
- * consumo directo (decisión 2026-11-09): va del proveedor a la máquina y no
- * entra a stock, así que «Actualiza stock» no se le puede decir (recorrido
- * 2026-11-09, UX-2).
+ * Qué hace la recepción en faena con el stock. El repuesto de catálogo entra al stock
+ * de la faena como cualquier producto físico y, si su solicitud trae una OT, queda
+ * reservado para ella (ADR mantención 0001, D1 y D5). Lo que no se le puede prometer
+ * es la entrega a una persona: sólo sale de bodega al usarse en una OT.
  */
-export function faenaStockEffect(items: readonly Pick<ReceiptOcItem, "isDirectConsumption">[]): string {
-  const direct = items.filter((item) => item.isDirectConsumption).length
-  if (direct === 0) return "Actualiza stock y trazabilidad."
-  if (direct === items.length) return "Consumo directo: los repuestos se entregan sin pasar por stock."
-  return "Actualiza stock y trazabilidad; los repuestos son de consumo directo y no pasan por stock."
+export function faenaStockEffect(items: readonly Pick<ReceiptOcItem, "isSparePart">[]): string {
+  const spareParts = items.filter((item) => item.isSparePart).length
+  if (spareParts === 0) return "Actualiza stock y trazabilidad."
+  if (spareParts === items.length) return "Los repuestos entran al stock de la faena; si tienen OT, quedan reservados para ella."
+  return "Actualiza stock y trazabilidad; los repuestos con OT quedan reservados para ella."
 }
 
-/** Ayuda bajo la tabla: qué va en Rechazado/Dañado, sin hablar de stock cuando nada entra a stock. */
-export function rejectionHint(items: readonly Pick<ReceiptOcItem, "isDirectConsumption">[]): string {
-  return items.length > 0 && items.every((item) => item.isDirectConsumption)
-    ? "lo que llegó pero no se acepta"
-    : "lo que llegó pero no ingresa a stock"
+/** Lo que le pasa a un repuesto al recibirse, por etapa: en oficina no hay reserva, nace al despachar la guía. */
+export function sparePartStockNote(stage: "office" | "faena"): string {
+  return stage === "office"
+    ? "Entra al stock de la oficina"
+    : "Entra al stock de la faena; si tiene OT, queda reservado para ella"
 }
+
+/** Ayuda bajo la tabla: lo rechazado o dañado no ingresa a stock, sea cual sea el producto. */
+export const REJECTION_HINT = "lo que llegó pero no ingresa a stock"

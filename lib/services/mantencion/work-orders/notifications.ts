@@ -1,6 +1,9 @@
 import { and, eq, inArray, ne } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelVehicles, mantWorkOrders, permissions, rolePermissions, roles, userPermissions, userRoles } from "@/db/schema"
+import {
+  fuelVehicles, mantPartsNoteItems, mantPartsNotes, mantWorkOrders, permissions, purchaseRequestItems,
+  rolePermissions, roles, userPermissions, userRoles,
+} from "@/db/schema"
 import type { NotificationType } from "@/db/schema/audit"
 import { OT_PERMISSIONS } from "@/lib/mantencion/work-order-states"
 import { notifyAfterCommit, notifyManyUser } from "@/lib/services/notification-create"
@@ -197,6 +200,39 @@ export interface PartsReceivedNotice {
   actorUserId: string
   /** Líneas de la OT que esa recepción dejó completas en faena. */
   itemCount: number
+  /**
+   * De esas líneas, los ítems de solicitud que nacieron de una nota de pedido
+   * (`purchase_request_items.parts_note_item_id`): el autor de la NP recibe un
+   * aviso propio que nombra el repuesto y la NP, en vez del aviso general.
+   */
+  requestItemIds?: readonly string[]
+}
+
+type NoteArrival = { authorId: string; noteCode: string; description: string }
+
+/** Autor, folio y descripción de las líneas de NP detrás de esos ítems de solicitud. */
+async function loadNoteArrivals(requestItemIds: readonly string[]): Promise<NoteArrival[]> {
+  if (requestItemIds.length === 0) return []
+  const rows = await db
+    .select({
+      authorId: mantPartsNotes.requestedByUserId,
+      noteCode: mantPartsNotes.code,
+      description: mantPartsNoteItems.description,
+    })
+    .from(purchaseRequestItems)
+    .innerJoin(mantPartsNoteItems, eq(mantPartsNoteItems.id, purchaseRequestItems.partsNoteItemId))
+    .innerJoin(mantPartsNotes, eq(mantPartsNotes.id, mantPartsNoteItems.noteId))
+    .where(inArray(purchaseRequestItems.id, [...requestItemIds]))
+    .orderBy(mantPartsNotes.code, mantPartsNoteItems.sortOrder)
+  return rows
+}
+
+/** «Llegó a faena: Filtro · NP-2026-0004 · OT OT-BIO-0007»; con varias líneas, un resumen legible. */
+function noteArrivalTitle(lines: readonly NoteArrival[], folio: string): string {
+  const codes = [...new Set(lines.map((line) => line.noteCode))]
+  const first = lines[0]!.description
+  const what = lines.length === 1 ? first : `${first} y ${lines.length - 1} más`
+  return `${lines.length === 1 ? "Llegó" : "Llegaron"} a faena: ${what} · ${codes.join(", ")} · OT ${folio}`
 }
 
 /**
@@ -225,22 +261,39 @@ export async function notifyWorkOrderPartsReceived(input: PartsReceivedNotice): 
   if (!order) return
   if (order.status === "cerrada" || order.status === "anulada") return
 
+  // El autor de la NP recibe el aviso que nombra su repuesto; no se le repite el general.
+  const noteArrivals = await loadNoteArrivals(input.requestItemIds ?? [])
+  const byAuthor = new Map<string, NoteArrival[]>()
+  for (const arrival of noteArrivals) byAuthor.set(arrival.authorId, [...(byAuthor.get(arrival.authorId) ?? []), arrival])
+  const authors = [...byAuthor.keys()].filter((id) => id !== input.actorUserId)
+
   const userIds = [...new Set([
     ...(order.assignedToUserId ? [order.assignedToUserId] : []),
     ...await holdersForPermission(OT_PERMISSIONS.manage, order.worksiteId, input.actorUserId),
-  ])].filter((id) => id !== input.actorUserId)
-  if (userIds.length === 0) return
+  ])].filter((id) => id !== input.actorUserId && !byAuthor.has(id))
 
-  const lines = input.itemCount === 1 ? "1 línea recibida" : `${input.itemCount} líneas recibidas`
   // Mismo rótulo que `equipmentLabel` de `./core`; no se importa de ahí porque `core` importa este módulo.
   const equipment = `${order.equipmentSnapshot.code} · ${order.equipmentSnapshot.type}`
+  const link = { entityType: "mant_work_order", entityId: order.id, entityHref: `/mantencion/ot/${order.id}` }
+
+  for (const authorId of authors) {
+    const lines = byAuthor.get(authorId)!
+    await notifyManyUser([authorId], {
+      type: "mant_ot_parts_received",
+      title: noteArrivalTitle(lines, order.folio),
+      body: `${equipment} · ${lines.map((line) => line.description).join("; ")}. Ya está en la bodega de la faena, reservado para esta OT.`,
+      ...link,
+      dedupeKey: `mant-ot-parts-np:${order.id}:${input.receiptId}`,
+    })
+  }
+
+  if (userIds.length === 0) return
+  const lines = input.itemCount === 1 ? "1 línea recibida" : `${input.itemCount} líneas recibidas`
   await notifyManyUser(userIds, {
     type: "mant_ot_parts_received",
     title: `Repuestos recibidos para OT ${order.folio}`,
     body: `${equipment} · ${lines} en faena. Revisa «Repuestos pedidos» en la OT.`,
-    entityType: "mant_work_order",
-    entityId: order.id,
-    entityHref: `/mantencion/ot/${order.id}`,
+    ...link,
     dedupeKey: `mant-ot-parts:${order.id}:${input.receiptId}`,
   })
 }
