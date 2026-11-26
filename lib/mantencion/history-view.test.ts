@@ -113,6 +113,29 @@ describe("filterHistoryRows", () => {
     expect(filterHistoryRows(rows, params({ q: "maestranza" })).map((r) => r.id)).toEqual(["ot:1"])
     expect(filterHistoryRows(rows, params({ q: "gr-11" })).map((r) => r.id)).toEqual(["r:1"])
   })
+  it("encuentra el folio de la OT y del registro firmado, con o sin guiones, espacios y mayúsculas", () => {
+    const folios = [
+      row({ id: "ot:1", source: "ot", reference: "OT-BIO-0001" }),
+      row({ id: "r:1", source: "registro", reference: "MP-STF-0147", equipmentLabel: "KA-91 · BCDF12" }),
+      row({ id: "h:1", reference: "MT-00031" }),
+    ]
+    const found = (q: string) => filterHistoryRows(folios, params({ q })).map((r) => r.id)
+    for (const q of ["MP-STF-0147", "mp-stf-0147", "mpstf0147", "mp stf 0147", "stf0147"]) expect(found(q), q).toEqual(["r:1"])
+    for (const q of ["OT-BIO-0001", "otbio0001", "ot bio 0001"]) expect(found(q), q).toEqual(["ot:1"])
+    expect(found("mt00031")).toEqual(["h:1"])
+    // El equipo también: «ka91» encuentra «KA-91 · BCDF12», y «ka91bcdf12» el equipo con su patente.
+    expect(found("ka91")).toEqual(["r:1"])
+    expect(found("KA 91")).toEqual(["r:1"])
+    expect(found("ka91bcdf12")).toEqual(["r:1"])
+    expect(found("kb91")).toEqual([])
+  })
+  it("la comparación sin guiones no cruza de un campo a otro ni compacta el texto libre", () => {
+    const rows = [row({ id: "r:1", reference: "MP-AB", equipmentLabel: "CD-1", detail: { description: "Cambio de bomba", orderText: null } as never })]
+    // «abcd» saldría de pegar el folio con el equipo; «iodeb», de quitar los espacios de la descripción.
+    expect(filterHistoryRows(rows, params({ q: "abcd" }))).toEqual([])
+    expect(filterHistoryRows(rows, params({ q: "iodeb" }))).toEqual([])
+    expect(filterHistoryRows(rows, params({ q: "cambio de bomba" })).map((r) => r.id)).toEqual(["r:1"])
+  })
   it("filtra por origen, tipo, taller y especialidad", () => {
     expect(filterHistoryRows(rows, params({ origen: "ot" })).map((r) => r.id)).toEqual(["ot:1"])
     expect(filterHistoryRows(rows, params({ tipo: "sin_clasificar" })).map((r) => r.id)).toEqual(["r:1"])

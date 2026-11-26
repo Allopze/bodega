@@ -13,7 +13,7 @@ import { SectionCard } from "../shared/section-card"
 export function RecordAside({ detail, photos }: { detail: RecordDetail; photos: ReactNode }) {
   return (
     <aside aria-label="Fotos, firma, observaciones e historial" className="flex min-w-0 flex-col gap-4">
-      <SectionCard title="Fotos de respaldo" description="Toca una foto para ampliarla.">
+      <SectionCard title="Fotos de respaldo">
         {photos}
       </SectionCard>
 
@@ -49,7 +49,7 @@ export function RecordAside({ detail, photos }: { detail: RecordDetail; photos: 
         </SectionCard>
       )}
 
-      <SectionCard title="Historial del equipo" description="Los últimos registros vigentes de este equipo que puedes ver.">
+      <SectionCard title="Historial del equipo">
         {detail.history.length === 0 ? (
           <p className="text-sm text-[var(--color-text-muted)]">Este es el único registro del equipo.</p>
         ) : (

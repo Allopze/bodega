@@ -52,7 +52,7 @@ export function RecordState({ row }: { row: RecordListRow }) {
     return (
       <div className="flex flex-col items-start gap-1">
         <Badge variant="danger" size="sm">Anulado</Badge>
-        <span className={`text-xs ${QUIET}`}>No cuenta en los cálculos</span>
+        <span className={`text-xs ${QUIET}`}>No cuenta en el Panel</span>
       </div>
     )
   }

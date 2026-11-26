@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  RECORD_FILTER_PARAMS, advancedFilterCount, hasRecordFilters, parseRecordFilters, parseRecordListContext, parseRecordQuery, recordDetailHref,
+  RECORD_FILTER_PARAMS, advancedFilterCount, compactSearchKey, hasRecordFilters, parseRecordFilters, parseRecordListContext, parseRecordQuery, recordDetailHref,
   recordFiltersToParams, recordListHref, recordQueryToParams,
 } from "./records-filters"
 
@@ -41,6 +41,26 @@ describe("filtros de Registros en la URL", () => {
     expect(RECORD_FILTER_PARAMS).not.toContain("revision")
     expect(RECORD_FILTER_PARAMS).not.toContain("orden")
     expect(RECORD_FILTER_PARAMS).toEqual(expect.arrayContaining(["faena", "tipo", "equipo", "hecho", "registro", "desde", "hasta", "estado", "alerta", "situacion"]))
+  })
+})
+
+describe("clave de búsqueda por folio, código o patente", () => {
+  it("deja sólo letras y números en minúscula: sin guiones, espacios, signos ni tildes", () => {
+    expect(compactSearchKey("MP-STF-0147")).toBe("mpstf0147")
+    expect(compactSearchKey(" ka 91 ")).toBe("ka91")
+    expect(compactSearchKey("KA-91 · BCDF-12")).toBe("ka91bcdf12")
+    expect(compactSearchKey("Ká–91")).toBe("ka91")
+    expect(compactSearchKey("OT_BIO.0001")).toBe("otbio0001")
+  })
+
+  it("dos escrituras del mismo folio o equipo dan la misma clave", () => {
+    expect(compactSearchKey("mp-stf-0147")).toBe(compactSearchKey("MP STF 0147"))
+    expect(compactSearchKey("ka91")).toBe(compactSearchKey("KA-91"))
+  })
+
+  it("una búsqueda de sólo signos queda vacía: quien llama no la trata como «cualquier cosa»", () => {
+    expect(compactSearchKey("-- ·")).toBe("")
+    expect(compactSearchKey("%_")).toBe("")
   })
 })
 

@@ -72,7 +72,7 @@ describe("chips de filtros activos", () => {
     expect(chip("Faena").textContent).toBe("Faena:Faena de prueba")
     expect(chip("Equipo").textContent).toBe("Equipo:EQ-01 · ABCD12")
     expect(chip("Origen").textContent).toBe("Origen:Orden de trabajo")
-    expect(chip("Responsable").textContent).toBe("Responsable:Externo")
+    expect(chip("Hecho por").textContent).toBe("Hecho por:Externo")
     expect(chip("Especialidad").textContent).toBe("Especialidad:Mecánica")
     expect(chip("Período").textContent).toBe("Período:Todo el historial")
   })
@@ -203,5 +203,10 @@ describe("buscador", () => {
   it("muestra el texto que la URL ya trae en `q`, para que la búsqueda se vea al volver a la página", () => {
     renderFilters("q=bomba")
     expect(screen.getByRole("searchbox", { name: "Buscar en el historial de mantenciones" })).toHaveValue("bomba")
+  })
+
+  it("dice que también busca por folio", () => {
+    renderFilters("")
+    expect(screen.getByRole("searchbox", { name: "Buscar en el historial de mantenciones" })).toHaveAttribute("placeholder", "Folio, equipo, trabajo o taller")
   })
 })

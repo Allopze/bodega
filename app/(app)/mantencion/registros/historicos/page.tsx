@@ -42,6 +42,13 @@ const TYPE_TABS: ReadonlyArray<{ type: ActionTypeOrUnknown; label: string }> = [
   { type: "sin_clasificar", label: ACTION_TYPE_LABELS.sin_clasificar },
 ]
 
+/**
+ * En el teléfono estos selectores no caben en una fila. Sin esto cada opción partía su texto en dos líneas, el control no
+ * bajaba de ~420 px y empujaba la página de lado. Ahora cada opción va en una línea y el control se desplaza dentro de
+ * su caja. El anillo de foco va por dentro: el contenedor con desplazamiento lo recortaría por fuera.
+ */
+const SCROLLABLE_SEGMENTS = "max-w-full overflow-x-auto [&_a]:whitespace-nowrap [&_a:focus-visible]:outline-offset-[-2px]"
+
 function periodText(params: HistoryParams): string {
   if (params.period === "todo") return "de todo el historial"
   if (params.period === "12m") return "de los últimos 12 meses"
@@ -73,7 +80,7 @@ export default async function MaintenanceHistoryPage({ searchParams }: { searchP
     <PageHeader
       title="Historial de mantenciones"
       description="Todo lo que se le hizo a los equipos: formularios anteriores, órdenes de trabajo y registros firmados."
-      breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Registros firmados", href: "/mantencion/registros" }, { label: "Historial de mantenciones" }]}
+      breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Historial de mantenciones" }]}
       actions={(
         <>
           {canExport && params.view !== "formularios" && <HistoryExportButton params={Object.fromEntries(new URL(historyHref(params, { page: 1 }), "http://localhost").searchParams)} />}
@@ -82,7 +89,7 @@ export default async function MaintenanceHistoryPage({ searchParams }: { searchP
       )}
     />
   )
-  const views = <SegmentedControl ariaLabel="Vista del historial" variant="segmented" items={viewItems} className="mb-3" />
+  const views = <SegmentedControl ariaLabel="Vista del historial" variant="segmented" items={viewItems} className={`mb-3 ${SCROLLABLE_SEGMENTS}`} />
 
   if (params.view === "formularios") {
     return (
@@ -158,7 +165,7 @@ export default async function MaintenanceHistoryPage({ searchParams }: { searchP
       />
 
       <div className="mb-3 text-sm text-[var(--color-text-muted)]">
-        <p>{plural(ordered.length, "trabajo", "trabajos")} {periodText(effective)}{worksite ? ` en ${worksite.name}` : ""}. Mismo criterio que el Panel.</p>
+        <p>{plural(ordered.length, "trabajo", "trabajos")} {periodText(effective)}{worksite ? ` en ${worksite.name}` : ""}.</p>
         <details className="mt-1 text-xs">
           <summary className="w-fit cursor-pointer text-[var(--color-primary-ink)] hover:underline">Qué cuenta</summary>
           <p className="mt-1 max-w-3xl">
@@ -171,8 +178,8 @@ export default async function MaintenanceHistoryPage({ searchParams }: { searchP
       {summary && effective.view === "historial" && <HistorySummary summary={summary} params={effective} scopeNote={scopeNote} includesOrders={loaded.includesOrders} />}
 
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <SegmentedControl ariaLabel="Filtrar por tipo de trabajo" variant="segmented" items={typeItems} />
-        {effective.view === "historial" && <SegmentedControl ariaLabel="Agrupar los trabajos" variant="segmented" items={groupItems} />}
+        <SegmentedControl ariaLabel="Filtrar por tipo de trabajo" variant="segmented" items={typeItems} className={SCROLLABLE_SEGMENTS} />
+        {effective.view === "historial" && <SegmentedControl ariaLabel="Agrupar los trabajos" variant="segmented" items={groupItems} className={SCROLLABLE_SEGMENTS} />}
       </div>
 
       {ordered.length === 0 ? (

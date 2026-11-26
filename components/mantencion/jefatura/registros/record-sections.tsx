@@ -107,7 +107,7 @@ export function RecordDataSection({ detail }: { detail: RecordDetail }) {
                   {detail.schedule.name} · {formatReading(detail.schedule.intervalValue, detail.unit)}
                   <span className="block text-xs font-normal text-[var(--color-text-muted)]">
                     Versión {detail.schedule.version} de la pauta
-                    {manual && ` · elegida a mano (la sugerida era la de ${formatReading(detail.schedule.suggestedIntervalValue, detail.unit)})`}
+                    {manual && ` · intervalo elegido a mano (el sugerido era el de ${formatReading(detail.schedule.suggestedIntervalValue, detail.unit)})`}
                   </span>
                 </>
               }
@@ -234,7 +234,7 @@ export function CorrectiveSections({ detail }: { detail: RecordDetail }) {
           />
           <DetailItem
             layout="stacked"
-            label="Días detenido"
+            label="Días en taller"
             value={workshop?.daysStopped != null ? plural(workshop.daysStopped, "día", "días") : null}
             mono
           />

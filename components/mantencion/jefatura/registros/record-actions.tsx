@@ -155,7 +155,7 @@ export function RecordActions({ recordId, folio, status, review, canExport, canO
         open={voidOpen}
         onOpenChange={setVoidOpen}
         title={`Anular ${label}`}
-        description="Queda visible como anulado y deja de contar en lecturas, estado de equipos e indicadores. No se puede deshacer."
+        description="Queda visible como anulado y deja de contar en lecturas, estado de equipos y el Panel. No se puede deshacer."
         variant="destructive"
         confirmLabel="Anular registro"
         reasonLabel="Motivo de la anulación"
@@ -173,7 +173,7 @@ export function RecordActions({ recordId, folio, status, review, canExport, canO
           <DialogHeader>
             <DialogTitle>Registro anulado</DialogTitle>
             <DialogDescription>
-              {label} ya no cuenta en los cálculos. Si el trabajo se hizo bien pero se registró mal, crea el registro corregido; queda enlazado con este.
+              {label} ya no cuenta en el Panel. Si el trabajo se hizo bien pero se registró mal, crea el registro corregido; queda enlazado con este.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

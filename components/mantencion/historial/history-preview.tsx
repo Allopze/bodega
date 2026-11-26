@@ -28,7 +28,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 
 /**
  * Vista previa de un trabajo del historial: se abre desde la lista sin salir de ella. Todo lo que muestra ya viene en
- * la fila (`detail`), así que abrirla no consulta nada. «Abrir la ficha completa» lleva a la fuente del trabajo
+ * la fila (`detail`), así que abrirla no consulta nada. «Ver el trabajo» lleva a la fuente del trabajo
  * (respuesta del formulario, orden de trabajo o registro firmado).
  */
 export function HistoryPreviewButton({ row, children, className, visibleText }: {
@@ -84,7 +84,7 @@ export function HistoryPreviewButton({ row, children, className, visibleText }: 
               <Fact label="Salida de taller">{detail.exitDate ? formatDate(detail.exitDate) : DASH}</Fact>
               <Fact label="Días en taller">{workshopText(row)}</Fact>
               <Fact label="Horas hombre">{row.laborHours === null ? DASH : formatHours(row.laborHours)}</Fact>
-              <Fact label="Responsable">{responsibleText(row)}</Fact>
+              <Fact label="Hecho por">{responsibleText(row)}</Fact>
               <Fact label="Especialidades">{specialties || DASH}</Fact>
               {detail.orderText && <Fact label="Nº de orden">{detail.orderText}</Fact>}
               {detail.contract && <Fact label="Contrato">{detail.contract}</Fact>}
@@ -96,7 +96,7 @@ export function HistoryPreviewButton({ row, children, className, visibleText }: 
           </SheetBody>
           <SheetFooter>
             <Button asChild>
-              <Link href={detail.href}>Abrir la ficha completa</Link>
+              <Link href={detail.href}>Ver el trabajo</Link>
             </Button>
           </SheetFooter>
         </SheetContent>

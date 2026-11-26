@@ -9,7 +9,7 @@ import { HistoryTable } from "./history-table"
 const TODAY = "2026-11-25"
 const HISTORY_PATH = "/mantencion/registros/historicos"
 const CARDS_LABEL = "Trabajos de mantención como tarjetas"
-const TABLE_HEADERS = ["Fecha", "Equipo", "Tipo", "Trabajo", "Lectura", "Días en taller", "Horas hombre", "Responsable", "Ficha"]
+const TABLE_HEADERS = ["Fecha", "Equipo", "Tipo", "Trabajo", "Lectura", "Días en taller", "Horas hombre", "Hecho por", "Ficha"]
 
 type Overrides = Partial<Omit<MaintenanceHistoryRow, "detail">> & { detail?: Partial<MaintenanceHistoryRow["detail"]> }
 
@@ -151,7 +151,7 @@ describe("HistoryTable: una fila de escritorio y una tarjeta móvil por trabajo"
     expect(fieldOf(card, "Lectura").textContent).toBe("40.312 km")
     expect(fieldOf(card, "Días en taller").textContent).toBe("3 días")
     expect(fieldOf(card, "Horas hombre").textContent).toBe("3,5 h")
-    expect(fieldOf(card, "Responsable").textContent).toBe("Externo · Taller de prueba")
+    expect(fieldOf(card, "Hecho por").textContent).toBe("Externo · Taller de prueba")
     expect(fieldOf(card, "Trabajo").textContent).toBe("Cambio de bomba hidráulica")
   })
 })
@@ -209,9 +209,9 @@ describe("HistoryTable: cabeceras ordenables", () => {
     }
   })
 
-  it("Trabajo, lectura y responsable no se ordenan: su cabecera no es un enlace", () => {
+  it("Trabajo, lectura y «Hecho por» no se ordenan: su cabecera no es un enlace", () => {
     const { table } = renderTable([row()])
-    for (const name of ["Trabajo", "Lectura", "Responsable"]) {
+    for (const name of ["Trabajo", "Lectura", "Hecho por"]) {
       expect(within(table).getByRole("columnheader", { name })).not.toHaveAttribute("aria-sort")
       expect(within(table).getByRole("columnheader", { name }).querySelector("a")).toBeNull()
     }
@@ -287,8 +287,8 @@ describe("HistoryTable: agrupación", () => {
     expect(headings).toEqual([`${nov} · 2`, `${oct} · 1`])
   })
 
-  it("el enlace «Abrir» de cada fila va a la ficha de origen y su nombre accesible dice equipo y fecha, también en la tarjeta", () => {
-    const name = "Abrir la ficha del trabajo de EQ-01 · ABCD12 del 10-11-2026"
+  it("el enlace «Ver el trabajo» de cada fila va a la ficha de origen y su nombre accesible dice equipo y fecha, también en la tarjeta", () => {
+    const name = "Ver el trabajo de EQ-01 · ABCD12 del 10-11-2026"
     const { table } = renderTable([row({ detail: { href: "/mantencion/registros/historicos/ot-1" } })])
     expect(within(table).getByRole("link", { name }).getAttribute("href")).toBe("/mantencion/registros/historicos/ot-1")
     expect(within(cardOf("EQ-01 · ABCD12")).getByRole("link", { name }).getAttribute("href")).toBe("/mantencion/registros/historicos/ot-1")

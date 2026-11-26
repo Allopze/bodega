@@ -79,11 +79,11 @@ async function download(page: Page, button: string, menu?: { trigger: string; it
   return { workbook, filename: file.suggestedFilename() }
 }
 
-/** Registros vigentes que cuentan los indicadores de Registros firmados (el titular «Indicadores · N registros vigentes…»). */
+/** Registros vigentes que cuentan los indicadores de Registros firmados (el titular «N registros vigentes del…»). */
 async function vigentesCount(page: Page): Promise<number> {
   await page.goto("/mantencion/registros?revision=todos")
-  const heading = page.getByRole("heading", { level: 2, name: /^Indicadores · \d+ registros? vigentes?/ })
-  const match = /Indicadores · (\d+)/.exec(await heading.innerText())
+  const heading = page.getByRole("heading", { level: 2, name: /^\d+ registros? vigentes?/ })
+  const match = /^(\d+)/.exec(await heading.innerText())
   return Number(match?.[1])
 }
 
@@ -237,7 +237,7 @@ test("registros: indicadores con su rango, filtros en la URL y orden por columna
   await login(page, JEFE)
   await page.goto("/mantencion/registros")
   await expectPageTitle(page, "Registros firmados")
-  await expect(page.getByRole("heading", { level: 2, name: /^Indicadores · \d+ registros? vigentes? del \d{2}-\d{2}-\d{4} al \d{2}-\d{2}-\d{4}/ })).toBeVisible()
+  await expect(page.getByRole("heading", { level: 2, name: /^\d+ registros? vigentes? del \d{2}-\d{2}-\d{4} al \d{2}-\d{2}-\d{4}/ })).toBeVisible()
   for (const seeded of [rec.A, rec.B, rec.C, rec.D]) {
     await expect(page.getByRole("link", { name: `Ver el registro ${seeded.folio}` })).toBeVisible()
   }
@@ -273,11 +273,25 @@ test("registros: indicadores con su rango, filtros en la URL y orden por columna
   await page.getByRole("button", { name: "Eliminar filtro Tipo" }).click()
   await expect(page).not.toHaveURL(/tipo=C/)
 
-  // Búsqueda de equipo en el servidor.
-  await page.getByRole("searchbox", { name: "Buscar equipo por código o patente" }).fill(rec.C.code)
+  // Búsqueda en el servidor: código o patente del equipo, y también el folio.
+  const search = page.getByRole("searchbox", { name: "Folio, código o patente" })
+  await search.fill(rec.C.code)
   await expect(page).toHaveURL(/equipo=/)
   await expect(page.getByRole("link", { name: `Ver el registro ${rec.C.folio}` })).toBeVisible()
   await expect(page.getByRole("link", { name: `Ver el registro ${rec.B.folio}` })).toHaveCount(0)
+  // El folio es lo que va impreso en el registro: se encuentra con o sin guiones y sin importar las mayúsculas.
+  const folioCompacto = rec.B.folio.toLowerCase().replaceAll("-", "")
+  await search.fill(folioCompacto)
+  await expect(page).toHaveURL(new RegExp(`equipo=${folioCompacto}`))
+  await expect(page.getByRole("link", { name: `Ver el registro ${rec.B.folio}` })).toBeVisible()
+  await expect(page.getByRole("link", { name: `Ver el registro ${rec.C.folio}` })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Eliminar filtro Búsqueda" })).toBeVisible()
+  // Sin coincidencia, el vacío habla de la búsqueda (no de «otro período») y ofrece quitarla.
+  await search.fill("mp-xyz-0000")
+  await expect(page.getByRole("heading", { level: 2, name: "No hay un registro con ese folio, código o patente" })).toBeVisible()
+  await page.getByRole("link", { name: "Quitar la búsqueda", exact: true }).click()
+  await expect(page).not.toHaveURL(/equipo=/)
+  await expect(page.getByRole("heading", { level: 2, name: "No hay un registro con ese folio, código o patente" })).toHaveCount(0)
 
   // «Más filtros»: alerta de salto de lectura → sólo D.
   await page.goto("/mantencion/registros")
@@ -389,7 +403,7 @@ test("detalle: datos, alertas, firmas y visor de fotos a pantalla completa", asy
   await page.goto(`/mantencion/registros/${rec.D.id}`)
   const alerts = page.getByRole("list", { name: "Alertas del registro" })
   await expect(alerts).toContainText("Salto de lectura")
-  await expect(alerts).toContainText("Pauta elegida a mano")
+  await expect(alerts).toContainText("Intervalo elegido a mano")
   await expect(alerts).toContainText("Posible preventiva duplicada")
   await expect(alerts.getByRole("link", { name: new RegExp(rec.A.folio) })).toHaveAttribute("href", `/mantencion/registros/${rec.A.id}`)
   await expect(page.getByText(/Motivo: Pedido de la jefatura/)).toBeVisible()

@@ -5,7 +5,7 @@ import { SkeletonPage } from "@/components/ui/skeleton"
 export default function Loading() {
   return (
     <PageContainer width="workbench">
-      <PageHeader title="Trabajo del formulario" breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Registros firmados", href: "/mantencion/registros" }, { label: "Historial de mantenciones", href: "/mantencion/registros/historicos" }]} />
+      <PageHeader title="Trabajo del formulario" breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Historial de mantenciones", href: "/mantencion/registros/historicos" }]} />
       <SkeletonPage rows={6} />
     </PageContainer>
   )

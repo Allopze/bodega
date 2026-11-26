@@ -72,7 +72,7 @@ describe("lista de registros", () => {
     // Taller: lo principal es «En taller · 4 días»; «Sin actualizar» va aparte, en la secundaria.
     expect(t.getByText("En taller · 4 días")).toBeTruthy()
     expect(t.getByText("Sin actualizar")).toBeTruthy()
-    expect(t.getByText("No cuenta en los cálculos")).toBeTruthy()
+    expect(t.getByText("No cuenta en el Panel")).toBeTruthy()
     expect(t.getByText("Anulado")).toBeTruthy()
     // «Completa» + «Revisado»: el resultado y la revisión no se mezclan en una misma línea.
     expect(t.getByText("Revisado").textContent).toBe("Revisado")
@@ -138,7 +138,7 @@ describe("detalle de un registro", () => {
       executorKind: "otro_mecanico", registeredByName: "Deivis González",
     })} />)
     expect(screen.getByText("Lectura anterior").nextSibling?.textContent).toContain("20.100 km")
-    expect(screen.getByText(/elegida a mano \(la sugerida era la de 40\.000 km\)/)).toBeTruthy()
+    expect(screen.getByText(/intervalo elegido a mano \(el sugerido era el de 40\.000 km\)/)).toBeTruthy()
     // El motivo vive en la alerta, no en dos lugares (regla A5).
     expect(screen.queryByText(/Motivo:/)).toBeNull()
     expect(screen.getByText("Registrado por Deivis González en nombre de Javier Roa")).toBeTruthy()
@@ -205,6 +205,9 @@ describe("detalle de un registro", () => {
     // Etiqueta y valor calzan: «Salida de taller» → «Aún en taller».
     expect(screen.getByText("Salida de taller")).toBeTruthy()
     expect(screen.getByText("Aún en taller")).toBeTruthy()
+    // La misma cifra se llama «Días en taller» en las órdenes, el Historial y aquí.
+    expect(screen.getByText("Días en taller")).toBeTruthy()
+    expect(screen.queryByText("Días detenido")).toBeNull()
     expect(screen.getByText("Sin actualizar hace más de 2 días.")).toBeTruthy()
     expect(screen.getByText(/Esperando repuesto/)).toBeTruthy()
     expect(screen.getByText("AEDO POLANCO JOSE A.")).toBeTruthy()
@@ -238,5 +241,9 @@ describe("detalle de un registro", () => {
     expect(screen.getByText("Ya la subí")).toBeTruthy()
     expect(screen.getByText("Aún sin respuesta del mecánico.")).toBeTruthy()
     expect(screen.getByRole("link", { name: /Preventiva 20\.000 km/ }).getAttribute("href")).toBe("/mantencion/registros/rec-0")
+    // Los títulos bastan: ni la galería ni el historial llevan una bajada que repita lo que ya se ve.
+    expect(screen.getByRole("heading", { name: "Fotos de respaldo" })).toBeTruthy()
+    expect(screen.queryByText(/Toca una foto para ampliarla/)).toBeNull()
+    expect(screen.queryByText(/Los últimos registros vigentes de este equipo/)).toBeNull()
   })
 })

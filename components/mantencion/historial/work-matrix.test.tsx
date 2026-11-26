@@ -106,19 +106,23 @@ describe("WorkMatrixView — la matriz equipos × meses", () => {
     expect(screen.queryByRole("link", { name: /Sin trabajos/ })).toBeNull()
   })
 
-  it("la leyenda nombra los cinco tipos y la nota de apoyo va junto a ella", () => {
+  it("la leyenda nombra los cinco tipos y dice cómo abrir los trabajos de una celda", () => {
     renderMatrix()
     const legend = screen.getByRole("list", { name: "Leyenda de tipos" })
     for (const label of ["Correctiva", "Preventiva", "Predictiva", "Sin clasificar", "Varios tipos"]) {
       expect(within(legend).getByText(label)).toBeDefined()
     }
-    expect(screen.getByText("Cada celda cuenta los trabajos del equipo en el mes. Toca una celda para ver sus trabajos.")).toBeDefined()
+    expect(screen.getByText("Toca una celda para ver sus trabajos.")).toBeDefined()
+    expect(screen.queryByText(/Cada celda cuenta/)).toBeNull()
   })
 
   it("el contenedor de la tabla desplaza en horizontal y es foco de teclado; la primera columna queda fija", () => {
     renderMatrix()
     const region = screen.getByRole("region", { name: CAPTION })
     expect(region.className).toContain("overflow-x-auto")
+    // `relative`: el texto `sr-only` de las celdas vacías es `absolute` y, sin un ancestro posicionado dentro del recorte,
+    // su posición (a la derecha de la tabla) ensancha la página en el teléfono.
+    expect(region.className).toContain("relative")
     expect(region.getAttribute("tabindex")).toBe("0")
     const firstHeader = region.querySelector("thead th") as HTMLElement
     expect(firstHeader.className).toContain("sticky left-0")

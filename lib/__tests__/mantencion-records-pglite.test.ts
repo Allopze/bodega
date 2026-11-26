@@ -229,9 +229,35 @@ describe("filtros", () => {
     expect(folios((await listAs(IDS.jefe, { situation: "paso_taller" })).rows)).toEqual(["MC-CHO-0001"])
   })
 
+  it("el buscador encuentra el folio, el código y la patente, escritos con o sin guiones, espacios y mayúsculas", async () => {
+    // El folio es lo que va impreso en el registro: antes sólo se buscaba por código y patente.
+    for (const typed of ["MC-CHO-0001", "mc-cho-0001", "mcCHO0001", "mc cho 0001", "cho-0001"]) {
+      expect(folios((await listAs(IDS.jefe, { equipment: typed })).rows), typed).toEqual(["MC-CHO-0001"])
+    }
+    // Un pedazo del folio sirve: los dos de Biodiversa que terminan en 0001.
+    expect(folios((await listAs(IDS.jefe, { equipment: "bio-0001" })).rows)).toEqual(["MC-BIO-0001", "MP-BIO-0001"])
+    // El código sin guion («ka91» por «KA-91») y la patente con espacio en vez de guion.
+    expect(folios((await listAs(IDS.jefe, { equipment: "ka200" })).rows)).toEqual(["MC-CHO-0001"])
+    expect(folios((await listAs(IDS.jefe, { equipment: "KA 300" })).rows)).toEqual(["MP-ARA-0001"])
+    expect(folios((await listAs(IDS.jefe, { equipment: "ghjk34" })).rows)).toEqual(["MP-ARA-0001"])
+    expect(folios((await listAs(IDS.jefe, { equipment: "bcdf 12" })).rows)).toEqual(["MC-CHO-0001"])
+    // Lo que no existe sigue sin aparecer.
+    expect((await listAs(IDS.jefe, { equipment: "MP-STF-0147" })).total).toBe(0)
+    expect((await listAs(IDS.jefe, { equipment: "ka999" })).total).toBe(0)
+  })
+
+  it("buscar por folio sólo achica el alcance: un supervisor no abre el folio de otra faena", async () => {
+    expect((await listAs(IDS.supBio, { equipment: "MC-CHO-0001" })).total).toBe(0)
+    expect(folios((await listAs(IDS.supBio, { equipment: "mpbio0002" })).rows)).toEqual(["MP-BIO-0002"])
+    // Y se combina con los demás filtros en vez de reemplazarlos.
+    expect((await listAs(IDS.jefe, { equipment: "bio-0001", kind: "P" })).total).toBe(1)
+  })
+
   it("un texto con comodines se busca literal", async () => {
     expect((await listAs(IDS.jefe, { equipment: "%" })).total).toBe(0)
     expect((await listAs(IDS.jefe, { equipment: "_" })).total).toBe(0)
+    // Una búsqueda de sólo signos no se vuelve «cualquier cosa»: no tiene versión compactada y queda la literal.
+    expect((await listAs(IDS.jefe, { equipment: "-%-" })).total).toBe(0)
   })
 
   it("ordena por columna y pagina en el servidor sin repetir ni perder filas", async () => {

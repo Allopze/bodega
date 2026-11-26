@@ -30,7 +30,10 @@ import { cn } from "@/lib/utils"
  * no toma el color de ninguno: fondo neutro con borde punteado.
  *
  * Es una `<table>` real, con encabezados de columna y de fila (`scope`) y una fila de faena por grupo. La primera
- * columna queda fija y la tabla tiene su propio desplazamiento horizontal: en 390 px la página no se desborda.
+ * columna queda fija y la tabla tiene su propio desplazamiento horizontal: en 390 px la página no se desborda. El
+ * contenedor con desplazamiento es `relative` a propósito: el texto `sr-only` de las celdas vacías es `absolute`, y sin
+ * un ancestro posicionado dentro del recorte su posición (a la derecha de la tabla, ~550 px) cuenta como ancho de la
+ * página y la desborda.
  */
 
 const CAPTION = "Trabajos por equipo y mes"
@@ -153,7 +156,7 @@ function MatrixLegend() {
           </li>
         ))}
       </ul>
-      <p className="text-xs text-[var(--color-text-muted)]">Cada celda cuenta los trabajos del equipo en el mes. Toca una celda para ver sus trabajos.</p>
+      <p className="text-xs text-[var(--color-text-muted)]">Toca una celda para ver sus trabajos.</p>
     </div>
   )
 }
@@ -178,7 +181,7 @@ function MatrixTable({ matrix, params }: { matrix: WorkMatrix; params: HistoryPa
       role="region"
       aria-label={CAPTION}
       tabIndex={0}
-      className="min-w-0 overflow-x-auto rounded-[var(--radius)] focus-visible:outline-2 focus-visible:outline-offset-2"
+      className="relative min-w-0 overflow-x-auto rounded-[var(--radius)] focus-visible:outline-2 focus-visible:outline-offset-2"
     >
       <table className="w-max min-w-full border-separate border-spacing-0.5 text-xs">
         <caption className="sr-only">{CAPTION}</caption>
