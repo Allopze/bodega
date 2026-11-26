@@ -136,9 +136,9 @@ describe("OtPartsRequestsSection con el resumen unificado", () => {
     expect(screen.getByRole("heading", { name: "Repuestos", level: 2 })).toBeTruthy()
     expect(screen.getByRole("heading", { name: "Notas de pedido" })).toBeTruthy()
     expect(screen.getByRole("heading", { name: "Reservados sin usar" })).toBeTruthy()
-    // La tabla de solicitudes sigue ahí con su nombre de siempre.
-    expect(screen.getByRole("heading", { name: "Repuestos pedidos" })).toBeTruthy()
-    expect(screen.getByRole("region", { name: "Repuestos pedidos" })).toBeTruthy()
+    // La tabla de solicitudes sigue ahí, con el nombre que dice lo que contiene.
+    expect(screen.getByRole("heading", { name: "Solicitudes de compra" })).toBeTruthy()
+    expect(screen.getByRole("region", { name: "Solicitudes de compra" })).toBeTruthy()
     // Con el resumen, lo declarado sale de los consumos (con su estado), no del texto de los registros.
     expect(screen.getByRole("heading", { name: "Declarados en los registros" })).toBeTruthy()
     expect(screen.getByText("Descontado")).toBeTruthy()

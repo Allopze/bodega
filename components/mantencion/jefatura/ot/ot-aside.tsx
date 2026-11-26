@@ -55,7 +55,7 @@ export function classificationChanges(event: WorkOrderEventDetail): string[] {
 }
 
 /**
- * Historial de la OT con TODOS sus eventos (asignaciones, cambios de fecha,
+ * «Movimientos» de la OT, con TODOS sus eventos (asignaciones, cambios de fecha,
  * rechazos…), no sólo las transiciones de estado: por eso no usa
  * `EntityTimeline`, que sólo dibuja `from → to` de un estado. El motivo de un
  * rechazo o de una anulación se ve siempre.
@@ -63,11 +63,11 @@ export function classificationChanges(event: WorkOrderEventDetail): string[] {
 export function OtTimeline({ events }: { events: WorkOrderEventDetail[] }) {
   const sorted = sortEventsNewestFirst(events)
   return (
-    <SectionCard title="Historial" description="Quién lo hizo y el motivo, cuando lo hay.">
+    <SectionCard title="Movimientos">
       {sorted.length === 0 ? (
         <p className="text-sm text-[var(--color-text-muted)]">Sin movimientos todavía.</p>
       ) : (
-        <ol aria-label="Historial de la orden de trabajo" className="relative ml-3 space-y-5 border-l border-[var(--color-border)] pl-6">
+        <ol aria-label="Movimientos de la orden de trabajo" className="relative ml-3 space-y-5 border-l border-[var(--color-border)] pl-6">
           {sorted.map((event) => {
             const change = changeText(event)
             const classification = classificationChanges(event)
@@ -108,14 +108,14 @@ export function OtTimeline({ events }: { events: WorkOrderEventDetail[] }) {
   )
 }
 
-/** Registros de mantención enlazados (la correctiva o preventiva que el mecánico firmó contra esta OT) y el hallazgo de origen. */
+/** Registros firmados enlazados (la correctiva o preventiva que el mecánico firmó contra esta OT) y el hallazgo de origen. */
 export function OtLinks({ detail }: { detail: WorkOrderDetail }) {
   const records = detail.linkedRecords
   return (
-    <SectionCard title="Registros y origen" description="Registros firmados contra esta orden y, si nació de una inspección, su hallazgo.">
+    <SectionCard title="Registros y origen">
       <div className="flex flex-col gap-4">
         <div>
-          <h3 className="mb-1.5 text-sm font-semibold text-[var(--color-text)]">Registros de mantención</h3>
+          <h3 className="mb-1.5 text-sm font-semibold text-[var(--color-text)]">Registros firmados</h3>
           {records.length === 0 ? (
             <p className="text-sm text-[var(--color-text-muted)]">Todavía no hay registros enlazados. El mecánico los firma desde su app o desde esta página.</p>
           ) : (
@@ -163,7 +163,7 @@ export function OtLinks({ detail }: { detail: WorkOrderDetail }) {
 
 export function OtAside({ detail }: { detail: WorkOrderDetail }) {
   return (
-    <aside aria-label="Historial y registros enlazados" className="flex min-w-0 flex-col gap-4">
+    <aside aria-label="Movimientos y registros enlazados" className="flex min-w-0 flex-col gap-4">
       <OtTimeline events={detail.events} />
       <OtLinks detail={detail} />
     </aside>

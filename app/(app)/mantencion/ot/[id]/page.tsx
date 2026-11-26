@@ -9,10 +9,12 @@ import {
   OtHeaderSection, OtItemsSection, OtObservationsSection, OtPartsRequestsSection, OtProgressSection, OtRejectionNotice, OtRepairSection, OtWorkPerformedSection,
   OtTransferredNotice, OtVoidedNotice,
 } from "@/components/mantencion/jefatura/ot/ot-sections"
+import type { EntryReadings } from "@/components/mantencion/jefatura/ot/ot-entry-reading"
 import { reservedUnusedNotice } from "@/components/mantencion/jefatura/notas-pedido/reserved-unused"
 import { can, canAny, requireAnyPermission } from "@/lib/auth/can"
 import { logger } from "@/lib/logger"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
+import { loadFleet } from "@/lib/services/mantencion/fleet"
 import { loadWorkOrderPartsOverview } from "@/lib/services/mantencion/parts-notes/query"
 import { loadWorkOrderRecordForm } from "@/lib/services/mantencion/web-record"
 import { listAssignableMechanics, listExecutionWorksiteOptions, loadWorkOrderDetail, loadWorkOrderEntryCatalogs } from "@/lib/services/mantencion/work-orders/query"
@@ -20,6 +22,25 @@ import { getOperationalSettings } from "@/lib/services/system-settings"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Orden de trabajo" }
+
+/**
+ * Las lecturas del equipo con que «Registrar ingreso» dice la última y valida la que se escribe (lo mismo que la app del
+ * mecánico). Se lee del mismo estado de flota que usa el registro desde el PC. Si el equipo ya no está activo en el módulo
+ * o la consulta falla, el diálogo sigue: lee bien el número, sólo que sin compararlo.
+ */
+async function loadEntryReadings(vehicleId: string): Promise<EntryReadings | null> {
+  try {
+    const [row] = await loadFleet({ scope: "all", vehicleIds: [vehicleId], includeRetired: false })
+    if (!row) return null
+    return {
+      readings: row.readings,
+      initial: row.initialReading ? { value: row.initialReading.value, date: row.initialReading.date, source: "Lectura inicial" } : null,
+    }
+  } catch (error) {
+    logger.warn("[mantencion-ot] lecturas del equipo para el ingreso fallaron", error)
+    return null
+  }
+}
 
 export default async function WorkOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   let session
@@ -39,7 +60,7 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
   // El PDF y la hoja imprimible exigen ver la OT (expone el trabajo enlazado): el
   // mecánico que sólo ejecuta ve la OT y sus acciones, pero no el botón de descarga.
   const canDownloadPdf = can(session, "mant:ot:view_worksite") || can(session, "mant:ot:view_all")
-  // «Pedir repuestos» precarga equipo, faena y OT en la solicitud (contrato de `/solicitudes/nueva`). Sólo con
+  // «Solicitar compra» precarga equipo, faena y OT en la solicitud (contrato de `/solicitudes/nueva`). Sólo con
   // permiso para crear y mientras la OT siga abierta: una cerrada o anulada ya no recibe repuestos. La solicitud
   // vuelve a validarlo; esto sólo decide si se ofrece. Con `view_own` el enlace a una solicitud ajena daría 404,
   // así que el código sólo es enlace con `view_all`.
@@ -57,11 +78,12 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
   // El resumen también alimenta los chips del registro web y el aviso al conformar o anular, así que se pide si se
   // puede ver o registrar. Si falla, la OT se muestra igual con lo de siempre: no se cae la página por esta sección.
   const wantsOverview = canOpenNotes || detail.canRegisterRecord
-  const [mechanics, entryCatalogs, recordForm, executionWorksites, settings, partsOverview] = await Promise.all([
+  const [mechanics, entryCatalogs, entryReadings, recordForm, executionWorksites, settings, partsOverview] = await Promise.all([
     allowed.has("assign") ? listAssignableMechanics() : Promise.resolve(null),
     needsEntryCatalogs ? loadWorkOrderEntryCatalogs() : Promise.resolve(null),
+    needsEntryCatalogs ? loadEntryReadings(detail.vehicleId) : Promise.resolve(null),
     detail.canRegisterRecord ? loadWorkOrderRecordForm(viewer, detail) : Promise.resolve(null),
-    // «Editar solicitud» y «Corregir clasificación» eligen la faena de ejecución y marcan el tipo de acción como obligatorio.
+    // «Editar orden» y «Corregir tipo de acción» eligen la faena de ejecución y marcan el tipo de acción como obligatorio.
     needsClassificationForm ? listExecutionWorksiteOptions() : Promise.resolve(null),
     needsClassificationForm ? getOperationalSettings() : Promise.resolve(null),
     wantsOverview
@@ -99,6 +121,7 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
             assignedToUserId={detail.assignedToUserId}
             mechanics={mechanics}
             entryCatalogs={entryCatalogs}
+            entryReadings={entryReadings}
             actorName={session.user.name ?? ""}
             actorUserId={session.user.id}
             pdfHref={`/api/mantencion/ot/${detail.id}/pdf`}

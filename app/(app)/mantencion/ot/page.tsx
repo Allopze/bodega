@@ -132,7 +132,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
       {filters.tab === "cerrada" && canSeeHistory && (
         // Los trabajos de los formularios anteriores y los registros firmados no son OT: viven en el Historial de mantenciones.
         <p className="mb-3 text-sm text-[var(--color-text-muted)]">
-          Aquí están las órdenes de trabajo hechas en la plataforma. Los trabajos anteriores, de los formularios, y los registros firmados están en el{" "}
+          Los trabajos de los formularios y los registros firmados están en el{" "}
           <Link
             href={filters.worksiteId ? `/mantencion/registros/historicos?faena=${encodeURIComponent(filters.worksiteId)}` : "/mantencion/registros/historicos"}
             className="font-semibold text-[var(--color-primary-ink)] underline underline-offset-2"

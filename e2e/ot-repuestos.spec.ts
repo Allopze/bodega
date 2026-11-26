@@ -3,13 +3,13 @@ import { cerrarSesion, clearRateLimits, pickCurrentMonthDate, selectRadixById, t
 import { withSql } from "./mantencion-3-helpers"
 
 /**
- * Repuestos pedidos desde la OT (plan 2026-11-07, Task 19).
+ * Compra de repuestos desde la OT (plan 2026-11-07, Task 19).
  *
  *   la jefatura de mantención crea una OT asignada a un mecánico → desde
- *   «Más acciones» pide repuestos → el formulario de solicitud llega con la
+ *   «Más acciones» elige «Solicitar compra» → el formulario de solicitud llega con la
  *   faena, el equipo y la OT precargados → guarda el borrador → la OT muestra
- *   «Repuestos pedidos» con la línea, y la lista de OT dice «Esperando repuesto».
- *   El mecánico asignado ve la OT pero no puede pedir repuestos.
+ *   «Solicitudes de compra» con la línea, y la lista de OT dice «Esperando repuesto».
+ *   El mecánico asignado ve la OT pero no puede solicitar la compra.
  *
  * Usuarios de `e2e/fixtures/mantencion-setup.ts` (contraseña `chome2026`).
  * Locators según «Locators in this repository» de AGENTS.md.
@@ -83,11 +83,11 @@ test.describe("OT · repuestos pedidos", () => {
     folio = /OT-[A-Z]+-\d{4}/.exec(titulo)?.[0] ?? ""
     expect(folio, "el título de la OT lleva su folio").not.toBe("")
 
-    // Sin solicitudes todavía: la sección lo dice y ofrece pedir.
-    await expect(page.getByRole("heading", { name: "Repuestos pedidos" })).toBeVisible()
+    // Sin solicitudes todavía: la sección lo dice y ofrece solicitar la compra.
+    await expect(page.getByRole("heading", { name: "Solicitudes de compra" })).toBeVisible()
 
     await page.getByRole("button", { name: "Más acciones" }).click()
-    await page.getByRole("menuitem", { name: "Pedir repuestos" }).click()
+    await page.getByRole("menuitem", { name: "Solicitar compra" }).click()
     await expect(page).toHaveURL(new RegExp(`/solicitudes/nueva\\?tipo=repuestos&ot=${otId}`))
     await page.waitForLoadState("networkidle").catch(() => undefined)
 
@@ -105,7 +105,7 @@ test.describe("OT · repuestos pedidos", () => {
     // un pedido y no la deja «esperando repuesto» (decisión 2026-11-07).
     await page.goto(`/mantencion/ot/${otId}`)
     await expect(textoVisible(page, REPUESTO)).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByRole("heading", { name: "Repuestos pedidos" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Solicitudes de compra" })).toBeVisible()
     await expect(textoVisible(page, /^REP-/).first()).toBeVisible()
     await page.goto("/mantencion/ot?repuestos=pendientes")
     await expect(page.getByRole("row").filter({ hasText: folio })).toHaveCount(0)
@@ -131,18 +131,18 @@ test.describe("OT · repuestos pedidos", () => {
     await expect(fila.getByText("Esperando repuesto")).toBeVisible()
   })
 
-  test("el mecánico asignado ve la OT pero no puede pedir repuestos", async ({ page }) => {
+  test("el mecánico asignado ve la OT pero no puede solicitar la compra", async ({ page }) => {
     expect(otId, "depende del test anterior").not.toBe("")
     await cerrarSesion(page)
     await entrarPlataforma(page, MECANICO)
     await page.goto(`/mantencion/ot/${otId}`)
     await expect(page.getByRole("heading", { level: 1, name: new RegExp(`^${folio}`) })).toBeVisible()
-    await expect(page.getByRole("heading", { name: "Repuestos pedidos" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Solicitudes de compra" })).toBeVisible()
     const masAcciones = page.getByRole("button", { name: "Más acciones" })
     if (await masAcciones.count()) {
       await masAcciones.click()
-      await expect(page.getByRole("menuitem", { name: "Pedir repuestos" })).toHaveCount(0)
+      await expect(page.getByRole("menuitem", { name: "Solicitar compra" })).toHaveCount(0)
     }
-    await expect(page.getByRole("link", { name: "Pedir repuestos" })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "Solicitar compra" })).toHaveCount(0)
   })
 })

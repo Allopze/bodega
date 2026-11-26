@@ -11,7 +11,7 @@ export const OT_STATE_META: Record<OtStatus, StateMetaInput> = Object.fromEntrie
 /** Qué dice cada evento en la línea de tiempo (el historial no muestra el valor crudo del enum: regla A6). */
 export const OT_EVENT_LABELS: Record<OtEventType, string> = {
   created: "Orden solicitada",
-  edited: "Solicitud editada",
+  edited: "Orden editada",
   assigned: "Mecánico asignado",
   unassigned: "Asignación retirada",
   taken: "Tomada por el mecánico",
@@ -35,12 +35,12 @@ export const OT_EVENT_LABELS: Record<OtEventType, string> = {
 }
 
 /**
- * Rótulo del evento en el historial. Una corrección de clasificación se guarda como `edited` con
- * `changeSet.scope === "clasificacion"` (el CHECK de la tabla no admite tipos nuevos) y se lee distinto de
- * «Solicitud editada».
+ * Rótulo del evento: lo usan la ficha («Movimientos») y la hoja «Historial» del Excel, para que una misma orden diga lo
+ * mismo en las dos. Una corrección del tipo de acción se guarda como `edited` con `changeSet.scope === "clasificacion"`
+ * (el CHECK de la tabla no admite tipos nuevos) y se lee distinto de «Orden editada».
  */
 export function otEventLabel(event: { type: OtEventType; changeSet?: Record<string, unknown> | null }): string {
-  if (event.type === "edited" && event.changeSet?.scope === "clasificacion") return "Clasificación corregida"
+  if (event.type === "edited" && event.changeSet?.scope === "clasificacion") return "Tipo de acción corregido"
   return OT_EVENT_LABELS[event.type] ?? event.type
 }
 
@@ -72,7 +72,7 @@ export function laborHoursText(hours: number | null): string {
   return hours == null ? "—" : `${hours.toLocaleString("es-CL", { maximumFractionDigits: 2 })} h`
 }
 
-/** Días detenido: «3 días», «1 día», «Mismo día»; «—» mientras falte la salida. */
+/** Días en taller: «3 días», «1 día», «Mismo día»; «—» mientras falte la salida. */
 export function daysStoppedText(days: number | null): string {
   if (days == null) return "—"
   if (days === 0) return "Mismo día"

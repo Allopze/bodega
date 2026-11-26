@@ -236,7 +236,7 @@ describe("clasificación Trinorma en el detalle", () => {
     expect(screen.getByText("Especialidades").nextElementSibling?.textContent).toBe("Mecánica, Hidráulica")
     expect(screen.getByText("Faena de ejecución").nextElementSibling?.textContent).toBe("Santa Fe")
     expect(screen.getByText("Horas hombre").nextElementSibling?.textContent).toContain("6,5")
-    expect(screen.getByText("Días detenido").nextElementSibling?.textContent).toBe("3 días")
+    expect(screen.getByText("Días en taller").nextElementSibling?.textContent).toBe("3 días")
   })
 })
 
@@ -351,8 +351,8 @@ function partsLine(overrides: Partial<WorkOrderPartsRequest> = {}): WorkOrderPar
   }
 }
 
-describe("«Repuestos pedidos»", () => {
-  const partsTable = () => within(screen.getByRole("region", { name: "Repuestos pedidos" }))
+describe("«Solicitudes de compra» de la OT", () => {
+  const partsTable = () => within(screen.getByRole("region", { name: "Solicitudes de compra" }))
 
   it("lista solicitud, repuesto, estado en español, orden de compra y entrega estimada; marca «Vencida» si la fecha pasó y falta recibir", () => {
     const detail = otDetail({
@@ -366,7 +366,7 @@ describe("«Repuestos pedidos»", () => {
     })
     render(<OtPartsRequestsSection detail={detail} canOpenRequests partsRequestHref={PEDIR_REPUESTOS} />)
 
-    expect(screen.getByRole("heading", { name: "Repuestos pedidos" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Solicitudes de compra" })).toBeTruthy()
     const rows = partsTable().getAllByRole("row")
     // Cabecera + cuatro líneas; cada una con su solicitud, repuesto y estado en español (nunca el valor crudo).
     expect(rows).toHaveLength(5)
@@ -412,33 +412,33 @@ describe("«Repuestos pedidos»", () => {
     expect(screen.getByText("Ningún registro enlazado declara repuestos.")).toBeTruthy()
   })
 
-  it("sin solicitudes y con permiso, el estado vacío ofrece «Pedir repuestos» con la URL de prellenado", () => {
+  it("sin solicitudes y con permiso, el estado vacío ofrece «Solicitar compra» con la URL de prellenado", () => {
     render(<OtPartsRequestsSection detail={otDetail()} canOpenRequests partsRequestHref={PEDIR_REPUESTOS} />)
-    expect(screen.getByText("Sin repuestos pedidos")).toBeTruthy()
-    const cta = screen.getAllByRole("link", { name: "Pedir repuestos" })
+    expect(screen.getByText("Sin solicitudes de compra")).toBeTruthy()
+    const cta = screen.getAllByRole("link", { name: "Solicitar compra" })
     expect(cta).toHaveLength(1)
     expect(cta[0]!.getAttribute("href")).toBe(PEDIR_REPUESTOS)
-    expect(screen.queryByRole("region", { name: "Repuestos pedidos" })).toBeNull()
+    expect(screen.queryByRole("region", { name: "Solicitudes de compra" })).toBeNull()
   })
 
-  it("con solicitudes, «Pedir repuestos» queda en la cabecera de la sección, una sola vez", () => {
+  it("con solicitudes, «Solicitar compra» queda en la cabecera de la sección, una sola vez", () => {
     render(<OtPartsRequestsSection detail={otDetail({ partsRequests: [partsLine()] })} canOpenRequests partsRequestHref={PEDIR_REPUESTOS} />)
-    const cta = screen.getAllByRole("link", { name: "Pedir repuestos" })
+    const cta = screen.getAllByRole("link", { name: "Solicitar compra" })
     expect(cta).toHaveLength(1)
     expect(cta[0]!.getAttribute("href")).toBe(PEDIR_REPUESTOS)
   })
 
   it("sin permiso para pedir (o con la OT cerrada) no ofrece pedir y el vacío lo dice en texto", () => {
     render(<OtPartsRequestsSection detail={otDetail()} canOpenRequests={false} partsRequestHref={null} />)
-    expect(screen.getByText("Nadie ha pedido repuestos para esta orden.")).toBeTruthy()
-    expect(screen.queryByRole("link", { name: "Pedir repuestos" })).toBeNull()
+    expect(screen.getByText("Aún no hay solicitudes de compra para esta orden.")).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "Solicitar compra" })).toBeNull()
   })
 
   it("el SKU y el N° de parte no se parten a mitad de token (tarjetas móviles y tabla): sólo se corta entre campos (UX-9)", () => {
     // Chromium corta «QA-901» después del guion; a 390 px quedaba «QA-» en un renglón y «901» en el siguiente.
     const detail = otDetail({ partsRequests: [partsLine({ productId: "prod-1", sku: "RPT-004", partNumber: "QA-901", isSparePart: true })] })
     render(<OtPartsRequestsSection detail={detail} canOpenRequests canOpenSpareParts partsRequestHref={null} />)
-    const cardList = within(screen.getByRole("list", { name: "Repuestos pedidos" }))
+    const cardList = within(screen.getByRole("list", { name: "Solicitudes de compra" }))
     for (const scope of [cardList, partsTable()]) {
       for (const token of ["RPT-004", "QA-901"]) {
         expect(scope.getByText(token).className).toContain("whitespace-nowrap")
@@ -479,21 +479,21 @@ describe("«Repuestos pedidos»", () => {
 
   it("en móvil cada línea es una tarjeta con repuesto, solicitud, estado, cantidad y recibido", () => {
     render(<OtPartsRequestsSection detail={otDetail({ partsRequests: [partsLine()] })} canOpenRequests partsRequestHref={null} />)
-    const cards = screen.getByRole("list", { name: "Repuestos pedidos" })
+    const cards = screen.getByRole("list", { name: "Solicitudes de compra" })
     expect(cards.className).toContain("md:hidden")
     const card = within(cards)
     expect(card.getByRole("link", { name: "REP-0007" }).getAttribute("href")).toBe("/solicitudes/req-1")
     expect(card.getByText("Cantidad")).toBeTruthy()
     expect(card.getByText("Recibido")).toBeTruthy()
     // La tabla de escritorio queda oculta bajo md.
-    expect(screen.getByRole("region", { name: "Repuestos pedidos" }).parentElement!.className).toContain("hidden md:block")
+    expect(screen.getByRole("region", { name: "Solicitudes de compra" }).parentElement!.className).toContain("hidden md:block")
   })
 })
 
 describe("columna lateral", () => {
-  it("el historial va de lo más reciente a lo más antiguo y deja ver el motivo de un rechazo", () => {
+  it("los movimientos van de lo más reciente a lo más antiguo y deja ver el motivo de un rechazo", () => {
     render(<OtAside detail={otDetail()} />)
-    const history = within(screen.getByRole("list", { name: "Historial de la orden de trabajo" }))
+    const history = within(screen.getByRole("list", { name: "Movimientos de la orden de trabajo" }))
     const items = history.getAllByRole("listitem").map((item) => item.textContent ?? "")
     expect(items[0]).toContain("Rechazada")
     expect(items[0]).toContain("Sigue la fuga de aceite")
@@ -502,7 +502,7 @@ describe("columna lateral", () => {
     expect(history.getByText("03-11-2026 → 05-11-2026")).toBeTruthy()
   })
 
-  it("una corrección de clasificación se lee «Clasificación corregida», con el motivo y qué cambió (antes → después)", () => {
+  it("una corrección del tipo de acción se lee «Tipo de acción corregido», con el motivo y qué cambió (antes → después)", () => {
     const detail = otDetail({
       events: [
         ...otDetail().events,
@@ -518,15 +518,15 @@ describe("columna lateral", () => {
       ],
     })
     render(<OtAside detail={detail} />)
-    const history = within(screen.getByRole("list", { name: "Historial de la orden de trabajo" }))
-    const item = history.getByText("Clasificación corregida").closest("li")!
+    const history = within(screen.getByRole("list", { name: "Movimientos de la orden de trabajo" }))
+    const item = history.getByText("Tipo de acción corregido").closest("li")!
     expect(item.textContent).toContain("Era una mantención programada")
     expect(item.textContent).toContain("Tipo de acción: Correctiva → Preventiva")
     expect(item.textContent).toContain("Especialidades: Mecánica → Mecánica, Soldadura")
     expect(item.textContent).toContain("Faena de ejecución: La del equipo → Santa Fe")
     expect(item.textContent).toContain("Horas hombre: 8 h → 2,5 h")
-    // La edición común de la solicitud conserva su rótulo.
-    expect(history.getByText("Solicitud editada")).toBeTruthy()
+    // La edición común de la orden conserva su rótulo.
+    expect(history.getByText("Orden editada")).toBeTruthy()
   })
 
   it("el detalle no dibuja costo de la OT (decisión 2026-11-17)", () => {

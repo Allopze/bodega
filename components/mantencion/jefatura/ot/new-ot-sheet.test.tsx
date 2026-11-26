@@ -12,6 +12,7 @@ vi.mock("@/app/(app)/mantencion/ot/actions", () => ({ createWorkOrderAction: (..
 vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 
 const { NewWorkOrderCta, buildCreatePayload, checksForActionType } = await import("./new-ot-sheet")
+const { discardNotices } = await import("./ot-request-fields")
 
 const EQUIPMENT = [
   { id: "veh-1", code: "KA-135", plate: "RBYD-98", typeName: "Camión", worksiteId: "ws-1", worksiteName: "Biodiversa", unit: "km" as const },
@@ -182,6 +183,53 @@ describe("buildCreatePayload", () => {
     expect(checksForActionType("correctiva")).toEqual({ repair: true, maintenance: false })
     expect(checksForActionType("preventiva")).toEqual({ repair: false, maintenance: true })
     expect(checksForActionType("predictiva")).toEqual({ repair: false, maintenance: true })
+  })
+})
+
+describe("«Nueva orden»: el tipo de acción prellena las casillas (sólo en el alta)", () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(cleanup)
+
+  it("elegir «Preventiva» marca Mantención y desmarca Reparación; en «Editar orden» no se toca (OT4-6)", async () => {
+    render(<NewWorkOrderCta {...BASE} />)
+    const sheet = await openSheet()
+    expect((sheet.getByRole("checkbox", { name: "Reparación" }) as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(sheet.getByRole("combobox", { name: /Tipo de acción/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "Preventiva" }))
+    expect((sheet.getByRole("checkbox", { name: "Reparación" }) as HTMLInputElement).checked).toBe(false)
+    expect((sheet.getByRole("checkbox", { name: "Mantención" }) as HTMLInputElement).checked).toBe(true)
+    // En el alta, la ayuda sigue explicando el prellenado y no hay avisos de lo que se borra.
+    expect(sheet.getByText(/Al elegirla se marca Reparación/)).toBeTruthy()
+    expect(sheet.queryByRole("status")?.textContent ?? "").toBe("")
+  })
+
+  it("el aviso de lo que se borra sólo existe al editar: en el alta no hay nada guardado que perder", async () => {
+    render(<NewWorkOrderCta {...BASE} />)
+    const sheet = await openSheet()
+    fireEvent.change(sheet.getByRole("textbox", { name: /^Reparación/ }), { target: { value: "Fuga de aceite" } })
+    fireEvent.click(sheet.getByRole("checkbox", { name: "Reparación" }))
+    expect(sheet.queryByText(/Al guardar se borra/)).toBeNull()
+  })
+})
+
+describe("discardNotices (OT4-6)", () => {
+  const base = { repair: true, maintenance: true, repairDescription: "", annexItems: [] as string[], maintenanceItems: [] as string[] }
+
+  it("sin tipos desmarcados, o desmarcados sin contenido, no avisa nada", () => {
+    expect(discardNotices(base)).toEqual({ repair: null, maintenance: null })
+    expect(discardNotices({ ...base, repair: false, repairDescription: "   ", annexItems: ["", "  "] })).toEqual({ repair: null, maintenance: null })
+    // Con la casilla marcada el contenido viaja: no se pierde.
+    expect(discardNotices({ ...base, repairDescription: "Fuga", annexItems: ["a"], maintenanceItems: ["b"] })).toEqual({ repair: null, maintenance: null })
+  })
+
+  it("dice qué se borra, con el verbo y los números concordados", () => {
+    expect(discardNotices({ ...base, repair: false, repairDescription: "Fuga" }).repair).toBe("Al guardar se borra la descripción.")
+    expect(discardNotices({ ...base, repair: false, annexItems: ["a"] }).repair).toBe("Al guardar se borra 1 trabajo anexo.")
+    expect(discardNotices({ ...base, repair: false, annexItems: ["a", " b "] }).repair).toBe("Al guardar se borran 2 trabajos anexos.")
+    expect(discardNotices({ ...base, repair: false, repairDescription: "Fuga", annexItems: ["a", "b"] }).repair).toBe("Al guardar se borran la descripción y 2 trabajos anexos.")
+    expect(discardNotices({ ...base, repair: false, repairDescription: "Fuga", annexItems: ["a"] }).repair).toBe("Al guardar se borran la descripción y 1 trabajo anexo.")
+    expect(discardNotices({ ...base, maintenance: false, maintenanceItems: ["a"] }).maintenance).toBe("Al guardar se borra 1 mantención solicitada.")
+    expect(discardNotices({ ...base, maintenance: false, maintenanceItems: ["a", "b", ""] }).maintenance).toBe("Al guardar se borran 2 mantenciones solicitadas.")
   })
 })
 

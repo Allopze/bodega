@@ -154,7 +154,12 @@ describe("OtRecordSheet: preventiva", () => {
 
   it("dice qué pauta toca, pide marcar los ítems y exige filtros, sticker y notas", async () => {
     const { sheet } = renderSheet("P")
+    // Los mismos nombres que en la app del mecánico: «Intervalo que toca», no «Pauta que corresponde».
+    expect(sheet.getByText("Escribe la lectura para ver qué intervalo toca.")).toBeTruthy()
     fireEvent.change(sheet.getByRole("textbox", { name: /Odómetro actual/ }), { target: { value: "120100" } })
+    expect(sheet.getByText(/^Intervalo que toca · /)).toBeTruthy()
+    expect(sheet.getByRole("button", { name: "Elegir otro intervalo" })).toBeTruthy()
+    expect(sheet.queryByText(/Pauta que corresponde|otra pauta/)).toBeNull()
     expect(sheet.getByText(/toca la de 20\.000 km/)).toBeTruthy()
     fireEvent.click(sheet.getByRole("button", { name: "Continuar" }))
     expect(await sheet.findByText(/Paso 2 de 4 · Pauta/)).toBeTruthy()
@@ -171,6 +176,22 @@ describe("OtRecordSheet: preventiva", () => {
     expect(sheet.getByText("Falta la foto del sticker de mantención.")).toBeTruthy()
     expect(sheet.getByLabelText("Cargar foto: filtros usados")).toBeTruthy()
     expect(sheet.getByLabelText("Cargar foto: sticker de mantención realizada")).toBeTruthy()
+  })
+})
+
+describe("OtRecordSheet: elegir otro intervalo", () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(cleanup)
+
+  it("«Elegir otro intervalo» ofrece los de la pauta, y elegir uno distinto pide el motivo (mismos nombres que la app)", () => {
+    const { sheet } = renderSheet("P")
+    fireEvent.change(sheet.getByRole("textbox", { name: /Odómetro actual/ }), { target: { value: "120100" } })
+    fireEvent.click(sheet.getByRole("button", { name: "Elegir otro intervalo" }))
+    const group = within(sheet.getByRole("group", { name: "Intervalo a usar" }))
+    fireEvent.click(group.getByRole("button", { name: "10.000 km" }))
+    expect(sheet.getByText(/^Lo elegiste a mano\. Por la lectura correspondía la de 20\.000 km\./)).toBeTruthy()
+    expect(sheet.getByRole("textbox", { name: /¿Por qué usas otro intervalo\?/ })).toBeTruthy()
+    expect(sheet.queryByText(/otra pauta|Elegida a mano/)).toBeNull()
   })
 })
 

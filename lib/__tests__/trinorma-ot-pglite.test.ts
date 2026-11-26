@@ -364,8 +364,29 @@ describe("corregir la clasificación (reclassifyWorkOrder)", () => {
     const audit = audits.find((item) => (stateOf(item.newState).events as string[] | undefined)?.includes("edited") && stateOf(item.newState).actionType === "preventiva")
     expect(audit).toBeTruthy()
     expect(stateOf(audit!.oldState)).toMatchObject({ actionType: "correctiva" })
-    // El detalle lo refleja y ya no ofrece «Editar solicitud» pero sí «Corregir clasificación».
+    // El detalle lo refleja y ya no ofrece «Editar orden» pero sí «Corregir tipo de acción».
     expect(await loadWorkOrderDetail(await viewerOf(IDS.jefe), id)).toMatchObject({ actionType: "preventiva", executionWorksiteName: "Cholguán", canEditRequest: false, canReclassify: true })
+
+    // El Excel rotula los eventos con la misma tabla que la ficha (OT4-9): la corrección se lee «Tipo de acción corregido».
+    const { rbac } = await contextOf(IDS.jefe)
+    const session = { user: { id: rbac.id, email: rbac.email, name: rbac.name, permissions: rbac.permissions, worksiteIds: rbac.worksiteIds, isGlobal: rbac.isGlobal }, expires: "2099-01-01" }
+    const outcome = await exportWorkOrders({ session: session as never, filters: { tab: "abiertas" } })
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    const ExcelJS = (await import("exceljs")).default
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(outcome.data.base64, "base64") as never)
+    const history = workbook.getWorksheet("Historial")!
+    const headers = (history.getRow(1).values as unknown[]).slice(1).map(String)
+    const folioCol = headers.indexOf("Folio") + 1
+    const eventCol = headers.indexOf("Evento") + 1
+    const folio = (await row(id)).folio
+    const labels: string[] = []
+    for (let r = 2; r <= history.rowCount; r++) if (history.getRow(r).getCell(folioCol).value === folio) labels.push(String(history.getRow(r).getCell(eventCol).value))
+    expect(labels).toContain("Orden solicitada")
+    expect(labels).toContain("Tipo de acción corregido")
+    expect(labels).not.toContain("Solicitud editada")
+    expect(labels).not.toContain("Creada")
   })
 
   it("sólo con mant:ot:manage: el mecánico y el administrador de contrato no pueden", async () => {
