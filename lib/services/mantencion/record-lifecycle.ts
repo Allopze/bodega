@@ -3,11 +3,13 @@ import { db, type Tx } from "@/db"
 import { mantRecordObservations, mantRecords, mantRecordVoids, mantWorkOrders } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
+import { logger } from "@/lib/logger"
 import { MAX_REVIEW_BATCH, reviewBatchMessage, type ReviewSkipReason } from "@/lib/mantencion/record-review-batch"
 import { createMantencionFilePath, resolveMantencionFile } from "@/lib/storage/config"
 import { removeFile } from "@/lib/storage/helpers"
 import { REASON_MAX_LENGTH, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 import { canActOnRecord, canObserveRecord, hasMantPermission, recordVisibility, type MantViewer } from "./access"
+import { reverseRecordPartsTx } from "./parts"
 import { pdfRevision, pdfStorageName } from "./record-pdf"
 import type { MantActionResult } from "./result"
 
@@ -91,6 +93,33 @@ async function assertWorkOrderInWorkshop(tx: Tx, record: LockedRecord): Promise<
   return { ok: false, message: `La OT ${ot.folio} ya salió de taller: reábrela antes de anular ${label(record)}.` }
 }
 
+const REVERSE_FAILED = "No se pudo devolver el repuesto a la bodega. Intenta de nuevo o avisa a bodega."
+
+/**
+ * Anular el registro devuelve a la bodega lo que descontó (`ingreso_anulacion` en la faena del
+ * movimiento original) y cierra como «sin movimiento» las líneas que seguían pendientes de conciliar.
+ *
+ * ORDEN DE BLOQUEO: registro → OT (ya bloqueada por `assertWorkOrderInWorkshop`) → faena → filas de
+ * stock. Corre en un savepoint: si no se puede reponer (la faena se cerró), lo que alcanzó a hacer
+ * se deshace y el registro NO se anula, en vez de quedar anulado con el stock descontado para siempre.
+ */
+async function reverseRecordStock(tx: Tx, record: LockedRecord, viewer: MantViewer, reason: string): Promise<{ ok: true; reversed: number; closedPending: number } | { ok: false; message: string }> {
+  try {
+    const result = await tx.transaction((savepoint) => reverseRecordPartsTx(savepoint as unknown as Tx, {
+      recordId: record.id,
+      actorUserId: viewer.userId,
+      userEmail: viewer.email ?? undefined,
+      reason: `Anulación del registro ${label(record)}: ${reason}`.slice(0, REASON_MAX_LENGTH),
+    }))
+    return { ok: true, ...result }
+  } catch (error) {
+    logger.warn("[mantencion/registros] no se pudo reponer el stock al anular un registro", { recordId: record.id, error })
+    // El único rechazo de negocio del motor (faena cerrada) es un `Error` llano en español; un fallo de la base no se muestra.
+    const readable = error instanceof Error && error.constructor === Error && !error.message.startsWith("Failed query")
+    return { ok: false, message: readable ? (error as Error).message : REVERSE_FAILED }
+  }
+}
+
 /** Anular (regla 13): sólo jefatura, con motivo; el registro sigue visible y se excluye de lecturas y estados. */
 export async function voidRecord(input: { recordId: string; reason: string; viewer: MantViewer }): Promise<MantActionResult> {
   const { viewer } = input
@@ -106,6 +135,8 @@ export async function voidRecord(input: { recordId: string; reason: string; view
     // Antes de insertar nada: si la OT ya salió de taller, no se anula (ni anulación ni bitácora).
     const blocked = await assertWorkOrderInWorkshop(tx, record)
     if (blocked) return blocked
+    const stock = await reverseRecordStock(tx, record, viewer, reason)
+    if (!stock.ok) return { ok: false, message: stock.message }
 
     await tx.insert(mantRecordVoids).values({ id: nanoid(), recordId: record.id, reason, userId: viewer.userId })
     await tx.update(mantRecords).set({
@@ -133,7 +164,7 @@ export async function voidRecord(input: { recordId: string; reason: string; view
       entityCode: record.folio ?? undefined,
       worksiteId: record.worksiteId,
       oldState: { status: "vigente", review: record.review },
-      newState: { status: "anulado" },
+      newState: { status: "anulado", ...(stock.reversed + stock.closedPending > 0 ? { stock: { reversed: stock.reversed, closedPending: stock.closedPending } } : {}) },
       reason,
     }, tx)
     return { ok: true, message: `Registro ${label(record)} anulado.` }

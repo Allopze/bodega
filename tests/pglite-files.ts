@@ -704,6 +704,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/np-parts-notes-pglite.test.ts",
 
   // NP · L4 consumo: registro, anulación, cierre de OT y conciliación.
+  "lib/__tests__/np-consumption-pglite.test.ts",
 
   // NP · L5 app del mecánico (si alguna suite del cliente usa PGlite).
 
