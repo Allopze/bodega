@@ -707,6 +707,10 @@ export const pgliteTestFiles = [
 
   // NP · L4 consumo: registro, anulación, cierre de OT y conciliación.
   "lib/__tests__/np-consumption-pglite.test.ts",
+  // «Mis pendientes» de Mantención: siete tipos de fila repartidos entre quienes pueden resolverlos, avisos del menú
+  // que salen de la misma cola, escalamiento por faena, equipo trasladado y resiliencia. Aislada: ninguna otra suite de
+  // la cola siembra `mant_*`.
+  "lib/__tests__/operational-work-queue-mantencion-pglite.test.ts",
 
   // NP · L5 app del mecánico (si alguna suite del cliente usa PGlite).
 

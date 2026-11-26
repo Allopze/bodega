@@ -10,6 +10,7 @@ import {
   markWorkOrderItemsSchema, receiveWorkOrderSchema, reclassifyWorkOrderSchema, rejectWorkOrderSchema, reopenWorkOrderSchema, startWorkOrderSchema,
   unassignWorkOrderSchema, updateWorkOrderEntrySchema, voidWorkOrderSchema,
 } from "@/lib/mantencion/work-order-schemas"
+import { revalidateQueueOfRecords, revalidateQueueOfWorkOrder } from "@/lib/services/mantencion/queue-revalidation"
 import {
   actorFromSession, toActionState, workOrderVehicleId, type WorkOrderActionState,
 } from "@/lib/services/mantencion/work-orders/action-support"
@@ -54,6 +55,8 @@ async function run<T extends { workOrderId: string }>(
       revalidatePath(`${PATH}/${workOrderId}`)
       const vehicleId = await workOrderVehicleId(workOrderId)
       if (vehicleId) revalidateVehicleFicha(vehicleId)
+      // Cada transición mueve la OT a la cola de otra persona (y cierra o anula sus notas): «Mis pendientes» y los avisos.
+      await revalidateQueueOfWorkOrder(workOrderId)
     }
     return toActionState(result)
   } catch (error) {
@@ -138,6 +141,8 @@ export async function registerWorkOrderRecordAction(formData: FormData): Promise
     revalidateVehicleFicha(result.vehicleId)
     revalidatePath("/mantencion/registros")
     revalidatePath("/mantencion/panel")
+    // El registro nuevo queda «por revisar» en su faena.
+    await Promise.all([revalidateQueueOfWorkOrder(result.workOrderId), revalidateQueueOfRecords([result.id])])
     return {
       ok: true,
       message: result.duplicate ? `El registro ${result.folio} ya estaba guardado.` : `Registro ${result.folio} guardado y enlazado a la OT.`,

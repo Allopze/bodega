@@ -7,12 +7,17 @@
  */
 import type { Session } from "next-auth"
 import { canActOnQueueSource } from "./work-queue-eligibility"
+import {
+  EMPTY_OWNERSHIP, hasMyWorkOrderSources, loadMantencionQueueOwnership, mantencionRecordsToReviewWhere, mantencionSourceBranches,
+  type MantencionQueueOwnership,
+} from "./mantencion/work-queue-sources"
 import { and, asc, eq, inArray, notInArray, or, sql, type SQL } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
   billingInvoices,
   dispatchGuides,
+  mantRecords,
   pdtpActivities,
   pdtpActivitySchedule,
   pdtpActivityWorksiteAssignees,
@@ -63,6 +68,7 @@ import {
   INVOICE_DUE_ORDER_STATUSES,
   OFFICE_RECEIVABLE_STATUSES,
   DEFAULT_QUEUE_SORT,
+  OPERATIONAL_MODULE_LABELS,
   requestStatusLabel,
   type OperationalSort,
   type WorkPriority,
@@ -1501,6 +1507,15 @@ function unionOperationalSourceBranches(branches: OperationalSourceBranch[]): SQ
   `
 }
 
+/**
+ * El módulo como lo lee una persona: «mantención» y no «mantencion» (el id). Las siglas (PDTP, CAPA, SST) conservan
+ * sus mayúsculas; el resto va en minúscula, que es como se arma la frase.
+ */
+function moduleNameForMessage(module: OperationalModule): string {
+  const label = OPERATIONAL_MODULE_LABELS[module] ?? module
+  return label === label.toUpperCase() ? label : label.toLowerCase()
+}
+
 export async function probeOperationalSourceBranches(
   branches: OperationalSourceBranch[],
   execute: (query: SQL) => Promise<unknown> = (query) => db.execute(query),
@@ -1523,7 +1538,7 @@ export async function probeOperationalSourceBranches(
     healthy,
     sourceErrors: [...failingModules].map((module) => ({
       module,
-      message: `No fue posible cargar las tareas de ${module}. El resto de la cola permanece disponible.`,
+      message: `No fue posible cargar las tareas de ${moduleNameForMessage(module)}. El resto de la cola permanece disponible.`,
     })),
   }
 }
@@ -1629,9 +1644,8 @@ type OperationalQueueSqlRow = {
 /** Consulta global keyset: entrega como máximo `limit + 1` filas al servidor. */
 async function getOperationalWorkQueuePage(
   session: Session,
-  scope: WorksiteScope,
   filters: Required<Pick<OperationalQueueFilters, "quick" | "sort" | "limit">> & OperationalQueueFilters,
-  sourceBranches = operationalSourceBranches(session, scope),
+  sourceBranches: OperationalSourceBranch[],
 ): Promise<Omit<OperationalQueueResult, "sourceErrors" | "refreshedAt">> {
   const sources = unionOperationalSourceBranches(sourceBranches)
   const filter = queueFilterSql(filters, session)
@@ -1762,6 +1776,54 @@ async function resolvePdtpActivityTargets(items: OperationalWorkItem[]): Promise
   })
 }
 
+/**
+ * Lo que la cola y el conteo del menú comparten: las ramas de esta sesión y, aparte, el predicado por registro de lo
+ * que debe revisar (el aviso de «Registros firmados» cuenta registros, no filas).
+ *
+ * Un solo armado para los dos: es lo que evita el desajuste «el rail dice 7 y la página muestra 2».
+ */
+interface OperationalQueueContext {
+  branches: OperationalSourceBranch[]
+  /** Registros que esta sesión debe revisar; `null` si no revisa ninguno. */
+  recordsToReviewWhere: SQL | null
+  /** Fallas de lecturas previas a la unión (hoy, la de los titulares de Mantención). */
+  sourceErrors: OperationalQueueResult["sourceErrors"]
+}
+
+/**
+ * Las fuentes de Mantención reparten una misma faena entre quienes pueden resolverla (`lib/mantencion/queue-owners.ts`),
+ * y eso pide una lectura previa de titulares. Si falla, la cola sigue sin Mantención y lo dice, en vez de caerse entera.
+ *
+ * Una sesión sin faenas (`scope.mode = 'none'`) no recibe ninguna fuente por faena: sólo «sus OT» (4 y 5) del mecánico
+ * de Mantención, que ejecuta OT de cualquier faena y no depende de la suya.
+ */
+async function loadOperationalQueueContext(session: Session, scope: WorksiteScope): Promise<OperationalQueueContext> {
+  const generalBranches = scope.mode === "none" ? [] : operationalSourceBranches(session, scope)
+  let ownership: MantencionQueueOwnership = EMPTY_OWNERSHIP
+  const sourceErrors: OperationalQueueResult["sourceErrors"] = []
+  if (scope.mode !== "none") {
+    try {
+      ownership = await loadMantencionQueueOwnership(session)
+    } catch (error) {
+      logger.warn("Operational queue could not resolve Mantención owners", {
+        event: "operational_queue_mantencion_owners_failed",
+        error: error instanceof Error ? error.message : String(error),
+      })
+      sourceErrors.push({ module: "mantencion", message: `No fue posible cargar las tareas de ${moduleNameForMessage("mantencion")}. El resto de la cola permanece disponible.` })
+    }
+  }
+  return {
+    branches: [...generalBranches, ...mantencionSourceBranches(session, ownership)],
+    recordsToReviewWhere: mantencionRecordsToReviewWhere(session, ownership),
+    sourceErrors,
+  }
+}
+
+/** Una sesión sin faenas sólo puede tener trabajo si es de las OT que ejecuta (`loadOperationalQueueContext`). */
+function hasNoQueueScope(session: Session, scope: WorksiteScope): boolean {
+  return scope.mode === "none" && !hasMyWorkOrderSources(session)
+}
+
 export async function getOperationalWorkQueue(session: Session, rawFilters: OperationalQueueFilters = {}): Promise<OperationalQueueResult> {
   const scope = resolveWorksiteScope(session)
   const filters: Required<Pick<OperationalQueueFilters, "quick" | "sort" | "limit">> & OperationalQueueFilters = {
@@ -1770,11 +1832,12 @@ export async function getOperationalWorkQueue(session: Session, rawFilters: Oper
     sort: rawFilters.sort ?? DEFAULT_QUEUE_SORT,
     limit: Math.max(1, Math.min(rawFilters.limit ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE)),
   }
-  if (scope.mode === "none") return { items: [], total: 0, summary: emptySummary(), filterOptions: emptyFilterOptions(), nextCursor: null, sourceErrors: [], refreshedAt: new Date().toISOString() }
-  const sourceBranches = operationalSourceBranches(session, scope)
+  if (hasNoQueueScope(session, scope)) return { items: [], total: 0, summary: emptySummary(), filterOptions: emptyFilterOptions(), nextCursor: null, sourceErrors: [], refreshedAt: new Date().toISOString() }
+  const context = await loadOperationalQueueContext(session, scope)
+  const sourceBranches = context.branches
   try {
-    const result = await getOperationalWorkQueuePage(session, scope, filters, sourceBranches)
-    return { ...result, sourceErrors: [], refreshedAt: new Date().toISOString() }
+    const result = await getOperationalWorkQueuePage(session, filters, sourceBranches)
+    return { ...result, sourceErrors: context.sourceErrors, refreshedAt: new Date().toISOString() }
   } catch (error) {
     logger.warn("Operational queue unified query failed; probing source branches", {
       event: "operational_queue_unified_query_failed",
@@ -1790,8 +1853,8 @@ export async function getOperationalWorkQueue(session: Session, rawFilters: Oper
         healthySourceCount: recovery.healthy.length,
       })
       try {
-        const result = await getOperationalWorkQueuePage(session, scope, filters, recovery.healthy)
-        return { ...result, sourceErrors: recovery.sourceErrors, refreshedAt: new Date().toISOString() }
+        const result = await getOperationalWorkQueuePage(session, filters, recovery.healthy)
+        return { ...result, sourceErrors: [...context.sourceErrors, ...recovery.sourceErrors], refreshedAt: new Date().toISOString() }
       } catch (recoveryError) {
         logger.error("Operational queue recovery query failed", {
           event: "operational_queue_recovery_failed",
@@ -1809,9 +1872,35 @@ export async function getOperationalWorkQueue(session: Session, rawFilters: Oper
 }
 
 /**
- * Conteo para el badge de navegación.
+ * Lo que el shell necesita de la cola en cada carga: el total de «Mis pendientes» y el número de los tres avisos de
+ * Mantención. Salen del MISMO cálculo que la lista; ningún aviso tiene su propia consulta paralela.
  *
- * Es un `COUNT(*)` sobre **exactamente la misma unión** que arma la cola, no un
+ * - `total`: filas de la cola (acciones). Es el aviso de `/pendientes`.
+ * - `ot`: filas de OT de la persona: por asignar, por recibir, por conformidad y sus OT asignadas o en taller.
+ * - `notas`: notas de pedido por resolver.
+ * - `registros`: REGISTROS por revisar, no filas: la cola agrupa por faena pero el aviso de «Registros firmados» cuenta
+ *   registros. Los dos comparten `reviewableRecordsWhere`.
+ */
+export interface OperationalWorkCounts {
+  total: number
+  ot: number
+  registros: number
+  notas: number
+}
+
+const NO_WORK_COUNTS: OperationalWorkCounts = { total: 0, ot: 0, registros: 0, notas: 0 }
+
+type CountRow = { total: number | string; ot: number | string; notas: number | string } | undefined
+
+/** postgres-js devuelve el arreglo directo; PGlite lo envuelve en `rows`. */
+function firstRow<T>(result: unknown): T | undefined {
+  return ((result as { rows?: unknown[] }).rows?.[0] ?? (result as unknown[])[0]) as T | undefined
+}
+
+/**
+ * Conteo para los avisos de navegación.
+ *
+ * Es un conteo sobre **exactamente la misma unión** que arma la cola, no un
  * recuento paralelo. Antes eran ~200 líneas que replicaban a mano el predicado
  * de cada fuente, y esa duplicación derivó tres veces (A-03 aprobaciones, A-06
  * inspecciones, la rama `select_quotation`): cuando el badge y la lista se
@@ -1822,39 +1911,66 @@ export async function getOperationalWorkQueue(session: Session, rawFilters: Oper
  * La resiliencia se conserva sin duplicar nada: si la unión falla se prueban
  * las ramas una a una y se cuenta con las sanas, igual que hace la cola.
  */
-export async function getOperationalWorkCount(session: Session): Promise<number> {
+export async function getOperationalWorkCounts(session: Session): Promise<OperationalWorkCounts> {
   const scope = resolveWorksiteScope(session)
-  if (scope.mode === "none") return 0
+  if (hasNoQueueScope(session, scope)) return NO_WORK_COUNTS
 
-  const branches = operationalSourceBranches(session, scope)
-  if (branches.length === 0) return 0
+  const context = await loadOperationalQueueContext(session, scope)
+  const { branches } = context
 
   const countBranches = async (list: OperationalSourceBranch[]) => {
     const result = await db.execute(sql`
-      SELECT COUNT(*)::int AS total FROM (${unionOperationalSourceBranches(list)}) AS operational_work_count
+      SELECT COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE source_type = 'mant_work_order')::int AS ot,
+        COUNT(*) FILTER (WHERE source_type = 'mant_parts_note')::int AS notas
+      FROM (${unionOperationalSourceBranches(list)}) AS operational_work_count
     `)
-    // postgres-js devuelve el arreglo directo; PGlite lo envuelve en `rows`.
-    const row = ((result as unknown as { rows?: unknown[] }).rows?.[0] ?? result[0]) as { total: number | string } | undefined
-    return Number(row?.total ?? 0)
+    const row = firstRow<NonNullable<CountRow>>(result)
+    return { total: Number(row?.total ?? 0), ot: Number(row?.ot ?? 0), notas: Number(row?.notas ?? 0) }
   }
 
-  try {
-    return await countBranches(branches)
-  } catch (error) {
-    logger.warn("Operational count unified query failed; probing source branches", {
-      event: "operational_count_unified_query_failed",
-      sourceCount: branches.length,
-      error: error instanceof Error ? error.message : String(error),
-    })
-    const recovery = await probeOperationalSourceBranches(branches)
-    if (recovery.healthy.length === 0) return 0
+  const countUnion = async () => {
+    if (branches.length === 0) return { total: 0, ot: 0, notas: 0 }
     try {
-      return await countBranches(recovery.healthy)
-    } catch {
-      // El badge degrada a 0 antes que tumbar el shell entero.
+      return await countBranches(branches)
+    } catch (error) {
+      logger.warn("Operational count unified query failed; probing source branches", {
+        event: "operational_count_unified_query_failed",
+        sourceCount: branches.length,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      const recovery = await probeOperationalSourceBranches(branches)
+      if (recovery.healthy.length === 0) return { total: 0, ot: 0, notas: 0 }
+      try {
+        return await countBranches(recovery.healthy)
+      } catch {
+        // El badge degrada a 0 antes que tumbar el shell entero.
+        return { total: 0, ot: 0, notas: 0 }
+      }
+    }
+  }
+
+  const countRecords = async () => {
+    if (!context.recordsToReviewWhere) return 0
+    try {
+      const result = await db.execute(sql`SELECT COUNT(*)::int AS total FROM ${mantRecords} WHERE ${context.recordsToReviewWhere}`)
+      return Number(firstRow<{ total: number | string }>(result)?.total ?? 0)
+    } catch (error) {
+      logger.warn("Operational count of records to review failed", {
+        event: "operational_count_records_failed",
+        error: error instanceof Error ? error.message : String(error),
+      })
       return 0
     }
   }
+
+  const [union, registros] = await Promise.all([countUnion(), countRecords()])
+  return { total: union.total, ot: union.ot, notas: union.notas, registros }
+}
+
+/** El total de la cola. Lo conservan las pruebas que lo comparan con `getOperationalWorkQueue`. */
+export async function getOperationalWorkCount(session: Session): Promise<number> {
+  return (await getOperationalWorkCounts(session)).total
 }
 
 export function parseOperationalQueueFilters(input: Record<string, string | string[] | undefined>): OperationalQueueFilters {
@@ -1862,7 +1978,7 @@ export function parseOperationalQueueFilters(input: Record<string, string | stri
     const value = input[key]
     return Array.isArray(value) ? value[0] : value
   }
-  const allowedModules: OperationalModule[] = ["solicitudes", "aprobaciones", "compras", "recepciones", "entregas", "pdtp", "capa", "inspecciones", "documentacion", "ppa", "sst", "cphs", "miper"]
+  const allowedModules: OperationalModule[] = ["solicitudes", "aprobaciones", "compras", "recepciones", "entregas", "pdtp", "capa", "inspecciones", "documentacion", "ppa", "sst", "cphs", "miper", "mantencion"]
   const allowedPriorities: WorkPriority[] = ["critical", "high", "normal", "low"]
   // "unassigned" y "mine" ya no tienen chip en /pendientes (decisión de producto
   // 2026-10-05): un ?quick= viejo cae en la vista por defecto, sin error.

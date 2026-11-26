@@ -30,6 +30,14 @@ export const operationsModule = {
     { roleSlug: "prevencionista_faena", permission: "operations:view_work" },
     { roleSlug: "jefe_mantencion", permission: "operations:view_work" },
     /*
+     * Mantención en «Mis pendientes» (decisión del 2026-11-26): el mecánico recibe sus OT asignadas y la
+     * supervisión los registros por revisar de su faena. Sin esto, la cola les produce trabajo y /pendientes
+     * los manda a prohibido, que es exactamente lo que PEND-002 prohíbe. En producción lo aplica
+     * `GRANT_ADDITIONS`.
+     */
+    { roleSlug: "mecanico", permission: "operations:view_work" },
+    { roleSlug: "supervisor_mantencion", permission: "operations:view_work" },
+    /*
      * PEND-002 (auditoría 2026-09-14): estos cinco roles ejecutan actividades
      * del PDTP —el manifiesto de Prevención les da `prevention:pdtp:execute`— y
      * la cola les produce trabajo, pero no podían abrirla ni verla en el menú:

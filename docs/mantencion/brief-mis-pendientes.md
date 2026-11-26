@@ -1,6 +1,6 @@
 # Brief: Mantención en «Mis pendientes» y avisos del menú
 
-Estado: **esperando las decisiones del §7.2** (2026-11-26). Es la fase 3 de `/impeccable shape` (sin código). La entrevista ya ocurrió: la decisión del 26-11 es «por responsable» (`qa/reports/mantencion-encontrabilidad-2026-11-26.md` §4.1 y §9.4). Lo que no pude verificar en el código va marcado «Supuesto».
+Estado: **decisiones tomadas el 2026-11-26 (todas las recomendadas del §7.2) e implementado en `fix/mant-mis-pendientes`** (ver el §8). Era la fase 3 de `/impeccable shape` (sin código). La entrevista ya ocurrió: la decisión del 26-11 es «por responsable» (`qa/reports/mantencion-encontrabilidad-2026-11-26.md` §4.1 y §9.4). Lo que no pude verificar en el código va marcado «Supuesto».
 
 ## Resumen
 
@@ -321,3 +321,32 @@ Notas:
 4. Permisos por defecto y `GRANT_ADDITIONS`, si la decisión 2 o la 6 los piden.
 5. Badges en el manifiesto; `revalidateOperationalViews` en las acciones de Mantención; ajustar las dos pruebas E2E.
 6. PGlite, E2E y navegador. `EXPLAIN` en `bodega_dev`.
+
+---
+
+## 8. Implementación (2026-11-26)
+
+Decisiones del usuario: todas las recomendadas del §7.2 (opción B; `mant:records:review` y `operations:view_work` por defecto; notas con el jefe primero; «OT por recibir» incluida; registros por faena; las OT del mecánico en sus dos etapas).
+
+Dónde quedó cada pieza:
+
+| Pieza | Archivo |
+|---|---|
+| Reparto de la faena entre titulares (puro) | `lib/mantencion/queue-owners.ts` |
+| Lectura de titulares (una por carga) | `lib/services/mantencion/queue-holders.ts` |
+| Las seis fuentes SQL y el predicado de registros | `lib/services/mantencion/work-queue-sources.ts` |
+| `getOperationalWorkCounts` (total, `ot`, `registros`, `notas`) y el contexto compartido con la cola | `lib/services/operational-work-queue.ts` |
+| Caché `operational-work-counts-v2` y los tres avisos | `app/(app)/layout.tsx` |
+| Refresco de la cola tras una acción de Mantención | `lib/services/mantencion/queue-revalidation.ts` |
+| Regla «nadie revisa lo propio» | `lib/services/mantencion/record-lifecycle.ts`, `lib/mantencion/record-review-batch.ts` |
+| Altas puntuales de permisos | `lib/auth/bootstrap.ts` (`GRANT_ADDITIONS`, claves `2026-11-26-…`) |
+
+Lo que el diseño dejaba abierto y se resolvió así:
+
+- **Dueño de cada faena.** Los titulares son los usuarios activos (sin cuenta temporal vencida) con el permiso de la acción; el rol `administrador` no cuenta como responsable. `local_first` para asignar, recibir, conformidad y registros; `global_first` para las notas. Quien mira recibe la fila si es el nivel más cercano; el administrador, sólo si nadie más puede resolverla.
+- **Estados de «Mi OT, en taller».** Una OT devuelta toma el estado `devuelta_a_taller` («Devuelta a taller», prioridad alta) y una con repuestos pedidos que no llegan, `esperando_repuestos` («Esperando repuestos», bloqueada). Así el filtro de estados no repite un mismo valor con dos rótulos.
+- **Estado de los registros.** `por_revisar`, no `pendiente`: no choca con el valor de otras fuentes.
+- **Aviso de «Registros firmados».** Cuenta los registros que esa persona debe revisar (los de las faenas que son suyas, sin los que firmó o ejecutó), no todos los pendientes del alcance. Para el jefe con supervisor en cada faena es 0, aunque la pestaña «Por revisar» muestre más.
+- **CTA de «Trabajar en …».** «Registrar trabajo» sólo para quien tiene `mant:app:use`; si no, «Abrir orden».
+- **Sesión sin faenas.** Con `scope = none` sólo se emiten «sus OT» del mecánico (4 y 5), no las demás fuentes.
+- **Fallos.** Si falla la lectura de titulares, la cola sigue sin Mantención y lo dice. Si falla una rama, `probeOperationalSourceBranches` la aísla.

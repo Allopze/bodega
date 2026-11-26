@@ -15,10 +15,11 @@ import { QueryProvider } from "@/components/providers/query-provider"
 import { NavigationProgress } from "@/components/layout/navigation-progress"
 import { AppToaster } from "@/components/ui/app-toaster"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
-import { can } from "@/lib/auth/can"
+import { can, canAny } from "@/lib/auth/can"
 import { getNavigationToggleState, routeIsEnabled, type NavigationToggleState } from "@/lib/services/module-toggles"
 import { registry } from "@/modules/registry"
-import { getOperationalWorkCount } from "@/lib/services/operational-work-queue"
+import { getOperationalWorkCounts, type OperationalWorkCounts } from "@/lib/services/operational-work-queue"
+import { actionableQueueSources } from "@/lib/services/work-queue-eligibility"
 import { badgeCountsTags } from "@/lib/services/operational-cache"
 import { countPendingPurchaseRequests } from "@/lib/services/purchasing-module/pending-purchase-queue"
 import { countFuelInboxPending } from "@/lib/combustibles/inbox/queries"
@@ -114,16 +115,20 @@ const badgeCountsLoader = (tags: string[]) => unstable_cache(
   }
 )
 
-const operationalWorkCountLoader = (tags: string[]) => unstable_cache(
-  async (userId: string, roles: string[], permissions: string[], worksiteIds: string[], isGlobal: boolean) => {
+// La clave lleva versión: lo que se guarda dejó de ser un número y pasó a ser el total más el desglose de Mantención.
+// Una entrada vieja con la forma anterior no se lee jamás (la caché de 30 s sobrevive a un despliegue).
+const operationalWorkCountsLoader = (tags: string[]) => unstable_cache(
+  async (userId: string, roles: string[], permissions: string[], worksiteIds: string[], isGlobal: boolean): Promise<OperationalWorkCounts> => {
     const session = {
       user: { id: userId, roles, permissions, worksiteIds, isGlobal },
     } as Session
-    return getOperationalWorkCount(session)
+    return getOperationalWorkCounts(session)
   },
-  ["operational-work-count"],
+  ["operational-work-counts-v2"],
   { revalidate: 30, tags },
 )
+
+const NO_WORK_COUNTS: OperationalWorkCounts = { total: 0, ot: 0, registros: 0, notas: 0 }
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -155,16 +160,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const canReceiveGuides = can(session, "warehouse:receive_guide")
   const canViewOperations = can(session, "operations:view_work")
   const canViewFuel = can(session, "combustibles:view")
+  // Los avisos de Mantención salen de la misma cola que «Mis pendientes», así que el cálculo corre también para quien tiene
+  // trabajo de Mantención sin tener la bandeja (un rol personalizado): su número del menú no depende de ese permiso.
+  const hasMantencionWork = actionableQueueSources(session.user.permissions ?? []).some((source) => source.startsWith("mant_"))
   const badgeTags = badgeCountsTags({ isGlobal, worksiteIds: session.user.worksiteIds ?? [] })
 
-  const [ws, rawBadgeCounts, operationalWorkCount] = await Promise.all([
+  const [ws, rawBadgeCounts, operationalCounts] = await Promise.all([
     session.user.primaryWorksiteId
       ? db.query.worksites.findFirst({ where: eq(worksites.id, session.user.primaryWorksiteId) })
       : Promise.resolve(undefined),
     badgeCountsLoader(badgeTags)(session.user.id, isGlobal, wsIds, canViewAllRequests, canViewFuel),
-    canViewOperations
-      ? operationalWorkCountLoader(badgeTags)(session.user.id, session.user.roles, session.user.permissions, wsIds, isGlobal)
-      : Promise.resolve(0),
+    canViewOperations || hasMantencionWork
+      ? operationalWorkCountsLoader(badgeTags)(session.user.id, session.user.roles, session.user.permissions, wsIds, isGlobal)
+      : Promise.resolve(NO_WORK_COUNTS),
   ])
   // No serializar conteos de módulos que esta sesión no puede abrir. Los
   // controles visuales respetan el permiso y el propio dato también.
@@ -176,7 +184,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // Sólo quien puede confirmar la recepción de una guía ve que le toca hacerlo.
     "/bodega/guias": canReceiveGuides ? rawBadgeCounts["/bodega/guias"] : 0,
     "/combustibles/revisar": canViewFuel ? rawBadgeCounts["/combustibles/revisar"] : 0,
-    "/pendientes":   canViewOperations ? operationalWorkCount : 0,
+    "/pendientes":   canViewOperations ? operationalCounts.total : 0,
+    // Mantención: el mismo cálculo que la cola. Cada número sólo viaja si la sesión puede abrir esa pantalla.
+    "/mantencion/ot":            canAny(session, "mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute") ? operationalCounts.ot : 0,
+    "/mantencion/notas-pedido":  canAny(session, "mant:np:view_worksite", "mant:np:manage") ? operationalCounts.notas : 0,
+    "/mantencion/registros":     canAny(session, "mant:records:view_own", "mant:records:view_worksite", "mant:records:view_all") ? operationalCounts.registros : 0,
   }
 
   return (

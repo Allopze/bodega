@@ -84,6 +84,8 @@ export const mantencionEquiposModule = {
           iconName: "Wrench",
           permissions: ["mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute"],
           group: "Mantención",
+          // Lo que a esta persona le toca hacer con las OT (`getOperationalWorkCounts`): el mismo cálculo de «Mis pendientes».
+          badge: "count" as const,
         },
         {
           // Bandeja de las notas de pedido del mecánico (2026-11-26). Quien las
@@ -93,6 +95,8 @@ export const mantencionEquiposModule = {
           iconName: "Tray",
           permissions: ["mant:np:view_worksite", "mant:np:manage"],
           group: "Mantención",
+          // Notas por resolver que son de esta persona (`getOperationalWorkCounts`).
+          badge: "count" as const,
         },
         {
           label: "Registros firmados",
@@ -100,6 +104,8 @@ export const mantencionEquiposModule = {
           iconName: "ClipboardText",
           permissions: ["mant:records:view_own", "mant:records:view_worksite", "mant:records:view_all"],
           group: "Mantención",
+          // REGISTROS por revisar de las faenas de esta persona (no filas de la cola): `getOperationalWorkCounts`.
+          badge: "count" as const,
         },
         {
           // El Historial de mantenciones (también su importación y cada trabajo) vive bajo
@@ -162,6 +168,11 @@ export const mantencionEquiposModule = {
     { roleSlug: "supervisor_mantencion", permission: "mant:records:view_own" },
     { roleSlug: "supervisor_mantencion", permission: "mant:records:view_worksite" },
     { roleSlug: "supervisor_mantencion", permission: "mant:records:observe" },
+    // Decisión del 2026-11-26 («Mis pendientes»): observar saca un registro de «pendiente» pero cerrarlo como
+    // «revisado» era sólo de la jefatura, y la cola de la supervisión no habría llegado nunca a cero. La regla
+    // «no revisas lo que firmaste o ejecutaste» (`markRecordReviewed`) vale para todos. En producción lo aplica
+    // `GRANT_ADDITIONS`.
+    { roleSlug: "supervisor_mantencion", permission: "mant:records:review" },
     { roleSlug: "supervisor_mantencion", permission: "mant:export" },
     // Jefatura de mantención: todo el módulo.
     { roleSlug: "jefe_mantencion", permission: "mant:app:use" },

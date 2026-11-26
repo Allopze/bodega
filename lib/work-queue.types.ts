@@ -40,6 +40,7 @@ export type OperationalModule =
   | "sst"
   | "cphs"
   | "miper"
+  | "mantencion"
 
 /**
  * Criterio de orden de la cola operacional. Vive aquí por la misma razón que

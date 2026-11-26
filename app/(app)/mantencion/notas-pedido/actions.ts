@@ -10,6 +10,7 @@ import { viewerFromSession } from "@/lib/services/mantencion/access"
 import { conciliatePart } from "@/lib/services/mantencion/parts/conciliation"
 import { releaseAllocationTx } from "@/lib/services/mantencion/parts"
 import { loadWorkOrderPartsOverview } from "@/lib/services/mantencion/parts-notes/query"
+import { revalidateQueueOfNote } from "@/lib/services/mantencion/queue-revalidation"
 import { rejectNoteItem, resolveNoteItemFromStock, voidPartsNote } from "@/lib/services/mantencion/parts-notes/resolve"
 import type { PartsActionResult } from "@/lib/services/mantencion/parts/types"
 import { formatQty } from "@/lib/utils"
@@ -59,6 +60,15 @@ const conciliateSchema = z.discriminatedUnion("mode", [
   z.object({ recordPartId: id, mode: z.literal("sin_movimiento"), reason }),
 ])
 
+/**
+ * Resolver, rechazar o anular cambia las líneas pendientes de la nota, que es lo que la cola de «Mis pendientes» y el aviso
+ * del menú cuentan: se refrescan además de las pantallas de la nota.
+ */
+async function refreshNoteQueue(noteId: string) {
+  refreshNotes(noteId)
+  await revalidateQueueOfNote(noteId)
+}
+
 /** «Reservar de bodega»: reserva lo libre de la faena para la OT y deja la línea resuelta. */
 export async function resolveNoteItemFromStockAction(input: unknown): Promise<NoteActionState> {
   const guard = await guardAnyPermission(MANAGE, PATH)
@@ -68,7 +78,7 @@ export async function resolveNoteItemFromStockAction(input: unknown): Promise<No
   try {
     const { noteId, ...data } = parsed.data
     const result = await resolveNoteItemFromStock(viewerFromSession(guard.session), data)
-    if (result.ok) refreshNotes(noteId)
+    if (result.ok) await refreshNoteQueue(noteId)
     return toState(result)
   } catch (error) {
     return actionErrorResult(error, "No se pudo reservar el repuesto de la bodega.")
@@ -84,7 +94,7 @@ export async function rejectNoteItemAction(input: unknown): Promise<NoteActionSt
   try {
     const { noteId, ...data } = parsed.data
     const result = await rejectNoteItem(viewerFromSession(guard.session), data)
-    if (result.ok) refreshNotes(noteId)
+    if (result.ok) await refreshNoteQueue(noteId)
     return toState(result)
   } catch (error) {
     return actionErrorResult(error, "No se pudo rechazar la línea.")
@@ -99,7 +109,7 @@ export async function voidPartsNoteAction(input: unknown): Promise<NoteActionSta
   if (!parsed.ok) return parsed
   try {
     const result = await voidPartsNote(viewerFromSession(guard.session), parsed.data)
-    if (result.ok) refreshNotes(parsed.data.noteId)
+    if (result.ok) await refreshNoteQueue(parsed.data.noteId)
     return toState(result)
   } catch (error) {
     return actionErrorResult(error, "No se pudo anular la nota.")
