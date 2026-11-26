@@ -3,6 +3,7 @@ import type {
   CatalogOtherEquipment,
   MantCatalog,
   ObservationReply,
+  SyncPartsNote,
   SyncRecord,
   SyncWarning,
   WorkOrderOpRequest,
@@ -121,7 +122,17 @@ export interface QueueWorkOrderItem extends QueueBase {
   summary: { workOrderId: string; folio: string; equipmentCode: string; equipmentPlate: string }
 }
 
-export type QueueItem = QueueRecordItem | QueueWorkshopItem | QueueReplyItem | QueueWorkOrderItem
+/**
+ * Una nota de pedido de repuestos para una OT (ADR mantención 0001). El id de la cola es el de la NP
+ * (`payload.id`, lo genera el teléfono): es la clave de idempotencia con la que llega al servidor.
+ */
+export interface QueuePartsNoteItem extends QueueBase {
+  type: "parts_note"
+  payload: SyncPartsNote
+  summary: { workOrderId: string; folio: string; equipmentCode: string; equipmentPlate: string }
+}
+
+export type QueueItem = QueueRecordItem | QueueWorkshopItem | QueueReplyItem | QueueWorkOrderItem | QueuePartsNoteItem
 
 export interface StoredPhoto {
   id: string

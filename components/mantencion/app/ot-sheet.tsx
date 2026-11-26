@@ -15,6 +15,7 @@ import { Sheet, useSheetDirty, useSheetGuard } from "./dialog"
 import { OtEntryForm } from "./ot-entry-form"
 import { OtItemsEditor } from "./ot-items"
 import { otKindText } from "./ot-lists"
+import { OtPartsSection } from "./ot-parts-section"
 import { useOtOp, type OtOpBody } from "./use-ot-op"
 import { Banner, FieldError, Label } from "./ui"
 
@@ -227,6 +228,8 @@ export function OtSheet({ view, onClose, onRegister, onHistory }: {
               </ul>
             </div>
           ) : null}
+
+          <OtPartsSection view={view} />
 
           {flags.canStart ? <button type="button" className="btnp" onClick={() => go("entry")}>Registrar ingreso a taller</button> : null}
           {flags.canWork ? (

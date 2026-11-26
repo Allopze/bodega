@@ -1,12 +1,16 @@
 import type {
   CatalogEquipment,
+  CatalogPartsAvailable,
   CatalogWorkOrder,
   CatalogWorkOrderItem,
   MantCatalog,
+  PartsNoteLineStage,
   WorkOrderOpRequest,
 } from "../contracts"
 import { OT_ITEM_MAX_PER_KIND, type OtItemKind, type OtStatus } from "../work-order-states"
-import type { QueueItem, QueueRecordItem, QueueWorkOrderItem } from "./types"
+import type { FlowJob, FlowPart } from "./flow-types"
+import { parseQuantity } from "./flow-validate"
+import type { QueueItem, QueuePartsNoteItem, QueueRecordItem, QueueWorkOrderItem } from "./types"
 
 /**
  * La OT tal como la ve el mecánico: lo que el servidor dijo en el catálogo más
@@ -27,6 +31,10 @@ import type { QueueItem, QueueRecordItem, QueueWorkOrderItem } from "./types"
  *  - Una operación rechazada no se aplica; se muestra su motivo en la OT.
  *  - `canFinish` calca la guardia del servidor: todos los ítems marcados y al
  *    menos un registro enlazado posterior a la última devolución.
+ *  - Repuestos (ADR mantención 0001): las notas de pedido del catálogo más las que
+ *    el teléfono aún no envió («por enviar»), y lo reservado para la OT menos lo que
+ *    un registro guardado en el teléfono ya usó. Un catálogo de antes de las notas
+ *    no trae `partsNotes` ni `partsAvailable`: se leen como vacíos.
  */
 
 export type OtSource = "mine"
@@ -53,6 +61,33 @@ export interface OtFlags {
   /** Fecha estimada, ítems SÍ/NO y registros: sólo con la OT «en taller». */
   canWork: boolean
   canFinish: boolean
+  /** «Pedir repuestos»: la OT está asignada o en ejecución y es de este usuario (la misma guardia del servidor). */
+  canRequestParts: boolean
+}
+
+/** Etapa de una línea de pedido para la vista: las del servidor más «por enviar» (sólo está en el teléfono). */
+export type OtPartStage = PartsNoteLineStage | "por_enviar"
+
+export interface OtPartLine {
+  /** Estable entre renders: el id de la línea del servidor, o nota + posición si aún está en la cola. */
+  key: string
+  description: string
+  quantity: number
+  unit: string
+  stage: OtPartStage
+  /** Lo que llegó a la faena para esta línea y lo ya usado de eso (sólo con `en_bodega`). */
+  arrived: number
+  used: number
+  rejectionReason: string | null
+  /** «NP-2026-0001»; `null` mientras la nota está sólo en el teléfono. */
+  noteCode: string | null
+}
+
+/** Un pedido de repuestos que el servidor rechazó al recibirlo (409/422): se lee y se quita con «Entendido». */
+export interface OtRejectedPartsNote {
+  /** Id del elemento en la cola. */
+  id: string
+  message: string
 }
 
 export interface OtView {
@@ -69,6 +104,11 @@ export interface OtView {
   flags: OtFlags
   /** Qué falta para terminar (vacío si se puede). */
   finishBlockers: string[]
+  /** Una fila por línea pedida: primero lo que aún está en el teléfono, después lo del catálogo. */
+  partsLines: OtPartLine[]
+  partsRejected: OtRejectedPartsNote[]
+  /** Reservado para esta OT y sin usar (ya descontado lo que un registro del teléfono usó). */
+  partsAvailable: CatalogPartsAvailable[]
 }
 
 export interface OtViews {
@@ -160,7 +200,131 @@ export function unmarkedItems(ot: Pick<CatalogWorkOrder, "items">): number {
   return ot.items.filter((item) => item.done === null).length
 }
 
-function viewOf(base: CatalogWorkOrder, source: OtSource, queue: readonly QueueItem[], ops: readonly QueueWorkOrderItem[], context: Parameters<typeof applyOp>[2]): OtView {
+const round2 = (value: number): number => Math.round(value * 100) / 100
+
+/** «2», «1,5»: las cantidades se dicen con coma, sin ceros de más. */
+export function qtyText(value: number): string {
+  return String(round2(value)).replace(".", ",")
+}
+
+function partLinesOf(ot: CatalogWorkOrder, queue: readonly QueueItem[], userId: string, generatedAt: string | undefined): OtPartLine[] {
+  const pending: OtPartLine[] = queue
+    .filter((item): item is QueuePartsNoteItem => item.type === "parts_note" && item.authorUserId === userId && item.payload.workOrderId === ot.id && appliesOver(item, generatedAt))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .flatMap((item) => item.payload.lines.map((line, index): OtPartLine => ({
+      key: `${item.id}:${index}`, description: line.description, quantity: line.quantity, unit: line.unitOfMeasure,
+      stage: "por_enviar", arrived: 0, used: 0, rejectionReason: null, noteCode: null,
+    })))
+  const known = (ot.partsNotes ?? []).flatMap((note) => note.lines.map((line): OtPartLine => ({
+    key: line.id, description: line.description, quantity: line.quantity, unit: line.unit,
+    stage: line.stage, arrived: line.arrived, used: line.used, rejectionReason: line.rejectionReason, noteCode: note.code,
+  })))
+  return [...pending, ...known]
+}
+
+/** La frase de estado de una línea: lleva el estado en palabras (nunca sólo en color) y, si aporta, un detalle aparte. */
+export function partStatusText(line: Pick<OtPartLine, "stage" | "arrived" | "used" | "rejectionReason">): { label: string; detail: string | null; tone: "wait" | "info" | "ok" | "bad" } {
+  switch (line.stage) {
+    case "por_enviar": return { label: "Pedido · por enviar", detail: null, tone: "wait" }
+    case "pedido": return { label: "Pedido", detail: null, tone: "wait" }
+    case "en_compra": return { label: "En compra", detail: null, tone: "info" }
+    case "rechazado": return { label: line.rejectionReason ? `Rechazado: ${line.rejectionReason}` : "Rechazado", detail: null, tone: "bad" }
+    case "en_bodega": {
+      const free = round2(Math.max(0, line.arrived - line.used))
+      if (line.used > 0) {
+        return {
+          label: `Usado ${qtyText(line.used)} de ${qtyText(line.arrived)}`,
+          detail: free > 0 ? `${free === 1 ? "Queda" : "Quedan"} ${qtyText(free)} ${free === 1 ? "disponible" : "disponibles"}` : null,
+          tone: "ok",
+        }
+      }
+      return { label: free > 0 ? `Llegó · ${qtyText(free)} ${free === 1 ? "disponible" : "disponibles"}` : "Llegó", detail: null, tone: "ok" }
+    }
+  }
+}
+
+/**
+ * Lo reservado para la OT menos lo que los registros del propio teléfono ya usaron de esa reserva y que el
+ * catálogo todavía no refleja (`queue` trae sólo los registros que cuentan: ver `recordApplies`). Lo agotado no se ofrece.
+ */
+function netAvailable(available: readonly CatalogPartsAvailable[], queue: readonly QueueItem[], workOrderId: string, userId: string): CatalogPartsAvailable[] {
+  const used = new Map<string, number>()
+  for (const item of queue) {
+    if (item.type !== "record" || item.authorUserId !== userId || item.payload.kind !== "C" || item.payload.workOrderId !== workOrderId) continue
+    for (const job of item.payload.jobs) {
+      for (const part of job.parts) {
+        if (part.source === "stock" && part.allocationId) used.set(part.allocationId, (used.get(part.allocationId) ?? 0) + part.quantity)
+      }
+    }
+  }
+  return available
+    .map((item) => ({ ...item, remaining: round2(item.remaining - (used.get(item.allocationId) ?? 0)) }))
+    .filter((item) => item.remaining > 0)
+}
+
+/** Lo disponible para el registro de una OT, como lo ve el trabajo en curso (catálogo guardado + cola del teléfono). */
+export function availablePartsFor(catalog: MantCatalog | null | undefined, queue: readonly QueueItem[], userId: string, workOrderId: string): CatalogPartsAvailable[] {
+  const ot = findWorkOrder(catalog, workOrderId)
+  if (!ot?.partsAvailable?.length) return []
+  const live = queue.filter((item) => item.type !== "record" || recordApplies(item, catalog))
+  return netAvailable(ot.partsAvailable, live, workOrderId, userId)
+}
+
+// ── Repuestos de bodega dentro de un trabajo (chips «Disponibles para esta OT») ──────────────────────────────────
+//
+// La línea de repuesto del borrador lleva `source`/`productId`/`allocationId` como campos opcionales de `FlowPart`.
+// Se tipan aquí aparte para no depender del orden en que se integra `flow-types.ts`: una línea sin `source` es el
+// texto libre de siempre.
+
+export type StockFlowPart = FlowPart & { source?: "stock" | "externo"; productId?: string | null; allocationId?: string | null }
+
+export function isStockPart(part: FlowPart): part is StockFlowPart & { source: "stock" } {
+  return (part as StockFlowPart).source === "stock"
+}
+
+const allocationOf = (part: FlowPart): string | null => (isStockPart(part) ? part.allocationId ?? null : null)
+
+/** Lo que las líneas del borrador ya toman de una reserva (todas las líneas de todos los trabajos, salvo `except`). */
+function placedStock(jobs: readonly FlowJob[], allocationId: string, except?: { workTypeId: string; index: number }): number {
+  let total = 0
+  for (const job of jobs) {
+    job.parts.forEach((part, index) => {
+      if (except && job.workTypeId === except.workTypeId && index === except.index) return
+      if (allocationOf(part) === allocationId) total += parseQuantity(part.quantity)
+    })
+  }
+  return round2(total)
+}
+
+/** Cuánto queda de una reserva después de lo ya puesto en el borrador. */
+export function freeStock(item: CatalogPartsAvailable, jobs: readonly FlowJob[]): number {
+  return round2(Math.max(0, item.remaining - placedStock(jobs, item.allocationId)))
+}
+
+/**
+ * Lo máximo que puede valer esa línea de bodega: lo disponible menos lo puesto en las demás líneas del mismo
+ * repuesto; entero si la unidad no admite decimales. Si la reserva ya no figura (se agotó o la OT cambió), la
+ * línea sólo puede bajar: su tope es lo que ya tiene.
+ */
+export function stockCap(available: readonly CatalogPartsAvailable[], jobs: readonly FlowJob[], at: { workTypeId: string; index: number }): number {
+  const part = jobs.find((job) => job.workTypeId === at.workTypeId)?.parts[at.index]
+  const allocationId = part ? allocationOf(part) : null
+  const item = allocationId ? available.find((entry) => entry.allocationId === allocationId) : undefined
+  if (!part || !allocationId || !item) return part ? parseQuantity(part.quantity) : 0
+  const cap = round2(Math.max(0, item.remaining - placedStock(jobs, allocationId, at)))
+  return item.wholeOnly ? Math.floor(cap) : cap
+}
+
+/** Agrega al trabajo una línea de bodega (cantidad 1, o lo poco que quede). Las líneas en blanco de partida se reemplazan. */
+export function addStockLine(jobs: readonly FlowJob[], workTypeId: string, item: CatalogPartsAvailable): FlowJob[] {
+  const quantity = Math.min(1, Math.max(freeStock(item, jobs), 0)) || 1
+  const line: StockFlowPart = { quantity: qtyText(quantity), description: item.name, source: "stock", productId: item.productId, allocationId: item.allocationId }
+  return jobs.map((job) => (job.workTypeId === workTypeId
+    ? { ...job, parts: [...job.parts.filter((part) => part.description.trim() !== ""), line] }
+    : job))
+}
+
+function viewOf(base: CatalogWorkOrder, source: OtSource, queue: readonly QueueItem[], ops: readonly QueueWorkOrderItem[], context: Parameters<typeof applyOp>[2], generatedAt: string | undefined): OtView {
   let ot = base
   const mine = ops.filter((op) => op.payload.workOrderId === base.id)
   for (const op of mine) ot = applyOp(ot, op.payload, context)
@@ -181,7 +345,12 @@ function viewOf(base: CatalogWorkOrder, source: OtSource, queue: readonly QueueI
     if (unmarked > 0) finishBlockers.push(describeUnmarked(unmarked))
     if (linked.length === 0) finishBlockers.push(ot.lastRejection ? "Registra una correctiva o preventiva nueva, después de la devolución" : "Registra al menos una correctiva o preventiva de esta OT")
   }
-  const pending = mine.some((op) => op.status !== "sent")
+  const notes = queue.filter((item): item is QueuePartsNoteItem => item.type === "parts_note" && item.authorUserId === context.userId && item.payload.workOrderId === base.id)
+  // Un pedido de repuestos que aún no llegó también es un cambio guardado sólo en el teléfono.
+  const pending = mine.some((op) => op.status !== "sent") || notes.some((note) => note.status !== "sent" && note.status !== "rejected")
+  const partsRejected = notes
+    .filter((note) => note.status === "rejected")
+    .map((note): OtRejectedPartsNote => ({ id: note.id, message: note.lastError ?? "La plataforma no aceptó el pedido de repuestos." }))
   return {
     ot,
     source,
@@ -194,8 +363,12 @@ function viewOf(base: CatalogWorkOrder, source: OtSource, queue: readonly QueueI
       canStart: ot.status === "asignada",
       canWork: executing,
       canFinish: executing && finishBlockers.length === 0,
+      canRequestParts: (ot.status === "asignada" || ot.status === "en_ejecucion") && ot.assignedToUserId === context.userId,
     },
     finishBlockers,
+    partsLines: partLinesOf(ot, queue, context.userId, generatedAt),
+    partsRejected,
+    partsAvailable: netAvailable(ot.partsAvailable ?? [], queue, ot.id, context.userId),
   }
 }
 
@@ -221,7 +394,7 @@ export function buildOtViews(catalog: MantCatalog | null | undefined, queue: rea
 
   // Un registro enviado que el catálogo ya refleja (o que jefatura anuló) no cuenta para `canFinish`.
   const live = queue.filter((item) => item.type !== "record" || recordApplies(item, catalog, generatedAt))
-  const mine = (catalog?.workOrders ?? []).map((ot) => viewOf(ot, "mine", live, ops, context))
+  const mine = (catalog?.workOrders ?? []).map((ot) => viewOf(ot, "mine", live, ops, context, generatedAt))
   mine.sort((a, b) => {
     const rank = STATUS_RANK[a.ot.status] - STATUS_RANK[b.ot.status]
     if (rank !== 0) return rank

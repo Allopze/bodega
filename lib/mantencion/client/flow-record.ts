@@ -2,7 +2,7 @@ import { syncRecordSchema, type SyncCorrectiveRecord, type SyncPreventiveRecord,
 import { checklistFor } from "../schedule"
 import type { MantItemValue, MantPhotoKind } from "../types"
 import type { FleetRow } from "./fleet-view"
-import { newDraft, stepsFor, type FlowDraft, type FlowStep } from "./flow-types"
+import { newDraft, partStockFields, stepsFor, type FlowDraft, type FlowStep } from "./flow-types"
 import { analyzeLecture, invalidPart, partQuantityMessage, parseQuantity, partsFilled } from "./flow-validate"
 import type { QueueRecordItem, RecordSummary } from "./types"
 
@@ -92,7 +92,7 @@ export function buildRecord(draft: FlowDraft, input: SignInput): BuiltRecord {
         workTypeId: job.workTypeId,
         hours: job.hours,
         noParts: job.noParts,
-        parts: job.noParts ? [] : partsFilled(job).map((part) => ({ quantity: parseQuantity(part.quantity), description: part.description.trim() })),
+        parts: job.noParts ? [] : partsFilled(job).map((part) => ({ quantity: parseQuantity(part.quantity), description: part.description.trim(), ...partStockFields(part) })),
       })),
       oilIds: draft.noOilChange ? [] : draft.oilIds,
       noOilChange: draft.noOilChange,
@@ -198,7 +198,7 @@ export function draftFromRejected(item: QueueRecordItem, row: FleetRow, now: Dat
       workTypeId: job.workTypeId,
       hours: job.hours,
       noParts: job.noParts,
-      parts: job.parts.length > 0 ? job.parts.map((part) => ({ quantity: String(part.quantity).replace(".", ","), description: part.description })) : [{ quantity: "1", description: "" }],
+      parts: job.parts.length > 0 ? job.parts.map((part) => ({ quantity: String(part.quantity).replace(".", ","), description: part.description, ...partStockFields(part) })) : [{ quantity: "1", description: "" }],
     })),
     oilIds: payload.oilIds,
     noOilChange: payload.noOilChange,

@@ -75,7 +75,7 @@ export function rejectedRecords(queue: readonly QueueItem[], userId: string): Qu
 export interface RejectedNote {
   /** Id del elemento en la cola. */
   id: string
-  type: "workshop" | "reply" | "ot"
+  type: "workshop" | "reply" | "ot" | "parts_note"
   /** «KA-140 · Salida de taller». */
   title: string
   /** El motivo del servidor, en lenguaje de usuario. */
@@ -104,6 +104,8 @@ export function rejectedNotes(queue: readonly QueueItem[], userId: string): Reje
       notes.push({ id: item.id, type: "workshop", title: `${item.summary.equipmentCode} · ${item.payload.kind === "salio" ? "Salida de taller" : "Novedad de taller"}`, message })
     } else if (item.type === "reply") {
       notes.push({ id: item.id, type: "reply", title: `${item.summary.equipmentCode} · Respuesta a la observación${item.summary.folio ? ` de ${item.summary.folio}` : ""}`, message })
+    } else if (item.type === "parts_note") {
+      notes.push({ id: item.id, type: "parts_note", title: `${item.summary.equipmentCode} · ${item.summary.folio} · Pedido de repuestos`, message })
     } else {
       notes.push({ id: item.id, type: "ot", title: `${item.summary.equipmentCode} · ${item.summary.folio} · ${OT_ACTION_LABEL[item.payload.action]}`, message })
     }

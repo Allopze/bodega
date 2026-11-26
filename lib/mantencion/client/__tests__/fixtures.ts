@@ -1,10 +1,10 @@
 import { IDBFactory } from "fake-indexeddb"
-import type { CatalogEquipment, CatalogWorkOrder, MantCatalog, SyncCorrectiveRecord, SyncPreventiveRecord, WorkOrderOpPayload, WorkOrderOpRequest } from "../../contracts"
+import type { CatalogEquipment, CatalogWorkOrder, MantCatalog, SyncCorrectiveRecord, SyncPartsNote, SyncPreventiveRecord, WorkOrderOpPayload, WorkOrderOpRequest } from "../../contracts"
 import type { MantScheduleSnapshot } from "../../types"
 import { resetDbConnectionForTests } from "../db"
 import { resetSignalForTests } from "../signal"
-import { newRecordItem, newWorkOrderItem } from "../queue"
-import type { DeviceAccount, QueueRecordItem, QueueWorkOrderItem, StoredCatalog, StoredPhoto } from "../types"
+import { newPartsNoteItem, newRecordItem, newWorkOrderItem } from "../queue"
+import type { DeviceAccount, QueuePartsNoteItem, QueueRecordItem, QueueWorkOrderItem, StoredCatalog, StoredPhoto } from "../types"
 
 /** Base limpia entre pruebas: cierra la conexión y entrega un IndexedDB nuevo. */
 export async function freshDb(): Promise<void> {
@@ -154,4 +154,18 @@ export function legacyTakeItem(n: number, overrides: { workOrderId?: string; aut
   const item = otOpItem(n, { action: "estimate", estimatedDeliveryDate: "2026-10-30", reason: null }, overrides)
   const { id, workOrderId, createdAt, deviceId } = item.payload
   return { ...item, payload: { id, workOrderId, createdAt, deviceId, action: "take" } satisfies WorkOrderOpRequest }
+}
+
+/** Una nota de pedido lista para la cola (el id de la cola es el de la NP; `n` ordena por hora de creación). */
+export function partsNoteItem(n: number, overrides: { workOrderId?: string; authorUserId?: string; createdAt?: string; lines?: SyncPartsNote["lines"]; equipmentStopped?: boolean } = {}): QueuePartsNoteItem {
+  const createdAt = overrides.createdAt ?? `2026-10-28T15:0${n}:00.000Z`
+  const workOrderId = overrides.workOrderId ?? "ot-1"
+  return newPartsNoteItem({
+    authorUserId: overrides.authorUserId ?? "u-1",
+    payload: {
+      id: UUID(700 + n), workOrderId, deviceId: UUID(900), appVersion: "test", createdAt, equipmentStopped: overrides.equipmentStopped ?? false, notes: null,
+      lines: overrides.lines ?? [{ description: "Filtro de aceite", quantity: 2, unitOfMeasure: "unidad", partNumber: null, productId: null }],
+    },
+    summary: { workOrderId, folio: "OT-BIO-0001", equipmentCode: "KA-140", equipmentPlate: "SGCP-84" },
+  }, UUID(700 + n), createdAt)
 }

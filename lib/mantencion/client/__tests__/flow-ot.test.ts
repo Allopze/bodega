@@ -72,6 +72,27 @@ describe("registro desde una OT", () => {
     expect(normalizeDraft(legacy as unknown as FlowDraft).workOrderId).toBeNull()
   })
 
+  it("un repuesto de la bodega viaja con source, productId y allocationId; el texto libre, sin ellos (ADR mantención 0001)", () => {
+    const base = run(start("C", "ot-1"),
+      { type: "patch", patch: { readingText: "40400", description: "Cambio de filtro" } },
+      { type: "jobAdd", workTypeId: "t-1" }, { type: "noOilChange" },
+      { type: "toggleId", field: "driverIds", id: "d-1" }, { type: "photoAdd", id: UUID(21) })
+    const draft = run(base, { type: "patch", patch: { jobs: base.jobs.map((job) => ({
+      ...job,
+      noParts: false,
+      parts: [
+        { quantity: "1", description: "Filtro de aceite", source: "stock" as const, productId: "p-1", allocationId: "al-1" },
+        { quantity: "2", description: "Abrazadera" },
+      ],
+    })) } })
+    const built = buildRecord(draft, input)
+    expect(built.ok).toBe(true)
+    if (!built.ok || built.payload.kind !== "C") return
+    expect(built.payload.jobs[0]?.parts).toEqual([
+      { quantity: 1, description: "Filtro de aceite", source: "stock", productId: "p-1", allocationId: "al-1" },
+      { quantity: 2, description: "Abrazadera" },
+    ])
+  })
   it("corregir un registro rechazado que estaba enlazado conserva la OT y no vuelve a preguntar por el taller", () => {
     const rejected = newRecordItem({
       authorUserId: "u-1",
