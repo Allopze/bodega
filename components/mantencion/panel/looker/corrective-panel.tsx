@@ -200,7 +200,7 @@ export function CorrectivePanel({
         <PanelBlock padding="none">
           <ChartFrame
             title="Horas y registros por equipo"
-            description="Barras: horas trabajadas. Línea: número de registros. Ejes separados porque son escalas distintas."
+            description="Barras: horas trabajadas. Línea: número de registros."
           >
             {chart.series.length === 0 ? (
               <p className="text-sm text-[var(--color-text-muted)]">Sin trabajos con horas en el período.</p>

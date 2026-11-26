@@ -25,7 +25,7 @@ import type { EquipmentDetailData, EquipmentEditData } from "./equipment-detail-
  * 2026-11-15). La cabecera y las pestañas son las de la ficha (`header`, `tabs`, y «Editar
  * vehículo» en `fichaActions`); las demás acciones son las de Mantención. Se abre en modo LECTURA
  * —estado de mantención (con el taller y las lecturas), plan de mantención, historial de cambios,
- * compras vinculadas, seguro, historial de mantenciones y órdenes de trabajo— y «Editar mantención» cambia la columna principal por
+ * compras vinculadas, seguro, historial de mantenciones y órdenes de trabajo— y «Editar plan de mantención» cambia la columna principal por
  * el formulario de la pauta, la lectura inicial y la baja. La identidad del equipo se edita sólo en
  * «Editar vehículo» (paso 4b). Las acciones viven en `PageHeader` (regla de layout 5); por eso
  * este componente de cliente es quien lo rinde.
@@ -63,7 +63,7 @@ export function EquipmentDetailView({
   /** `null` si la persona no puede administrar equipos: la ficha es sólo de lectura. */
   edit: EquipmentEditData | null
   canSeeSchedules: boolean
-  /** `mant:export`: muestra «Exportar historial» (el servidor lo vuelve a exigir). */
+  /** `mant:export`: muestra «Exportar Excel» (el servidor lo vuelve a exigir). */
   canExport: boolean
   justCreated: boolean
   /**
@@ -100,8 +100,8 @@ export function EquipmentDetailView({
         actions={(
           <>
             {newOrder && !editing && <NewWorkOrderCta {...newOrder} triggerLabel="Crear orden de trabajo" triggerVariant="primary" />}
-            {canExport && <ExportButton action={exportEquipmentHistoryAction} filters={data.vehicleId} label="Exportar historial" />}
-            {edit && !editing && <Button variant="secondary" size="sm" onClick={() => setEditing(true)}><PencilSimple size={14} aria-hidden />Editar mantención</Button>}
+            {canExport && <ExportButton action={exportEquipmentHistoryAction} filters={data.vehicleId} label="Exportar Excel" ariaLabel="Exportar Excel del historial de mantenciones" />}
+            {edit && !editing && <Button variant="secondary" size="sm" onClick={() => setEditing(true)}><PencilSimple size={14} aria-hidden />Editar plan de mantención</Button>}
             {fichaActions}
           </>
         )}

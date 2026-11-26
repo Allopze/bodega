@@ -30,23 +30,31 @@ export interface EquipmentFilterOptions {
 const FILTER_KEYS = ["faena", "tipo", "pauta", "estado", "estimacionGps", "bajas", "taller"] as const
 
 /**
- * Filtros estructurados de «Equipos» (A2): faena, tipo, pauta y estado, más la
- * casilla «Mostrar dados de baja». La búsqueda de texto NO está aquí: la pone el
+ * Casilla ligada a un parámetro de la URL. Responde al toque antes de que termine la navegación y, si la URL
+ * cambia por otro camino (quitar el chip, «Limpiar filtros»), se vuelve a alinear con ella.
+ */
+function useUrlToggle(urlValue: boolean) {
+  const [value, setValue] = useState(urlValue)
+  const [seenUrlValue, setSeenUrlValue] = useState(urlValue)
+  if (seenUrlValue !== urlValue) {
+    setSeenUrlValue(urlValue)
+    setValue(urlValue)
+  }
+  return [value, setValue] as const
+}
+
+/**
+ * Filtros estructurados de «Equipos» (A2): faena, tipo, pauta y estado, más las
+ * casillas «En taller» y «Mostrar dados de baja». La búsqueda de texto NO está aquí: la pone el
  * buscador de la barra superior, que filtra la lista ya cargada. Todo vive en la
  * URL (`router.replace`, sin mover el scroll), así que el panel puede enlazar con
- * `?estado=vencida` y el filtro sobrevive a recargar la página.
+ * `?estado=vencida` o `?taller=1` y el filtro sobrevive a recargar la página.
  */
 export function EquipmentFilters({ options, canViewGps = true, allWorksitesLabel = ALL_WORKSITES_LABEL }: { options: EquipmentFilterOptions; canViewGps?: boolean; /** Rótulo de «todas» del selector de faena según el alcance (`allWorksitesLabel`); sin él, el global. */ allWorksitesLabel?: string }) {
   const { searchParams, setFilter, setFilters, getFilter } = useUrlFilters()
   const filters = parseEquipmentListFilters(Object.fromEntries(searchParams.entries()))
-  // La casilla responde al toque antes de que termine la navegación de la URL; si la URL cambia
-  // por otro camino (quitar el chip, «Limpiar»), se vuelve a alinear con ella.
-  const [includeRetired, setIncludeRetired] = useState(filters.includeRetired)
-  const [urlIncludeRetired, setUrlIncludeRetired] = useState(filters.includeRetired)
-  if (urlIncludeRetired !== filters.includeRetired) {
-    setUrlIncludeRetired(filters.includeRetired)
-    setIncludeRetired(filters.includeRetired)
-  }
+  const [includeRetired, setIncludeRetired] = useUrlToggle(filters.includeRetired)
+  const [inWorkshop, setInWorkshop] = useUrlToggle(filters.inWorkshop === true)
   const labelOf = (list: OptionSelectOption[], value: string | undefined) => String(list.find((item) => item.value === value)?.label ?? value ?? "")
 
   const chips: ActiveFilterChip[] = []
@@ -59,7 +67,7 @@ export function EquipmentFilters({ options, canViewGps = true, allWorksitesLabel
   // «Mantención» y no «Estado»: para Flota el estado de un equipo es operativo / en mantención / fuera de servicio.
   add("estado", "Mantención", filters.state, labelOf(STATE_OPTIONS, filters.state))
   if (canViewGps) add("estimacionGps", "Estimación GPS", filters.gpsEstimate, labelOf(GPS_STATE_OPTIONS, filters.gpsEstimate))
-  // «En taller» llega desde el tile del panel; no tiene control propio, sólo su chip para quitarlo (A2).
+  // «En taller» se elige con su casilla o llega desde la cifra del Panel; el chip lo quita (A2).
   if (filters.inWorkshop) chips.push({ key: "taller", label: "Situación", value: "1", displayValue: "En taller" })
   if (filters.includeRetired && filters.state !== "baja") chips.push({ key: "bajas", label: "Incluye", value: "1", displayValue: "dados de baja" })
 
@@ -78,17 +86,29 @@ export function EquipmentFilters({ options, canViewGps = true, allWorksitesLabel
       {canViewGps && (
         <OptionSelect aria-label="Filtrar por estimación GPS" className={SELECT_CLASS} emptyLabel="Toda estimación GPS" options={GPS_STATE_OPTIONS} value={getFilter("estimacionGps")} onValueChange={(v) => setFilter("estimacionGps", v)} />
       )}
-      <Checkbox
-        id="eq-f-bajas"
-        label="Mostrar dados de baja"
-        checked={includeRetired}
-        // Con «Estado: Dado de baja» las bajas ya están a la vista: la casilla no se puede apagar.
-        disabled={filters.state === "baja"}
-        onChange={(event) => {
-          setIncludeRetired(event.target.checked)
-          setFilter("bajas", event.target.checked ? "1" : null)
-        }}
-      />
+      {/* Las dos casillas van juntas, centradas con los selectores, y bajan de fila como un solo grupo. */}
+      <div className="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1 sm:min-h-8">
+        <Checkbox
+          id="eq-f-taller"
+          label="En taller"
+          checked={inWorkshop}
+          onChange={(event) => {
+            setInWorkshop(event.target.checked)
+            setFilter("taller", event.target.checked ? "1" : null)
+          }}
+        />
+        <Checkbox
+          id="eq-f-bajas"
+          label="Mostrar dados de baja"
+          checked={includeRetired}
+          // Con «Estado: Dado de baja» las bajas ya están a la vista: la casilla no se puede apagar.
+          disabled={filters.state === "baja"}
+          onChange={(event) => {
+            setIncludeRetired(event.target.checked)
+            setFilter("bajas", event.target.checked ? "1" : null)
+          }}
+        />
+      </div>
     </FilterToolbar>
   )
 }

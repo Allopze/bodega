@@ -77,7 +77,7 @@ export function EquipmentStatusCard({ data }: { data: EquipmentDetailData }) {
       {status.state === "sin_preventiva" ? (
         <p className="mb-3 text-sm text-[var(--color-text-muted)]">
           Sin preventiva firmada ni declarada no hay próxima mantención. Si hubo una antes de la plataforma, declárala en
-          «Editar mantención» con su respaldo.
+          «Editar plan de mantención» con su respaldo.
         </p>
       ) : null}
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">

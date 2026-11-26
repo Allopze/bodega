@@ -268,8 +268,30 @@ export function clearFiltersHref(pathname: string, tab: LookerTab): string {
   return tab === "planificacion" || tab === "camiones" || tab === "maquinas" ? `${pathname}?pestana=${tab}` : pathname
 }
 
-export function tabHref(pathname: string, tab: LookerTab): string {
-  return tab === "hoy" ? pathname : `${pathname}?pestana=${tab}`
+/**
+ * Parámetros que viajan al cambiar de pestaña: el período y la faena son el contexto del Panel entero (los mismos
+ * nombres en «Hoy» y en las otras pestañas). Todo lo demás pertenece a la pestaña que se deja: los filtros cruzados
+ * `x_*`, el equipo, la frecuencia (las opciones de cada pestaña dependen de su unidad) y la página.
+ */
+export const TAB_CARRY_PARAMS = ["desde", "hasta", "faena"] as const
+
+/**
+ * Enlace a una pestaña del Panel. `current` son los parámetros de la URL donde se está: de ellos sólo se conservan
+ * los de `TAB_CARRY_PARAMS`, así quien elige un período y una faena no los pierde al cambiar de pestaña. Sin
+ * `current` lleva sólo `pestana` (la pestaña «Hoy» es la página sin parámetro).
+ */
+export function tabHref(pathname: string, tab: LookerTab, current: Raw = {}): string {
+  const params = new URLSearchParams()
+  if (tab !== "hoy") params.set("pestana", tab)
+  for (const key of TAB_CARRY_PARAMS) {
+    const value = current[key]
+    const list = Array.isArray(value) ? value : value === undefined ? [] : [value]
+    for (const item of list) {
+      if (item.trim() !== "") params.append(key, item)
+    }
+  }
+  const query = params.toString()
+  return query ? `${pathname}?${query}` : pathname
 }
 
 /** «oct 2026» a partir de `YYYY-MM`. */

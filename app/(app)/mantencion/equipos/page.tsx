@@ -81,7 +81,7 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
     <PageContainer>
       <PageHeader
         title="Equipos"
-        description="Estado de mantención de cada equipo, de la más urgente a la más al día."
+        description="Estado de mantención de cada equipo."
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Equipos" }]}
         actions={(
           <div className="flex flex-wrap items-center gap-2">
@@ -99,13 +99,13 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
               {showNoSchedule && (
                 <li>
                   {plural(withoutSchedule, "equipo activo no tiene", "equipos activos no tienen")} pauta. El mecánico no podrá registrarles una mantención preventiva.{" "}
-                  <Link href={`/mantencion/equipos?pauta=${NO_SCHEDULE}`} className="font-semibold underline underline-offset-2">Ver cuáles</Link>
+                  <Link href={`/mantencion/equipos?pauta=${NO_SCHEDULE}`} className="font-semibold underline underline-offset-2">Ver equipos sin pauta</Link>
                 </li>
               )}
               {showPendingFleet && (
                 <li>
                   {plural(pendingFleet, "vehículo de la flota aún no está", "vehículos de la flota aún no están")} en Mantención. Sólo falta su marca y su pauta.{" "}
-                  <Link href="/mantencion/equipos/incorporar" className="font-semibold underline underline-offset-2">Incorporarlos</Link>
+                  <Link href="/mantencion/equipos/incorporar" className="font-semibold underline underline-offset-2">Incorporar desde la flota</Link>
                 </li>
               )}
             </ul>

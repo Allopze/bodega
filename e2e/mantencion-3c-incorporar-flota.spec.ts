@@ -43,7 +43,7 @@ test.describe("Incorporar desde la flota", () => {
     const errors = trackConsole(page)
     await asJefe(page)
     await page.goto("/mantencion/equipos")
-    await page.getByRole("link", { name: "Incorporarlos", exact: true }).click()
+    await page.getByRole("link", { name: "Incorporar desde la flota", exact: true }).click()
     await expectPageTitle(page, "Incorporar desde la flota")
 
     const before = await withSql(async (sql) => (await sql`select worksite_id, model, year, brand from fuel_vehicles where id = ${VEHICLE.id}`)[0])

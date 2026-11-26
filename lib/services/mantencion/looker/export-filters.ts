@@ -13,15 +13,15 @@ export type ExportTab = Exclude<LookerTab, "hoy">
 
 export const EXPORT_TAB_LABEL: Record<ExportTab, string> = {
   planificacion: "Planificación",
-  camiones: "Camiones (equipos por kilómetros)",
-  maquinas: "Máquinas (equipos por horas)",
+  camiones: "Por kilómetros",
+  maquinas: "Por horas",
 }
 
-/** «Camiones», «Planificación»: el nombre corto, para el título del libro y el nombre del archivo. */
+/** «Por kilómetros», «Planificación»: el nombre de la pestaña, para el título del libro y el nombre del archivo. */
 export const EXPORT_TAB_SHORT: Record<ExportTab, string> = {
   planificacion: "Planificación",
-  camiones: "Camiones",
-  maquinas: "Máquinas",
+  camiones: "Por kilómetros",
+  maquinas: "Por horas",
 }
 
 const dates = (from: string, to: string) => `${formatDate(from)} al ${formatDate(to)}`

@@ -131,7 +131,7 @@ describe("ficha del equipo: crear una orden de trabajo y el enlace a Flota", () 
     expect(screen.getByRole("heading", { name: "Seguro" })).toBeDefined()
   })
 
-  it("«Editar mantención» cambia la columna por la pauta, la lectura y la baja; «Editar vehículo» llega de la ficha (paso 4b)", () => {
+  it("«Editar plan de mantención» cambia la columna por la pauta, la lectura y la baja; «Editar vehículo» llega de la ficha (paso 4b)", () => {
     const edit = {
       schedules: [{ id: "s1", name: "Camiones y tractos", unit: "km" as const, intervalCount: 5 }],
       initial: { scheduleId: "s1", initialReading: "90.000", initialReadingDate: "2026-09-01", retired: false, retiredReason: "" },
@@ -144,19 +144,19 @@ describe("ficha del equipo: crear una orden de trabajo y el enlace a Flota", () 
     )
     expect(screen.queryByRole("button", { name: "Editar ficha" })).toBeNull()
     expect(screen.getByRole("button", { name: "Editar vehículo" })).toBeDefined()
-    fireEvent.click(screen.getByRole("button", { name: "Editar mantención" }))
-    const form = screen.getByRole("form", { name: "Editar mantención" })
+    fireEvent.click(screen.getByRole("button", { name: "Editar plan de mantención" }))
+    const form = screen.getByRole("form", { name: "Editar plan de mantención" })
     expect(within(form).getByRole("combobox", { name: /^Pauta de mantención/ })).toBeDefined()
     expect(within(form).queryByLabelText(/^Código interno/)).toBeNull()
     // Con registros la lectura inicial queda fija.
     expect((within(form).getByLabelText(/^Lectura inicial/) as HTMLInputElement).readOnly).toBe(true)
     fireEvent.click(within(form).getByRole("button", { name: "Cancelar" }))
-    expect(screen.queryByRole("form", { name: "Editar mantención" })).toBeNull()
+    expect(screen.queryByRole("form", { name: "Editar plan de mantención" })).toBeNull()
   })
 
-  it("sin permiso para administrar equipos no hay «Editar mantención»", () => {
+  it("sin permiso para administrar equipos no hay «Editar plan de mantención»", () => {
     render(view())
-    expect(screen.queryByRole("button", { name: "Editar mantención" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Editar plan de mantención" })).toBeNull()
   })
 })
 
@@ -186,7 +186,7 @@ describe("ficha del equipo: preventiva declarada, anterior a la plataforma", () 
     expect(screen.getByText(/Respaldo: OT-1234/)).toBeDefined()
   })
 
-  it("«Editar mantención» trae la sección con lo guardado, el servicio de la pauta y la marca de que la sección viene", () => {
+  it("«Editar plan de mantención» trae la sección con lo guardado, el servicio de la pauta y la marca de que la sección viene", () => {
     const edit = {
       schedules: [{ id: "s1", name: "Camiones y tractos", unit: "km" as const, intervalCount: 2 }],
       initial: { scheduleId: "s1", initialReading: "90.000", initialReadingDate: "2026-09-01", retired: false, retiredReason: "" },
@@ -195,8 +195,8 @@ describe("ficha del equipo: preventiva declarada, anterior a la plataforma", () 
       expectedUpdatedAt: "2026-11-20T15:00:00.123456+00:00",
     }
     render(<EquipmentDetailView data={data({ priorPreventive: prior })} edit={edit} canSeeSchedules={false} canExport={false} justCreated={false} header={HEADER} />)
-    fireEvent.click(screen.getByRole("button", { name: "Editar mantención" }))
-    const form = screen.getByRole("form", { name: "Editar mantención" })
+    fireEvent.click(screen.getByRole("button", { name: "Editar plan de mantención" }))
+    const form = screen.getByRole("form", { name: "Editar plan de mantención" })
     expect(within(form).getByText("Preventiva anterior a la plataforma (declarada)")).toBeDefined()
     expect(within(form).getByText(/no un registro firmado/)).toBeDefined()
     expect((form.querySelector('input[name="priorPreventiveForm"]') as HTMLInputElement).value).toBe("1")
@@ -214,9 +214,24 @@ describe("ficha del equipo: preventiva declarada, anterior a la plataforma", () 
       initial: { scheduleId: "", initialReading: "", initialReadingDate: "", retired: false, retiredReason: "" },
     }
     render(<EquipmentDetailView data={data({ schedule: null })} edit={edit} canSeeSchedules={false} canExport={false} justCreated={false} header={HEADER} />)
-    fireEvent.click(screen.getByRole("button", { name: "Editar mantención" }))
-    const form = screen.getByRole("form", { name: "Editar mantención" })
+    fireEvent.click(screen.getByRole("button", { name: "Editar plan de mantención" }))
+    const form = screen.getByRole("form", { name: "Editar plan de mantención" })
     expect(within(form).getByText(/no tiene pauta: asígnale una/)).toBeDefined()
     expect(within(form).getByRole("combobox", { name: /^Servicio de la pauta/ }).hasAttribute("disabled")).toBe(true)
+  })
+})
+
+describe("ficha del equipo: exportar", () => {
+  it("con `mant:export` la cabecera ofrece «Exportar Excel» (rótulo de la plataforma) con un nombre accesible que dice qué baja", () => {
+    render(<EquipmentDetailView data={data()} edit={null} canSeeSchedules={false} canExport justCreated={false} header={HEADER} />)
+    const button = screen.getByRole("button", { name: "Exportar Excel del historial de mantenciones" })
+    expect(button.textContent).toContain("Exportar Excel")
+    // El rótulo viejo ya no existe: el nombre accesible empieza por el visible (WCAG 2.5.3).
+    expect(screen.queryByRole("button", { name: "Exportar historial" })).toBeNull()
+  })
+
+  it("sin `mant:export` no hay botón: el servidor lo vuelve a exigir, pero no se ofrece", () => {
+    render(view())
+    expect(screen.queryByRole("button", { name: /Exportar/ })).toBeNull()
   })
 })

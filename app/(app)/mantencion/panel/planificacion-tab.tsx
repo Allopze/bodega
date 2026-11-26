@@ -41,7 +41,7 @@ export async function PlanificacionTab({ context, viewer }: { context: LookerCon
   return (
     <div className="flex flex-col gap-5">
       <p className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-xs text-[var(--color-text-muted)]">
-        Próxima = punto de la última mantención + intervalo base de la pauta. Si el jefe de mantención ajustó el intervalo, la fila lo marca con un lápiz y el motivo. Ordenado por faltantes: lo vencido queda arriba.
+        Próxima = punto de la última mantención + intervalo base de la pauta. Si el jefe de mantención ajustó el intervalo, la fila lo marca con un lápiz y el motivo.
       </p>
 
       <DashboardPanel cols="single">
@@ -60,7 +60,7 @@ export async function PlanificacionTab({ context, viewer }: { context: LookerCon
         <PanelBlock padding="none">
           <ChartFrame
             title="Delta kilometraje"
-            description="A − B por equipo. Verde: se hizo antes o a tiempo; naranja: atraso. Barras más grandes primero."
+            description="A − B por equipo. Verde: se hizo antes o a tiempo; naranja: atraso."
           >
             <CrossFilterBars
               ariaLabel="Delta de kilometraje por equipo"
@@ -69,7 +69,7 @@ export async function PlanificacionTab({ context, viewer }: { context: LookerCon
               mode="delta"
               selectedKey={selectedId}
               actionFor={(item) => equipmentAction(item.key, item.key === selectedId)}
-              emptyMessage="Sin mantenimientos con lectura programada y real en el período."
+              emptyMessage="Sin mantenciones con lectura programada y real en el período."
             />
           </ChartFrame>
         </PanelBlock>
@@ -91,7 +91,7 @@ export async function PlanificacionTab({ context, viewer }: { context: LookerCon
         <PanelBlock padding="none">
           <ChartFrame
             title="Delta horas"
-            description="A − B por equipo. Verde: se hizo antes o a tiempo; naranja: atraso. Barras más grandes primero."
+            description="A − B por equipo. Verde: se hizo antes o a tiempo; naranja: atraso."
           >
             <CrossFilterBars
               ariaLabel="Delta de horas por equipo"
@@ -100,7 +100,7 @@ export async function PlanificacionTab({ context, viewer }: { context: LookerCon
               mode="delta"
               selectedKey={selectedId}
               actionFor={(item) => equipmentAction(item.key, item.key === selectedId)}
-              emptyMessage="Sin mantenimientos con lectura programada y real en el período."
+              emptyMessage="Sin mantenciones con lectura programada y real en el período."
             />
           </ChartFrame>
         </PanelBlock>

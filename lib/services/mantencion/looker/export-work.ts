@@ -11,7 +11,7 @@ import type {
 } from "./types"
 
 /**
- * Hojas de Camiones y Máquinas del Excel: el correctivo (trabajos, conductores y horas por equipo) y el
+ * Hojas de «Por kilómetros» y «Por horas» del Excel: el correctivo (trabajos, conductores y horas por equipo) y el
  * preventivo (cumplimiento por mes, por faena y mecánico, por patente, y la matriz de checklist). Módulo PURO:
  * recibe lo que ya cargó `loadWorkControlData`. Una dimensión sin valor lleva el rótulo de la pantalla («Sin
  * faena», «Sin mecánico»); una medida que no existe va vacía, nunca en cero.
@@ -164,7 +164,7 @@ export function matrixChecksSheet(matrix: ChecklistMatrix): ReportSheet {
 
 /** Las notas de lectura de la pantalla para la hoja «Filtros». */
 export function workNotes(unit: MantUnit, matrix: ChecklistMatrix, matrixLimit: number): string[] {
-  const subject = unit === "km" ? "equipos por kilómetros" : "máquinas por horas"
+  const subject = unit === "km" ? "equipos por kilómetros" : "equipos por horas"
   const notes = [
     `Correctivo: OT con ingreso a taller y correctivas del período, sólo ${subject}. La fecha es el ingreso a taller. La hoja «Correctivos» trae todos los trabajos del filtro (la pantalla los muestra de 25 en 25).`,
     `Preventivo: pautas de formularios hasta el ${formatDate(FORMS_LAST_COUNTED_DATE)} y registros de la plataforma desde el ${formatDate(FORMS_CUTOVER_DATE)}, sólo ${subject}.`,

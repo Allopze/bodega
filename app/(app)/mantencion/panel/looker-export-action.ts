@@ -12,7 +12,7 @@ import { todayInChile } from "@/lib/utils"
 import type { ExportActionResult } from "@/components/ui/export-button"
 
 /**
- * «Exportar Excel» de las pestañas Planificación, Camiones y Máquinas del Panel de mantención.
+ * «Exportar Excel» de las pestañas Planificación, «Por kilómetros» y «Por horas» del Panel de mantención.
  *
  * Es el libro de la pantalla armado EN EL SERVIDOR: del navegador sólo llegan la pestaña y los parámetros de la URL
  * (`desde`, `hasta`, `faena`, `equipo`, `frecuencia` y los `x_*` del filtro cruzado). Con ellos se vuelve a consultar

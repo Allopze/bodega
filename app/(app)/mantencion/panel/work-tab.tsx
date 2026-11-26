@@ -10,8 +10,8 @@ import { loadWorkControlData } from "@/lib/services/mantencion/looker/work-data"
 const PANEL = "/mantencion/panel"
 
 /**
- * Camiones (km) y Máquinas (h) comparten esta pestaña: el filtro de unidad del cargador es lo
- * que separa una de otra. Así el correctivo de máquinas no se duplica con el de camiones.
+ * «Por kilómetros» (km) y «Por horas» (h) comparten esta pestaña: el filtro de unidad del cargador es lo
+ * que separa una de otra. Así el correctivo de un equipo por horas no se duplica con el de uno por kilómetros.
  *
  * El resumen de conductores se carga primero porque el conductor elegido filtra la tabla de OT
  * y el combinado; el gráfico de equipos ignora el equipo que él mismo emite.
@@ -37,7 +37,7 @@ export async function WorkTab({
   const selectedEquipmentId = cross.equipment?.id ?? null
   const selectedMonth = cross.month?.key ?? cross.check?.month ?? null
   const selectedWorksiteId = cross.worksite?.id ?? cross.equipment?.worksiteId ?? cross.work?.worksiteId ?? cross.check?.worksiteId ?? null
-  const unitLabel = unit === "km" ? "equipos por kilómetros" : "máquinas por horas"
+  const unitLabel = unit === "km" ? "equipos por kilómetros" : "equipos por horas"
 
   return (
     <WorkControlTab

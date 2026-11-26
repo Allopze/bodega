@@ -230,11 +230,11 @@ describe("Excel de Camiones · filtros de la URL", () => {
     expect(dataRows(workbook, "Filtros")).toContainEqual(["Códigos (equipos)", `${B.code} · ${B.plate}`])
   })
 
-  it("«Máquinas» pide la otra unidad: sin máquinas por horas no hay filas, y el encabezado habla de horas", async () => {
+  it("«Por horas» pide la otra unidad: sin máquinas por horas no hay filas, y el encabezado habla de horas", async () => {
     const { workbook } = await exportOf(globalSession, "maquinas", OCTOBER)
     expect(dataRows(workbook, "Correctivos")).toEqual([])
     expect(workbook.getWorksheet("Correctivos")!.getRow(1).getCell(8).value).toBe("Horómetro (h)")
-    expect(dataRows(workbook, "Filtros")).toContainEqual(["Pestaña", "Máquinas (equipos por horas)"])
+    expect(dataRows(workbook, "Filtros")).toContainEqual(["Pestaña", "Por horas"])
   })
 
   it("sobre el tope de filas corta la hoja y lo dice dentro del libro", async () => {

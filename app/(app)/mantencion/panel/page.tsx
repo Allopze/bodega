@@ -25,13 +25,14 @@ type SearchParams = Record<string, string | string[] | undefined>
 const DESCRIPTION: Record<Exclude<LookerTab, "hoy">, string> = {
   planificacion: "Consolidado de mantención por kilómetros y por horas, con el delta y los faltantes de cada equipo.",
   camiones: "Trabajos correctivos y cumplimiento preventivo de los equipos controlados por kilómetros.",
-  maquinas: "Trabajos correctivos y cumplimiento preventivo de las máquinas controladas por horas.",
+  maquinas: "Trabajos correctivos y cumplimiento preventivo de los equipos controlados por horas.",
 }
 
 /**
  * Panel de mantención con cuatro pestañas: «Hoy» (el Panel operativo de siempre) y las tres
- * réplicas del panel de Looker. La pestaña viaja en `pestana`; cada una es un enlace que lleva
- * sólo ese parámetro, así los filtros se reinician al cambiar de pestaña.
+ * réplicas del panel de Looker (Planificación, «Por kilómetros» y «Por horas»). La pestaña viaja en
+ * `pestana`; cada una es un enlace que conserva el período y la faena (`desde`, `hasta`, `faena`) y
+ * suelta los filtros propios de la pestaña (cruzados, equipo, frecuencia y página).
  *
  * Gate: `mant:records:view_*`. Las consultas de OT y de registros vuelven a aplicar su propia
  * visibilidad y el alcance por faena: ocultar una pestaña no es autorización.
@@ -61,14 +62,14 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
           { label: "Control operacional", href: "/control-operacional" },
           { label: "Mantención" },
           { label: "Panel" },
-          { label: tab === "planificacion" ? "Planificación" : tab === "camiones" ? "Camiones" : "Máquinas" },
+          { label: tab === "planificacion" ? "Planificación" : tab === "camiones" ? "Por kilómetros" : "Por horas" },
         ]} />}
         // Acción de página: el libro de la pestaña con los filtros de la URL, sólo con `mant:export` (el mismo criterio que
         // el Excel de «Hoy»). La acción de servidor vuelve a exigirlo y arma el libro con el alcance de quien exporta.
         actions={can(session, "mant:export") ? <LookerExcelButton tab={tab} params={pickFilterParams(params)} /> : undefined}
       />
 
-      <PanelTabs active={tab} />
+      <PanelTabs active={tab} params={params} />
 
       {context.filters.invalidPeriod && (
         <Callout tone="warning" className="mb-4">
