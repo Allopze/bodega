@@ -13,6 +13,9 @@ import type { QueueItem } from "./types"
  *    (el ingreso la deja «en taller», y sólo entonces acepta registros).
  *  - «Terminar» espera a los registros anteriores enlazados a esa OT (el
  *    servidor exige al menos uno vigente).
+ *  - Un registro enlazado a una OT espera también a las notas de pedido
+ *    anteriores de esa OT: la reserva de repuestos que el registro consume
+ *    nace del pedido, y éste tiene que llegar primero.
  *
  * Una dependencia RECHAZADA no bloquea: el servidor contestará con su motivo en
  * vez de dejar al elemento esperando para siempre. «Anterior» es estricto
@@ -37,7 +40,7 @@ export function waitsForDependency(item: QueueItem, queue: readonly QueueItem[])
   }
   if (item.type === "record" && item.payload.workOrderId) {
     const { workOrderId } = item.payload
-    return queue.some((other) => other.type === "ot" && other.payload.workOrderId === workOrderId && alive(other) && other.createdAt < item.createdAt)
+    return queue.some((other) => (other.type === "ot" || other.type === "parts_note") && other.payload.workOrderId === workOrderId && alive(other) && other.createdAt < item.createdAt)
   }
   return false
 }

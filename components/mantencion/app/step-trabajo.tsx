@@ -5,7 +5,7 @@ import type { FleetRow } from "@/lib/mantencion/client/fleet-view"
 import type { FlowAction } from "@/lib/mantencion/client/flow"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
 import { staleChoices, staleIds, staleMessage } from "@/lib/mantencion/client/flow-validate"
-import { findWorkOrder } from "@/lib/mantencion/client/ot-model"
+import { availablePartsFor, findWorkOrder } from "@/lib/mantencion/client/ot-model"
 import { todayInChile } from "@/lib/utils"
 import { useAppData } from "./app-context"
 import { EquipmentSummary } from "./step-lectura"
@@ -15,7 +15,7 @@ import { CheckBox, FieldError } from "./ui"
 
 /** Paso 3 (correctiva): qué se hizo, quién, con qué, cuánto tardó y en qué quedó el equipo. Las fotos van en el paso siguiente. */
 export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispatch: Dispatch<FlowAction>; row: FleetRow }) {
-  const { stored, account } = useAppData()
+  const { stored, account, queue } = useAppData()
   const catalog = stored?.catalog
   const { errors } = draft
   const mechanics = (catalog?.mechanics ?? []).filter((mechanic) => mechanic.id !== account.userId)
@@ -27,6 +27,8 @@ export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispat
   const goneExecutor = staleChoices(draft, lists).find((choice) => choice.kind === "mechanic" || choice.kind === "workshop")
   const goneOils = staleIds(draft.oilIds, lists ? lists.oils : null)
   const linked = draft.workOrderId ? (findWorkOrder(catalog, draft.workOrderId)?.folio ?? "Orden de trabajo") : null
+  // Lo reservado para la OT y sin usar (ADR mantención 0001): sólo con una OT; sin ella no hay de dónde sacar repuestos de bodega.
+  const available = draft.workOrderId ? availablePartsFor(catalog, queue, account.userId, draft.workOrderId) : []
 
   /** El nombre del recién elegido, para poder decir «Quita “X”» si deja de estar disponible. */
   const named = (list: ReadonlyArray<{ id: string; name: string }>, id: string): Pick<Partial<FlowDraft>, "idNames"> => {
@@ -37,7 +39,7 @@ export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispat
   return (
     <>
       <EquipmentSummary row={row} />
-      <JobsField draft={draft} dispatch={dispatch} workTypes={catalog?.workTypes ?? []} ready={ready} />
+      <JobsField draft={draft} dispatch={dispatch} workTypes={catalog?.workTypes ?? []} ready={ready} partsAvailable={available} />
 
       <div>
         <div className="lbl">¿Quién hizo el trabajo?</div>

@@ -1,5 +1,5 @@
 import { canSync, getAccount, markAccountNeedsLogin } from "./accounts"
-import { postObservationReply, postRecord, postWorkOrderOp, postWorkshopUpdate, uploadPhoto, type ApiFailure } from "./api"
+import { postObservationReply, postPartsNote, postRecord, postWorkOrderOp, postWorkshopUpdate, uploadPhoto, type ApiFailure } from "./api"
 import { refreshCatalog } from "./catalog-sync"
 import { emit } from "./events"
 import { getPhotos, resetUploaded, setPhotoUploaded } from "./photo-store"
@@ -16,8 +16,8 @@ import type { DeviceAccount, QueueItem, QueueRecordItem } from "./types"
  * credencial de SU autor, en el orden en que se creó:
  *
  *   registro → sube cada foto (PUT idempotente) y luego el POST con su id;
- *   taller / respuesta / OT → un POST (el de taller espera a que su registro llegue;
- *   los de OT y los registros enlazados a una OT guardan su orden: ver queue-order.ts).
+ *   taller / respuesta / OT / nota de pedido → un POST (el de taller espera a que su registro llegue;
+ *   los de OT, las notas de pedido y los registros enlazados a una OT guardan su orden: ver queue-order.ts).
  *
  * Lo que decide cada respuesta está en `lib/mantencion/contracts.ts`
  * (`SyncRecordResponse`): 401/403 pide entrar de nuevo; 409/422 es un rechazo
@@ -79,8 +79,9 @@ async function settleFailure(item: QueueItem, failure: ApiFailure, account: Devi
     // Falta un permiso de la cuenta, no venció la sesión: volver a entrar falla igual.
     // Un registro se muestra «Por corregir» con el motivo del servidor (y se puede
     // descartar); lo que no tiene pantalla de rechazo (taller, OT, respuesta) espera
-    // como cuando la credencial no sirve, para no perderlo en silencio.
-    if (item.type === "record") {
+    // como cuando la credencial no sirve, para no perderlo en silencio. Una nota de pedido sí
+    // se rechaza a la vista: «Entendido» en la OT, con el motivo, en vez de esperar sin que nadie sepa por qué.
+    if (item.type === "record" || item.type === "parts_note") {
       await markRejected(item.id, failureMessage(failure), null)
       return "rejected"
     }
@@ -151,7 +152,9 @@ async function sendOne(item: QueueItem, account: DeviceAccount, deps: SyncDeps, 
     ? await postWorkshopUpdate(account.token, item.payload, deps.fetchImpl)
     : item.type === "ot"
       ? await postWorkOrderOp(account.token, item.payload, deps.fetchImpl)
-      : await postObservationReply(account.token, item.payload, deps.fetchImpl)
+      : item.type === "parts_note"
+        ? await postPartsNote(account.token, item.payload, deps.fetchImpl)
+        : await postObservationReply(account.token, item.payload, deps.fetchImpl)
   if (result.kind === "ok") {
     reportReachable(true)
     await markSimpleSent(item.id)
