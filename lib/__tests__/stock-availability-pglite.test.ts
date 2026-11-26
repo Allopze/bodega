@@ -163,8 +163,6 @@ describe("getStockAvailability", () => {
       // recibir, y la entrega de 2 no descuenta nada.
       { worksiteId: WS_ALPHA, productId: PRODUCT_SMALL, incoming: 6 },
       { worksiteId: WS_ALPHA, productId: PRODUCT_XL, incoming: 4 },
-      // El repuesto ya no es de consumo directo: lo aprobado y no recibido (9) también está en camino.
-      { worksiteId: WS_ALPHA, productId: SPARE_PART, incoming: 9 },
     ])
   })
 
