@@ -4,8 +4,8 @@
  * + worksite stock ingress.
  */
 
-import { eq, and, notInArray, ne } from "drizzle-orm"
-import { db } from "@/db"
+import { eq, and, asc, inArray, notInArray, ne } from "drizzle-orm"
+import { db, type Tx } from "@/db"
 import {
   receipts, receiptItems,
   dispatchGuides,
@@ -22,6 +22,7 @@ import { applyMovementTx } from "./stock"
 import { OFFICE_ORIGIN_LABEL, prepareDispatchGuideForOfficeReceiptTx, resolveOfficeWorksite } from "./dispatch-guides"
 import { notifyManyUser, notifyAfterCommit } from "./notifications"
 import { notifyWorkOrderPartsReceived } from "./mantencion/work-orders/notifications"
+import { addToAllocationTx, lockForStockTx } from "./mantencion/parts"
 import { closeOrderTx } from "./purchasing-module/receiving"
 import {
   collectRequesterShortfallNoticesTx,
@@ -105,6 +106,52 @@ function arrivalNotice(stage: RegisterReceiptInput["stage"], place: string, arri
   }
 }
 
+/**
+ * Repuestos (ADR mantención 0001): lo que se recibe entra al stock y, si el ítem de
+ * solicitud trae OT, se reserva. Regla de bloqueo 3: ANTES del ciclo de ítems y de
+ * cualquier movimiento de un repuesto se toman, en el orden global, las OT de las
+ * líneas, la faena de stock y las filas de stock (`lockForStockTx`, ordenadas).
+ *
+ * Primero las líneas de OC de esos repuestos (`FOR UPDATE`, por id): el ciclo las
+ * vuelve a bloquear después y la guía las bloquea antes que el stock, así que tomar
+ * el stock sin ellas invertiría el orden y abriría un deadlock entre una recepción
+ * en oficina y el despacho de una guía de la misma OC.
+ */
+async function lockSparePartStockTx(tx: Tx, input: {
+  purchaseOrderId: string
+  items: ReceiptItemInput[]
+  stockWorksiteId: string
+}): Promise<void> {
+  const receivedIds = input.items.filter((item) => item.quantityReceived > 0).map((item) => item.purchaseOrderItemId)
+  if (receivedIds.length === 0) return
+  const lines = await tx
+    .select({ id: purchaseOrderItems.id, productId: purchaseOrderItems.productId, requestItemId: purchaseOrderItems.requestItemId })
+    .from(purchaseOrderItems)
+    .innerJoin(products, eq(products.id, purchaseOrderItems.productId))
+    .where(and(
+      inArray(purchaseOrderItems.id, receivedIds),
+      eq(purchaseOrderItems.purchaseOrderId, input.purchaseOrderId),
+      eq(products.isSparePart, true),
+    ))
+  if (lines.length === 0) return
+
+  await tx.select({ id: purchaseOrderItems.id }).from(purchaseOrderItems)
+    .where(inArray(purchaseOrderItems.id, lines.map((line) => line.id)))
+    .orderBy(asc(purchaseOrderItems.id))
+    .for("update")
+
+  const requestItemIds = lines.flatMap((line) => (line.requestItemId ? [line.requestItemId] : []))
+  const workOrders = requestItemIds.length === 0 ? [] : await tx
+    .select({ workOrderId: purchaseRequestItems.workOrderId })
+    .from(purchaseRequestItems)
+    .where(inArray(purchaseRequestItems.id, requestItemIds))
+  await lockForStockTx(tx, {
+    workOrderIds: workOrders.flatMap((row) => (row.workOrderId ? [row.workOrderId] : [])),
+    worksiteId: input.stockWorksiteId,
+    productIds: lines.flatMap((line) => (line.productId ? [line.productId] : [])),
+  })
+}
+
 export async function registerReceipt(
   input: RegisterReceiptInput,
   worksiteIds: string[] | 'all' = 'all',
@@ -133,6 +180,8 @@ export async function registerReceipt(
   // faena, por OT. La recepción parcial no avisa: mantención no puede actuar
   // hasta que el repuesto está entero. Un aviso por OT y recepción.
   const partsArrivals = new Map<string, Set<string>>()
+  // De esas líneas, las que nacieron de una nota de pedido: su autor también recibe aviso.
+  const partsNoteLines = new Map<string, Set<string>>()
   const countArrival = (requestItemId: string, request: { id: string; code: string; requesterId: string | null }) => {
     if (!request.requesterId) return
     const arrival = arrivals.get(request.id)
@@ -148,6 +197,7 @@ export async function registerReceipt(
   const code = await db.transaction(async (tx) => {
     arrivals.clear()
     partsArrivals.clear()
+    partsNoteLines.clear()
     shortfallNotices = []
     const shortfalls: RequesterShortfall[] = []
     // Read order INSIDE the transaction to avoid stale status checks.
@@ -226,6 +276,15 @@ export async function registerReceipt(
       createdAt:       now,
     })
 
+    // La faena donde el repuesto queda guardado: la de la oficina en su etapa, la de destino en faena
+    // (en REC-001 es la propia oficina: no hay movimiento, pero la reserva sí se crea ahí).
+    const sparePartStockWorksiteId = office?.id ?? faenaStockWorksiteId ?? worksiteId
+    await lockSparePartStockTx(tx, {
+      purchaseOrderId: input.purchaseOrderId,
+      items: input.items,
+      stockWorksiteId: sparePartStockWorksiteId,
+    })
+
     for (const ri of input.items) {
       const qtyRec = ri.quantityReceived
       const qtyRej = ri.quantityRejected ?? 0
@@ -245,7 +304,7 @@ export async function registerReceipt(
       const requestItem = lockedOcItem.requestItemId
         ? await tx.query.purchaseRequestItems.findFirst({
           where: eq(purchaseRequestItems.id, lockedOcItem.requestItemId),
-          columns: { id: true, emergencyResourceId: true },
+          columns: { id: true, emergencyResourceId: true, workOrderId: true, partsNoteItemId: true },
         })
         : null
       const isEmergencyService = Boolean(requestItem?.emergencyResourceId)
@@ -390,7 +449,7 @@ export async function registerReceipt(
           if (fullReceived) {
             const reqItem = await tx.query.purchaseRequestItems.findFirst({
               where: eq(purchaseRequestItems.id, lockedOcItem.requestItemId),
-              columns: { id: true, workOrderId: true },
+              columns: { id: true, workOrderId: true, partsNoteItemId: true },
               with: { request: { columns: { requesterId: true, code: true, id: true } } },
             })
             if (reqItem?.request) countArrival(reqItem.id, reqItem.request)
@@ -398,6 +457,11 @@ export async function registerReceipt(
               const lines = partsArrivals.get(reqItem.workOrderId) ?? new Set<string>()
               lines.add(reqItem.id)
               partsArrivals.set(reqItem.workOrderId, lines)
+              if (reqItem.partsNoteItemId) {
+                const noteLines = partsNoteLines.get(reqItem.workOrderId) ?? new Set<string>()
+                noteLines.add(reqItem.id)
+                partsNoteLines.set(reqItem.workOrderId, noteLines)
+              }
             }
 
             if (isEmergencyService && fullReceived && qtyRej === 0 && qtyDmg === 0) {
@@ -414,28 +478,46 @@ export async function registerReceipt(
         }
 
         const stockWorksiteId = input.stage === "office" ? office?.id : faenaStockWorksiteId
-        if (stockWorksiteId && lockedOcItem.productId) {
+        if (lockedOcItem.productId) {
           const product = await tx.query.products.findFirst({
             where: eq(products.id, lockedOcItem.productId),
           })
-          // A catalog service is evidence/cost work, not a physical unit. It
-          // keeps its receipt history but never creates a stock balance or a
-          // kardex movement that an operator could later deliver. A catalog
-          // spare part is direct consumption (decisión 2026-11-09): it goes
-          // from the supplier to the machine, so it never enters the stock
-          // either; its item is already `delivered` (see `receiveItemTx`).
-          if (product?.isService || product?.isSparePart) continue
-          await applyMovementTx(tx, {
-            worksiteId: stockWorksiteId,
-            productId:   lockedOcItem.productId,
-            type:        "ingreso_oc",
-            quantity:    qtyRec,
-            referenceType: "receipt",
-            referenceId: receiptId,
-            performedBy: input.receivedBy,
-            userEmail:   input.userEmail,
-            notes:       `Recepción ${txCode}, ${input.stage === "office" ? `ingreso en ${office?.name ?? OFFICE_ORIGIN_LABEL}` : `guía ${input.dispatchGuideNo ?? "s/n"}`}`,
-          })
+          // Un servicio del catálogo es evidencia y costo, no una unidad física: conserva
+          // su historial de recepción pero nunca crea saldo ni kárdex que alguien pueda
+          // entregar después. Todo lo demás —repuestos incluidos (ADR mantención 0001,
+          // D1)— entra al stock de la bodega donde se recibe.
+          if (product && !product.isService) {
+            if (stockWorksiteId) {
+              await applyMovementTx(tx, {
+                worksiteId: stockWorksiteId,
+                productId:   lockedOcItem.productId,
+                type:        "ingreso_oc",
+                quantity:    qtyRec,
+                referenceType: "receipt",
+                referenceId: receiptId,
+                performedBy: input.receivedBy,
+                userEmail:   input.userEmail,
+                notes:       `Recepción ${txCode}, ${input.stage === "office" ? `ingreso en ${office?.name ?? OFFICE_ORIGIN_LABEL}` : `guía ${input.dispatchGuideNo ?? "s/n"}`}`,
+              })
+            }
+            // El repuesto que llega a la faena para una OT queda reservado para ella (D5). En la
+            // oficina no: ahí es stock de la oficina y la reserva nace al despachar la guía (D11).
+            // Si la OT ya cerró o se anuló, `addToAllocationTx` devuelve `null` y el stock queda libre.
+            if (product.isSparePart && input.stage === "faena" && requestItem?.workOrderId) {
+              await addToAllocationTx(tx, {
+                workOrderId: requestItem.workOrderId,
+                worksiteId: sparePartStockWorksiteId,
+                productId: lockedOcItem.productId,
+                quantity: qtyRec,
+                source: "recepcion",
+                receiptId,
+                requestItemId: requestItem.id,
+                noteItemId: requestItem.partsNoteItemId ?? null,
+                actorUserId: input.receivedBy,
+                userEmail: input.userEmail,
+              })
+            }
+          }
         }
       }
     }
@@ -499,8 +581,10 @@ export async function registerReceipt(
   }
   // Mantención: una vez por OT, con las líneas que quedaron completas en esta recepción.
   for (const [workOrderId, lines] of partsArrivals) {
+    const noteLines = partsNoteLines.get(workOrderId)
     notifyAfterCommit(() => notifyWorkOrderPartsReceived({
       workOrderId, receiptId, actorUserId: input.receivedBy, itemCount: lines.size,
+      ...(noteLines?.size ? { requestItemIds: [...noteLines] } : {}),
     }))
   }
   flushRequesterShortfallNotifications(shortfallNotices)

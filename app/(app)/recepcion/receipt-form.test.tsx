@@ -58,23 +58,42 @@ function makeItem(overrides: Partial<ReceiptOcItem> = {}): ReceiptOcItem {
 
 describe("ReceiptForm", () => {
   describe("repuestos de catálogo", () => {
-    it("una OC sólo de repuestos dice consumo directo, no «Actualiza stock»", () => {
+    it("una OC sólo de repuestos dice que entran al stock y se reservan para la OT, no «consumo directo»", () => {
       render(
         <ReceiptForm
           purchaseOrderId="po-1"
           orderCode="OC-001"
           orderWorksiteName="Faena Norte"
           officeName="Administración"
-          items={[makeItem({ productName: "Filtro de aceite", productSku: "RPT-001", isDirectConsumption: true })]}
+          items={[makeItem({ productName: "Filtro de aceite", productSku: "RPT-001", isSparePart: true })]}
           canOffice={false}
           canFaena={true}
           deliveryMode="directo_faena"
         />,
       )
       expect(screen.queryByText(/Actualiza stock/)).toBeNull()
-      expect(screen.getByText(/Consumo directo: los repuestos se entregan sin pasar por stock/)).toBeTruthy()
-      expect(screen.getAllByText(/Consumo directo, no pasa por stock/).length).toBeGreaterThan(0)
-      expect(screen.queryByText(/no ingresa a stock/)).toBeNull()
+      expect(screen.getByText(/Los repuestos entran al stock de la faena; si tienen OT, quedan reservados para ella/)).toBeTruthy()
+      expect(screen.getAllByText(/Entra al stock de la faena; si tiene OT, queda reservado para ella/).length).toBeGreaterThan(0)
+      expect(screen.queryByText(/[Cc]onsumo directo/)).toBeNull()
+      // Lo rechazado o dañado no entra a stock sea cual sea el producto.
+      expect(screen.getByText(/lo que llegó pero no ingresa a stock/)).toBeTruthy()
+    })
+
+    it("en la llegada a oficina el repuesto entra al stock de la oficina, sin hablar de reserva", () => {
+      render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          officeName="Administración"
+          items={[makeItem({ productName: "Filtro de aceite", productSku: "RPT-001", isSparePart: true })]}
+          canOffice={true}
+          canFaena={false}
+          deliveryMode="via_oficina"
+        />,
+      )
+      expect(screen.getAllByText(/Entra al stock de la oficina/).length).toBeGreaterThan(0)
+      expect(screen.queryByText(/queda reservado/)).toBeNull()
     })
   })
 

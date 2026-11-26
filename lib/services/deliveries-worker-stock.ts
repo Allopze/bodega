@@ -21,6 +21,7 @@ import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/e
 import { onEppDeliveryCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { pdtpCatalogActivityIdForLegacyNumber } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 import { applyMovementTx } from "@/lib/services/stock"
+import { SPARE_PART_FORBIDDEN_MESSAGE } from "@/lib/services/stock-reservations"
 import { inTransitDeliveryWarning, readInTransitToWorksite, type InTransitDeliveryLine } from "@/lib/services/dispatch-in-transit"
 import { codeYear, todayInChile } from "@/lib/utils"
 import { backdatedDeliveryMessage, earliestDeliveryDate } from "@/lib/validation/operations"
@@ -275,6 +276,9 @@ export async function registerWorkerStockDelivery(
       const product = await tx.query.products.findFirst({ where: eq(products.id, item.productId) })
       if (!product || !product.isActive) throw new Error("Producto no disponible")
       if (product.isService) throw new Error("Los servicios no se entregan desde bodega")
+      // Un repuesto sólo sale de la bodega al usarse en una OT (ADR mantención 0001, D8): el motor de
+      // stock también lo bloquea, pero acá se dice antes de escribir la línea de la entrega.
+      if (product.isSparePart) throw new Error(SPARE_PART_FORBIDDEN_MESSAGE)
       if (product.isEpp && !Number.isInteger(item.quantity)) {
         throw new Error("Los EPP se entregan en cantidades enteras")
       }

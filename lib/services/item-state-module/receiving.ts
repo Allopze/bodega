@@ -43,11 +43,13 @@ export async function receiveItemTx(
     const product = item.productId
       ? await tx.query.products.findFirst({ where: eq(products.id, item.productId) })
       : null
-    // Texto libre, productos de servicio y repuestos de catálogo no generan
-    // stock al recibirse (el repuesto es de consumo directo: se instala en la
-    // faena, no pasa por la bodega), por lo que no tienen una entrega posterior
-    // desde Bodega. Al completarse la recepción llegan directamente al estado
-    // terminal; los productos físicos de catálogo sí quedan "received" para su
+    // Texto libre, servicios y repuestos de catálogo no tienen una entrega posterior
+    // desde Bodega: al completarse la recepción llegan directamente al estado
+    // terminal. El repuesto SÍ entra al stock de la faena (ADR mantención 0001, D1;
+    // lo mueve `registerReceipt`) y queda reservado para su OT, pero no se entrega a
+    // un trabajador (D8): su única salida es el consumo en la OT. Para Compras el
+    // ciclo termina al llegar a faena (D10) y el consumo se sigue en la reserva y el
+    // kárdex. Los demás productos físicos de catálogo quedan "received" para su
     // posterior entrega.
     const fullyReceivedTarget: ItemStatus = !item.productId || product?.isService || product?.isSparePart
       ? "delivered"

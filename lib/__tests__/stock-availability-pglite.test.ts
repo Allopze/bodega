@@ -82,7 +82,8 @@ beforeAll(async () => {
     { id: PRODUCT_MEDIUM, sku: "GUANTE-M", name: "Guante", categoryId: CATEGORY_ID, unitOfMeasure: "par", isActive: true, createdAt: NOW, updatedAt: NOW },
     { id: PRODUCT_XL, sku: "GUANTE-XL", name: "Guante", categoryId: CATEGORY_ID, unitOfMeasure: "par", isActive: true, createdAt: NOW, updatedAt: NOW },
     { id: SERVICE, sku: "SERV-01", name: "Calibración", categoryId: CATEGORY_ID, unitOfMeasure: "servicio", isService: true, isActive: true, createdAt: NOW, updatedAt: NOW },
-    // Repuesto de catálogo: consumo directo, nunca ingresa a la bodega.
+    // Repuesto de catálogo: desde el ADR de mantención 0001 entra al stock de la faena y, por la vía
+    // oficina, viaja en guía; su pedido por llegar cuenta como stock en tránsito.
     { id: SPARE_PART, sku: "RPT-001", name: "Filtro hidráulico", categoryId: CATEGORY_ID, unitOfMeasure: "unidad", isSparePart: true, partNumber: "HF-35", isActive: true, createdAt: NOW, updatedAt: NOW },
   ])
   await inMemoryDb.insert(schema.worksiteStock).values([
@@ -102,7 +103,7 @@ beforeAll(async () => {
     { id: "request-item-s", requestId: "request-alpha", productId: PRODUCT_SMALL, quantity: 10, status: "partially_delivered", createdAt: NOW, updatedAt: NOW },
     { id: "request-item-l", requestId: "request-alpha", productId: PRODUCT_LARGE, quantity: 6, status: "partially_received", createdAt: NOW, updatedAt: NOW },
     { id: "request-item-service", requestId: "request-alpha", productId: SERVICE, quantity: 50, status: "partially_received", createdAt: NOW, updatedAt: NOW },
-    // Pedido y aprobado, pero el repuesto de catálogo no es stock en tránsito: no cuenta.
+    // Pedido y aprobado: el repuesto de catálogo también es stock por llegar a la faena.
     { id: "request-item-spare-part", requestId: "request-alpha", productId: SPARE_PART, quantity: 9, status: "approved", createdAt: NOW, updatedAt: NOW },
     // Aprobado y todavía sin OC: también está por recibir, entero.
     { id: "request-item-approved", requestId: "request-alpha", productId: PRODUCT_LARGE, quantity: 2, status: "approved", createdAt: NOW, updatedAt: NOW },
@@ -162,6 +163,8 @@ describe("getStockAvailability", () => {
       // recibir, y la entrega de 2 no descuenta nada.
       { worksiteId: WS_ALPHA, productId: PRODUCT_SMALL, incoming: 6 },
       { worksiteId: WS_ALPHA, productId: PRODUCT_XL, incoming: 4 },
+      // El repuesto ya no es de consumo directo: lo aprobado y no recibido (9) también está en camino.
+      { worksiteId: WS_ALPHA, productId: SPARE_PART, incoming: 9 },
     ])
   })
 
@@ -185,6 +188,15 @@ describe("getIncomingWithoutStock", () => {
         productName: "Guante",
         productSku: "GUANTE-M",
         unitOfMeasure: "par",
+      },
+      // El repuesto tampoco ha entrado nunca a Alfa: sólo aparece lo por recibir.
+      {
+        worksiteId: WS_ALPHA,
+        productId: SPARE_PART,
+        incoming: 9,
+        productName: "Filtro hidráulico",
+        productSku: "RPT-001",
+        unitOfMeasure: "unidad",
       },
     ])
   })

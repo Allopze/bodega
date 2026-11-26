@@ -41,6 +41,8 @@ import {
   dispatchGuides,
   fuelVehicles,
   inventoryMovements,
+  mantPartsAllocationSources,
+  mantPartsAllocations,
   purchaseOrderItems,
   purchaseOrders,
   purchaseRequestItems,
@@ -72,6 +74,7 @@ import {
 import { receiveItemTx } from "@/lib/services/item-state"
 import { notifyAfterCommit } from "@/lib/services/notifications"
 import { notifyWorkOrderPartsReceived } from "@/lib/services/mantencion/work-orders/notifications"
+import { addToAllocationTx, lockForStockTx, shrinkAllocationsForSourceTx } from "@/lib/services/mantencion/parts"
 import type { DispatchGuideInput } from "@/lib/validation/dispatch-guides"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
@@ -415,8 +418,6 @@ export async function prepareDispatchGuideForOfficeReceiptTx(
       eq(receipts.purchaseOrderId, input.purchaseOrderId),
       eq(purchaseOrderItems.purchaseOrderId, input.purchaseOrderId),
       eq(products.isService, false),
-      // El repuesto de catálogo es de consumo directo: no ingresó stock a la oficina, no hay qué trasladar.
-      eq(products.isSparePart, false),
       gt(receiptItems.quantityReceived, 0),
     ))
     .orderBy(asc(receiptItems.id))
@@ -517,7 +518,6 @@ export async function prepareAdditionalDispatchGuideForOfficeReceipt(
         eq(receiptItems.receiptId, receiptId),
         eq(purchaseOrderItems.purchaseOrderId, order.id),
         eq(products.isService, false),
-        eq(products.isSparePart, false),
         gt(receiptItems.quantityReceived, 0),
       ))
       .orderBy(asc(receiptItems.id))
@@ -784,6 +784,7 @@ async function guideItemsTx(tx: Tx, guideId: string) {
       differenceReason: dispatchGuideItems.differenceReason,
       name:      products.name,
       isService: products.isService,
+      isSparePart: products.isSparePart,
     })
     .from(dispatchGuideItems)
     .innerJoin(products, eq(dispatchGuideItems.productId, products.id))
@@ -916,6 +917,33 @@ async function assertEnoughStock(
 }
 
 /**
+ * Repuestos de la guía que traen OT (ADR mantención 0001, D11): cada línea con
+ * `purchaseOrderItemId` apunta a un ítem de solicitud, y éste a la OT y, si nació de
+ * una nota de pedido, a su línea. Es la trazabilidad de la reserva que nace al
+ * despachar. Sin OT no hay reserva: el repuesto llega a la faena como stock libre.
+ */
+async function sparePartTracesTx(
+  tx: Tx,
+  items: Array<{ purchaseOrderItemId: string | null; isSparePart: boolean }>,
+): Promise<Map<string, { requestItemId: string; workOrderId: string; partsNoteItemId: string | null }>> {
+  const orderItemIds = items.flatMap((item) => (item.isSparePart && item.purchaseOrderItemId ? [item.purchaseOrderItemId] : []))
+  if (orderItemIds.length === 0) return new Map()
+  const rows = await tx
+    .select({
+      orderItemId: purchaseOrderItems.id,
+      requestItemId: purchaseRequestItems.id,
+      workOrderId: purchaseRequestItems.workOrderId,
+      partsNoteItemId: purchaseRequestItems.partsNoteItemId,
+    })
+    .from(purchaseOrderItems)
+    .innerJoin(purchaseRequestItems, eq(purchaseRequestItems.id, purchaseOrderItems.requestItemId))
+    .where(inArray(purchaseOrderItems.id, orderItemIds))
+  return new Map(rows.flatMap((row) => (row.workOrderId
+    ? [[row.orderItemId, { requestItemId: row.requestItemId, workOrderId: row.workOrderId, partsNoteItemId: row.partsNoteItemId }] as const]
+    : [])))
+}
+
+/**
  * Despacha la guía: descuenta en la oficina, abona en la faena y sella el
  * documento. Todo en una transacción; si algo falla, no queda ni stock movido
  * ni guía despachada.
@@ -950,6 +978,18 @@ export async function dispatchDispatchGuide(
       .limit(1)
     const destinationName = destination?.name ?? "faena"
 
+    // Regla de bloqueo 3: las OT de las líneas, la faena de destino y las filas de stock de los
+    // repuestos se toman ANTES de cualquier movimiento, en el orden global (OT → faena → stock).
+    const traces = await sparePartTracesTx(tx, items)
+    const spareParts = items.filter((item) => item.isSparePart)
+    if (spareParts.length > 0) {
+      await lockForStockTx(tx, {
+        workOrderIds: [...new Set([...traces.values()].map((trace) => trace.workOrderId))],
+        worksiteId: guide.destinationWorksiteId,
+        productIds: spareParts.map((item) => item.productId),
+      })
+    }
+
     await assertEnoughStock(tx, guide.originWorksiteId, items, (shortages) =>
       `Stock insuficiente en ${OFFICE_ORIGIN_LABEL} para: ${shortages.join("; ")}`)
 
@@ -977,6 +1017,23 @@ export async function dispatchDispatchGuide(
         userEmail:     actor.userEmail,
         reason:        `Guía ${guide.code} · ingreso desde ${OFFICE_ORIGIN_LABEL}`,
       })
+      // El repuesto que llega a la faena para una OT queda reservado para ella (D5/D11). Si la OT
+      // ya cerró o se anuló, `addToAllocationTx` devuelve `null` y el stock queda libre.
+      const trace = item.purchaseOrderItemId ? traces.get(item.purchaseOrderItemId) : undefined
+      if (trace) {
+        await addToAllocationTx(tx, {
+          workOrderId: trace.workOrderId,
+          worksiteId: guide.destinationWorksiteId,
+          productId: item.productId,
+          quantity: item.quantity,
+          source: "traslado",
+          dispatchGuideId: guide.id,
+          requestItemId: trace.requestItemId,
+          noteItemId: trace.partsNoteItemId,
+          actorUserId: actor.userId,
+          userEmail: actor.userEmail,
+        })
+      }
     }
 
     // Doble cinturón: la fila ya está bloqueada, pero el `WHERE status='draft'`
@@ -1069,11 +1126,14 @@ export async function confirmDispatchGuideReceipt(
   // aviso a mantención que da `registerReceipt` cuando la OC llega directo a
   // faena. Una OC vía oficina llega a faena por acá y antes no avisaba.
   const partsArrivals = new Map<string, Set<string>>()
+  // De esas líneas, las que nacieron de una nota de pedido: su autor también recibe aviso.
+  const partsNoteLines = new Map<string, Set<string>>()
   const partsReceipt: { id: string | null } = { id: null }
 
   const result = await db.transaction(async (tx) => {
     shortfallNotices.length = 0
     partsArrivals.clear()
+    partsNoteLines.clear()
     partsReceipt.id = null
     const guide = await lockGuide(tx, guideId)
     if (guide.status === "received") throw new Error("La recepción de esta guía ya fue confirmada")
@@ -1188,7 +1248,7 @@ export async function confirmDispatchGuideReceipt(
           })
           if (fullReceived) {
             const [requestItem] = await tx
-              .select({ workOrderId: purchaseRequestItems.workOrderId })
+              .select({ workOrderId: purchaseRequestItems.workOrderId, partsNoteItemId: purchaseRequestItems.partsNoteItemId })
               .from(purchaseRequestItems)
               .where(eq(purchaseRequestItems.id, line.poItem.requestItemId))
             if (requestItem?.workOrderId) {
@@ -1196,6 +1256,11 @@ export async function confirmDispatchGuideReceipt(
               lines.add(line.poItem.requestItemId)
               partsArrivals.set(requestItem.workOrderId, lines)
               partsReceipt.id = receiptId
+              if (requestItem.partsNoteItemId) {
+                const noteLines = partsNoteLines.get(requestItem.workOrderId) ?? new Set<string>()
+                noteLines.add(line.poItem.requestItemId)
+                partsNoteLines.set(requestItem.workOrderId, noteLines)
+              }
             }
           }
         }
@@ -1314,8 +1379,10 @@ export async function confirmDispatchGuideReceipt(
   const receiptForParts = partsReceipt.id
   if (receiptForParts) {
     for (const [workOrderId, lines] of partsArrivals) {
+      const noteLines = partsNoteLines.get(workOrderId)
       notifyAfterCommit(() => notifyWorkOrderPartsReceived({
         workOrderId, receiptId: receiptForParts, actorUserId: actor.userId, itemCount: lines.size,
+        ...(noteLines?.size ? { requestItemIds: [...noteLines] } : {}),
       }))
     }
   }
@@ -1362,6 +1429,34 @@ export async function cancelDispatchGuide(
     const items = hadStockEgress ? await guideItemsTx(tx, guideId) : []
 
     if (hadStockEgress) {
+      // Repuestos (ADR mantención 0001): lo que esta guía reservó para una OT se rebaja ANTES de
+      // revertir el stock, para que la guarda del motor ya vea la reserva achicada. Si el repuesto
+      // ya se usó, `shrinkAllocationsForSourceTx` lanza con el registro y la OT, y la anulación se
+      // bloquea. Bloqueo en el orden global: OT → faena de destino → filas de stock.
+      const spareParts = items.filter((item) => item.isSparePart)
+      if (spareParts.length > 0) {
+        const reservedFor = await tx
+          .select({ workOrderId: mantPartsAllocations.workOrderId })
+          .from(mantPartsAllocationSources)
+          .innerJoin(mantPartsAllocations, eq(mantPartsAllocations.id, mantPartsAllocationSources.allocationId))
+          .where(eq(mantPartsAllocationSources.dispatchGuideId, guide.id))
+        await lockForStockTx(tx, {
+          workOrderIds: [...new Set(reservedFor.map((row) => row.workOrderId))],
+          worksiteId: guide.destinationWorksiteId,
+          productIds: spareParts.map((item) => item.productId),
+        })
+        for (const item of spareParts) {
+          await shrinkAllocationsForSourceTx(tx, {
+            dispatchGuideId: guide.id,
+            productId: item.productId,
+            quantity: item.quantity,
+            source: "anulacion_guia",
+            actorUserId: actor.userId,
+            reason: `Anulación de la guía ${guide.code}: ${reason}`,
+          })
+        }
+      }
+
       await assertEnoughStock(tx, guide.destinationWorksiteId, items, (shortages) =>
         "No se puede anular: la faena ya consumió parte de lo despachado " +
         `(${shortages.join("; ")}). Regulariza con un ajuste de inventario en Bodega.`)

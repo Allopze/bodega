@@ -106,9 +106,9 @@ export async function getStockAvailability(
     .where(and(
       requestScope,
       eq(worksites.isActive, true),
+      // El repuesto de catálogo SÍ cuenta: entra al stock de la faena (ADR mantención 0001, D1) y, por
+      // la vía oficina, viaja en guía como el resto de la mercadería.
       eq(products.isService, false),
-      // Consumo directo: el repuesto de catálogo no llega a la bodega, no es stock en tránsito.
-      eq(products.isSparePart, false),
       notInArray(purchaseRequests.status, [...TERMINAL_REQUEST_STATUSES]),
       inArray(purchaseRequestItems.status, [...NOT_YET_AT_FAENA_ITEM_STATUSES]),
     ))

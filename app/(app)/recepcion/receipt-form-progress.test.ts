@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { describeStageProgress, faenaStockEffect, rejectionHint } from "./receipt-form-progress"
+import { REJECTION_HINT, describeStageProgress, faenaStockEffect, sparePartStockNote } from "./receipt-form-progress"
 import type { ReceiptOcItem } from "./receipt-form.types"
 
 function item(overrides: Partial<ReceiptOcItem> = {}): ReceiptOcItem {
@@ -71,21 +71,25 @@ describe("describeStageProgress", () => {
   })
 })
 
-describe("faenaStockEffect / rejectionHint", () => {
+describe("faenaStockEffect / sparePartStockNote / REJECTION_HINT", () => {
   it("sin repuestos, la recepción actualiza stock", () => {
     expect(faenaStockEffect([item()])).toBe("Actualiza stock y trazabilidad.")
-    expect(rejectionHint([item()])).toBe("lo que llegó pero no ingresa a stock")
+    expect(REJECTION_HINT).toBe("lo que llegó pero no ingresa a stock")
   })
 
-  it("sólo repuestos: consumo directo, sin hablar de stock", () => {
-    const parts = [item({ isDirectConsumption: true }), item({ id: "oci-2", isDirectConsumption: true })]
-    expect(faenaStockEffect(parts)).toBe("Consumo directo: los repuestos se entregan sin pasar por stock.")
-    expect(rejectionHint(parts)).toBe("lo que llegó pero no se acepta")
+  it("sólo repuestos: entran al stock de la faena y, con OT, quedan reservados (ya no es consumo directo)", () => {
+    const parts = [item({ isSparePart: true }), item({ id: "oci-2", isSparePart: true })]
+    expect(faenaStockEffect(parts)).toBe("Los repuestos entran al stock de la faena; si tienen OT, quedan reservados para ella.")
+    expect(faenaStockEffect(parts)).not.toMatch(/consumo directo|sin pasar por stock/i)
   })
 
   it("mixta: dice las dos cosas", () => {
-    const mixed = [item(), item({ id: "oci-2", isDirectConsumption: true })]
-    expect(faenaStockEffect(mixed)).toBe("Actualiza stock y trazabilidad; los repuestos son de consumo directo y no pasan por stock.")
-    expect(rejectionHint(mixed)).toBe("lo que llegó pero no ingresa a stock")
+    const mixed = [item(), item({ id: "oci-2", isSparePart: true })]
+    expect(faenaStockEffect(mixed)).toBe("Actualiza stock y trazabilidad; los repuestos con OT quedan reservados para ella.")
+  })
+
+  it("la nota de cada repuesto depende de la etapa: la oficina no reserva", () => {
+    expect(sparePartStockNote("office")).toBe("Entra al stock de la oficina")
+    expect(sparePartStockNote("faena")).toBe("Entra al stock de la faena; si tiene OT, queda reservado para ella")
   })
 })
