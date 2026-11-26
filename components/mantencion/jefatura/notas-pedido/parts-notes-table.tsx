@@ -88,8 +88,11 @@ export function PartsNotesTable({ rows }: { rows: PartsNoteListRow[] }) {
             <NoteFlags row={row} />
           </TableCell>
           <TableCell>
-            <VehicleIdentity code={row.equipmentCode} plate={row.equipmentPlate} />
-            <Link href={`/mantencion/ot/${row.workOrderId}`} aria-label={`Ver la OT ${row.workOrderFolio}`} className={OT_LINK}>{row.workOrderFolio}</Link>
+            {/* En columna: el equipo (código y patente) y debajo su OT. En línea, el folio quedaba pegado al código. */}
+            <div className="flex flex-col items-start gap-1">
+              <VehicleIdentity code={row.equipmentCode} plate={row.equipmentPlate} />
+              <Link href={`/mantencion/ot/${row.workOrderId}`} aria-label={`Ver la OT ${row.workOrderFolio}`} className={OT_LINK}>{row.workOrderFolio}</Link>
+            </div>
           </TableCell>
           <TableCell>{row.worksiteName}</TableCell>
           <TableCell>{row.requestedByName}</TableCell>

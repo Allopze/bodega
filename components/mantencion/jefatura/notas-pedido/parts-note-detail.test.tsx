@@ -30,6 +30,9 @@ function view(overrides: Partial<React.ComponentProps<typeof PartsNoteDetailView
 }
 
 beforeEach(() => vi.clearAllMocks())
+
+// El selector de repuesto (Radix) desplaza la opción activa; jsdom no implementa `scrollIntoView`.
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, writable: true, value: vi.fn() })
 afterEach(cleanup)
 
 describe("PartsNoteDetailView: cabecera", () => {
@@ -134,6 +137,10 @@ describe("PartsNoteDetailView: líneas", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sacar de bodega" }))
     const dialog = within(await screen.findByRole("dialog"))
     expect(dialog.getByText(/El mecánico pidió «Filtro de aceite motor»/)).toBeTruthy()
+    // Aunque haya un solo repuesto con stock, no se preselecciona: puede no ser el que pidió el mecánico.
+    expect((dialog.getByRole("button", { name: "Sacar de bodega" }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(dialog.getByRole("combobox", { name: "Repuesto de la bodega" }))
+    fireEvent.click(await screen.findByRole("option", { name: /Filtro de aceite FA-1/ }))
     expect(dialog.getByText("3 libres en Biodiversa")).toBeTruthy()
     fireEvent.click(dialog.getByRole("button", { name: "Sacar de bodega" }))
     await waitFor(() => expect(actions.resolveNoteItemFromStockAction).toHaveBeenCalledWith({ noteId: "n1", itemId: "i1", productId: "p9", quantity: 1 }))

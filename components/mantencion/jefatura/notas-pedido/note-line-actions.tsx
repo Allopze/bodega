@@ -29,7 +29,9 @@ function TakeFromStockDialog({ noteId, line, worksiteName, stockOptions, onOpenC
 }) {
   const router = useRouter()
   const op = useOperation()
-  const [productId, setProductId] = React.useState(line.productId ?? (stockOptions.length === 1 ? stockOptions[0]!.productId : ""))
+  // Sin preselección cuando el mecánico pidió en texto libre: aunque haya un solo repuesto con stock, puede no
+  // ser el que pidió (un clic reservaría el equivocado). Jefatura elige siempre.
+  const [productId, setProductId] = React.useState(line.productId ?? "")
   const chosen = stockOptions.find((option) => option.productId === productId)
   const free = productId === line.productId ? (line.freeInWorksite ?? chosen?.free ?? 0) : (chosen?.free ?? 0)
   const max = Math.min(line.quantity, free)
