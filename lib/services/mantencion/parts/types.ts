@@ -120,11 +120,25 @@ export type PartsNoteDetailLine = {
   freeInWorksite: number | null
 }
 
+/** Repuesto con stock libre en la faena actual del equipo: lo que jefatura puede «Sacar de bodega». */
+export type PartsNoteStockOption = {
+  productId: string
+  name: string
+  partNumber: string | null
+  unit: string
+  free: number
+}
+
 export type PartsNoteDetail = Omit<PartsNoteListRow, "pendingLines" | "totalLines"> & {
   notes: string | null
   voidReason: string | null
   lines: PartsNoteDetailLine[]
   canManage: boolean
+  /**
+   * Repuestos del catálogo con stock libre en la faena actual del equipo (sólo para quien
+   * resuelve). El mecánico pide en texto libre: jefatura elige aquí cuál saca de la bodega.
+   */
+  stockOptions?: PartsNoteStockOption[]
 }
 
 /** Lo que `?np=<id>` precarga en la solicitud de repuestos (L2). */

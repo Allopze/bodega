@@ -65,10 +65,30 @@ async function refreshNow(userId: string, withOthers: boolean, fetchImpl?: typeo
   return outcome
 }
 
-/** Refresca el catálogo de una cuenta. Una sola petición a la vez por cuenta. */
+/** Refresco encadenado detrás del que está en vuelo, uno por cuenta (ver `refreshCatalog`). */
+const queued = new Map<string, Promise<RefreshOutcome>>()
+
+/**
+ * Refresca el catálogo de una cuenta. Una sola petición a la vez por cuenta.
+ *
+ * Si se pide otra mientras una vuela, NO se devuelve la que vuela: pudo salir antes del
+ * cambio que motiva el pedido (al volver la señal, el refresco del evento `online` sale
+ * milisegundos antes de que la cola envíe una nota de pedido, y el de después del envío
+ * quedaba fundido con ese, con el catálogo viejo). Se encadena una más, una sola: los
+ * pedidos que lleguen mientras tanto esperan esa misma.
+ */
 export function refreshCatalog(userId: string, options: { withOthers?: boolean; fetchImpl?: typeof fetch } = {}): Promise<RefreshOutcome> {
   const existing = inFlight.get(userId)
-  if (existing) return existing
+  if (existing) {
+    const chained = queued.get(userId)
+    if (chained) return chained
+    const next = existing.then(() => {
+      queued.delete(userId)
+      return refreshCatalog(userId, options)
+    })
+    queued.set(userId, next)
+    return next
+  }
   const promise = refreshNow(userId, options.withOthers ?? true, options.fetchImpl)
     .catch((): RefreshOutcome => "error")
     .finally(() => { inFlight.delete(userId) })

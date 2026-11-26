@@ -129,6 +129,12 @@ async function conciliateLocked(tx: Tx, viewer: MantViewer, input: ConciliateInp
     return { ok: false, message: await stillMissingMessage(tx, line.productId, quantity, result) }
   }
 
+  // `consumePartTx` puede tomar la reserva vigente de la OT en otra faena (la OT sigue al equipo
+  // en un traslado). Quien concilia sólo escribe stock de sus faenas: si cae fuera, se deshace.
+  if (result.worksiteId !== worksiteId && !inScope(viewer, result.worksiteId)) {
+    throw new ConciliationAbort("El repuesto está reservado en una faena que no tienes asignada: concilia desde esa faena.")
+  }
+
   const [applied] = await tx.update(mantRecordParts)
     .set({ stockStatus: "descontado", inventoryMovementId: result.movementId, allocationId: result.allocationId, stockNote: null })
     .where(and(eq(mantRecordParts.id, line.id), eq(mantRecordParts.stockStatus, "pendiente_conciliar")))

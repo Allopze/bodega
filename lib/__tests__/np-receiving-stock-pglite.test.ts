@@ -45,7 +45,7 @@ const { IDS, seedMantFixtures } = await import("./mantencion-sync-fixtures")
 const parts = await import("@/lib/services/mantencion/parts")
 const { registerReceipt } = await import("@/lib/services/receiving")
 const { voidReceipt } = await import("@/lib/services/receiving-void")
-const { cancelDispatchGuide, confirmDispatchGuideReceipt, dispatchDispatchGuide } = await import("@/lib/services/dispatch-guides")
+const { cancelDispatchGuide, confirmDispatchGuideReceipt, dispatchDispatchGuide, prepareAdditionalDispatchGuideForOfficeReceipt } = await import("@/lib/services/dispatch-guides")
 const { registerWorkerStockDelivery } = await import("@/lib/services/deliveries")
 const { SPARE_PART_FORBIDDEN_MESSAGE } = await import("@/lib/services/stock-reservations")
 
@@ -496,6 +496,14 @@ describe("anular una recepción", () => {
     expect(await stockOf(P.seal)).toBe(stockBefore)
     const [line] = await testDb.select().from(schema.purchaseOrderItems).where(eq(schema.purchaseOrderItems.id, ocItemIds[0]!))
     expect(line!.quantityReceived).toBe(0)
+  })
+
+  it("una recepción en oficina anterior al corte no arma una guía con el repuesto: nunca entró al stock de la oficina", async () => {
+    const { orderId, ocItemIds } = await seedOrder([{ quantity: 3, productId: P.seal }], "via_oficina")
+    const receiptId = `rec-l1-precut-office-${counter}`
+    await testDb.insert(schema.receipts).values({ id: receiptId, code: `REC-L1-PREOF-${counter}`, purchaseOrderId: orderId, receivedBy: IDS.jefe, receivedAt: now, locationType: "office", worksiteId: OFFICE, status: "closed", createdAt: now })
+    await testDb.insert(schema.receiptItems).values({ id: `ri-l1-of-${counter}`, receiptId, purchaseOrderItemId: ocItemIds[0]!, quantityReceived: 3, quantityRejected: 0, quantityDamaged: 0, status: "received" })
+    await expect(prepareAdditionalDispatchGuideForOfficeReceipt(receiptId, { userId: IDS.jefe })).rejects.toThrow("no tiene bienes trasladables")
   })
 })
 

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, gt, ilike, inArray, or, sql, type SQL } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import { fuelVehicles, mantPartsNoteItems, mantPartsNotes, mantWorkOrders, products, users, worksiteStock, worksites } from "@/db/schema"
@@ -7,7 +7,7 @@ import { escapeLikePattern } from "@/lib/utils"
 import type { MantViewer } from "../access"
 import { stockReservationSummary } from "../parts/reads"
 import type {
-  NoteItemResolution, PartsNoteDetail, PartsNoteDetailLine, PartsNoteListFilters, PartsNoteListRow, PartsNoteStatus, PartsNoteTab,
+  NoteItemResolution, PartsNoteDetail, PartsNoteDetailLine, PartsNoteListFilters, PartsNoteListRow, PartsNoteStatus, PartsNoteStockOption, PartsNoteTab,
 } from "../parts/types"
 import { canSeeNote, NP_PERMISSIONS, noteVisibility, noteVisibilitySql } from "./access"
 import { loadLineStates } from "./lines"
@@ -137,6 +137,22 @@ async function freeByProduct(worksiteId: string, productIds: readonly string[]):
   }))
 }
 
+/** Repuestos del catálogo con stock libre (> 0) en una faena, por nombre. Lectura sin bloqueo: para mostrar. */
+async function stockOptionsIn(worksiteId: string): Promise<PartsNoteStockOption[]> {
+  const rows = await db
+    .select({ productId: products.id, name: products.name, partNumber: products.partNumber, unit: products.unitOfMeasure, quantity: worksiteStock.quantity })
+    .from(worksiteStock)
+    .innerJoin(products, eq(products.id, worksiteStock.productId))
+    .where(and(eq(worksiteStock.worksiteId, worksiteId), eq(products.isSparePart, true), gt(worksiteStock.quantity, 0)))
+    .orderBy(asc(products.name))
+  if (rows.length === 0) return []
+  const reserved = await stockReservationSummary({ worksiteIds: [worksiteId], productIds: rows.map((row) => row.productId) })
+  const held = new Map(reserved.map((row) => [row.productId, row.reserved]))
+  return rows
+    .map((row) => ({ productId: row.productId, name: row.name, partNumber: row.partNumber, unit: row.unit, free: Math.max(0, roundQty(Number(row.quantity) - (held.get(row.productId) ?? 0))) }))
+    .filter((row) => row.free > 0)
+}
+
 export async function getPartsNote(viewer: MantViewer, noteId: string): Promise<PartsNoteDetail | null> {
   const visibility = noteVisibility(viewer)
   if (visibility.kind === "none") return null
@@ -203,6 +219,7 @@ export async function getPartsNote(viewer: MantViewer, noteId: string): Promise<
   ])
   const nameOf = new Map(names.map((row) => [row.id, row.name]))
 
+  const canManage = viewer.permissions.includes(NP_PERMISSIONS.manage)
   const lines = items.map((item): PartsNoteDetailLine => {
     const state = states.get(item.id)!
     return {
@@ -241,6 +258,7 @@ export async function getPartsNote(viewer: MantViewer, noteId: string): Promise<
     notes: note.notes,
     voidReason: note.voidReason,
     lines,
-    canManage: viewer.permissions.includes(NP_PERMISSIONS.manage),
+    canManage,
+    stockOptions: canManage && note.vehicleWorksiteId ? await stockOptionsIn(note.vehicleWorksiteId) : [],
   }
 }

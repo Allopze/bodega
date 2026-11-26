@@ -113,6 +113,25 @@ describe("catálogo con ETag", () => {
     expect((request(second, 1).init.headers as Record<string, string>)["If-None-Match"]).toBe('"o1"')
   })
 
+  it("un refresco pedido mientras otro vuela sale después y trae lo nuevo (no se funde con el viejo)", async () => {
+    await saveAccount(account("u-1"))
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    // El primero sale ANTES del cambio (p. ej. al volver la señal) y responde con lo viejo.
+    const stale = vi.fn(async () => { await gate; return json(200, CATALOG, { etag: '"v1"' }) })
+    const fresh = vi.fn(async () => json(200, { ...CATALOG, version: "v2" }, { etag: '"v2"' }))
+    const first = refreshCatalog("u-1", { fetchImpl: stale as unknown as typeof fetch, withOthers: false })
+    // Mientras vuela, la cola envía algo y pide otro refresco: dos pedidos, una sola petición extra.
+    const second = refreshCatalog("u-1", { fetchImpl: fresh as unknown as typeof fetch, withOthers: false })
+    const third = refreshCatalog("u-1", { fetchImpl: fresh as unknown as typeof fetch, withOthers: false })
+    release()
+    expect(await first).toBe("updated")
+    expect(await second).toBe("updated")
+    expect(await third).toBe("updated")
+    expect(fresh).toHaveBeenCalledTimes(1)
+    expect((await loadStoredCatalog("u-1"))?.etag).toBe('"v2"')
+  })
+
   it("una lectura del catálogo nunca usa la cookie", async () => {
     const fetchImpl = vi.fn(async () => json(200, CATALOG, { etag: '"v1"' }))
     await fetchCatalog("token-u-1", null, fetchImpl as unknown as typeof fetch)

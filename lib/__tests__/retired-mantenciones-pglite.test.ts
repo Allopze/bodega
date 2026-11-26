@@ -46,7 +46,10 @@ describe("retiro del módulo antiguo de mantenciones", () => {
     expect(tableNames).toEqual(Array(RETIRED_MAINTENANCE_TABLES.length).fill(null))
   })
 
-  it("retira egreso_mantencion del control de tipos de movimiento", async () => {
+  // 0368 lo retiró junto con `maintenance_parts`; el ADR de mantención 0001 (migración 0403)
+  // lo reintroduce con otro dueño: ahora lo emite el registro del mecánico al usar un repuesto
+  // reservado para su OT. Lo retirado siguen siendo las tablas del módulo antiguo.
+  it("egreso_mantencion vuelve al control de tipos de movimiento con el ADR 0001 (registro del mecánico)", async () => {
     const result = await pg.query<{ definition: string }>(`
       SELECT pg_get_constraintdef(oid) AS definition
       FROM pg_constraint
@@ -54,7 +57,7 @@ describe("retiro del módulo antiguo de mantenciones", () => {
         AND conname = 'inventory_movements_type_valid'
     `)
     expect(result.rows[0]?.definition).toBeTruthy()
-    expect(result.rows[0]?.definition).not.toContain("egreso_mantencion")
+    expect(result.rows[0]?.definition).toContain("egreso_mantencion")
   })
 
   it("rechaza destinos OnWay que creen órdenes antiguas", async () => {

@@ -761,6 +761,18 @@ describe("bandeja de notas de pedido", () => {
     const viewOnly = { ...(await viewerOf(IDS.jefe)), permissions: ["mant:np:view_worksite"] }
     expect((await query.getPartsNote(viewOnly, bio.noteId))?.canManage).toBe(false)
   })
+
+  it("quien resuelve ve los repuestos con stock libre en la faena del equipo para elegir cuál sacar (lo encontró la E2E)", async () => {
+    const { bio } = await seedTray()
+    const gasket = await makeProduct("Empaquetadura culata QA")
+    await ingress(gasket, 2)
+    const jefe = await viewerOf(IDS.jefe)
+    const detail = await query.getPartsNote(jefe, bio.noteId)
+    expect(detail?.stockOptions).toEqual(expect.arrayContaining([expect.objectContaining({ productId: gasket, name: "Empaquetadura culata QA", free: 2 })]))
+    expect(detail?.stockOptions?.every((option) => option.free > 0)).toBe(true)
+    const viewOnly = { ...jefe, permissions: ["mant:np:view_worksite"] }
+    expect((await query.getPartsNote(viewOnly, bio.noteId))?.stockOptions).toEqual([])
+  })
 })
 
 describe("detalle de la NP: etapa, llegado, usado, compras y libre en la faena", () => {
