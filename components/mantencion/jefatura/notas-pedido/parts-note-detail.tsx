@@ -23,7 +23,7 @@ function lineResolvedText(line: PartsNoteDetailLine): string | null {
   const by = line.resolvedByName ? `${line.resolvedByName}${line.resolvedAt ? ` · ${formatDateTime(line.resolvedAt)}` : ""}` : null
   if (line.resolution === "rechazada") return `Motivo: ${line.resolutionReason ?? "sin motivo"}${by ? ` · ${by}` : ""}`
   if (!by) return null
-  if (line.resolution === "desde_stock") return `Reservada por ${by}`
+  if (line.resolution === "desde_stock") return `Reservado por ${by}`
   if (line.resolution === "en_compra") return `Enviada a compra por ${by}`
   return null
 }

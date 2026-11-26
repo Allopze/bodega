@@ -226,7 +226,7 @@ function GroupDisclosure({ label, defaultOpen, pending, children }: { label: str
         <button
           type="button"
           aria-expanded={open}
-          className="mt-1 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left hover:bg-nav-hover-bg focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-(--color-primary) lg:min-h-9"
+          className="mt-1 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left hover:bg-nav-hover-bg focus-ring-inset lg:min-h-9"
         >
           <span className="text-eyebrow flex-1">{label}</span>
           {!open && pending > 0 && <CountBadge count={pending} />}

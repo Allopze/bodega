@@ -102,7 +102,7 @@ export const STAGE_TEXT: Record<PartsNoteLineStage, string> = {
   pedido: "Pedido",
   en_compra: "En compra",
   en_bodega: "Reservado",
-  rechazado: "Rechazada",
+  rechazado: "Rechazado",
 }
 
 /** Insignia de la etapa: el naranja signal es de lo pendiente («Pedido»); lo ya resuelto va en otro tono. */
@@ -117,7 +117,7 @@ export type ProgressStep = { key: "pedido" | "en_compra" | "llego" | "usado"; la
 
 /**
  * La cadena «Pedido → En compra → Llegó 2/2 → Usado 1/2» de una línea. Una línea rechazada no avanza
- * (`null`: se dice «Rechazada» con su motivo). Los números sólo aparecen donde ya hay algo que contar;
+ * (`null`: se dice «Rechazado» con su motivo). Los números sólo aparecen donde ya hay algo que contar;
  * el paso actual se marca con `aria-current` y peso, no sólo con color.
  */
 export function lineProgress(line: { stage: PartsNoteLineStage; quantity: number; arrived: number; used: number }): ProgressStep[] | null {

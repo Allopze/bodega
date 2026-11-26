@@ -192,7 +192,7 @@ export function CommandPalette({ session, enabledModuleIds, disabledSubmoduleHre
               onKeyDown={onInputKey}
               placeholder="Ir a... o escribe un folio (SOL-, OC-, OT-, MP-, MC-, NP-)"
               aria-label="Buscar páginas"
-              className="h-12 flex-1 bg-transparent text-[15px] text-(--color-text) outline-none placeholder:text-(--color-text-subtle)"
+              className="focus-ring-inset h-12 flex-1 rounded-lg bg-transparent text-[15px] text-(--color-text) placeholder:text-(--color-text-subtle)"
             />
             <kbd className="hidden shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-2xs text-(--color-text-subtle) sm:block">esc</kbd>
           </div>

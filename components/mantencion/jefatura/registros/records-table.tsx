@@ -72,8 +72,9 @@ export function RecordState({ row }: { row: RecordListRow }) {
   const notes: ReactNode[] = []
   if (row.workshop?.stale) notes.push(<span key="stale" className={ATTENTION}>Sin actualizar</span>)
   if (row.review === "observado") {
-    // Dice de quién es el turno: con respuesta, de jefatura (revisar); sin ella, del mecánico.
-    notes.push(<span key="review" className={ATTENTION}>Observado · {row.lastObservationAnswered ? "con respuesta" : "espera al mecánico"}</span>)
+    // Dice de quién es el turno: con respuesta es de jefatura (revisar) y va en señal; sin ella es del mecánico y no
+    // pide nada a quien mira la lista.
+    notes.push(<span key="review" className={row.lastObservationAnswered ? ATTENTION : QUIET}>Observado · {row.lastObservationAnswered ? "con respuesta" : "espera al mecánico"}</span>)
   }
   if (row.review === "revisado") notes.push(<span key="review" className="font-medium text-[var(--color-success-ink)]">Revisado</span>)
   const alerts = alertNames(row)

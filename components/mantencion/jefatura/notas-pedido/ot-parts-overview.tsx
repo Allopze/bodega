@@ -93,7 +93,7 @@ export function OtPartsOverview({ workOrderId, overview, canOpenNotes, canManage
                         {line.description} <span className="font-mono text-xs tabular-nums text-[var(--color-text-muted)]">× {formatQty(line.quantity)}</span>
                       </span>
                       {line.stage === "rechazado"
-                        ? <span className="text-xs text-[var(--color-text-muted)]">Rechazada: {line.rejectionReason ?? "sin motivo"}</span>
+                        ? <span className="text-xs text-[var(--color-text-muted)]">Rechazado: {line.rejectionReason ?? "sin motivo"}</span>
                         : <LineProgress line={line} />}
                     </li>
                   ))}

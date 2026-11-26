@@ -81,10 +81,10 @@ describe("lista de registros", () => {
   it("«Sin actualizar» y «Observado» van en tono de señal, nunca en rojo", () => {
     render(<RecordsTable
       sort="fecha" dir="desc" sortHref={sortHref} listQuery=""
-      rows={[row({ id: "b", folio: "MC-B", kind: "C", intervalValue: null, review: "observado", workshop: { daysStopped: 3, stale: true } })]}
+      rows={[row({ id: "b", folio: "MC-B", kind: "C", intervalValue: null, review: "observado", lastObservationAnswered: true, workshop: { daysStopped: 3, stale: true } })]}
     />)
     const t = table()
-    for (const label of ["Sin actualizar", "Observado · espera al mecánico", "En taller · 3 días"]) {
+    for (const label of ["Sin actualizar", "Observado · con respuesta", "En taller · 3 días"]) {
       expect(t.getByText(label).className).toContain("--color-signal-ink")
       expect(t.getByText(label).className).not.toContain("--color-danger")
     }
@@ -110,6 +110,9 @@ describe("lista de registros", () => {
     expect(within(rowOf("MP-A")).getByText("Observado · espera al mecánico")).toBeTruthy()
     expect(within(rowOf("MP-B")).getByText("Observado · con respuesta")).toBeTruthy()
     expect(within(rowOf("MP-C")).queryByText(/Observado/)).toBeNull()
+    // El turno de jefatura va en señal; el del mecánico no pide nada a quien mira la lista.
+    expect(within(rowOf("MP-B")).getByText("Observado · con respuesta").className).toContain("--color-signal-ink")
+    expect(within(rowOf("MP-A")).getByText("Observado · espera al mecánico").className).toContain("--color-text-muted")
   })
 
   it("la revisión pendiente no se pinta: es lo normal y las pestañas ya cuentan lo que falta", () => {

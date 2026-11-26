@@ -40,7 +40,7 @@ describe("«Repuestos» de la OT: notas de pedido", () => {
     expect(chains[0]!.textContent).toBe("Pedido → En compra → Llegó 2/2 → Usado 1/2")
     expect(within(chains[0]!).getByText("Usado 1/2").closest("li")!.getAttribute("aria-current")).toBe("step")
     expect(chains[1]!.textContent).toBe("Pedido → En compra → Llegó → Usado")
-    expect(within(note).getByText("Rechazada: Ya hay en la faena")).toBeTruthy()
+    expect(within(note).getByText("Rechazado: Ya hay en la faena")).toBeTruthy()
   })
 
   it("sin permiso para ver la bandeja el código es texto; una nota ya cerrada no lleva el naranja", () => {

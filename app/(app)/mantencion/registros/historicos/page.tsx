@@ -47,7 +47,7 @@ const TYPE_TABS: ReadonlyArray<{ type: ActionTypeOrUnknown; label: string }> = [
  * bajaba de ~420 px y empujaba la página de lado. Ahora cada opción va en una línea y el control se desplaza dentro de
  * su caja. El anillo de foco va por dentro: el contenedor con desplazamiento lo recortaría por fuera.
  */
-const SCROLLABLE_SEGMENTS = "max-w-full overflow-x-auto [&_a]:whitespace-nowrap [&_a:focus-visible]:outline-offset-[-2px]"
+const SCROLLABLE_SEGMENTS = "max-w-full overflow-x-auto [&_a]:whitespace-nowrap focus-ring-inset"
 
 function periodText(params: HistoryParams): string {
   if (params.period === "todo") return "de todo el historial"

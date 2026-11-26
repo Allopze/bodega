@@ -273,6 +273,14 @@ strong, b {
   outline: none;
 }
 
+/* Dentro de un contenedor que recorta (la paleta, un segmentado con desplazamiento, el menú lateral) el anillo
+   va por dentro. Es una regla sin capa, como la de arriba: las utilidades de Tailwind viven en
+   `@layer utilities` y no le ganan, así que `focus-visible:outline-offset-[-2px]` no tenía efecto. */
+.focus-ring-inset:focus-visible,
+.focus-ring-inset :focus-visible {
+  outline-offset: -2px;
+}
+
 /* ─── Scrollbar ── */
 * {
   scrollbar-width: thin;

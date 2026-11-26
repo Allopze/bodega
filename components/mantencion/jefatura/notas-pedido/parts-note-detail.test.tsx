@@ -93,7 +93,7 @@ describe("PartsNoteDetailView: líneas", () => {
     expect(first.getByText("Pendiente de recepción")).toBeTruthy()
     expect(first.queryByText("purchased")).toBeNull()
     const second = within(items[1]!)
-    expect(second.getByText("Rechazada")).toBeTruthy()
+    expect(second.getByText("Rechazado")).toBeTruthy()
     expect(second.getByText(/Ya hay en la faena/)).toBeTruthy()
     expect(second.getByText(/Ana Pérez · 21-11-2026/)).toBeTruthy()
   })
@@ -133,7 +133,7 @@ describe("PartsNoteDetailView: líneas", () => {
     })
     const line = within(lineItems()[0]!)
     expect(line.getByText("Reservado")).toBeTruthy()
-    expect(line.getByText(/^Reservada por Ana Pérez · 21-11-2026/)).toBeTruthy()
+    expect(line.getByText(/^Reservado por Ana Pérez · 21-11-2026/)).toBeTruthy()
     expect(line.queryByText(/En bodega|Sacada de la bodega/)).toBeNull()
   })
 
