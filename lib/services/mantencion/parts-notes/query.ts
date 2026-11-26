@@ -110,6 +110,7 @@ export async function listPartsNotes(viewer: MantViewer, filters: PartsNoteListF
   return {
     rows: rows.map((row): PartsNoteListRow => ({
       ...row,
+      equipmentCode: row.equipmentCode ?? "",
       status: row.status as PartsNoteStatus,
       requestedByName: row.requestedByName ?? "",
       pendingLines: Number(row.pendingLines),
@@ -230,7 +231,7 @@ export async function getPartsNote(viewer: MantViewer, noteId: string): Promise<
     status: note.status as PartsNoteStatus,
     workOrderId: note.workOrderId,
     workOrderFolio: note.workOrderFolio,
-    equipmentCode: note.equipmentCode,
+    equipmentCode: note.equipmentCode ?? "",
     equipmentPlate: note.equipmentPlate,
     worksiteId: note.worksiteId,
     worksiteName: note.worksiteName,

@@ -40,7 +40,7 @@ export interface FlowPart {
 }
 
 /** Lo que una línea de repuesto aporta al contrato más allá de cantidad y texto: nada si es texto libre. */
-export function partStockFields(part: FlowPart): Pick<FlowPart, "source" | "productId" | "allocationId"> {
+export function partStockFields(part: Pick<FlowPart, "source" | "productId" | "allocationId">): Pick<FlowPart, "source" | "productId" | "allocationId"> {
   return part.source ? { source: part.source, productId: part.productId ?? null, allocationId: part.allocationId ?? null } : {}
 }
 

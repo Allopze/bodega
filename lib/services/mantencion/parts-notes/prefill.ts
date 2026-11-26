@@ -63,7 +63,8 @@ export async function loadPartsNotePrefill(viewer: MantViewer, noteId: string): 
     noteId: note.id,
     noteCode: note.code,
     // La solicitud nace en la faena donde está el equipo hoy: es donde se necesita el repuesto.
-    worksiteId: note.vehicleWorksiteId,
+    // Un equipo sin faena (no debería) cae a la faena de la NP.
+    worksiteId: note.vehicleWorksiteId ?? note.worksiteId,
     vehicleId: note.vehicleId,
     vehicleLabel: vehicleLabel(note.vehicleCode, note.vehiclePlate),
     workOrderId: note.workOrderId,
