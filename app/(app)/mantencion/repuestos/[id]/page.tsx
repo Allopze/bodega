@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { can, requirePermission } from "@/lib/auth/can"
 import { getSparePartDetail } from "@/lib/services/spare-parts-catalog"
 import { loadSparePartUnits } from "../unit-options"
+import { bodegaProductHref } from "@/lib/routing/bodega-product"
 import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 export const metadata: Metadata = { title: "Ficha de repuesto" }
@@ -52,6 +53,10 @@ export default async function SparePartDetailPage({ params }: { params: Promise<
         : "/solicitudes/nueva?tipo=repuestos"
       : null,
   }
+
+  // «Ver existencias en bodega» sólo con el permiso que exige /bodega (`warehouse:view_stock`); Bodega lo valida igual.
+  // El repuesto es un producto del catálogo: su id es el que filtra el kárdex.
+  const bodegaHref = can(session, "warehouse:view_stock") ? bodegaProductHref(part.id) : null
 
   const hasActivity = suppliers.length + priceHistory.length + purchasedFor.length + recentLines.length > 0
   const unitLabel = units.find((unit) => unit.code === part.unitOfMeasure)?.label ?? part.unitOfMeasure
@@ -108,7 +113,7 @@ export default async function SparePartDetailPage({ params }: { params: Promise<
           )}
         </div>
         <aside aria-label="Datos del repuesto" className="lg:sticky lg:top-4">
-          <SparePartDataCard part={part} unitLabel={unitLabel} />
+          <SparePartDataCard part={part} unitLabel={unitLabel} bodegaHref={bodegaHref} />
         </aside>
       </div>
     </PageContainer>

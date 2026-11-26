@@ -18,8 +18,28 @@ function unique(values: Array<string | null | undefined>): string[] {
 }
 
 /**
- * Barra de filtros de las pestañas Looker: rango, faena múltiple, código con búsqueda y
- * frecuencia. Los controles reflejan lo que fijó un clic (el equipo deriva su faena y su
+ * Planificación es el estado de hoy de cada equipo: ninguna de sus consultas filtra por fecha, así que su barra no
+ * ofrece el período (PAN4-6). El período sigue en la URL para las otras pestañas.
+ */
+function hasPeriod(tab: LookerFilters["tab"]): boolean {
+  return tab !== "planificacion"
+}
+
+/** `href` con el `desde` y el `hasta` de la URL actual: lo que «Borrar filtros» no debe quitar donde el período no se ve. */
+function keepPeriod(href: string, current: URLSearchParams): string {
+  const [path = href, query = ""] = href.split("?")
+  const params = new URLSearchParams(query)
+  for (const key of ["desde", "hasta"]) {
+    const value = current.get(key)
+    if (value?.trim()) params.set(key, value)
+  }
+  const next = params.toString()
+  return next ? `${path}?${next}` : path
+}
+
+/**
+ * Barra de filtros de las pestañas Looker: rango (salvo en Planificación, que no tiene período), faena múltiple,
+ * código con búsqueda y frecuencia. Los controles reflejan lo que fijó un clic (el equipo deriva su faena y su
  * frecuencia), pero el clic sigue viviendo en su propio parámetro `x_*`: cambiarlo a mano
  * limpia el filtro cruzado de esa dimensión para que no se contradigan.
  */
@@ -82,7 +102,12 @@ export function LookerFilterBar({
     navigate(query ? `${pathname}?${query}` : pathname)
   }
 
-  const clear = () => navigate(clearFiltersHref(pathname, filters.tab))
+  const showPeriod = hasPeriod(filters.tab)
+  const clear = () => {
+    const href = clearFiltersHref(pathname, filters.tab)
+    // Sin el control a la vista, borrar filtros no puede llevarse el período que se eligió en otra pestaña.
+    navigate(showPeriod ? href : keepPeriod(href, new URLSearchParams(Array.from(searchParams.entries()))))
+  }
 
   return (
     <div data-looker-filter-bar="" data-looker-filter-ready={ready ? "" : undefined} aria-busy={pending || undefined}>
@@ -97,12 +122,14 @@ export function LookerFilterBar({
         hasActiveFilters={chips.length > 0}
         clearLabel="Borrar filtros"
       >
-        <PeriodControl
-          mode="range"
-          from={filters.requestedFrom}
-          to={filters.requestedTo}
-          defaultRange={{ ...defaultIndicatorRange(), label: DEFAULT_RANGE_LABEL }}
-        />
+        {showPeriod && (
+          <PeriodControl
+            mode="range"
+            from={filters.requestedFrom}
+            to={filters.requestedTo}
+            defaultRange={{ ...defaultIndicatorRange(), label: DEFAULT_RANGE_LABEL }}
+          />
+        )}
         <MultiSelectPopover
           label="Faena"
           options={worksiteOptions}

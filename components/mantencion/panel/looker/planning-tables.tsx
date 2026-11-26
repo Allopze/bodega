@@ -119,10 +119,8 @@ export function PlanningTable({
                 {row.code || "—"}
               </TableCell>
               <TableCell nowrap>
-                <span
-                  className="font-mono text-xs"
-                  title={row.outOfRange ? "La última mantención queda fuera del rango elegido; se muestra igual para no esconder lo vencido." : undefined}
-                >
+                {/* Sin período en esta pestaña no hay «fuera de rango» que avisar: `outOfRange` sólo lo usa el Excel. */}
+                <span className="font-mono text-xs">
                   {row.lastDate ? formatDate(row.lastDate) : "Sin mantención"}
                 </span>
                 <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs">

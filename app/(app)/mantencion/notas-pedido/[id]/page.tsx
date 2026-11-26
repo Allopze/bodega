@@ -29,6 +29,8 @@ export default async function PartsNoteDetailPage({ params }: { params: Promise<
   const canOpenRequests = can(session, "repuestos:view_all") || can(session, "requests:view_all")
   const canOpenOrders = canAny(session, "purchasing:view", "receiving:view")
   const canOpenWorkOrder = canAny(session, "mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute")
+  // «Ver en bodega» sólo se ofrece con el permiso que exige /bodega (`warehouse:view_stock`); Bodega lo valida igual.
+  const canOpenBodega = can(session, "warehouse:view_stock")
   const open = note.status === "enviada" || note.status === "en_gestion"
 
   return (
@@ -50,6 +52,7 @@ export default async function PartsNoteDetailPage({ params }: { params: Promise<
         canOpenWorkOrder={canOpenWorkOrder}
         canOpenRequests={canOpenRequests}
         canOpenOrders={canOpenOrders}
+        canOpenBodega={canOpenBodega}
       />
     </PageContainer>
   )

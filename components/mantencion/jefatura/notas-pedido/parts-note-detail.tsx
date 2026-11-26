@@ -5,6 +5,7 @@ import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { Badge } from "@/components/ui/badge"
 import { Callout } from "@/components/ui/callout"
 import { DetailItem } from "@/components/ui/detail-item"
+import { bodegaProductHref } from "@/lib/routing/bodega-product"
 import type { PartsNoteDetail, PartsNoteDetailLine } from "@/lib/services/mantencion/parts/types"
 import { formatDateTime, formatQty } from "@/lib/utils"
 import { SectionCard } from "../shared/section-card"
@@ -12,6 +13,7 @@ import { NoteLineActions } from "./note-line-actions"
 import { isNotePending, STAGE_META } from "./parts-notes-format"
 
 const TEXT_LINK = "font-mono text-sm font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
+const PLAIN_LINK = "text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
 
 function CodeLink({ href, children }: { href: string | null; children: ReactNode }) {
   return href ? <Link href={href} className={TEXT_LINK}>{children}</Link> : <span className="font-mono text-sm">{children}</span>
@@ -26,13 +28,14 @@ function lineResolvedText(line: PartsNoteDetailLine): string | null {
   return null
 }
 
-function Line({ note, line, canAct, buyHref, canOpenRequests, canOpenOrders }: {
+function Line({ note, line, canAct, buyHref, canOpenRequests, canOpenOrders, canOpenBodega }: {
   note: PartsNoteDetail
   line: PartsNoteDetailLine
   canAct: boolean
   buyHref: string | null
   canOpenRequests: boolean
   canOpenOrders: boolean
+  canOpenBodega: boolean
 }) {
   const resolved = lineResolvedText(line)
   const identity = [
@@ -54,6 +57,12 @@ function Line({ note, line, canAct, buyHref, canOpenRequests, canOpenOrders }: {
       </div>
       {showArrival && (
         <p className="mt-1.5 font-mono text-sm tabular-nums text-[var(--color-text)]">Llegó {formatQty(line.arrived)} · Usado {formatQty(line.used)}</p>
+      )}
+      {/* Sólo una línea del catálogo tiene producto que mirar; Bodega valida el permiso y la faena igual. */}
+      {canOpenBodega && line.productId && (
+        <p className="mt-1.5 text-xs">
+          <Link href={bodegaProductHref(line.productId, note.worksiteId)} aria-label={`Ver en bodega: ${line.description}`} className={PLAIN_LINK}>Ver en bodega</Link>
+        </p>
       )}
       {resolved && <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">{resolved}</p>}
       {line.purchases.length > 0 && (
@@ -81,15 +90,18 @@ function Line({ note, line, canAct, buyHref, canOpenRequests, canOpenOrders }: {
 /**
  * Detalle de una nota de pedido: de quién es, para qué orden y equipo, y una fila por línea con su etapa, lo que
  * llegó y se usó, sus compras y —para quien la administra y mientras la línea siga pendiente— las tres salidas:
- * reservar de bodega, comprar o rechazar. «Anular nota» vive en el encabezado de la página (`VoidNoteButton`).
+ * reservar de bodega, comprar o rechazar. Cada línea del catálogo enlaza a Bodega, ya filtrada por el producto y por
+ * la faena de la OT, para quien puede abrirla. «Anular nota» vive en el encabezado de la página (`VoidNoteButton`).
  * Componente de servidor; sólo las acciones son de cliente.
  */
-export function PartsNoteDetailView({ note, buyHref, canOpenWorkOrder, canOpenRequests, canOpenOrders }: {
+export function PartsNoteDetailView({ note, buyHref, canOpenWorkOrder, canOpenRequests, canOpenOrders, canOpenBodega }: {
   note: PartsNoteDetail
   buyHref: string | null
   canOpenWorkOrder: boolean
   canOpenRequests: boolean
   canOpenOrders: boolean
+  /** `warehouse:view_stock`: el permiso que exige `/bodega`. Sin él, la línea no ofrece el enlace. */
+  canOpenBodega: boolean
 }) {
   const open = note.status === "enviada" || note.status === "en_gestion"
   const pending = isNotePending({ status: note.status, pendingLines: note.lines.filter((line) => line.resolution === "pendiente").length })
@@ -132,6 +144,7 @@ export function PartsNoteDetailView({ note, buyHref, canOpenWorkOrder, canOpenRe
               buyHref={buyHref}
               canOpenRequests={canOpenRequests}
               canOpenOrders={canOpenOrders}
+              canOpenBodega={canOpenBodega}
             />
           ))}
         </ul>

@@ -42,10 +42,10 @@ function alertNames(row: RecordListRow): string[] {
 /**
  * Estado de un registro en lo mínimo que decide qué hacer con él: UNA línea
  * principal —cómo salió el trabajo— y, como mucho, una secundaria con lo que
- * requiere atención o ya se resolvió (sin actualizar, observado, revisado,
- * alertas). Antes la celda mezclaba cuatro dimensiones en textos de colores y
- * chips de dos estilos. La revisión «Pendiente» no se pinta: es lo normal y las
- * pestañas ya cuentan lo que falta.
+ * requiere atención o ya se resolvió (sin actualizar, observado —con respuesta
+ * o esperando al mecánico—, revisado, alertas). Antes la celda mezclaba cuatro
+ * dimensiones en textos de colores y chips de dos estilos. La revisión
+ * «Pendiente» no se pinta: es lo normal y las pestañas ya cuentan lo que falta.
  */
 export function RecordState({ row }: { row: RecordListRow }) {
   if (row.status === "anulado") {
@@ -71,7 +71,10 @@ export function RecordState({ row }: { row: RecordListRow }) {
 
   const notes: ReactNode[] = []
   if (row.workshop?.stale) notes.push(<span key="stale" className={ATTENTION}>Sin actualizar</span>)
-  if (row.review === "observado") notes.push(<span key="review" className={ATTENTION}>Observado</span>)
+  if (row.review === "observado") {
+    // Dice de quién es el turno: con respuesta, de jefatura (revisar); sin ella, del mecánico.
+    notes.push(<span key="review" className={ATTENTION}>Observado · {row.lastObservationAnswered ? "con respuesta" : "espera al mecánico"}</span>)
+  }
   if (row.review === "revisado") notes.push(<span key="review" className="font-medium text-[var(--color-success-ink)]">Revisado</span>)
   const alerts = alertNames(row)
   if (alerts.length > 0) notes.push(<span key="alerts">{alerts.length === 1 ? "Alerta" : "Alertas"}: {LIST.format(alerts)}</span>)

@@ -114,7 +114,12 @@ function Code({ href, children }: { href: string | null; children: ReactNode }) 
 
 /* ── Datos ─────────────────────────────────────────────────────────────────── */
 
-export function SparePartDataCard({ part, unitLabel }: { part: SparePartRecord; unitLabel: string }) {
+/**
+ * `bodegaHref` es el destino de «Ver existencias en bodega» (Bodega ya filtrada por este repuesto); `null` o ausente
+ * cuando quien mira no tiene el permiso que exige /bodega (`warehouse:view_stock`). La ficha no trae existencias
+ * propias: cuánto hay y cuánto está reservado se lee en Bodega, y el enlace evita ir a buscarlo a mano.
+ */
+export function SparePartDataCard({ part, unitLabel, bodegaHref = null }: { part: SparePartRecord; unitLabel: string; bodegaHref?: string | null }) {
   return (
     <Card>
       <CardHeader className="pb-1">
@@ -135,6 +140,13 @@ export function SparePartDataCard({ part, unitLabel }: { part: SparePartRecord; 
           <div className="mt-3 border-t border-[var(--color-border)] pt-3">
             <p className="text-xs text-[var(--color-text-subtle)]">Notas</p>
             <p className="mt-1 whitespace-pre-line text-sm text-[var(--color-text)]">{part.notes}</p>
+          </div>
+        )}
+        {bodegaHref && (
+          <div className="mt-3 border-t border-[var(--color-border)] pt-3">
+            <Button asChild variant="link" size="sm" className="h-auto min-h-11 p-0 text-xs sm:min-h-0">
+              <Link href={bodegaHref}>Ver existencias en bodega</Link>
+            </Button>
           </div>
         )}
       </CardContent>
