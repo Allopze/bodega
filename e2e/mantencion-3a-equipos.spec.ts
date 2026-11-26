@@ -74,8 +74,10 @@ test.describe("E2E 6 · Equipos", () => {
     await expect(page.getByRole("option", { name: "Nueva faena…" })).toHaveCount(0)
     await page.keyboard.press("Escape")
 
+    // La unidad es del equipo (2026-11-25): un camión de Cholguan mide en horas y no admite «Camiones y tractos» (km).
+    // QA-EQ1 sigue siendo un equipo por km de Cholguan —lo que las pautas de 3b asignan y cambian— y por eso es una camioneta.
     await fillEquipmentForm(page, {
-      code: "qa-eq1", plate: "zzzb 71", type: /^Camión ·/, brand: "Scania", model: "R450", year: "2021",
+      code: "qa-eq1", plate: "zzzb 71", type: /^Camioneta · km$/, brand: "Scania", model: "R450", year: "2021",
       worksite: "Cholguan", schedule: "Camiones y tractos", reading: "12.345",
     })
     await page.getByRole("button", { name: "Crear equipo", exact: true }).click()
@@ -100,7 +102,8 @@ test.describe("E2E 6 · Equipos", () => {
     await asJefe(page)
     await page.goto("/mantencion/equipos/nuevo")
     // Repetir la patente de QA-EQ1 se rechaza con el equipo que ya la tiene.
-    await fillEquipmentForm(page, { code: "QA-EQ2", plate: "ZZZB-71", type: /^Camión ·/, brand: "Scania", model: "R450", year: "2020", worksite: "Biodiversa" })
+    // El tipo «Camión» ya no lleva la unidad en su rótulo: depende de la faena (Biodiversa, por kilómetros).
+    await fillEquipmentForm(page, { code: "QA-EQ2", plate: "ZZZB-71", type: /^Camión$/, brand: "Scania", model: "R450", year: "2020", worksite: "Biodiversa" })
     await page.getByRole("button", { name: "Crear equipo", exact: true }).click()
     await expect(page.getByText(/La patente ZZZB-71 ya está en el equipo QA-EQ1/)).toBeVisible()
     await expect(page).toHaveURL(/\/mantencion\/equipos\/nuevo/)
