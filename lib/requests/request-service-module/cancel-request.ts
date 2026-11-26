@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequests, purchaseRequestItems } from "@/db/schema"
+import { unlinkNoteItemsFromRequestTx } from "@/lib/services/mantencion/parts-notes/resolve"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { resolveReplenishmentLinksTx } from "@/lib/services/epp-replenishment"
 import { isRequestCancellable } from "@/lib/services/requests-cancel.constants"
@@ -54,7 +55,7 @@ export async function cancelRequest(
     assertCancellable(precheck, reason)
 
     const items = await tx
-      .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status })
+      .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, partsNoteItemId: purchaseRequestItems.partsNoteItemId })
       .from(purchaseRequestItems)
       .where(eq(purchaseRequestItems.requestId, requestId))
       .orderBy(purchaseRequestItems.id)
@@ -108,6 +109,14 @@ export async function cancelRequest(
       .update(purchaseRequests)
       .set({ status: "cancelled", closedAt: now, updatedAt: now })
       .where(and(eq(purchaseRequests.id, requestId), eq(purchaseRequests.status, request.status)))
+
+    // Las líneas de notas de pedido que esta solicitud compraba vuelven a «pendiente»
+    // si nadie más las compra (ADR mantención 0001). Después de cancelar: si no, la
+    // solicitud contaría como comprador vivo.
+    const noteItemIds = [...new Set(items.flatMap((item) => (item.partsNoteItemId ? [item.partsNoteItemId] : [])))]
+    if (noteItemIds.length > 0) {
+      await unlinkNoteItemsFromRequestTx(tx, { noteItemIds, actorUserId: userId })
+    }
 
     await recordStatusChange({
       entityType: "purchase_request",

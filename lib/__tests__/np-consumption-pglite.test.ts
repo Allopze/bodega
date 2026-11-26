@@ -189,7 +189,7 @@ async function recordRow(id: string) {
 }
 const settle = () => new Promise((resolve) => setTimeout(resolve, 150))
 async function alerts() {
-  return (await testDb.select().from(schema.notifications)).filter((row) => row.type === "system_alert")
+  return (await testDb.select().from(schema.notifications)).filter((row) => row.type === "mant_np_stock_pending")
 }
 
 /** Lleva la OT hasta «cerrada» por los servicios reales (el registro ya está firmado). */

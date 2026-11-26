@@ -11,13 +11,9 @@ import { NP_PERMISSIONS } from "./access"
  * Avisos de la nota de pedido (NP). Se envían DESPUÉS del commit
  * (`notifyAfterCommit` en quien llama): las notificaciones escriben por el `db`
  * global y, dentro de la transacción, sobrevivirían a un rollback.
- *
- * Los tipos son nuevos; `NotificationType` (db/schema/audit.ts) aún no los lista y
- * ese archivo es del núcleo. La columna es texto libre, así que el cast sólo
- * ahorra un cambio de tipos: cuando se agreguen a la unión, quitar el cast.
  */
-const NP_CREATED = "mant_np_created" as NotificationType
-const NP_REJECTED = "mant_np_rejected" as NotificationType
+const NP_CREATED: NotificationType = "mant_np_created"
+const NP_REJECTED: NotificationType = "mant_np_rejected"
 
 const ADMIN_ROLE = "administrador"
 

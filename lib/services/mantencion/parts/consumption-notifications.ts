@@ -71,8 +71,7 @@ export async function sendPendingStockNotice(notice: PendingStockNotice): Promis
     if (userIds.length === 0) continue
     const label = [...new Set(ids.map((id) => names.get(id) ?? "Repuesto"))].join(", ")
     await notifyManyUser(userIds, {
-      // Sin tipo propio todavía: `system_alert` es el aviso genérico de la plataforma.
-      type: "system_alert",
+      type: "mant_np_stock_pending",
       title: `Faltó stock en la OT ${notice.workOrderFolio}`,
       body: `Faltó stock: ${label} · OT ${notice.workOrderFolio} · registro ${notice.recordFolio}. Concilia desde Notas de pedido.`,
       entityType: "mant_record",

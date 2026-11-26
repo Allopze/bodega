@@ -16,6 +16,7 @@ import {
   serviceQuotations,
 } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
+import { unlinkNoteItemsFromRequestTx } from "@/lib/services/mantencion/parts-notes/resolve"
 import {
   resolveQuotationAttachmentFile,
   resolveServiceQuotationFile,
@@ -70,7 +71,7 @@ export async function deleteRequest(
     // 2. Obtener los ítems y comprobar que no haya decisiones asociadas por
     // solicitud o por ítem. No se eliminan decisiones: son evidencia.
     const items = await tx
-      .select({ id: purchaseRequestItems.id })
+      .select({ id: purchaseRequestItems.id, partsNoteItemId: purchaseRequestItems.partsNoteItemId })
       .from(purchaseRequestItems)
       .where(eq(purchaseRequestItems.requestId, requestId))
 
@@ -103,6 +104,14 @@ export async function deleteRequest(
 
     // 4. Verify deletion occurred (paranoid check)
     if (deletedRows.length === 0) throw new Error("La solicitud fue modificada concurrentemente")
+
+    // Las líneas de notas de pedido que el borrador compraba vuelven a «pendiente» si
+    // nadie más las compra (ADR mantención 0001). Va después del DELETE: el cascade ya
+    // borró los ítems y no cuentan como comprador.
+    const noteItemIds = [...new Set(items.flatMap((item) => (item.partsNoteItemId ? [item.partsNoteItemId] : [])))]
+    if (noteItemIds.length > 0) {
+      await unlinkNoteItemsFromRequestTx(tx, { noteItemIds, actorUserId: userId })
+    }
 
     // 5. Auditoría (entityId string sobrevive al borrado)
     await recordAudit(

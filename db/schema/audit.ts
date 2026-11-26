@@ -150,6 +150,10 @@ export type NotificationType =
   | "mant_ot_unassigned"         // devuelta a «por asignar» → el mecánico que la tenía
   | "mant_ot_voided"             // anulada → el mecánico asignado + quien la solicitó
   | "mant_ot_parts_received"     // repuestos de la OT completos en faena → mecánico + jefatura (dedupe por recepción)
+  // Notas de pedido de repuestos (2026-11-26, ADR mantención 0001). Sin migración: `type` es texto.
+  | "mant_np_created"            // NP nueva → quienes la resuelven en la faena (mant:np:manage)
+  | "mant_np_rejected"           // línea rechazada → el mecánico que la pidió
+  | "mant_np_stock_pending"      // faltó stock al sincronizar un registro → quienes concilian (mant:np:manage)
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),

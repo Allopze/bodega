@@ -39,7 +39,8 @@ vi.mock("server-only", () => ({}))
 
 type LinkInput = { links: Array<{ noteItemId: string; requestItemId: string }>; actorUserId: string }
 const linkNoteItemsToRequestTx = vi.hoisted(() => vi.fn(async (_tx: unknown, _input: unknown) => undefined))
-vi.mock("@/lib/services/mantencion/parts-notes/resolve", () => ({ linkNoteItemsToRequestTx }))
+const unlinkNoteItemsFromRequestTx = vi.hoisted(() => vi.fn(async (_tx: unknown, _input: unknown) => undefined))
+vi.mock("@/lib/services/mantencion/parts-notes/resolve", () => ({ linkNoteItemsToRequestTx, unlinkNoteItemsFromRequestTx }))
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
@@ -277,6 +278,17 @@ describe("solicitud de repuestos desde una nota de pedido", () => {
       expect(linkNoteItemsToRequestTx).toHaveBeenCalledTimes(1)
       expect((linkNoteItemsToRequestTx.mock.calls[0] as unknown as [Tx, LinkInput])[1].links)
         .toEqual([{ noteItemId: LINE.a2, requestItemId: saved[1]!.id }])
+    })
+
+    it("quitar del borrador el ítem de una línea de NP la devuelve a «pendiente» (si nadie más la compra)", async () => {
+      const requestId = await persistRepuestoDraft(session, draft([
+        npItem(LINE.a1, { description: "Manguera hidráulica 1/2" }),
+        npItem(LINE.a2, { description: "Abrazadera de acero" }),
+      ]))
+      unlinkNoteItemsFromRequestTx.mockClear()
+      await persistRepuestoDraft(session, draft([npItem(LINE.a1, { description: "Manguera hidráulica 1/2" })], { id: requestId }))
+      expect(unlinkNoteItemsFromRequestTx).toHaveBeenCalledTimes(1)
+      expect((unlinkNoteItemsFromRequestTx.mock.calls[0] as unknown as [Tx, { noteItemIds: string[] }])[1].noteItemIds).toEqual([LINE.a2])
     })
   })
 

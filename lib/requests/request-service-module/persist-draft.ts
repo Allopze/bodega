@@ -11,7 +11,7 @@ import {
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
-import { linkNoteItemsToRequestTx } from "@/lib/services/mantencion/parts-notes/resolve"
+import { linkNoteItemsToRequestTx, unlinkNoteItemsFromRequestTx } from "@/lib/services/mantencion/parts-notes/resolve"
 import { assertLinkedWorkOrderOpen } from "./linked-work-order"
 import { assertPartsNoteLineBuyable } from "./linked-parts-note"
 import type { RequestModuleConfig, RequestServiceInput } from "../request-config"
@@ -172,6 +172,7 @@ export async function persistDraft(
     }
 
     const noteLinks: Array<{ noteItemId: string; requestItemId: string }> = []
+    const keptNoteItemIds = new Set<string>()
 
     for (const [i, item] of data.items.entries()) {
       const itemId = item.id ?? nanoid()
@@ -185,6 +186,7 @@ export async function persistDraft(
         const alreadySaved = savedNoteItemIds.has(partsNoteItemId)
         await assertPartsNoteLineBuyable(tx, { partsNoteItemId, workOrderId }, { alreadySaved, actor: session })
         if (!alreadySaved) noteLinks.push({ noteItemId: partsNoteItemId, requestItemId: itemId })
+        keptNoteItemIds.add(partsNoteItemId)
       }
       // Sólo repuestos ofrece catálogo; servicios sigue siendo texto libre.
       const productId = config.requestType === "repuestos" ? (item.productId?.trim() || null) : null
@@ -233,6 +235,13 @@ export async function persistDraft(
     // servicio de notas la rechaza, la solicitud no queda a medias.
     if (noteLinks.length > 0) {
       await linkNoteItemsToRequestTx(tx, { links: noteLinks, actorUserId: session.user.id })
+    }
+    // Una línea que el borrador compraba y que la nueva versión ya no trae vuelve a
+    // «pendiente» si nadie más la compra (después de reescribir los ítems: si no, el
+    // ítem viejo contaría como comprador).
+    const droppedNoteItemIds = [...savedNoteItemIds].filter((noteItemId) => !keptNoteItemIds.has(noteItemId))
+    if (droppedNoteItemIds.length > 0) {
+      await unlinkNoteItemsFromRequestTx(tx, { noteItemIds: droppedNoteItemIds, actorUserId: session.user.id })
     }
   })
 
