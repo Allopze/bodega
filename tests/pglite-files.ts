@@ -698,6 +698,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/np-receiving-stock-pglite.test.ts",
 
   // NP · L2 compras: solicitud desde NP y catalogación obligatoria.
+  "lib/__tests__/np-purchase-request-link-pglite.test.ts",
 
   // NP · L3 notas de pedido: servicio, sync y catálogo del teléfono.
 

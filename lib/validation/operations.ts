@@ -52,6 +52,12 @@ export const requestItemSchema = z.object({
   vehicleId:           z.string().max(60).nullable().optional(),
   workOrderId:         z.string().max(60).nullable().optional(),
   /**
+   * Línea de la nota de pedido del mecánico que el ítem compra (`?np=` en «Nueva
+   * solicitud»). El servidor verifica que sea de la misma OT del ítem
+   * (`assertPartsNoteLineBuyable`): el cliente sólo propone el id.
+   */
+  partsNoteItemId:     z.string().max(60).nullable().optional(),
+  /**
    * Precio unitario estimado por quien pide (CLP). Vacío = no lo indicó, y no es
    * lo mismo que 0 (`z.coerce.number()` convertiría `""` en 0): por eso el vacío
    * se normaliza a `null` antes de coercionar.

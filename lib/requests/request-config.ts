@@ -64,6 +64,12 @@ export interface RequestItemInput {
   vehicleId?:     string | null
   /** OT abierta del mismo vehículo; exige `vehicleId`. */
   workOrderId?:   string | null
+  /**
+   * Línea de la nota de pedido del mecánico que este ítem compra (ADR mantención
+   * 0001). Sólo repuestos y sólo con `workOrderId`: el servidor verifica que la
+   * línea sea de esa OT y que todavía se pueda comprar.
+   */
+  partsNoteItemId?: string | null
   /** Precio unitario estimado por quien pide (CLP); null = no lo indicó. */
   estimatedUnitPrice?: number | null
 }

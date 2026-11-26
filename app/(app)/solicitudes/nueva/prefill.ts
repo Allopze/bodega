@@ -11,16 +11,18 @@ import { listReplenishmentSuggestions } from "@/lib/services/epp-replenishment"
 import { logger } from "@/lib/logger"
 import { OT_OPEN_STATUSES } from "@/lib/mantencion/work-order-states"
 import { vehicleLabel } from "@/lib/services/fleet"
+import { viewerFromSession } from "@/lib/services/mantencion/access"
+import { loadPartsNotePrefill } from "@/lib/services/mantencion/parts-notes/query"
 import type { PrefillItem } from "../request-form.types"
 
 /**
  * Ítems con los que se abre el creador. Ningún origen crea nada por su cuenta: la
  * solicitud sólo existe cuando la persona la envía a aprobación.
  *
- * Orígenes, en este orden de prioridad: una OT o un equipo de flota (`?ot=`,
- * `?vehiculo=`, para pedir repuestos), un activo de emergencia, la reposición de
- * Bodega (`?producto=`), la copia de otra solicitud (`?desde=`) y las brechas de
- * EPP de Prevención (`?reposicion=1`).
+ * Orígenes, en este orden de prioridad: una nota de pedido del mecánico (`?np=`),
+ * una OT o un equipo de flota (`?ot=`, `?vehiculo=`, para pedir repuestos), un
+ * activo de emergencia, la reposición de Bodega (`?producto=`), la copia de otra
+ * solicitud (`?desde=`) y las brechas de EPP de Prevención (`?reposicion=1`).
  */
 export interface PrefillResult {
   prefillItems?: PrefillItem[]
@@ -50,6 +52,8 @@ export interface PrefillRequest {
   workOrderId?: string
   /** `?vehiculo=`: equipo de flota para el que se piden repuestos. */
   vehicleId?: string
+  /** `?np=`: nota de pedido del mecánico que se convierte en solicitud de repuestos. */
+  partsNoteId?: string
   /** `?repuesto=`: repuesto de catálogo con el que se abre el pedido (desde su ficha). */
   sparePartId?: string
 }
@@ -131,6 +135,50 @@ async function fleetPrefill({
 }
 
 /**
+ * Solicitud de repuestos desde una nota de pedido (`?np=`, ADR mantención 0001): un
+ * ítem por línea, con la OT y el equipo de la nota y la urgencia que ella dice
+ * («crítica» si el equipo está detenido). Cada ítem lleva `partsNoteItemId`, con lo
+ * que al guardar la línea de la nota queda «en compra».
+ *
+ * `loadPartsNotePrefill` decide el acceso de la persona y devuelve `null` si la nota
+ * no existe, no es suya de ver o ya no tiene líneas por comprar. La OT y el equipo se
+ * revalidan igual que en `?ot=` (OT abierta, equipo activo, faenas del alcance): la
+ * nota pudo escribirse con la OT abierta y la OT cerrarse después, y el servidor
+ * rechazaría el borrador. La faena que abre el creador es la del equipo, no la de la
+ * nota: es la que el servidor exige al guardar.
+ */
+async function partsNotePrefill({ session, noteId }: { session: Session; noteId: string }): Promise<PrefillResult> {
+  const note = await loadPartsNotePrefill(viewerFromSession(session), noteId)
+  if (!note) return { prefillNotice: "La nota de pedido no existe, ya no tiene repuestos por comprar o no tienes acceso a ella." }
+
+  const fleet = await fleetPrefill({ session, workOrderId: note.workOrderId, vehicleId: "" })
+  const equipment = fleet.prefillItems?.[0]
+  // OT cerrada, fuera de tus faenas o equipo dado de baja: `fleetPrefill` ya dice cuál.
+  if (!equipment || !fleet.initialWorksiteId) {
+    return { prefillNotice: `No se puede pedir desde la nota de pedido ${note.noteCode}. ${fleet.prefillNotice ?? ""}`.trim() }
+  }
+
+  return {
+    initialWorksiteId: fleet.initialWorksiteId,
+    initialUrgency: note.urgency,
+    prefillItems: note.items.map((line) => ({
+      productId: line.productId,
+      productNameFree: line.description,
+      quantity: line.quantity,
+      unitOfMeasure: line.unitOfMeasure,
+      urgency: note.urgency,
+      notes: line.partNumber ? `N° de parte: ${line.partNumber}` : "",
+      vehicleId: equipment.vehicleId,
+      vehicleLabel: equipment.vehicleLabel,
+      workOrderId: note.workOrderId,
+      workOrderFolio: note.workOrderFolio,
+      partsNoteItemId: line.partsNoteItemId,
+    })),
+    prefillNotice: `Solicitud desde la nota de pedido ${note.noteCode} de la OT ${note.workOrderFolio}. Revisa las cantidades antes de enviar.`,
+  }
+}
+
+/**
  * «Pedir repuestos» desde la ficha de un repuesto (`?repuesto=`): el pedido abre
  * con ese repuesto elegido. Sólo un repuesto de catálogo activo; uno desactivado
  * o un producto común no se precarga.
@@ -157,7 +205,9 @@ async function sparePartPrefill(sparePartId: string): Promise<PrefillResult> {
 
 export async function buildPrefill({
   session, reposicion, desdeId, productoIds, cantidades, emergencyResourceId, workOrderId = "", vehicleId = "", sparePartId = "",
+  partsNoteId = "",
 }: PrefillRequest): Promise<PrefillResult> {
+  if (partsNoteId) return partsNotePrefill({ session, noteId: partsNoteId })
   if (workOrderId || vehicleId) return fleetPrefill({ session, workOrderId, vehicleId })
   if (sparePartId) return sparePartPrefill(sparePartId)
 
