@@ -24,7 +24,7 @@ export type RecordSituationFilter = (typeof RECORD_SITUATIONS)[number]
 export const RECORD_ALERT_LABEL: Record<RecordAlertFilter, string> = {
   salto: "Salto de lectura",
   fuera: "Fuera de faena",
-  pauta: "Pauta elegida a mano",
+  pauta: "Intervalo elegido a mano",
   duplicado: "Preventiva duplicada",
 }
 
@@ -44,10 +44,16 @@ export const STAMP_GAP_LIMIT_HOURS = 72
 /** Registros por página. Misma constante para la consulta y para el paginador. */
 export const RECORDS_PAGE_SIZE = 25
 
+/** La regla vive en `lib/mantencion/normalize.ts` (módulo puro, también lo usa el Historial). */
+export { compactSearchKey } from "@/lib/mantencion/normalize"
+
 export interface RecordFilters {
   worksiteId?: string
   kind?: "P" | "C"
-  /** Código o patente del equipo (texto parcial). */
+  /**
+   * Lo que se escribió en el buscador: folio, código o patente (texto parcial, sin importar mayúsculas, guiones ni
+   * espacios). Viaja en la URL como `equipo` por compatibilidad con los enlaces que ya existen.
+   */
   equipment?: string
   /** Quién hizo el trabajo: `u:<userId>` (mecánico) o `w:<workshopId>` (taller externo). */
   executor?: string

@@ -27,7 +27,7 @@ describe("alertas de un registro", () => {
     expect(tags.map((tag) => tag.key)).toEqual(["jump", "outside", "manual", "duplicate", "stamp"])
     // El nombre corto es el del PDF y el del filtro: no cambia.
     expect(tags.map((tag) => tag.label)).toEqual([
-      "Salto de lectura", "Fuera de faena", "Pauta elegida a mano", "Preventiva duplicada", "Hora del sello y de recepción difieren más de 72 h",
+      "Salto de lectura", "Fuera de faena", "Intervalo elegido a mano", "Preventiva duplicada", "Hora del sello y de recepción difieren más de 72 h",
     ])
     const byKey = Object.fromEntries(tags.map((tag) => [tag.key, tag]))
     expect(byKey.jump!.message).toContain("20.212 km más que la anterior (20.100 km, del 12-09-2026)")

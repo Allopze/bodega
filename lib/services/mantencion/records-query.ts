@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, lte, or, sql, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, like, lte, or, sql, type SQL, type SQLWrapper } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
@@ -10,7 +10,7 @@ import type { MantExecutorKind, MantRecordKind, MantRecordStatus, MantReview, Ma
 import { recordVisibility, recordVisibilitySql, type MantViewer } from "./access"
 import { loadWorkshopCases } from "./records-workshop"
 import type { RecordFilters, RecordListQuery, RecordSortKey } from "./records-filters"
-import { RECORDS_PAGE_SIZE } from "./records-filters"
+import { RECORDS_PAGE_SIZE, compactSearchKey } from "./records-filters"
 
 /**
  * Lista e indicadores de «Registros» (§10). El filtrado es SIEMPRE en el
@@ -20,18 +20,40 @@ import { RECORDS_PAGE_SIZE } from "./records-filters"
  * agrandarlo.
  */
 
+/** El texto de una columna sin mayúsculas ni signos: lo que `compactSearchKey` deja del texto que se escribe. */
+const compactSql = (value: SQLWrapper) => sql`regexp_replace(lower(coalesce(${value}, '')), '[^[:alnum:]]+', '', 'g')`
+
+/**
+ * El buscador de la lista: el folio, el código o la patente del equipo, sin que importen las mayúsculas, los guiones ni
+ * los espacios («ka91» encuentra KA-91; «mpstf0147», MP-STF-0147). Se compara tal cual se escribió Y compactado: lo
+ * escrito literalmente sigue encontrando lo mismo que antes (también el texto con «%» o «_», que se busca literal), y
+ * lo compactado agrega las coincidencias que un guion o un espacio impedían. Una búsqueda de sólo signos no tiene
+ * versión compactada: queda la literal.
+ */
+function searchCondition(text: string): SQL {
+  const typed = `%${escapeLikePattern(text)}%`
+  const code = sql`${mantRecords.equipmentSnapshot}->>'code'`
+  const plate = sql`${mantRecords.equipmentSnapshot}->>'plate'`
+  const compact = compactSearchKey(text)
+  const compactPattern = `%${compact}%`
+  return or(
+    ilike(mantRecords.folio, typed),
+    ilike(code, typed),
+    ilike(plate, typed),
+    ...(compact ? [
+      like(compactSql(mantRecords.folio), compactPattern),
+      like(compactSql(code), compactPattern),
+      like(compactSql(plate), compactPattern),
+    ] : []),
+  )!
+}
+
 /** Predicado común de la lista, los indicadores y la exportación. */
 export function recordsWhere(viewer: MantViewer, filters: RecordFilters): SQL {
   const conditions: Array<SQL | undefined> = [recordVisibilitySql(recordVisibility(viewer))]
   if (filters.worksiteId) conditions.push(eq(mantRecords.worksiteId, filters.worksiteId))
   if (filters.kind) conditions.push(eq(mantRecords.kind, filters.kind))
-  if (filters.equipment) {
-    const pattern = `%${escapeLikePattern(filters.equipment)}%`
-    conditions.push(or(
-      ilike(sql`${mantRecords.equipmentSnapshot}->>'code'`, pattern),
-      ilike(sql`${mantRecords.equipmentSnapshot}->>'plate'`, pattern),
-    ))
-  }
+  if (filters.equipment) conditions.push(searchCondition(filters.equipment))
   if (filters.executor) {
     const [prefix, id] = filters.executor.split(":") as ["u" | "w", string]
     conditions.push(prefix === "u" ? eq(mantRecords.executorUserId, id) : eq(mantRecords.executorWorkshopId, id))

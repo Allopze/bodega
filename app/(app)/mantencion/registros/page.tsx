@@ -2,7 +2,6 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { Suspense } from "react"
 import { redirect } from "next/navigation"
-import { Truck, Warning } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
@@ -25,6 +24,7 @@ import {
 import { listRecords, loadRecordFilterOptions, loadRecordIndicators, loadRecordReviewCounts } from "@/lib/services/mantencion/records-query"
 import { formatDate } from "@/lib/utils"
 import { RecordsExportButton } from "./records-export-button"
+import { emptyCopy, isSearchOnly } from "./records-empty"
 
 export const metadata: Metadata = { title: "Registros firmados" }
 export const dynamic = "force-dynamic"
@@ -67,27 +67,6 @@ function buildReviewTabs(counts: Record<MantReview, number>): StageTab[] {
   ]
 }
 
-/** Lo que dice una pestaña sin registros: qué significa y qué hacer, sin jerga (regla A4). */
-function emptyCopy(review: MantReview | undefined, filtered: boolean): { title: string; description: string } {
-  if (filtered) {
-    const where = review === "pendiente" ? "por revisar" : review === "observado" ? "observados" : review === "revisado" ? "revisados" : null
-    return {
-      title: where ? `No hay registros ${where} con estos filtros` : "Ningún registro coincide con estos filtros",
-      description: "Prueba con otro período o quita algún filtro.",
-    }
-  }
-  if (review === "pendiente") {
-    return { title: "No hay registros por revisar", description: "Llegan apenas un mecánico los firma y su teléfono los sincroniza." }
-  }
-  if (review === "observado") {
-    return { title: "No hay registros observados", description: "Quedan los registros con corrección pedida, hasta que los marques como revisados." }
-  }
-  if (review === "revisado") {
-    return { title: "Aún no hay registros revisados", description: "Aparece al marcar un registro como revisado." }
-  }
-  return { title: "Aún no hay registros firmados", description: "Llegan apenas un mecánico firma una mantención y su teléfono la sincroniza." }
-}
-
 export default async function RecordsPage({ searchParams }: { searchParams: Promise<RawSearchParams> }) {
   let session
   try {
@@ -120,6 +99,8 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
   const pagination = resolvePagination({ pageParam: String(list.page), totalItems: list.total, pageSize: RECORDS_PAGE_SIZE })
   // La pestaña de revisión no es un «filtro» para el aviso de lista vacía: vaciarla es una buena noticia, no un error de filtros.
   const filtered = hasRecordFilters({ ...query.filters, review: undefined })
+  // Sólo la búsqueda por folio, código o patente (sin otro filtro): su vacío tiene texto y salida propios.
+  const searchOnly = isSearchOnly(query.filters)
   const canExport = can(session, "mant:export")
   // «Abrir la app del mecánico» es para quien firma desde ella: quien sólo ve lo propio. A la oficina no le sirve.
   const isMechanic = can(session, "mant:app:use") && can(session, "mant:records:view_own")
@@ -138,8 +119,8 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
   const range = indicators.range
     ? `${plural(indicators.total, "registro vigente", "registros vigentes")} del ${formatDate(indicators.range.from)} al ${formatDate(indicators.range.to)}`
     : query.filters.status === "anulado"
-      ? "los registros anulados no cuentan en los indicadores"
-      : "sin registros con estos filtros"
+      ? "Los registros anulados no cuentan en el Panel"
+      : "Sin registros con estos filtros"
 
   // Una fila compacta, no tarjetas (regla A1): sólo lo que lleva a un subconjunto. El total vive en el
   // titular y la revisión en las pestañas (A5: una cifra no se repite en dos controles). Un indicador en
@@ -152,7 +133,6 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
       // también los que están por una OT, y las dos se leían como el mismo número que no cuadraba.
       label: "Equipos en taller por correctiva",
       value: indicators.workshopEquipment,
-      icon: <Truck size={14} aria-hidden />,
       tone: indicators.workshopStale > 0 ? "signal" : undefined,
       secondary: indicators.workshopStale > 0 ? `${plural(indicators.workshopStale, "sin actualizar", "sin actualizar")} hace más de 2 días` : "Todos con estado al día",
       href: hrefWith(params, { tipo: "C", situacion: "en_taller", estado: "vigente" }),
@@ -163,23 +143,23 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
       key: "not-done",
       label: "Ítems no realizados",
       value: indicators.notDoneItems,
-      icon: <Warning size={14} aria-hidden />,
       tone: "signal",
       secondary: `En ${plural(indicators.notDoneRecords, "preventiva", "preventivas")}`,
       href: hrefWith(params, { tipo: "P", situacion: "no_realizados", estado: "vigente" }),
     })
   }
 
-  const empty = emptyCopy(query.filters.review, filtered)
+  const empty = emptyCopy(query.filters.review, filtered, searchOnly)
   // «Quitar los filtros» deja la pestaña y el orden en los que se está: sólo suelta lo que filtra.
   const clearFiltersHref = hrefWith(params, Object.fromEntries(RECORD_FILTER_PARAMS.map((key) => [key, null])))
   const allHref = hrefWith(params, { revision: "todos" })
+  const clearSearchHref = hrefWith(params, { equipo: null })
 
   return (
     <PageContainer>
       <PageHeader
         title="Registros firmados"
-        description="Las mantenciones firmadas por los mecánicos. Un registro anulado sigue visible, marcado, pero no cuenta en los indicadores."
+        description="Las mantenciones firmadas por los mecánicos."
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Registros firmados" }]}
         actions={
           <>
@@ -193,9 +173,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
 
       {stats.length > 0 && (
         <section aria-labelledby="registros-indicadores" className="mb-5">
-          <h2 id="registros-indicadores" className="mb-2 text-sm font-semibold text-[var(--color-text)]">
-            Indicadores <span className="font-normal text-[var(--color-text-muted)]">· {range}</span>
-          </h2>
+          <h2 id="registros-indicadores" className="mb-2 text-sm font-semibold text-[var(--color-text)]">{range}</h2>
           <SummaryBar stats={stats} />
         </section>
       )}
@@ -212,13 +190,19 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
         <EmptyState
           title={empty.title}
           description={empty.description}
-          action={filtered
-            ? <Button asChild variant="secondary"><Link href={clearFiltersHref}>Quitar los filtros</Link></Button>
-            : query.filters.review
-              ? <Button asChild variant="secondary"><Link href={allHref}>Ver todos los registros</Link></Button>
-              : isMechanic
-                ? <Button asChild><Link href="/m/mantencion">Abrir la app del mecánico</Link></Button>
-                : undefined}
+          action={searchOnly
+            ? <Button asChild variant="secondary"><Link href={clearSearchHref}>Quitar la búsqueda</Link></Button>
+            : filtered
+              ? <Button asChild variant="secondary"><Link href={clearFiltersHref}>Quitar los filtros</Link></Button>
+              : query.filters.review
+                ? <Button asChild variant="secondary"><Link href={allHref}>Ver todos los registros</Link></Button>
+                : isMechanic
+                  ? <Button asChild><Link href="/m/mantencion">Abrir la app del mecánico</Link></Button>
+                  : undefined}
+          // Una pestaña de revisión recorta la búsqueda: el folio puede estar en otra. «Todos» la repite sin recorte.
+          secondaryAction={searchOnly && query.filters.review
+            ? <Button asChild variant="secondary"><Link href={allHref}>Buscar en todos los registros</Link></Button>
+            : undefined}
         />
       ) : (
         <>

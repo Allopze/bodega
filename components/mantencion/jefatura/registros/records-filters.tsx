@@ -28,11 +28,12 @@ const ALERT_OPTIONS: OptionSelectOption[] = RECORD_ALERTS.map((value) => ({ valu
 const SITUATION_OPTIONS: OptionSelectOption[] = RECORD_SITUATIONS.map((value) => ({ value, label: RECORD_SITUATION_LABEL[value] }))
 
 /**
- * Filtros de «Registros» (A2): seis primarios a la vista —equipo, faena, tipo,
- * «Hecho por», desde y hasta— y el resto en «Más filtros (N)», con una pastilla
- * removible por cada filtro activo. Todo vive en la URL (`router.replace`, sin
- * mover el scroll) y la lista se filtra en el servidor: por eso la búsqueda es
- * propia y esta ruta está en `ROUTES_WITH_OWN_SEARCH`.
+ * Filtros de «Registros» (A2): seis primarios a la vista (la búsqueda por folio,
+ * código o patente, faena, tipo, «Hecho por», desde y hasta) y el resto en
+ * «Más filtros (N)», con una pastilla removible por cada filtro activo. Todo
+ * vive en la URL (`router.replace`, sin mover el scroll) y la lista se filtra
+ * en el servidor: por eso la búsqueda es propia y esta ruta está en
+ * `ROUTES_WITH_OWN_SEARCH`.
  *
  * La revisión NO está aquí: son las pestañas sobre la tabla (regla A5, una
  * dimensión = una representación), así que ni es un filtro del panel ni cuenta
@@ -56,7 +57,8 @@ export function RecordsFilters({ options }: { options: RecordFilterOptions }) {
   const add = (key: string, label: string, value: string | undefined, displayValue: string) => {
     if (value) chips.push({ key, label, value, displayValue })
   }
-  add("equipo", "Equipo", filters.equipment, filters.equipment ?? "")
+  // El parámetro sigue siendo `equipo` (los enlaces que ya existen lo traen), pero busca también por folio.
+  add("equipo", "Búsqueda", filters.equipment, filters.equipment ?? "")
   add("faena", "Faena", filters.worksiteId, labelOf(worksiteOptions, filters.worksiteId))
   add("tipo", "Tipo", filters.kind, labelOf(KIND_OPTIONS, filters.kind))
   add("hecho", "Hecho por", filters.executor, labelOf(options.executors, filters.executor))
@@ -92,7 +94,7 @@ export function RecordsFilters({ options }: { options: RecordFilterOptions }) {
         </>
       )}
     >
-      <FilterSearchInput param="equipo" placeholder="Código o patente" ariaLabel="Buscar equipo por código o patente" className="h-11 w-full pl-8 text-xs sm:h-8 sm:w-36" />
+      <FilterSearchInput param="equipo" placeholder="Folio, código o patente" ariaLabel="Folio, código o patente" className="h-11 w-full pl-8 text-xs sm:h-8 sm:w-52" />
       {showWorksite && (
         <OptionSelect aria-label="Filtrar por faena" className={BAR_SELECT_CLASS} emptyLabel="Todas las faenas" options={worksiteOptions} value={getFilter("faena")} onValueChange={(v) => setFilter("faena", v)} />
       )}

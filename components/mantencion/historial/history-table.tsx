@@ -76,9 +76,9 @@ function DesktopRow({ row }: { row: MaintenanceHistoryRow }) {
         <Link
           href={row.detail.href}
           className="text-sm font-semibold text-[var(--color-primary-ink)] hover:underline"
-          aria-label={`Abrir la ficha del trabajo de ${row.equipmentLabel} del ${formatDate(row.date)}`}
+          aria-label={`Ver el trabajo de ${row.equipmentLabel} del ${formatDate(row.date)}`}
         >
-          Abrir
+          Ver el trabajo
         </Link>
       </TableCell>
     </TableRow>
@@ -103,7 +103,7 @@ function MobileCard({ row }: { row: MaintenanceHistoryRow }) {
               Vista previa
             </HistoryPreviewButton>
             <Button asChild variant="secondary" className="h-11">
-              <Link href={row.detail.href} aria-label={`Abrir la ficha del trabajo de ${row.equipmentLabel} del ${formatDate(row.date)}`}>Abrir la ficha</Link>
+              <Link href={row.detail.href} aria-label={`Ver el trabajo de ${row.equipmentLabel} del ${formatDate(row.date)}`}>Ver el trabajo</Link>
             </Button>
           </div>
         )}
@@ -111,7 +111,7 @@ function MobileCard({ row }: { row: MaintenanceHistoryRow }) {
         <ResponsiveDataListField label="Lectura">{row.detail.reading ?? DASH}</ResponsiveDataListField>
         <ResponsiveDataListField label="Días en taller">{workshopText(row)}</ResponsiveDataListField>
         <ResponsiveDataListField label="Horas hombre">{row.laborHours === null ? DASH : formatHours(row.laborHours)}</ResponsiveDataListField>
-        <ResponsiveDataListField label="Responsable">{responsibleText(row)}</ResponsiveDataListField>
+        <ResponsiveDataListField label="Hecho por">{responsibleText(row)}</ResponsiveDataListField>
         <ResponsiveDataListField label="Trabajo" className="col-span-2">
           <span className="line-clamp-3 whitespace-pre-wrap break-words">{row.detail.description || "No informado"}</span>
         </ResponsiveDataListField>
@@ -151,7 +151,7 @@ export function HistoryTable({ rows, params }: { rows: readonly MaintenanceHisto
                 <TableHead>Lectura</TableHead>
                 <SortHead label="Días en taller" sort="dias" params={params} sortable={sortable} />
                 <SortHead label="Horas hombre" sort="horas" params={params} sortable={sortable} />
-                <TableHead>Responsable</TableHead>
+                <TableHead>Hecho por</TableHead>
                 <TableHead><span className="sr-only">Ficha</span></TableHead>
               </TableRow>
             </TableHeader>

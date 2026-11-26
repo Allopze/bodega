@@ -124,7 +124,7 @@ describe("vista previa del trabajo", () => {
     expect(fact(dialog, "Faena")).toBe("Faena de prueba")
   })
 
-  it("muestra lectura, ingreso y salida de taller, días, horas, responsable y especialidades con su nombre", () => {
+  it("muestra lectura, ingreso y salida de taller, días, horas, quién lo hizo y especialidades con su nombre", () => {
     const { table } = renderTable([fullRow()])
     const dialog = openFromTable(table, "Cambio de bomba hidráulica")
     expect(fact(dialog, "Lectura del equipo")).toBe("40.312 km")
@@ -132,7 +132,7 @@ describe("vista previa del trabajo", () => {
     expect(fact(dialog, "Salida de taller")).toBe("13-11-2026")
     expect(fact(dialog, "Días en taller")).toBe("3 días")
     expect(fact(dialog, "Horas hombre")).toBe("3,5 h")
-    expect(fact(dialog, "Responsable")).toBe("Externo · Taller de prueba")
+    expect(fact(dialog, "Hecho por")).toBe("Externo · Taller de prueba")
     expect(fact(dialog, "Especialidades")).toBe("Mecánica, Hidráulica")
   })
 
@@ -173,10 +173,10 @@ describe("vista previa del trabajo", () => {
     expect(within(dialog).getByText("Faena sin identificar")).toBeDefined()
   })
 
-  it("«Abrir la ficha completa» lleva a la fuente del trabajo", () => {
+  it("«Ver el trabajo» lleva a la fuente del trabajo", () => {
     const { table } = renderTable([fullRow()])
     const dialog = openFromTable(table, "Cambio de bomba hidráulica")
-    expect(within(dialog).getByRole("link", { name: "Abrir la ficha completa" }).getAttribute("href")).toBe("/mantencion/registros/historicos/ot-1")
+    expect(within(dialog).getByRole("link", { name: "Ver el trabajo" }).getAttribute("href")).toBe("/mantencion/registros/historicos/ot-1")
   })
 
   it("la tarjeta móvil abre la misma vista previa que la tabla", () => {

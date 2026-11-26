@@ -130,7 +130,7 @@ test("la vista previa abre sin salir de la lista y lleva a la ficha completa", a
   await expect(dialog.getByText("QA_ Trabajo masivo 30", { exact: true })).toBeVisible()
   await expect(dialog.getByText("Correctiva", { exact: true })).toBeVisible()
   await expect(dialog.getByText("1,5 h", { exact: true })).toBeVisible()
-  await expect(dialog.getByRole("link", { name: "Abrir la ficha completa", exact: true })).toHaveAttribute("href", /\/mantencion\/registros\/historicos\/[^/]+$/)
+  await expect(dialog.getByRole("link", { name: "Ver el trabajo", exact: true })).toHaveAttribute("href", /\/mantencion\/registros\/historicos\/[^/]+$/)
   await page.keyboard.press("Escape")
   await expect(dialog).toHaveCount(0)
   await expect(page).toHaveURL(/q=masivo/)
@@ -250,6 +250,19 @@ test("«Órdenes de trabajo cerradas» avisa dónde están los trabajos anterior
   await expectPageTitle(page, "Historial de mantenciones")
 })
 
+/**
+ * La página no se desplaza de lado Y el pozo del shell (`[data-shell-scroll]`, `overflow-x: hidden`) tampoco tiene nada fuera de
+ * su ancho. Medir sólo `documentElement` no basta: el pozo recorta lo que se pasa, así que el desborde no llega al documento y
+ * lo que queda fuera del ancho es contenido inalcanzable (el selector de tipo se cortaba en «Predictivas»).
+ */
+async function noOverflow(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const well = document.querySelector("[data-shell-scroll]")
+    return document.documentElement.scrollWidth <= document.documentElement.clientWidth
+      && (well ? well.scrollWidth <= well.clientWidth : true)
+  })
+}
+
 test("en el teléfono la lista son tarjetas con vista previa y no desborda", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
   const page = await context.newPage()
@@ -260,12 +273,19 @@ test("en el teléfono la lista son tarjetas con vista previa y no desborda", asy
     await expectPageTitle(page, "Historial de mantenciones")
     await expect(page.getByRole("list", { name: "Trabajos de mantención como tarjetas" }).getByRole("button", { name: /^Vista previa del trabajo de / }).first()).toBeVisible()
     await page.waitForLoadState("networkidle")
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
-    // La matriz se desplaza dentro de su contenedor: la página no.
+    expect(await noOverflow(page)).toBe(true)
+    // El selector de tipo no cabe en 390 px: cada opción en una línea y el control se desplaza dentro de su caja, no la página.
+    const tipos = page.getByRole("group", { name: "Filtrar por tipo de trabajo" })
+    await expect(tipos.getByRole("link", { name: /^Sin clasificar/ })).toHaveCount(1)
+    expect(await tipos.evaluate((group) => {
+      const box = group.parentElement as HTMLElement
+      return box.scrollWidth > box.clientWidth && getComputedStyle(box).overflowX === "auto"
+    })).toBe(true)
+    // La matriz se desplaza dentro de su contenedor: la página (y el pozo) no.
     await page.goto(`${FAENA_A}&vista=matriz`)
     await expect(page.getByRole("table", { name: "Trabajos por equipo y mes" })).toBeVisible()
     await page.waitForLoadState("networkidle")
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+    expect(await noOverflow(page)).toBe(true)
   } finally {
     expect(mobileProblems).toEqual([])
     await context.close()

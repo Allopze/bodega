@@ -23,7 +23,6 @@ export default async function ImportHistoricalPage() {
         breadcrumb={[
           { label: "Control operacional", href: "/control-operacional" },
           { label: "Mantención" },
-          { label: "Registros firmados", href: "/mantencion/registros" },
           { label: "Historial de mantenciones", href: "/mantencion/registros/historicos" },
           { label: "Importar" },
         ]}

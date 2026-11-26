@@ -114,7 +114,7 @@ export function EquipmentTimelineCard({ timeline, vehicleId }: { timeline: Equip
   const linkLabel = "Ver todo el historial de este equipo"
 
   return (
-    <SectionCard title="Historial de mantenciones" description={timeline.total > 0 ? "Del más reciente al más antiguo" : undefined}>
+    <SectionCard title="Historial de mantenciones">
       {!timeline.includesOrders && (
         <p className="mb-3 text-sm text-[var(--color-text-muted)]">Tu perfil no ve todas las órdenes de trabajo de este equipo.</p>
       )}

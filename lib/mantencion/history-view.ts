@@ -1,7 +1,7 @@
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { bucketLabel, listBuckets } from "@/lib/indicators/period"
 import { ACTION_TYPES, SPECIALTIES, type ActionTypeOrUnknown, type Specialty } from "@/lib/mantencion/action-type"
-import { nameKey } from "@/lib/mantencion/normalize"
+import { compactSearchKey, nameKey } from "@/lib/mantencion/normalize"
 import type { MaintenanceHistoryRow, WorkSource } from "@/lib/services/mantencion/maintenance-work"
 
 /**
@@ -209,17 +209,29 @@ const rowSearchText = (row: MaintenanceHistoryRow) => nameKey([
 ].join(" "))
 
 /**
+ * Lo que identifica un trabajo y se escribe con o sin guiones y espacios: su folio (`reference`: el de la OT, el del
+ * registro firmado o el ID del consolidado), el equipo («KA-91 · BCDF12») y el nº de orden del formulario. Se compara
+ * compactado (`compactSearchKey`), cada campo por separado para que una búsqueda no cruce de uno a otro. El texto libre
+ * (el trabajo, el taller) no se compacta: sin sus espacios, una búsqueda corta encontraría pedazos de palabras.
+ */
+const rowIdentityFields = (row: MaintenanceHistoryRow) => [row.reference, row.equipmentLabel, row.detail.orderText ?? ""]
+
+/**
  * Aplica la búsqueda, el origen, el tipo, el taller y la especialidad. `skip` deja sin aplicar uno de ellos: así los
- * conteos del selector de tipo se calculan con todos los demás filtros puestos.
+ * conteos del selector de tipo se calculan con todos los demás filtros puestos. La búsqueda encuentra el folio del
+ * trabajo, el equipo, el nº de orden, la faena, la descripción, el taller, el contrato y la lectura.
  */
 export function filterHistoryRows(rows: readonly MaintenanceHistoryRow[], params: HistoryParams, skip?: "type"): MaintenanceHistoryRow[] {
   const query = params.q ? nameKey(params.q) : ""
+  // «mpstf0147», «ka 91» o «OT BIO 0001» encuentran el folio y el equipo aunque se escriban sin sus guiones.
+  const compact = params.q ? compactSearchKey(params.q) : ""
   return rows.filter((row) => {
     if (params.source && row.source !== params.source) return false
     if (skip !== "type" && params.type && row.actionType !== params.type) return false
     if (params.workshop && row.external !== (params.workshop === "externo")) return false
     if (params.specialty && !row.detail.specialties.includes(params.specialty)) return false
-    return !query || rowSearchText(row).includes(query)
+    if (!query || rowSearchText(row).includes(query)) return true
+    return compact !== "" && rowIdentityFields(row).some((field) => compactSearchKey(field).includes(compact))
   })
 }
 

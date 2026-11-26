@@ -95,7 +95,6 @@ export default async function HistoricalRecordPage({ params }: { params: Promise
         breadcrumb={[
           { label: "Control operacional", href: "/control-operacional" },
           { label: "Mantención" },
-          { label: "Registros firmados", href: "/mantencion/registros" },
           { label: "Historial de mantenciones", href: HISTORY_PATH },
           { label: "Detalle" },
         ]}
@@ -128,7 +127,7 @@ export default async function HistoricalRecordPage({ params }: { params: Promise
             <Fact label="Salida de taller">{dayLabel(row.exitDate)}</Fact>
             <Fact label="Días detenido">{row.downtimeDays !== null ? String(row.downtimeDays).replace(".", ",") : DASH}</Fact>
             <Fact label="Horas hombre">{row.laborHours !== null ? formatHours(row.laborHours) : row.hoursText.trim() || DASH}</Fact>
-            <Fact label="Responsable">{responsible}</Fact>
+            <Fact label="Hecho por">{responsible}</Fact>
             <Fact label="Especialidades">{specialties || DASH}</Fact>
             {row.contractText && <Fact label="Contrato">{row.contractText}</Fact>}
           </dl>

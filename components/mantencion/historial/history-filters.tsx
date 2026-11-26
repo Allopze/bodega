@@ -54,7 +54,7 @@ export function HistoryFilters({ worksites, state }: { worksites: Array<{ id: st
   if (worksiteId) chips.push({ key: "faena", label: "Faena", value: worksiteId, displayValue: state.worksiteName ?? "La elegida" })
   if (vehicleId) chips.push({ key: "equipo", label: "Equipo", value: vehicleId, displayValue: state.vehicleLabel ?? "El elegido" })
   if (source) chips.push({ key: "origen", label: "Origen", value: source, displayValue: String(SOURCE_OPTIONS.find((option) => option.value === source)?.label ?? source) })
-  if (workshop) chips.push({ key: "taller", label: "Responsable", value: workshop, displayValue: workshop === "externo" ? "Externo" : "Interno" })
+  if (workshop) chips.push({ key: "taller", label: "Hecho por", value: workshop, displayValue: workshop === "externo" ? "Externo" : "Interno" })
   if (specialty) chips.push({ key: "especialidad", label: "Especialidad", value: specialty, displayValue: String(SPECIALTY_OPTIONS.find((option) => option.value === specialty)?.label ?? specialty) })
   if (state.period === "todo") chips.push({ key: "periodo", label: "Período", value: "todo", displayValue: "Todo el historial" })
   if (state.period === "personalizado") {
@@ -78,7 +78,7 @@ export function HistoryFilters({ worksites, state }: { worksites: Array<{ id: st
       onClearAll={() => setFilters({ q: null, faena: null, equipo: null, origen: null, tipo: null, taller: null, especialidad: null, periodo: null, desde: null, hasta: null })}
     >
       <FilterSearchInput
-        placeholder="Equipo, trabajo, orden o taller"
+        placeholder="Folio, equipo, trabajo o taller"
         ariaLabel="Buscar en el historial de mantenciones"
         className="h-11 w-full pl-8 text-xs sm:h-8 sm:w-72"
       />

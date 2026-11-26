@@ -124,3 +124,13 @@ export function parseLocaleNumber(text: string): number | null | "invalid" {
   if (!/^\d+(\.\d+)?$/.test(normalized)) return "invalid"
   return Number(normalized)
 }
+
+/**
+ * Clave de búsqueda compacta: minúsculas, sin tildes y sólo letras y números. Así «ka91», «KA 91» y «KA-91» son la
+ * misma búsqueda, y «mpstf0147» encuentra «MP-STF-0147». Registros firmados (`recordsWhere`, en SQL) y el Historial de
+ * mantenciones (`history-view`, sobre las filas ya leídas) usan la misma regla. Una búsqueda hecha sólo de signos queda
+ * vacía; quien llama decide qué hacer con ella.
+ */
+export function compactSearchKey(value: string): string {
+  return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "")
+}

@@ -83,8 +83,8 @@ export function recordAlertTags(detail: AlertSource): RecordAlertTag[] {
     const reason = detail.schedule.manualReason?.trim()
     tags.push({
       key: "manual",
-      label: "Pauta elegida a mano",
-      title: "Pauta elegida a mano",
+      label: "Intervalo elegido a mano",
+      title: "Intervalo elegido a mano",
       message: `Se hizo la mantención de ${formatReading(detail.schedule.intervalValue, detail.unit)} en vez de la sugerida, de ${formatReading(detail.schedule.suggestedIntervalValue, detail.unit)}. Motivo: ${reason || "sin motivo registrado"}.`,
       action: reason ? "Verifica que el motivo justifique el cambio." : "Pide el motivo al mecánico con «Observar».",
       anchor: { href: DATA_ANCHOR, label: "Ver la pauta usada" },

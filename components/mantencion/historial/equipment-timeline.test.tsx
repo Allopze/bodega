@@ -70,6 +70,8 @@ describe("«Historial de mantenciones» de la hoja de vida", () => {
       "/mantencion/registros/historicos/h-2026-b",
       "/mantencion/registros/historicos/h-2025",
     ])
+    // El orden se ve en la lista: la tarjeta no lo narra bajo su título.
+    expect(screen.queryByText("Del más reciente al más antiguo")).toBeNull()
   })
 
   it("cada trabajo es un solo enlace a su ficha, con nombre accesible de tipo, fecha, origen y primera línea", () => {
