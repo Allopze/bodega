@@ -129,7 +129,7 @@ describe("«Historial de mantenciones» de la hoja de vida", () => {
     expect(text).not.toMatch(/Interno|Externo|días? en taller|Lectura|hombre/)
   })
 
-  it("«en taller» cuando el trabajo sigue en taller sin días calculables; «Interno» cuando el taller es propio", () => {
+  it("«En taller» cuando el trabajo sigue en taller sin días calculables; «Interno» cuando el taller es propio", () => {
     render(
       <EquipmentTimelineCard
         vehicleId="veh-1"
@@ -138,8 +138,21 @@ describe("«Historial de mantenciones» de la hoja de vida", () => {
         ])}
       />,
     )
-    expect(within(items()[0]!).getByText("en taller")).toBeDefined()
+    expect(within(items()[0]!).getByText("En taller")).toBeDefined()
     expect(within(items()[0]!).getByText("Interno")).toBeDefined()
+  })
+
+  it("mientras sigue en taller dice lo mismo que la lista del Historial: «3 días · sigue en taller»", () => {
+    render(<EquipmentTimelineCard vehicleId="veh-1" timeline={timeline([work("ot-1", "2026-10-03", { source: "ot", inWorkshop: true, workshopDays: 3 })])} />)
+    expect(within(items()[0]!).getByText("3 días · sigue en taller")).toBeDefined()
+  })
+
+  it("un trabajo que salió de taller el mismo día no repite «0 días en taller»; el resto de sus datos sigue", () => {
+    render(<EquipmentTimelineCard vehicleId="veh-1" timeline={timeline([work("h-1", "2026-10-03", { workshopDays: 0, laborHours: 1, detail: { reading: "14568" } })])} />)
+    const text = items()[0]!.textContent ?? ""
+    expect(text).not.toMatch(/días? en taller/)
+    expect(text).toContain("Lectura 14568")
+    expect(text).toContain("1 h hombre")
   })
 
   it("muestra como mucho diez trabajos y el pie lleva al historial completo", () => {

@@ -23,7 +23,8 @@ export interface EquipmentLifeData {
   workOrders?: LifeWorkOrders | null
   /**
    * «Historial de mantenciones» del equipo (`loadEquipmentTimeline`) con su `vehicleId`, para enlazar al
-   * historial completo. `null` (o ausente) = sin permiso de historial: la tarjeta no se dibuja.
+   * historial completo. `null` (o ausente) = sin permiso de historial: en su lugar va la lista de lo firmado
+   * en la app (`rows`), con el mismo título.
    */
   timeline?: (EquipmentTimeline & { vehicleId: string }) | null
   /**
@@ -68,19 +69,21 @@ function LifeStatus({ row }: { row: LifeRow }) {
 }
 
 /**
- * Hoja de vida del equipo: todas sus mantenciones, vigentes y anuladas (éstas
- * marcadas), dentro del alcance de lectura de quien mira. Reemplaza a «Registros
- * recientes»: es la misma lista, completa y con más columnas.
+ * Las mantenciones firmadas en la app, vigentes y anuladas (éstas marcadas), dentro del alcance de lectura de
+ * quien mira. Sólo se dibuja para quien no ve el historial: con la línea de tiempo, lo firmado ya está ahí y
+ * esta tarjeta decía «aún no tiene mantenciones» justo debajo de años de formularios. Lleva el mismo título que
+ * la línea de tiempo: para quien mira, las dos son «el historial de mantenciones del equipo».
  */
-function MaintenanceLifeSection({ life, code }: { life: EquipmentLifeData; code: string }) {
+function SignedRecordsSection({ life, code }: { life: EquipmentLifeData; code: string }) {
   const { rows, totals, hasMore, limit } = life
   return (
-    <SectionCard title="Hoja de vida" description={rows.length ? totalsText(totals) : "Historial de mantenciones del equipo"}>
+    <SectionCard title="Historial de mantenciones" description={rows.length ? totalsText(totals) : undefined}>
       {rows.length === 0 ? (
         <EmptyState
           compact
-          title="Este equipo aún no tiene mantenciones"
-          description="Se llenan cuando el mecánico firma una preventiva o una correctiva desde la app. Si esperabas verlas y no están, puede que pertenezcan a una faena que tu perfil no alcanza."
+          as="p"
+          title="Este equipo aún no tiene mantenciones firmadas"
+          description="Aparecen cuando el mecánico firma una preventiva o una correctiva desde la app. Si esperabas verlas, puede que pertenezcan a una faena que tu perfil no alcanza."
         />
       ) : (
         <>
@@ -199,6 +202,7 @@ function EquipmentWorkOrdersSection({ workOrders, code, impact }: { workOrders: 
       {rows.length === 0 ? (
         <EmptyState
           compact
+          as="p"
           title="Este equipo aún no tiene órdenes de trabajo"
           description="Se llenan cuando se pide una reparación o una mantención para este equipo."
         />
@@ -278,15 +282,16 @@ function EquipmentWorkOrdersSection({ workOrders, code, impact }: { workOrders: 
 }
 
 /**
- * Hoja de vida del equipo: las mantenciones firmadas y, debajo, las órdenes de
- * trabajo del taller (sólo para quien tiene permiso de OT).
+ * Historial del equipo en la ficha: UNA tarjeta «Historial de mantenciones» —la línea de tiempo (formularios,
+ * órdenes de trabajo y registros firmados) para quien ve el historial; si no, la lista de lo firmado— y, debajo,
+ * las órdenes de trabajo del taller (sólo para quien tiene permiso de OT).
  */
 export function EquipmentLifeSection({ life, code }: { life: EquipmentLifeData; code: string }) {
   return (
     <div className="flex flex-col gap-5">
-      {/* La línea de tiempo va primero: reúne formularios, órdenes de trabajo y registros; «Hoja de vida» es sólo lo firmado en la app. */}
-      {life.timeline && <EquipmentTimelineCard timeline={life.timeline} vehicleId={life.timeline.vehicleId} />}
-      <MaintenanceLifeSection life={life} code={code} />
+      {life.timeline
+        ? <EquipmentTimelineCard timeline={life.timeline} vehicleId={life.timeline.vehicleId} />
+        : <SignedRecordsSection life={life} code={code} />}
       <EquipmentWorkOrdersSection workOrders={life.workOrders ?? null} code={code} impact={life.workOrderImpact} />
     </div>
   )

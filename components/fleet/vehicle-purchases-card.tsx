@@ -100,6 +100,8 @@ export function VehiclePurchasesCard({
           <EmptyState
             compact
             align="start"
+            // Dentro de la tarjeta, que ya tiene su título: el vacío es texto, no un segundo encabezado de sección.
+            as="p"
             title="Sin compras vinculadas"
             description={requestButton
               ? "Se llena cuando se pidan repuestos o servicios para este equipo, con su orden de compra y costo."

@@ -118,8 +118,15 @@ describe("«Seguro» de la ficha", () => {
   })
 })
 
-describe("«Hoja de vida»", () => {
+describe("«Historial de mantenciones» sin permiso de historial: lo firmado en la app", () => {
   const totals = { active: 3, activeCorrective: 1, activePreventive: 2, activeHours: 3.5, voided: 1 }
+
+  it("lleva el mismo título que la línea de tiempo y, sin registros, dice que faltan los firmados", () => {
+    render(<EquipmentLifeSection code="KA-107" life={data().life} />)
+    expect(screen.getAllByRole("heading", { name: "Historial de mantenciones" })).toHaveLength(1)
+    expect(screen.queryByRole("heading", { name: "Hoja de vida" })).toBeNull()
+    expect(screen.getByText("Este equipo aún no tiene mantenciones firmadas")).toBeDefined()
+  })
 
   it("una sola etiqueta por fila: la revisión pendiente no se pinta, y «Vigente» es lo que queda", () => {
     render(
@@ -154,7 +161,7 @@ describe("«Hoja de vida»", () => {
   })
 })
 
-describe("«Órdenes de trabajo» de la hoja de vida", () => {
+describe("«Órdenes de trabajo» de la ficha", () => {
   const workOrders = (overrides: Partial<NonNullable<EquipmentDetailData["life"]["workOrders"]>> = {}) => ({
     total: 2,
     rows: [
@@ -186,6 +193,8 @@ describe("«Órdenes de trabajo» de la hoja de vida", () => {
   it("con permiso pero sin órdenes dice qué significa; si hay más de las que caben, enlaza a la lista", () => {
     const { rerender } = render(<EquipmentLifeSection life={life({ rows: [], total: 0 })} code="KA-107" />)
     expect(screen.getByText("Este equipo aún no tiene órdenes de trabajo")).toBeTruthy()
+    // El vacío es texto dentro de la tarjeta, no un segundo encabezado al nivel de su título.
+    expect(screen.queryByRole("heading", { name: "Este equipo aún no tiene órdenes de trabajo" })).toBeNull()
     rerender(<EquipmentLifeSection life={life(workOrders({ total: 14 }))} code="KA-107" />)
     expect(screen.getByRole("link", { name: "Ver todas en la lista de órdenes" }).getAttribute("href")).toBe("/mantencion/ot?estado=abiertas&q=KA-107")
   })
@@ -209,11 +218,21 @@ describe("«Historial de mantenciones» en la hoja de vida", () => {
     expect(screen.getByRole("link", { name: "Ver todo el historial de este equipo" }).getAttribute("href")).toBe("/mantencion/registros/historicos?equipo=veh-1&periodo=todo")
   })
 
-  it("sin permiso de historial (null o ausente) la tarjeta no se dibuja, y ya no aparece «Historial anterior»", () => {
+  // Regresión (2026-11-26): debajo de años de formularios, una segunda tarjeta «Hoja de vida» decía «Este equipo
+  // aún no tiene mantenciones» porque sólo leía lo firmado en la app. Con la línea de tiempo, la tarjeta es una sola.
+  it("con la línea de tiempo no hay una segunda tarjeta que diga que el equipo no tiene mantenciones", () => {
+    render(<EquipmentLifeSection code="KA-107" life={withTimeline({ rows: [historyRow], total: 1, includesOrders: true, vehicleId: "veh-1" })} />)
+    expect(screen.getAllByRole("heading", { name: "Historial de mantenciones" })).toHaveLength(1)
+    expect(screen.queryByRole("heading", { name: "Hoja de vida" })).toBeNull()
+    expect(screen.queryByText(/aún no tiene mantenciones/)).toBeNull()
+  })
+
+  it("sin permiso de historial (null o ausente) la tarjeta es la de lo firmado, y ya no aparece «Historial anterior»", () => {
     const { rerender } = render(<EquipmentLifeSection code="KA-107" life={withTimeline(null)} />)
-    expect(screen.queryByRole("heading", { name: "Historial de mantenciones" })).toBeNull()
+    expect(screen.getAllByRole("heading", { name: "Historial de mantenciones" })).toHaveLength(1)
+    expect(screen.getByText("Este equipo aún no tiene mantenciones firmadas")).toBeDefined()
     rerender(<EquipmentLifeSection code="KA-107" life={data().life} />)
-    expect(screen.queryByRole("heading", { name: "Historial de mantenciones" })).toBeNull()
+    expect(screen.getByText("Este equipo aún no tiene mantenciones firmadas")).toBeDefined()
     expect(screen.queryByText("Historial anterior")).toBeNull()
   })
 })

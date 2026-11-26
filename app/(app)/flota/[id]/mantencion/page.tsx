@@ -15,7 +15,7 @@ import { getWorkOrderConsumptionImpact } from "@/lib/services/fleet"
 import { formatNumber } from "@/lib/mantencion/format"
 import { equipmentScope, recordVisibility, recordVisibilitySql, viewerFromSession } from "@/lib/services/mantencion/access"
 import { countEquipmentRecords } from "@/lib/services/mantencion/equipment"
-import { loadEquipmentInsurance, loadEquipmentWorkOrders, loadLifeRows, loadLifeTotals } from "@/lib/services/mantencion/equipment-life"
+import { loadEquipmentInsurance, loadEquipmentWorkOrders, loadLifeRows, loadLifeTotals, type LifeTotals } from "@/lib/services/mantencion/equipment-life"
 import { loadEquipmentTimeline } from "@/lib/services/mantencion/maintenance-work"
 import { listEquipmentHistory } from "@/lib/services/mantencion/equipment-history"
 import { loadEquipmentCurrents } from "@/lib/services/mantencion/equipment-resolve"
@@ -36,6 +36,9 @@ import { listPersonalUsePeriods } from "@/lib/services/fleet-personal-use"
 
 export const metadata: Metadata = { title: "Vehículo · Mantención" }
 export const dynamic = "force-dynamic"
+
+/** Totales de lo firmado para quien ve la línea de tiempo: esa lista no se dibuja, así que no se consulta. */
+const NO_LIFE_TOTALS: LifeTotals = { active: 0, activeCorrective: 0, activePreventive: 0, activeHours: 0, voided: 0 }
 
 /**
  * Pestaña «Mantención» de la ficha única del vehículo (crítica 2026-11-15, paso 4a). Era la
@@ -93,11 +96,12 @@ export default async function EquipmentDetailPage({
   const canSeePurchases = can(session, "purchasing:view") || can(session, "repuestos:view_all")
   // La línea de tiempo del «Historial de mantenciones» (formularios, OT y registros) sólo la pide quien puede ver el
   // historial: el mismo permiso que decidía la visibilidad de «Historial anterior». Su alcance lo aplica el servicio.
+  // Quien la ve no recibe además la lista de lo firmado (la línea de tiempo ya lo trae): no se consulta en balde.
   const canSeeHistory = canAny(session, "mant:records:view_all", "mant:records:view_worksite")
   const [history, life, totals, insurance, recordCount, schedules, workOrders, timeline, purchases] = await Promise.all([
     listEquipmentHistory(id),
-    loadLifeRows(id, visibility, { limit: lifeLimit }),
-    loadLifeTotals(id, visibility),
+    canSeeHistory ? Promise.resolve({ rows: [], hasMore: false }) : loadLifeRows(id, visibility, { limit: lifeLimit }),
+    canSeeHistory ? Promise.resolve(NO_LIFE_TOTALS) : loadLifeTotals(id, visibility),
     loadEquipmentInsurance(id),
     countEquipmentRecords(id),
     canManage ? listSchedules() : Promise.resolve(null),

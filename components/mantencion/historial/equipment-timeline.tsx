@@ -8,7 +8,7 @@ import { ACTION_TYPE_COLORS, HISTORY_SOURCE_LABELS, historyHref, parseHistoryPar
 import type { EquipmentTimeline, MaintenanceHistoryRow } from "@/lib/services/mantencion/maintenance-work"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { ActionTypeBadge } from "./action-type-badge"
-import { responsibleText } from "./history-format"
+import { responsibleText, workshopText as sharedWorkshopText } from "./history-format"
 
 /** Trabajos que caben en la hoja de vida del equipo; el resto se ve en el Historial de mantenciones. */
 export const EQUIPMENT_TIMELINE_LIMIT = 10
@@ -18,10 +18,14 @@ function firstLine(description: string): string {
   return description.split("\n").map((line) => line.trim()).find((line) => line !== "") ?? "Sin descripción"
 }
 
-/** «3 días en taller»; «en taller» si no hay días calculables pero sigue ahí; `null` si el trabajo no dice nada del taller. */
+/**
+ * Mientras sigue en taller, lo mismo que la lista y la vista previa («3 días · sigue en taller», «En taller»).
+ * Terminado: «3 días en taller»; nada si salió el mismo día (0) o el trabajo no informa el taller. «0 días en
+ * taller» se repetía en casi todos los formularios y no decía nada; la cifra exacta sigue en la ficha del trabajo.
+ */
 function workshopText(row: MaintenanceHistoryRow): string | null {
-  if (row.workshopDays !== null) return plural(row.workshopDays, "día en taller", "días en taller")
-  return row.inWorkshop ? "en taller" : null
+  if (row.inWorkshop) return sharedWorkshopText(row)
+  return row.workshopDays ? plural(row.workshopDays, "día en taller", "días en taller") : null
 }
 
 /** «Externo · {responsable}», «Externo» o «Interno»; `null` si el trabajo no lo informa. */
