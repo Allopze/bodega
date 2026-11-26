@@ -46,12 +46,13 @@ describe("onwayCaptchaSolverEnabled", () => {
 
 function fakePage(options: {
   textareaValue?: string
-  frames?: Array<{ url: string; token?: string; bodyText?: string }>
+  frames?: Array<{ url: string; token?: string; bodyText?: string; checked?: boolean }>
 }) {
   const frames = (options.frames ?? []).map((frame) => ({
     url: () => frame.url,
     locator: () => ({
       getAttribute: async () => frame.token ?? null,
+      count: async () => (frame.checked ? 1 : 0),
     }),
     evaluate: async () => frame.bodyText ?? "",
   }))
@@ -75,13 +76,26 @@ describe("hasOnwayCaptchaToken", () => {
     await expect(hasOnwayCaptchaToken(page)).resolves.toBe(false)
   })
 
-  it("detecta el token dentro del frame del desafío", async () => {
-    const page = fakePage({ frames: [{ url: "https://www.google.com/recaptcha/bframe", token: "x".repeat(40) }] })
+  it("acepta la casilla marcada en el frame anchor", async () => {
+    const page = fakePage({
+      frames: [{ url: "https://www.google.com/recaptcha/api2/anchor", checked: true }],
+    })
     await expect(hasOnwayCaptchaToken(page)).resolves.toBe(true)
   })
 
-  it("ignora frames ajenos a recaptcha", async () => {
-    const page = fakePage({ frames: [{ url: "https://onway.enteldigital.cl/OnlineTracking", token: "x".repeat(40) }] })
+  it("NO se declara resuelto por el token de desafío del bframe", async () => {
+    // Regresión del 2026-11-25: `#recaptcha-token` vale ~4300 caracteres desde
+    // que el desafío se pinta, con `getResponse()` vacío y la casilla sin
+    // marcar. Se declaraba resuelto a los 587 ms y Auth0 rechazaba el envío.
+    const page = {
+      evaluate: async () => 0,
+      frames: () => [
+        {
+          url: () => "https://www.google.com/recaptcha/api2/bframe",
+          locator: () => ({ getAttribute: async () => "x".repeat(4302), count: async () => 0 }),
+        },
+      ],
+    } as never
     await expect(hasOnwayCaptchaToken(page)).resolves.toBe(false)
   })
 })

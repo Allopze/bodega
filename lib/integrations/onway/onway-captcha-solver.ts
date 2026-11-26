@@ -92,19 +92,53 @@ async function checkboxFrame(page: Page): Promise<Frame | undefined> {
 }
 
 /**
- * ¿El widget ya entregó un token? Se mira el textarea del portal y el frame del
- * desafío: según la versión del widget, Google deja el token en
- * `#recaptcha-token` dentro del iframe y el textarea principal queda vacío.
+ * ¿El widget ya entregó una respuesta válida?
+ *
+ * **No** sirve mirar `#recaptcha-token` del `bframe`: ese input lleva el token
+ * del **desafío**, no el de la respuesta, y aparece en cuanto el desafío se
+ * pinta. Medido el 2026-11-25 contra la demo oficial de reCAPTCHA v2: a los
+ * 681 ms de pulsar la casilla ya tenía 4302 caracteres, mientras
+ * `getResponse()` seguía vacío y la casilla sin marcar. Usarlo como señal de
+ * éxito hacía que el solver se declarara resuelto sin haber resuelto nada: en
+ * producción devolvió `outcome: instant` a los 587 ms y Auth0 rechazó el
+ * envío 45 s después (`ONWAY_INTERACTIVE_AUTH_REQUIRED`).
+ *
+ * Señal correcta, tomada de `hayTokenVerificado` del referente:
+ *  1. `grecaptcha.getResponse()` no vacío (lo que Auth0 lee de verdad), o
+ *  2. la casilla marcada en el frame `anchor`.
  */
 export async function hasOnwayCaptchaToken(page: Page): Promise<boolean> {
-  const fromPage = await page
+  const fromWidget = await page
+    .evaluate(() => {
+      const g = (window as unknown as { grecaptcha?: { getResponse?: () => string } }).grecaptcha
+      try {
+        return g?.getResponse?.()?.length ?? 0
+      } catch {
+        // El widget puede no estar listo todavía.
+        return 0
+      }
+    })
+    .catch(() => 0)
+  if (fromWidget > 20) return true
+
+  // En el portal real el token queda además en el textarea oculto.
+  const fromTextarea = await page
     .evaluate(() => {
       const el = document.querySelector('textarea[name="g-recaptcha-response"]') as HTMLInputElement | null
       return el ? el.value.length : 0
     })
     .catch(() => 0)
-  if (fromPage > 20) return true
+  if (fromTextarea > 20) return true
 
+  return isCheckboxChecked(page)
+}
+
+/**
+ * Longitud del token de desafío del `bframe`. **Sólo para diagnóstico**: no es
+ * una señal de éxito (ver `hasOnwayCaptchaToken`).
+ */
+export async function onwayCaptchaChallengeTokenLength(page: Page): Promise<number> {
+  let longest = 0
   for (const frame of page.frames()) {
     if (!frame.url().includes("recaptcha")) continue
     const length = await frame
@@ -112,9 +146,9 @@ export async function hasOnwayCaptchaToken(page: Page): Promise<boolean> {
       .getAttribute("value")
       .then((value) => value?.length ?? 0)
       .catch(() => 0)
-    if (length > 20) return true
+    longest = Math.max(longest, length)
   }
-  return false
+  return longest
 }
 
 async function isCheckboxChecked(page: Page): Promise<boolean> {
