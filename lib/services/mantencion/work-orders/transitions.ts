@@ -13,7 +13,7 @@ import { todayInChile } from "@/lib/utils"
 import {
   canActOnWorkOrder, canEditExecution, canEditRequest, canReclassifyWorkOrder, type AccessCheck,
 } from "./access"
-import { activateWorkOrderCapaEvidence, supersedeWorkOrderCapaEvidence } from "./capa-link"
+import { activateWorkOrderCapaEvidence, releaseWorkOrderCapaOnVoid, supersedeWorkOrderCapaEvidence } from "./capa-link"
 import { accessFactsOf, applyChange, assertNotFuture, CLIENT_OP_EVENTS, linkedRecordState, planFor, refuse, runLocked, type LockedResult, type OtRow } from "./core"
 import { checkClassification, checkRequestFields, itemRows, normalizeItems } from "./create"
 import { releaseWorkOrderAllocationsTx } from "../parts"
@@ -482,18 +482,31 @@ export async function conformWorkOrder(actor: WorkOrderActor, input: Base & { fa
 
 // ── Anular y reabrir ────────────────────────────────────────────────────────
 
-/** Anula la OT (jefatura, o quien la creó mientras no ha entrado a taller: «por asignar» o «asignada»). Si estaba en taller, revierte el estado del equipo. */
+/**
+ * Anula la OT (jefatura, o quien la creó mientras no ha entrado a taller: «por asignar» o «asignada»). Si estaba en taller,
+ * revierte el estado del equipo. Si nació de un hallazgo de inspección, su acción correctiva (CAPA) viva se cancela con el
+ * motivo y el hallazgo vuelve a quedar abierto para derivarlo de nuevo (OT-1, `releaseWorkOrderCapaOnVoid`).
+ */
 export async function voidWorkOrder(actor: WorkOrderActor, input: Base & { reason: string }): Promise<LockedResult> {
   return runLocked(actor, input, async (ctx) => {
     assertAct(canActOnWorkOrder(actor, accessFactsOf(ctx), "void"))
     const reason = assertReason("void", input.reason)
     const wasInWorkshop = ctx.ot.status === "en_ejecucion"
+    // La CAPA del hallazgo, antes de escribir la OT: el evento de la anulación deja constancia de lo que se canceló.
+    const capa = await releaseWorkOrderCapaOnVoid(ctx.tx, {
+      workOrder: { id: ctx.ot.id, folio: ctx.ot.folio, inspectionFindingId: ctx.ot.inspectionFindingId },
+      actorUserId: actor.userId,
+      reason,
+    })
     const row = await applyChange(ctx, {
       status: "anulada",
       voidedByUserId: actor.userId,
       voidedAt: nowIso(),
       voidReason: reason,
-    }, [{ type: "voided", reason, clientOpId: input.clientOpId }], { reason })
+    }, [{ type: "voided", reason, changeSet: capa ? { capaCancelled: capa } : null, clientOpId: input.clientOpId }], {
+      reason,
+      ...(capa ? { newState: { capaCancelled: capa.capaCode, findingId: capa.findingId } } : {}),
+    })
     if (wasInWorkshop) {
       await markVehicleOutOfWorkshop(ctx.tx, { vehicleId: row.vehicleId, folio: row.folio, workOrderId: row.id, actorUserId: actor.userId, reason: "OT anulada" })
     }

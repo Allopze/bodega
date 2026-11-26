@@ -86,6 +86,11 @@ export interface OtActionsProps {
    * faena. `null` o ausente = nada reservado (o quien mira no ve las notas de pedido).
    */
   reservedUnused?: ReservedUnusedNotice | null
+  /**
+   * La OT nació de un hallazgo de inspección con una acción correctiva (CAPA) enlazada: «Anular» avisa que esa acción
+   * se cancela y el hallazgo vuelve a quedar abierto (OT-1). Presentación; lo hace el servicio al anular.
+   */
+  hasInspectionCapa?: boolean
   /** Repuestos reservados disponibles: los chips «Disponibles para esta OT» del registro web. */
   availableParts?: WorkOrderAvailablePart[]
 }
@@ -106,6 +111,9 @@ export function recordOptions(input: { repair: boolean; maintenance: boolean; ha
 }
 
 const KIND_TEXT: Record<RecordKind, string> = { C: "Correctiva", P: "Preventiva" }
+
+/** Qué más pasa al anular una OT que nació de un hallazgo de inspección (OT-1). */
+export const INSPECTION_CAPA_VOID_NOTICE = "Nació de un hallazgo de inspección: si su acción correctiva (CAPA) sigue en curso, se cancela con este motivo y el hallazgo queda abierto para que Prevención lo derive de nuevo."
 
 type DialogName = "edit" | "reclassify" | "assign" | "entry" | "estimate" | "items" | "finish" | "receive" | "conform" | "reject" | "reopen" | "void" | null
 
@@ -336,7 +344,7 @@ export function OtActions(props: OtActionsProps) {
         open={dialog === "void"}
         onOpenChange={(open) => { if (!open) setDialog(null) }}
         title={`Anular ${props.folio}`}
-        description={`Queda visible como anulada, con su motivo. Si el equipo estaba en taller, vuelve a su estado anterior. No se puede deshacer.${props.reservedUnused ? ` ${reservedUnusedText(props.reservedUnused)}` : ""}`}
+        description={`Queda visible como anulada, con su motivo. Si el equipo estaba en taller, vuelve a su estado anterior. No se puede deshacer.${props.hasInspectionCapa ? ` ${INSPECTION_CAPA_VOID_NOTICE}` : ""}${props.reservedUnused ? ` ${reservedUnusedText(props.reservedUnused)}` : ""}`}
         variant="destructive"
         confirmLabel="Anular orden"
         reasonLabel="Motivo de la anulación"

@@ -138,6 +138,23 @@ describe("releaseAllocationAction", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/mantencion/ot/[id]", "page")
   })
 
+  it("dice qué líneas de nota volvieron a pendiente y refresca la ficha de cada nota (NP4-4)", async () => {
+    const line = (itemId: string, noteId: string, noteCode: string, description: string, outcome: "pendiente" | "rechazada") =>
+      ({ itemId, noteId, noteCode, description, quantity: 1, outcome, remainderItemId: null })
+    services.releaseAllocationTx.mockResolvedValueOnce({ released: 2, returnedLines: [line("i1", "n1", "NP-2026-0002", "Filtro de combustible primario", "pendiente")] })
+    expect(await actions.releaseAllocationAction(input)).toEqual({
+      ok: true,
+      message: "Liberaste 2 de «Filtro de aceite»; pasa a stock libre de Santa Fe. «Filtro de combustible primario» de NP-2026-0002 volvió a pendiente.",
+    })
+    expect(revalidatePath).toHaveBeenCalledWith("/mantencion/notas-pedido/n1")
+
+    services.releaseAllocationTx.mockResolvedValueOnce({ released: 2, returnedLines: [line("i1", "n1", "NP-1", "Filtro", "pendiente"), line("i2", "n2", "NP-2", "Filtro", "pendiente"), line("i3", "n2", "NP-2", "Aceite", "rechazada")] })
+    expect(await actions.releaseAllocationAction(input)).toEqual({
+      ok: true,
+      message: "Liberaste 2 de «Filtro de aceite»; pasa a stock libre de Santa Fe. 2 líneas de notas de pedido volvieron a pendiente. Una línea se rechazó sola porque la orden ya terminó.",
+    })
+  })
+
   it("una reserva que la OT no tiene (o que ya no está disponible) no se libera", async () => {
     expect(await actions.releaseAllocationAction({ ...input, allocationId: "al-ajena" })).toEqual({ ok: false, message: "Esa reserva ya no está disponible." })
     expect(services.transaction).not.toHaveBeenCalled()

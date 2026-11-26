@@ -365,6 +365,23 @@ describe("OtActions: «Solicitar compra»", () => {
   })
 })
 
+describe("OtActions: aviso de la CAPA al anular una OT que nació de un hallazgo (OT-1)", () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(cleanup)
+
+  it("«Anular» dice que la acción correctiva se cancela y el hallazgo queda abierto, sólo si la OT nació de un hallazgo con CAPA", async () => {
+    render(<OtActions {...props({ status: "asignada", allowedTransitions: ["void"], hasInspectionCapa: true })} />)
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Anular" }))
+    expect(within(await screen.findByRole("dialog")).getByText(/su acción correctiva \(CAPA\) sigue en curso, se cancela con este motivo y el hallazgo queda abierto para que Prevención lo derive de nuevo/)).toBeTruthy()
+    cleanup()
+    render(<OtActions {...props({ status: "asignada", allowedTransitions: ["void"] })} />)
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Anular" }))
+    expect(within(await screen.findByRole("dialog")).queryByText(/CAPA/)).toBeNull()
+  })
+})
+
 describe("OtActions: aviso de repuestos reservados sin usar", () => {
   beforeEach(() => vi.clearAllMocks())
   afterEach(cleanup)

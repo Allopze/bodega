@@ -40,6 +40,9 @@ function TakeFromStockDialog({ noteId, line, worksiteName, stockOptions, onOpenC
   const parsed = parseQty(quantity)
   const tooMuch = parsed > max
   const valid = Boolean(productId) && max > 0 && parsed > 0 && !tooMuch
+  // Reservar menos de lo pedido resuelve sólo esa cantidad: el saldo queda como una línea pendiente nueva (NP4-3).
+  const balance = Math.round(line.quantity * 100) - Math.round(parsed * 100)
+  const partial = valid && balance > 0
   const name = (productId === line.productId ? line.productName : chosen?.name) ?? line.description
   const options = stockOptions.map((option) => ({
     value: option.productId,
@@ -95,6 +98,11 @@ function TakeFromStockDialog({ noteId, line, worksiteName, stockOptions, onOpenC
             >
               <Input id="np-take-quantity" inputMode="decimal" value={quantity} disabled={free <= 0} onChange={(event) => setQuantity(event.target.value)} />
             </Field>
+            {partial && (
+              <p role="status" className="text-sm text-[var(--color-text)]">
+                Reservas {formatQty(parsed)} de {formatQty(line.quantity)}: el saldo ({formatQty(balance / 100)}) queda como una línea pendiente nueva de esta nota, para comprarlo o rechazarlo.
+              </p>
+            )}
           </div>
           {op.message && <p role="alert" className="mt-2 text-sm text-[var(--color-danger-ink)]">{op.message}</p>}
           <DialogFooter>

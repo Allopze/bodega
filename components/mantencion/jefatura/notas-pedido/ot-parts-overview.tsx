@@ -35,7 +35,7 @@ function ReleaseButton({ workOrderId, part }: { workOrderId: string; part: WorkO
         <NoteReasonDialog
           onOpenChange={setOpen}
           title="Liberar repuesto reservado"
-          description={`${part.name}: lo reservado sin usar pasa a stock libre de ${part.worksiteName} y deja de estar reservado para esta orden.`}
+          description={`${part.name}: lo reservado sin usar pasa a stock libre de ${part.worksiteName} y deja de estar reservado para esta orden. Si una nota de pedido lo reservó, esa línea vuelve a pendiente.`}
           label="Motivo"
           submitLabel="Liberar"
           extraValid={parsed > 0 && !tooMuch && !whole}

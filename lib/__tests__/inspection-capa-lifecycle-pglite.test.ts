@@ -245,6 +245,30 @@ describe("derivación de hallazgos de inspección a CAPA", () => {
     expect(orders.map((order) => order.status).sort()).toEqual(["cerrada", "solicitada"])
   })
 
+  it("anular la OT derivada libera el hallazgo: Prevención lo deriva de nuevo y obtiene una CAPA y una OT nuevas, sin tocar a mano la acción vieja (OT-1)", async () => {
+    const first = await deriveFinding()
+    const { voidWorkOrder } = await import("@/lib/services/mantencion/work-orders/transitions")
+    const voided = await voidWorkOrder(
+      { userId: USER_ID, name: "Responsable Mantención", permissions: ["mant:ot:manage"], worksiteIds: [WORKSITE_ID], isGlobal: false },
+      { workOrderId: first.workOrder!.id, reason: "Se derivó el equipo equivocado" },
+    )
+    expect(voided).toMatchObject({ ok: true, value: { status: "anulada" } })
+
+    // Antes quedaba trabado: «El hallazgo ya tiene una acción CAPA enlazada» y la única salida era cancelar la CAPA a mano.
+    const [released] = await testDb.select().from(schema.preventionInspectionFindings).where(eq(schema.preventionInspectionFindings.id, FINDING_ID))
+    expect(released).toMatchObject({ status: "open", capaActionId: null })
+    const second = await deriveFinding()
+
+    expect(second.capaId).not.toBe(first.capaId)
+    expect(second.workOrder).toMatchObject({ created: true })
+    expect(second.workOrder?.id).not.toBe(first.workOrder!.id)
+    expect(second.finding).toMatchObject({ status: "capa_linked", capaActionId: second.capaId })
+    expect((await ordersOf(FINDING_ID)).map((order) => order.status).sort()).toEqual(["anulada", "solicitada"])
+    const capas = await testDb.select().from(schema.preventionCapaActions)
+    expect(capas.map((capa) => [capa.id, capa.status]).sort()).toEqual([[first.capaId, "cancelled"], [second.capaId, "pending"]].sort())
+    expect(capas.find((capa) => capa.id === first.capaId)).toMatchObject({ cancellationReason: expect.stringContaining("anulada: Se derivó el equipo equivocado") })
+  })
+
   it("un equipo que no está en el módulo de mantención deriva la CAPA igual, sin OT, y dice por qué", async () => {
     await testDb.delete(schema.mantEquipmentProfiles).where(eq(schema.mantEquipmentProfiles.vehicleId, VEHICLE_ID))
 

@@ -14,7 +14,8 @@ import { writeTrail } from "./trail"
  *   transacción, con la OT ya bloqueada `FOR UPDATE`: las líneas `pendiente` de las NP abiertas se rechazan solas,
  *   con el motivo, para que la NP no siga en «Pendientes» ni en la cifra del Panel por una orden que ya terminó.
  *   No toca lo ya resuelto (`desde_stock`, `en_compra`, `rechazada`) ni las NP `cerrada` o `anulada`, y repetirla no
- *   hace nada: sin líneas pendientes no escribe. No avisa al mecánico: el cierre o la anulación de la OT ya lo avisan.
+ *   hace nada: sin líneas pendientes ni estado que cambiar no escribe. No avisa al mecánico: el cierre o la anulación de
+ *   la OT ya lo avisan.
  *
  * Bloqueo: llamar con la OT tomada (`FOR UPDATE` en la transición, `FOR SHARE` en las demás escrituras de la NP). Las
  * filas de las NP y de sus líneas se toman `FOR NO KEY UPDATE` ordenadas por id, como `voidPartsNote` y las
@@ -78,6 +79,9 @@ export const autoRejectionTrail = (end: WorkOrderEnd): Record<string, unknown> =
 /**
  * Rechaza las líneas `pendiente` de las NP abiertas (`enviada` o `en_gestion`) de la OT que termina. Devuelve cuántas
  * NP y líneas tocó (`{ notes: 0, lines: 0 }` si no había nada que hacer, que es lo que pasa al repetirla).
+ *
+ * Además recalcula el estado de esas NP, sin escribir si no cambia: una NP que sólo esperaba una compra (`en_gestion`
+ * sin líneas pendientes) deja de esperar cuando la OT termina, porque lo que llegue ya no se reserva para ella (NP4-2).
  */
 export async function rejectOpenLinesOfWorkOrderTx(tx: Tx, input: {
   workOrderId: string
@@ -99,7 +103,6 @@ export async function rejectOpenLinesOfWorkOrderTx(tx: Tx, input: {
     .where(and(inArray(mantPartsNoteItems.noteId, [...noteById.keys()]), eq(mantPartsNoteItems.resolution, "pendiente")))
     .orderBy(asc(mantPartsNoteItems.id))
     .for("no key update")
-  if (lines.length === 0) return { notes: 0, lines: 0 }
 
   // Las filas se tomaron por id; el rastro sale en el orden de la NP y de la línea, que es como se leen.
   const ordered = [...lines].sort((a, b) => a.noteId.localeCompare(b.noteId) || a.sortOrder - b.sortOrder)
@@ -112,5 +115,7 @@ export async function rejectOpenLinesOfWorkOrderTx(tx: Tx, input: {
       workOrderId: input.workOrderId, resolution: line.resolution,
     }, { reason, actor: input.actor, extra })
   }
+  // La OT ya figura terminada en esta transacción: una NP con compras en curso pasa de «en gestión» a «cerrada».
+  for (const note of notes) await recalcNoteStatusTx(tx, note.id, { onlyIfChanged: true })
   return { notes: new Set(ordered.map((line) => line.noteId)).size, lines: ordered.length }
 }

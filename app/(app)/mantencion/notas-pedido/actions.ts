@@ -12,6 +12,7 @@ import { releaseAllocationTx } from "@/lib/services/mantencion/parts"
 import { loadWorkOrderPartsOverview } from "@/lib/services/mantencion/parts-notes/query"
 import { revalidateQueueOfNote } from "@/lib/services/mantencion/queue-revalidation"
 import { rejectNoteItem, resolveNoteItemFromStock, voidPartsNote } from "@/lib/services/mantencion/parts-notes/resolve"
+import type { ReturnedNoteLine } from "@/lib/services/mantencion/parts-notes/line-release"
 import type { PartsActionResult } from "@/lib/services/mantencion/parts/types"
 import { formatQty } from "@/lib/utils"
 import type { Permission } from "@/modules/permissions"
@@ -116,10 +117,22 @@ export async function voidPartsNoteAction(input: unknown): Promise<NoteActionSta
   }
 }
 
+/** Lo que le pasó a las líneas de nota que esa reserva alimentaba, dicho al final del aviso de «Liberar». */
+function returnedLinesText(lines: readonly ReturnedNoteLine[]): string {
+  const back = lines.filter((line) => line.outcome === "pendiente")
+  const rejected = lines.length - back.length
+  const parts: string[] = []
+  if (back.length === 1) parts.push(`«${back[0]!.description}» de ${back[0]!.noteCode} volvió a pendiente.`)
+  else if (back.length > 1) parts.push(`${back.length} líneas de notas de pedido volvieron a pendiente.`)
+  if (rejected > 0) parts.push(rejected === 1 ? "Una línea se rechazó sola porque la orden ya terminó." : `${rejected} líneas se rechazaron solas porque la orden ya terminó.`)
+  return parts.length > 0 ? ` ${parts.join(" ")}` : ""
+}
+
 /**
  * «Liberar» una reserva sin usar de la OT (pasa a stock libre de su faena). `releaseAllocationTx` no mira el
  * alcance: la reserva se busca entre las que la OT tiene según el servicio de lectura (que sí lo aplica) y, además,
- * debe estar en una faena de quien actúa.
+ * debe estar en una faena de quien actúa. Las líneas de nota «desde stock» que esa reserva alimentaba vuelven a
+ * pendiente (NP4-4 y NP4-6) y el aviso lo dice.
  */
 export async function releaseAllocationAction(input: unknown): Promise<NoteActionState> {
   const guard = await guardAnyPermission(MANAGE, PATH)
@@ -138,8 +151,10 @@ export async function releaseAllocationAction(input: unknown): Promise<NoteActio
     const released = await db.transaction((tx) => releaseAllocationTx(tx, {
       allocationId, quantity: amount, reason: text, actorUserId: viewer.userId, ...(viewer.email ? { userEmail: viewer.email } : {}),
     }))
+    const returned = released.returnedLines ?? []
     refreshNotes()
-    return { ok: true, message: `Liberaste ${formatQty(released.released)} de «${allocation.name}»; pasa a stock libre de ${allocation.worksiteName}.` }
+    for (const noteId of new Set(returned.map((line) => line.noteId))) revalidatePath(`${PATH}/${noteId}`)
+    return { ok: true, message: `Liberaste ${formatQty(released.released)} de «${allocation.name}»; pasa a stock libre de ${allocation.worksiteName}.${returnedLinesText(returned)}` }
   } catch (error) {
     return actionErrorResult(error, "No se pudo liberar el repuesto.")
   }
