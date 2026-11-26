@@ -155,6 +155,28 @@ export function translateOnwayCaptchaObjective(objetivo: string): string {
     if (name.toLowerCase() === flat) return name
   }
 
+  // Inglés en plural o con otro sufijo: "bicycles" → "Bicycle", "cars" → "Car".
+  // El tenant de Auth0 de OnWay sirve las consignas en inglés (medido 2026-11-26).
+  const singularEn = words
+    .map((word) => {
+      if (word.endsWith("ies") && word.length > 4) return `${word.slice(0, -3)}y`
+      if (word.endsWith("sses") || word.endsWith("shes") || word.endsWith("ches")) return word.slice(0, -2)
+      if (word.length > 3 && word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1)
+      return word
+    })
+    .join(" ")
+  for (const name of ONWAY_CAPTCHA_CLASSES) {
+    if (name.toLowerCase() === singularEn) return name
+  }
+
+  // El inglés agrega adjetivos al sustantivo de la clase: "fire hydrants" debe
+  // resolver a "Hydrant". Se prueba la última palabra del singular, que en una
+  // consigna de reCAPTCHA es siempre el objeto.
+  const lastEn = singularEn.split(" ").at(-1) ?? ""
+  for (const name of ONWAY_CAPTCHA_CLASSES) {
+    if (lastEn && name.toLowerCase() === lastEn) return name
+  }
+
   const singular = words.map((word) => (word.length > 3 && word.endsWith("s") ? word.slice(0, -1) : word)).join(" ")
   if (singular in TRANSLATIONS_FLAT) return TRANSLATIONS_FLAT[singular]!
 
@@ -162,26 +184,42 @@ export function translateOnwayCaptchaObjective(objetivo: string): string {
 }
 
 /**
- * Extrae el objeto de la consigna: "Selecciona todas las imágenes con taxis"
- * devuelve "taxis".
+ * Extrae el objeto de la consigna.
  *
- * El portal pega el texto de ayuda sin espacio ("incendiosHaz clic…"), así que
- * se separa camel-case antes de recortar. Sin esto la traducción nunca calzaría.
+ * Acepta español e inglés: el portal de referencia servía las consignas en
+ * español, pero el tenant de Auth0 de OnWay las sirve **en inglés**. Medido el
+ * 2026-11-26 contra Auth0 real:
+ *
+ *   "Select all images with bicyclesClick verify once there are none left"
+ *
+ * Con solos los patrones en español no calzaba ninguno, la traducción fallaba y
+ * el solver se rendía antes de marcar una casilla (por eso producción registró
+ * `tiles: 0`).
+ *
+ * El texto de ayuda viene pegado sin espacio ("bicyclesClick verify"), así que
+ * se separa camel-case antes de recortar. Sin eso la traducción tampoco calza.
  */
 export function onwayCaptchaObjectiveFromPrompt(prompt: string): string {
   const text = prompt.trim()
   const patterns = [
+    // Español
     /(?:imágenes|imagenes|cuadros|cuadradas)\s+con\s+(.+)$/i,
     /(?:selecciona|seleccione)\s+(?:todas?\s+)?(?:las\s+)?(.+)$/i,
+    // Inglés
+    /(?:select|click|choose)\s+(?:all\s+)?(?:the\s+)?(?:images|pictures|squares|tiles)\s+(?:with|containing|that contain)\s+(.+)$/i,
+    /(?:select|click|choose)\s+(?:all\s+)?(.+?)\s*(?:click|once|verify|if there)/i,
   ]
 
   const withoutArticle = (value: string): string =>
     value
       .replace(/([a-záéíóúñ])([A-ZÁÉÍÓÚÑ])/g, "$1 $2")
+      .replace(/([a-z])([A-Z][a-z])/g, "$1 $2")
       .replace(/\s*(?:haz clic|si no hay|verificar cuando).*$/i, "")
+      .replace(/\s*(?:click verify|once there are|if there are|if none|verify once).*$/i, "")
       .replace(/[.;].*$/, "")
       .replace(/\bque\s+contengan?\b.*$/i, "")
       .replace(/^(?:un|una|unos|unas|el|la|los|las)\s+/i, "")
+      .replace(/^(?:a|an|the)\s+/i, "")
       .trim()
 
   for (const pattern of patterns) {

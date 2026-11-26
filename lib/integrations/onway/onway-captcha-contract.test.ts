@@ -36,6 +36,34 @@ describe("onwayCaptchaObjectiveFromPrompt", () => {
     expect(onwayCaptchaObjectiveFromPrompt("Selecciona todas las imágenes con bocas de incendiosHaz clic en verificar"))
       .toBe("bocas de incendios")
   })
+
+  /**
+   * El tenant de Auth0 de OnWay sirve las consignas en INGLÉS. Texto medido el
+   * 2026-11-26 en producción. Con sólo los patrones en español el solver se
+   * rendía antes de marcar nada (`tiles: 0`).
+   */
+  it("extrae el objeto de una consigna en inglés de Auth0", () => {
+    expect(
+      onwayCaptchaObjectiveFromPrompt("Select all images with bicyclesClick verify once there are none left"),
+    ).toBe("bicycles")
+    expect(
+      onwayCaptchaObjectiveFromPrompt("Select all images with traffic lights. Click verify once there are none left."),
+    ).toBe("traffic lights")
+    expect(
+      onwayCaptchaObjectiveFromPrompt("Select all squares with crosswalks"),
+    ).toBe("crosswalks")
+  })
+
+  it("traduce la consigna inglesa a la clase del modelo", () => {
+    const objetivo = onwayCaptchaObjectiveFromPrompt("Select all images with bicyclesClick verify once there are none left")
+    expect(translateOnwayCaptchaObjective(objetivo)).toBe("Bicycle")
+    expect(translateOnwayCaptchaObjective("traffic lights")).toBe("Traffic Light")
+    expect(translateOnwayCaptchaObjective("crosswalks")).toBe("Crosswalk")
+    expect(translateOnwayCaptchaObjective("cars")).toBe("Car")
+    expect(translateOnwayCaptchaObjective("motorcycles")).toBe("Motorcycle")
+    expect(translateOnwayCaptchaObjective("buses")).toBe("Bus")
+    expect(translateOnwayCaptchaObjective("fire hydrants")).toBe("Hydrant")
+  })
 })
 
 describe("translateOnwayCaptchaObjective", () => {

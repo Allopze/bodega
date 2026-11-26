@@ -75,7 +75,11 @@ export function onwayCaptchaSolverEnabled(): boolean {
 }
 
 function logOf(options: OnwayCaptchaSolveOptions): (message: string) => void {
-  return options.log ?? ((message) => logger.info("[flota/onway/captcha]", { message }))
+  // `warn`, no `info`: en producción el logger filtra por debajo de `warn`
+  // (`lib/logger.ts`), así que con `info` el paso a paso del solver era
+  // invisible justo cuando hacía falta diagnosticarlo (2026-11-26). Son pocas
+  // líneas por desafío y sólo se emiten cuando Auth0 pide verificación.
+  return options.log ?? ((message) => logger.warn("[flota/onway/captcha]", { message }))
 }
 
 function challengeFrame(page: Page): Frame | undefined {
@@ -561,5 +565,11 @@ export async function solveOnwayCaptcha(
   if (await isOnwayCaptchaBlocked(page)) {
     return { ok: false, outcome: null, failure: "ONWAY_CAPTCHA_BLOCKED", tilesSelected: totalSelected, rounds: totalRounds }
   }
-  return { ok: false, outcome: null, failure: "ONWAY_CAPTCHA_REJECTED", tilesSelected: totalSelected, rounds: totalRounds }
+  // Distinguir "se enviaron tableros y el portal los rechazó" de "nunca se
+  // llegó a marcar nada" (consigna ilegible, clasificador vacío, tablero que
+  // cambió). Con el mismo código, un `tiles: 0` parecía un rechazo del portal
+  // cuando en realidad el solver nunca envió nada (medido 2026-11-26).
+  const failure: OnwayCaptchaFailure = totalSelected > 0 ? "ONWAY_CAPTCHA_REJECTED" : "ONWAY_CAPTCHA_NOT_RECOGNIZED"
+  log(`sin resolución automática: ${failure} (casillas marcadas: ${totalSelected})`)
+  return { ok: false, outcome: null, failure, tilesSelected: totalSelected, rounds: totalRounds }
 }
