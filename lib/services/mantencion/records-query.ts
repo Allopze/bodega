@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, like, lte, or, sql,
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
-  mantRecordCorrectives, mantRecordItems, mantRecords, mantWorkshopUpdates, users, worksites,
+  mantRecordCorrectives, mantRecordItems, mantRecordObservations, mantRecords, mantWorkshopUpdates, users, worksites,
   type MantEquipmentSnapshot,
 } from "@/db/schema"
 import { escapeLikePattern } from "@/lib/utils"
@@ -119,6 +119,12 @@ export interface RecordListRow {
   alerts: { jump: boolean; outOfWorksite: boolean; manualSchedule: boolean; duplicate: boolean }
   /** Correctiva que dejó el equipo en taller y sigue ahí. */
   workshop: { daysStopped: number | null; stale: boolean } | null
+  /**
+   * La última observación del registro ya tiene la respuesta del mecánico (`responded_at`, la misma definición de
+   * «respondida» que el detalle). Sólo dice algo con la revisión «observado»: distingue lo que espera al mecánico de
+   * lo que ya espera a jefatura. Sin observaciones, es `false`.
+   */
+  lastObservationAnswered?: boolean
 }
 
 /** Columnas de orden. Siempre hay un desempate estable para que la paginación no repita ni pierda filas. */
@@ -171,6 +177,8 @@ export async function listRecords(
       outOfWorksite: mantRecords.outOfWorksite,
       duplicateOf: mantRecords.duplicateOfRecordId,
       notDoneCount: sql<number>`(select count(*)::int from ${mantRecordItems} i where i.record_id = ${mantRecords.id} and i.value = 'NR')`,
+      // Sólo la última observación (por el índice record_id, created_at): no se traen todas a memoria.
+      lastObservationAnswered: sql<boolean>`coalesce((select o.responded_at is not null from ${mantRecordObservations} o where o.record_id = ${mantRecords.id} order by o.created_at desc, o.id desc limit 1), false)`,
     })
     .from(mantRecords)
     .innerJoin(worksites, eq(worksites.id, mantRecords.worksiteId))
@@ -216,6 +224,7 @@ export async function listRecords(
         duplicate: row.duplicateOf !== null,
       },
       workshop: open.has(row.id) ? { daysStopped: open.get(row.id)!.daysStopped, stale: open.get(row.id)!.stale } : null,
+      lastObservationAnswered: row.lastObservationAnswered,
     })),
   }
 }

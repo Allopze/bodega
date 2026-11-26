@@ -305,6 +305,48 @@ describe("bandeja de revisión", () => {
     }
   })
 
+  it("REGN-4: la fila dice si la ÚLTIMA observación ya tiene respuesta, sin cargar todas las observaciones", async () => {
+    const answeredFor = async (id: string) => (await listAs(IDS.jefe)).rows.find((item) => item.id === id)?.lastObservationAnswered
+    const at = (daysBack: number) => new Date(Date.now() - daysBack * 86_400_000).toISOString()
+    const observe = (id: string, daysBack: number) =>
+      testDb.insert(schema.mantRecordObservations).values({ id, recordId: R.manual, text: "Falta la foto del sticker", userId: IDS.supBio, createdAt: at(daysBack) })
+    const answer = (id: string) =>
+      testDb.update(schema.mantRecordObservations)
+        .set({ response: "Ya la subí", respondedBy: IDS.mecBio, respondedAt: new Date().toISOString() })
+        .where(eq(schema.mantRecordObservations.id, id))
+
+    await setReview(R.manual, "observado")
+    try {
+      // Observado sin ninguna observación guardada (dato antiguo): no hay respuesta que mostrar.
+      expect(await answeredFor(R.manual)).toBe(false)
+      // Observado y el mecánico todavía no contesta: espera al mecánico.
+      await observe("obs-regn4-1", 3)
+      expect(await answeredFor(R.manual)).toBe(false)
+      // Responde: ya espera a jefatura. Es el mismo criterio del detalle (`response` no nulo).
+      await answer("obs-regn4-1")
+      expect(await answeredFor(R.manual)).toBe(true)
+      const detail = await loadRecordDetail(await viewerOf(IDS.jefe), R.manual)
+      expect(detail?.observations.every((observation) => observation.response !== null)).toBe(true)
+      // Jefatura observa de nuevo: manda la ÚLTIMA, que está sin responder, aunque la anterior sí lo estuviera.
+      await observe("obs-regn4-2", 1)
+      expect(await answeredFor(R.manual)).toBe(false)
+      // Si sólo se responde la más reciente y la anterior queda abierta, igual cuenta la última.
+      await testDb.update(schema.mantRecordObservations)
+        .set({ response: null, respondedBy: null, respondedAt: null })
+        .where(eq(schema.mantRecordObservations.id, "obs-regn4-1"))
+      await answer("obs-regn4-2")
+      expect(await answeredFor(R.manual)).toBe(true)
+      // Los registros sin observaciones no la traen en verdadero.
+      expect(await answeredFor(R.prev)).toBe(false)
+      // La pestaña «Observados» trae la misma fila con el mismo dato.
+      const observed = (await listAs(IDS.jefe, { review: "observado" })).rows
+      expect(observed.map((item) => [item.folio, item.lastObservationAnswered])).toEqual([["MP-BIO-0002", true]])
+    } finally {
+      await testDb.delete(schema.mantRecordObservations).where(inArray(schema.mantRecordObservations.id, ["obs-regn4-1", "obs-regn4-2"]))
+      await setReview(R.manual, "pendiente")
+    }
+  })
+
   it("un registro anulado no es trabajo por revisar: ni se cuenta ni aparece en las pestañas", async () => {
     await setReview(R.duplicate, "pendiente", "anulado")
     try {

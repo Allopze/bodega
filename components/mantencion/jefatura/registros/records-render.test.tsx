@@ -84,10 +84,32 @@ describe("lista de registros", () => {
       rows={[row({ id: "b", folio: "MC-B", kind: "C", intervalValue: null, review: "observado", workshop: { daysStopped: 3, stale: true } })]}
     />)
     const t = table()
-    for (const label of ["Sin actualizar", "Observado", "En taller · 3 días"]) {
+    for (const label of ["Sin actualizar", "Observado · espera al mecánico", "En taller · 3 días"]) {
       expect(t.getByText(label).className).toContain("--color-signal-ink")
       expect(t.getByText(label).className).not.toContain("--color-danger")
     }
+  })
+
+  it("REGN-4: un registro observado dice si espera al mecánico o ya tiene su respuesta, en la tabla y en las tarjetas", () => {
+    render(<RecordsTable
+      sort="fecha" dir="desc" sortHref={sortHref} listQuery=""
+      rows={[
+        row({ id: "a", folio: "MP-A", review: "observado", lastObservationAnswered: false }),
+        row({ id: "b", folio: "MP-B", review: "observado", lastObservationAnswered: true }),
+        // Un registro que no está observado no habla de respuestas, aunque haya tenido una antes.
+        row({ id: "c", folio: "MP-C", review: "revisado", lastObservationAnswered: true }),
+      ]}
+    />)
+    for (const scope of [table(), cards()]) {
+      expect(scope.getAllByText("Observado · espera al mecánico")).toHaveLength(1)
+      expect(scope.getAllByText("Observado · con respuesta")).toHaveLength(1)
+      expect(scope.getByText("Revisado")).toBeTruthy()
+    }
+    // Cada texto cae en la fila de su registro.
+    const rowOf = (folio: string) => table().getByRole("link", { name: `Ver el registro ${folio}` }).closest("tr") as HTMLElement
+    expect(within(rowOf("MP-A")).getByText("Observado · espera al mecánico")).toBeTruthy()
+    expect(within(rowOf("MP-B")).getByText("Observado · con respuesta")).toBeTruthy()
+    expect(within(rowOf("MP-C")).queryByText(/Observado/)).toBeNull()
   })
 
   it("la revisión pendiente no se pinta: es lo normal y las pestañas ya cuentan lo que falta", () => {

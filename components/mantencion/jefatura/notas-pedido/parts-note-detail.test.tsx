@@ -26,7 +26,7 @@ const lineItems = () => {
 }
 
 function view(overrides: Partial<React.ComponentProps<typeof PartsNoteDetailView>> = {}) {
-  return render(<PartsNoteDetailView note={noteDetail()} buyHref={BUY} canOpenWorkOrder canOpenRequests canOpenOrders {...overrides} />)
+  return render(<PartsNoteDetailView note={noteDetail()} buyHref={BUY} canOpenWorkOrder canOpenRequests canOpenOrders canOpenBodega={false} {...overrides} />)
 }
 
 beforeEach(() => vi.clearAllMocks())
@@ -96,6 +96,33 @@ describe("PartsNoteDetailView: líneas", () => {
     expect(second.getByText("Rechazada")).toBeTruthy()
     expect(second.getByText(/Ya hay en la faena/)).toBeTruthy()
     expect(second.getByText(/Ana Pérez · 21-11-2026/)).toBeTruthy()
+  })
+
+  it("NAV-7: cada línea del catálogo enlaza a Bodega, filtrada por su producto y por la faena de la OT", () => {
+    view({
+      canOpenBodega: true,
+      note: noteDetail({
+        worksiteId: "ws-cab",
+        lines: [
+          noteLine({ id: "i1", description: "Filtro de aceite", productId: "prod-1" }),
+          noteLine({ id: "i2", description: "Correa", productId: "prod-2", resolution: "rechazada", stage: "rechazado", resolutionReason: "Ya hay en la faena" }),
+          // Texto libre del mecánico: no hay producto que mirar.
+          noteLine({ id: "i3", description: "Sello a medida", productId: null, freeInWorksite: null }),
+        ],
+      }),
+    })
+    const [first, second, free] = lineItems().map((item) => within(item))
+    expect(first!.getByRole("link", { name: "Ver en bodega: Filtro de aceite" }).getAttribute("href")).toBe("/bodega?vista=kardex&producto=prod-1&faena=ws-cab")
+    expect(first!.getByText("Ver en bodega")).toBeTruthy()
+    // También las líneas ya resueltas: mirar el stock no depende de que la línea siga pendiente.
+    expect(second!.getByRole("link", { name: "Ver en bodega: Correa" }).getAttribute("href")).toBe("/bodega?vista=kardex&producto=prod-2&faena=ws-cab")
+    expect(free!.queryByRole("link", { name: /Ver en bodega/ })).toBeNull()
+  })
+
+  it("NAV-7: sin el permiso de Bodega no se ofrece el enlace, aunque la línea tenga producto", () => {
+    view({ canOpenBodega: false })
+    expect(screen.queryByRole("link", { name: /Ver en bodega/ })).toBeNull()
+    expect(screen.queryByText("Ver en bodega")).toBeNull()
   })
 
   it("una línea reservada del stock dice «Reservado» y quién la reservó, no «En bodega» ni «Sacada de la bodega»", () => {

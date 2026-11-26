@@ -174,6 +174,23 @@ describe("fichas de repuesto — secciones", () => {
   })
 })
 
+describe("fichas de repuesto — existencias en Bodega (NAV-7)", () => {
+  afterEach(cleanup)
+  const PART = { id: "rep-1", sku: "RPT-001", name: "Filtro", partNumber: null, partBrand: null, unitOfMeasure: "unidad", notes: null, referencePrice: null, isActive: true, createdAt: "2026-10-01T12:00:00.000Z", updatedAt: "2026-11-01T12:00:00.000Z" }
+
+  it("con el permiso de Bodega la tarjeta de datos ofrece «Ver existencias en bodega» con el destino que recibe", () => {
+    render(<SparePartDataCard unitLabel="Unidad" part={PART} bodegaHref="/bodega?vista=kardex&producto=rep-1&faena=todas" />)
+    expect(screen.getByRole("link", { name: "Ver existencias en bodega" }).getAttribute("href")).toBe("/bodega?vista=kardex&producto=rep-1&faena=todas")
+  })
+
+  it("sin el permiso (destino nulo) o sin destino, no hay enlace", () => {
+    const { rerender } = render(<SparePartDataCard unitLabel="Unidad" part={PART} bodegaHref={null} />)
+    expect(screen.queryByRole("link", { name: /existencias en bodega/ })).toBeNull()
+    rerender(<SparePartDataCard unitLabel="Unidad" part={PART} />)
+    expect(screen.queryByRole("link", { name: /existencias en bodega/ })).toBeNull()
+  })
+})
+
 describe("priceSourceLabel", () => {
   it("traduce los orígenes conocidos y no deja pasar un valor desconocido", () => {
     expect(priceSourceLabel("invoice_reconciliation")).toBe("Conciliación de factura")
