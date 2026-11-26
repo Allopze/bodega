@@ -21,12 +21,6 @@ export { loadPartsNotePrefill } from "./prefill"
  * amplía lo que se ve.
  */
 
-/** Pestañas de la bandeja: cada una agrupa estados de la NP. */
-const TAB_STATUSES: Record<PartsNoteTab, readonly PartsNoteStatus[]> = {
-  pendientes: ["enviada"],
-  en_gestion: ["en_gestion"],
-  cerradas: ["cerrada", "anulada"],
-}
 const EMPTY_COUNTS: Record<PartsNoteTab, number> = { pendientes: 0, en_gestion: 0, cerradas: 0 }
 const MAX_PAGE_SIZE = 200
 const iso = (value: string) => new Date(value).toISOString()
@@ -34,6 +28,22 @@ const iso = (value: string) => new Date(value).toISOString()
 /** Líneas pendientes y totales de la NP, para la columna «n de m». */
 const pendingLinesSql = sql<number>`(select count(*)::int from ${mantPartsNoteItems} where ${mantPartsNoteItems.noteId} = ${mantPartsNotes.id} and ${mantPartsNoteItems.resolution} = 'pendiente')`
 const totalLinesSql = sql<number>`(select count(*)::int from ${mantPartsNoteItems} where ${mantPartsNoteItems.noteId} = ${mantPartsNotes.id})`
+
+/** La NP tiene al menos una línea pendiente: lo que jefatura todavía tiene que resolver. */
+export const noteHasPendingLineSql = sql`exists (select 1 from ${mantPartsNoteItems} where ${mantPartsNoteItems.noteId} = ${mantPartsNotes.id} and ${mantPartsNoteItems.resolution} = 'pendiente')`
+/** NP abierta: ni cerrada ni anulada. */
+const noteOpenSql = sql`${mantPartsNotes.status} in ('enviada', 'en_gestion')`
+
+/**
+ * Qué agrupa cada pestaña de la bandeja (NP4-2, decisión 2026-11-26). «Pendientes» (las notas por resolver, y la cifra del
+ * Panel) es toda nota abierta con al menos una línea pendiente, aunque tenga otras ya resueltas. «En gestión» es lo que
+ * no tiene nada pendiente pero espera una compra que aún no llega a la faena. «Cerradas», lo cerrado y lo anulado.
+ */
+export const TAB_CONDITIONS: Record<PartsNoteTab, SQL> = {
+  pendientes: sql`(${noteOpenSql} and ${noteHasPendingLineSql})`,
+  en_gestion: sql`(${noteOpenSql} and not ${noteHasPendingLineSql})`,
+  cerradas: sql`${mantPartsNotes.status} in ('cerrada', 'anulada')`,
+}
 
 /** Filtros comunes a la bandeja y a los conteos (todo menos la pestaña). */
 function baseConditions(viewer: MantViewer, filters: PartsNoteListFilters): SQL[] {
@@ -59,18 +69,21 @@ export async function listPartsNotes(viewer: MantViewer, filters: PartsNoteListF
   const pageSize = Math.min(Math.max(Math.trunc(filters.pageSize ?? 25) || 25, 1), MAX_PAGE_SIZE)
   const page = Math.max(Math.trunc(filters.page ?? 1) || 1, 1)
 
-  const counted = await db
-    .select({ status: mantPartsNotes.status, total: sql<number>`count(*)::int` })
+  // Un solo recorrido: cada nota cae en una sola pestaña, la misma que filtra la lista de abajo.
+  const [counted] = await db
+    .select({
+      pendientes: sql<number>`(count(*) filter (where ${TAB_CONDITIONS.pendientes}))::int`,
+      en_gestion: sql<number>`(count(*) filter (where ${TAB_CONDITIONS.en_gestion}))::int`,
+      cerradas: sql<number>`(count(*) filter (where ${TAB_CONDITIONS.cerradas}))::int`,
+    })
     .from(mantPartsNotes)
     .innerJoin(mantWorkOrders, eq(mantWorkOrders.id, mantPartsNotes.workOrderId))
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
     .where(and(...base))
-    .groupBy(mantPartsNotes.status)
-  const counts = { ...EMPTY_COUNTS }
-  for (const row of counted) {
-    for (const tab of Object.keys(TAB_STATUSES) as PartsNoteTab[]) {
-      if ((TAB_STATUSES[tab] as readonly string[]).includes(row.status)) counts[tab] += Number(row.total)
-    }
+  const counts: Record<PartsNoteTab, number> = {
+    pendientes: Number(counted?.pendientes ?? 0),
+    en_gestion: Number(counted?.en_gestion ?? 0),
+    cerradas: Number(counted?.cerradas ?? 0),
   }
 
   const requestedBy = alias(users, "np_requested_by")
@@ -96,7 +109,7 @@ export async function listPartsNotes(viewer: MantViewer, filters: PartsNoteListF
     .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
     .innerJoin(worksites, eq(worksites.id, mantPartsNotes.worksiteId))
     .innerJoin(requestedBy, eq(requestedBy.id, mantPartsNotes.requestedByUserId))
-    .where(and(...base, inArray(mantPartsNotes.status, [...TAB_STATUSES[filters.tab]])))
+    .where(and(...base, TAB_CONDITIONS[filters.tab]))
     // Lo que espera respuesta: primero el equipo detenido y lo más antiguo; el resto, lo más reciente primero.
     .orderBy(
       ...(filters.tab === "pendientes"

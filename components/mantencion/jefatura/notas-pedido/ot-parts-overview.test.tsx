@@ -79,6 +79,8 @@ describe("«Repuestos» de la OT: reservados sin usar", () => {
     const dialog = within(await screen.findByRole("dialog"))
     expect(dialog.getByText(/pasa a stock libre de Santa Fe/)).toBeTruthy()
     expect(dialog.getByText(/deja de estar reservado para esta orden/)).toBeTruthy()
+    // La línea de nota que lo reservó vuelve a pendiente (NP4-4): el diálogo lo avisa antes de confirmar.
+    expect(dialog.getByText(/Si una nota de pedido lo reservó, esa línea vuelve a pendiente\./)).toBeTruthy()
     const quantity = dialog.getByRole("textbox", { name: /Cantidad a liberar/ }) as HTMLInputElement
     expect(quantity.value).toBe("2")
     const submit = dialog.getByRole("button", { name: "Liberar" }) as HTMLButtonElement

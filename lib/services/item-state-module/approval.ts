@@ -7,6 +7,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { resolveReplenishmentLinksTx } from "@/lib/services/epp-replenishment"
 import { cancelEmergencyResourceServiceCaseTx } from "@/lib/services/emergency-resource-service"
+import { unlinkNoteItemsFromRequestTx } from "@/lib/services/mantencion/parts-notes/resolve"
 import { canTransition, type ItemStatus } from "./types"
 import { lockRequestsForRollupTx, rollupRequestStatus } from "./rollup"
 import {
@@ -221,6 +222,12 @@ export async function approveItem(
 /**
  * Reject an item: requested → rejected. Reason is mandatory.
  * After the transition, rolls up the parent request status.
+ *
+ * Si el ítem compraba una línea de nota de pedido (`parts_note_item_id`, ADR mantención 0001) y ya no le queda
+ * ninguna compra viva, la línea se desvincula igual que al cancelar la solicitud (NP4-1): vuelve a «pendiente»,
+ * o se rechaza sola si su OT ya terminó (D13). Va al final, con el ítem rechazado y el padre recalculado (si no, el
+ * propio ítem contaría como comprador vivo), y toma la OT `FOR SHARE` y luego la línea: el mismo orden que
+ * `cancelRequest`, que ya llega ahí con los ítems y el padre bloqueados.
  */
 export async function rejectItem(
   itemId: string,
@@ -233,7 +240,7 @@ export async function rejectItem(
   let pendingNotices: PendingRequesterNotification[] = []
   await db.transaction(async (tx) => {
     const [item] = await tx
-      .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
+      .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId, partsNoteItemId: purchaseRequestItems.partsNoteItemId })
       .from(purchaseRequestItems)
       .where(eq(purchaseRequestItems.id, itemId))
       .for("update")
@@ -283,6 +290,9 @@ export async function rejectItem(
     await resolveReplenishmentLinksTx(tx, [itemId])
     await cancelEmergencyResourceServiceCaseTx(tx, { requestItemId: itemId, actorUserId: userId, reason })
     await rollupRequestStatus(item.requestId, tx, userId)
+    if (item.partsNoteItemId) {
+      await unlinkNoteItemsFromRequestTx(tx, { noteItemIds: [item.partsNoteItemId], actorUserId: userId })
+    }
     pendingNotices = await collectReviewSummaryNoticesTx(tx, [item.requestId], { reviewerName: opts?.approverName })
   })
   flushRequesterApprovalNotifications(pendingNotices)

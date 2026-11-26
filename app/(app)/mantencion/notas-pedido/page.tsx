@@ -32,9 +32,9 @@ const PATHNAME = "/mantencion/notas-pedido"
 function emptyCopy(tab: InboxTab, filtered: boolean): { title: string; description: string } {
   if (filtered) return { title: "Ninguna nota coincide con los filtros", description: "Prueba con otra faena o quita los filtros." }
   switch (tab) {
-    case "pendientes": return { title: "No hay notas por resolver", description: "Cuando un mecánico pida repuestos para una orden de trabajo, la nota aparece aquí hasta que resuelvas cada línea." }
-    case "en_gestion": return { title: "No hay notas en gestión", description: "Aquí quedan las notas con líneas ya resueltas que siguen abiertas: en compra, o con repuestos por llegar y usar." }
-    case "cerradas": return { title: "Aún no hay notas cerradas", description: "Una nota se cierra cuando todas sus líneas quedaron resueltas, o queda anulada con su motivo." }
+    case "pendientes": return { title: "No hay notas por resolver", description: "Cuando un mecánico pida repuestos para una orden de trabajo, la nota aparece aquí mientras le quede una línea por resolver." }
+    case "en_gestion": return { title: "No hay notas en gestión", description: "Aquí quedan las notas sin líneas por resolver que esperan una compra: el repuesto aún no llega a la faena." }
+    case "cerradas": return { title: "Aún no hay notas cerradas", description: "Una nota se cierra cuando cada línea quedó rechazada, reservada de la bodega o comprada y recibida; o queda anulada con su motivo." }
     case "por_conciliar": return { title: "No hay repuestos por conciliar", description: "Aquí aparecen los repuestos que un mecánico declaró usar sin que hubiera stock al sincronizar su registro." }
   }
 }

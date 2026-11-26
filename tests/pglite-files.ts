@@ -704,6 +704,8 @@ export const pgliteTestFiles = [
 
   // NP · L3 notas de pedido: servicio, sync y catálogo del teléfono.
   "lib/__tests__/np-parts-notes-pglite.test.ts",
+  // Reglas de las notas de pedido (NP4-1 a NP4-6): rechazo de la compra, «por resolver», saldo parcial y liberación de reservas.
+  "lib/__tests__/np-reglas-pglite.test.ts",
 
   // NP · L4 consumo: registro, anulación, cierre de OT y conciliación.
   "lib/__tests__/np-consumption-pglite.test.ts",

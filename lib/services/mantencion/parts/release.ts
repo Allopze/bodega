@@ -9,6 +9,7 @@ import { mantPartsAllocations, mantPartsAllocationSources, mantWorkOrderEvents }
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { consumedSql, roundQty, toCents } from "@/lib/services/stock-reservations"
+import { planReleaseToLinesTx, returnReleasedLinesTx, type ReturnedNoteLine } from "../parts-notes/line-release"
 import { allocationRemainingTx, lockForStockTx } from "./allocations"
 import { PartsValidationError, type ReleasedAllocation } from "./types"
 
@@ -72,14 +73,19 @@ export async function releaseWorkOrderAllocationsTx(tx: Tx, input: {
   return { released }
 }
 
-/** Libera a mano parte de una reserva (jefatura, con motivo). Toma sus propios bloqueos. */
+/**
+ * Libera a mano parte de una reserva (jefatura, con motivo). Toma sus propios bloqueos: OT → faena → fila de stock
+ * (`lockForStockTx`) → líneas de nota de pedido y su NP. Las líneas «desde stock» que la reserva alimentaba vuelven a
+ * pendiente (o se rechazan solas si su OT terminó) y la nota se recalcula, todo en esta transacción
+ * (`parts-notes/line-release.ts`). Una reserva que queda en cero se cierra: ya no reserva nada.
+ */
 export async function releaseAllocationTx(tx: Tx, input: {
   allocationId: string
   quantity: number
   reason: string
   actorUserId: string
   userEmail?: string
-}): Promise<{ released: number }> {
+}): Promise<{ released: number; returnedLines: ReturnedNoteLine[] }> {
   const reason = input.reason.trim()
   if (reason.length < 5) throw new PartsValidationError("Indica el motivo (al menos 5 letras).", "reason")
   const [allocation] = await tx
@@ -94,23 +100,43 @@ export async function releaseAllocationTx(tx: Tx, input: {
   if (toCents(quantity) <= 0 || toCents(quantity) > toCents(remaining)) {
     throw new PartsValidationError(`Puedes liberar hasta ${formatQty(remaining)}.`, "quantity")
   }
-  await tx.update(mantPartsAllocations)
-    .set({ quantity: sql`${mantPartsAllocations.quantity} - ${quantity}`, updatedAt: new Date().toISOString() })
+
+  // A qué líneas de nota corresponde lo liberado (y su bloqueo), antes de escribir nada.
+  const plan = await planReleaseToLinesTx(tx, { allocationId: input.allocationId, workOrderId: allocation.workOrderId, quantity })
+  const now = new Date().toISOString()
+  const [after] = await tx.update(mantPartsAllocations)
+    .set({ quantity: sql`${mantPartsAllocations.quantity} - ${quantity}`, updatedAt: now })
     .where(eq(mantPartsAllocations.id, input.allocationId))
-  await tx.insert(mantPartsAllocationSources).values({
-    id: nanoid(), allocationId: input.allocationId, source: "liberacion", quantity: -quantity, actorUserId: input.actorUserId, reason,
+    .returning({ quantity: mantPartsAllocations.quantity })
+  for (const row of plan.sourceRows) {
+    await tx.insert(mantPartsAllocationSources).values({
+      id: nanoid(), allocationId: input.allocationId, source: "liberacion", quantity: -row.quantity, noteItemId: row.noteItemId, actorUserId: input.actorUserId, reason,
+    })
+  }
+  // Una reserva que queda en cero no tiene nada usado (lo restante nunca baja de lo consumido): se cierra como liberada.
+  const closed = !!after && toCents(Number(after.quantity)) === 0
+  if (closed) {
+    await tx.update(mantPartsAllocations)
+      .set({ status: "liberada", releasedQuantity: quantity, releasedByUserId: input.actorUserId, releasedAt: now, releaseReason: reason, updatedAt: now })
+      .where(and(eq(mantPartsAllocations.id, input.allocationId), eq(mantPartsAllocations.status, "activa")))
+  }
+  const returnedLines = await returnReleasedLinesTx(tx, {
+    plan, allocationId: input.allocationId, reason, actor: { userId: input.actorUserId, email: input.userEmail },
   })
   await tx.insert(mantWorkOrderEvents).values({
     id: nanoid(),
     workOrderId: allocation.workOrderId,
     type: "parts_released",
     reason,
-    changeSet: { items: [{ allocationId: input.allocationId, productId: allocation.productId, worksiteId: allocation.worksiteId, quantity }] },
+    changeSet: {
+      items: [{ allocationId: input.allocationId, productId: allocation.productId, worksiteId: allocation.worksiteId, quantity }],
+      ...(returnedLines.length > 0 ? { lines: returnedLines.map((line) => ({ itemId: line.itemId, noteCode: line.noteCode, quantity: line.quantity, outcome: line.outcome })) } : {}),
+    },
     actorUserId: input.actorUserId,
   })
   await recordAudit({
     userId: input.actorUserId, userEmail: input.userEmail, action: "update", entityType: "mant_parts_allocation",
-    entityId: input.allocationId, newState: { released: quantity }, reason, worksiteId: allocation.worksiteId,
+    entityId: input.allocationId, newState: { released: quantity, ...(closed ? { status: "liberada" } : {}) }, reason, worksiteId: allocation.worksiteId,
   }, tx)
-  return { released: quantity }
+  return { released: quantity, returnedLines }
 }

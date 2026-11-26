@@ -211,6 +211,8 @@ describe("«Reservar de bodega»", () => {
     // Por omisión, lo pedido (tope: lo libre).
     const quantity = dialog.getByRole("textbox", { name: /Cantidad a reservar/ }) as HTMLInputElement
     expect(quantity.value).toBe("2")
+    // Se reserva todo lo pedido: no queda saldo que avisar.
+    expect(dialog.queryByText(/queda como una línea pendiente nueva/)).toBeNull()
     fireEvent.change(quantity, { target: { value: "9" } })
     expect(dialog.getByText("Puedes reservar hasta 2.")).toBeTruthy()
     expect((dialog.getByRole("button", { name: "Reservar de bodega" }) as HTMLButtonElement).disabled).toBe(true)
@@ -225,7 +227,12 @@ describe("«Reservar de bodega»", () => {
     view({ note: noteDetail({ lines: [noteLine({ quantity: 4, freeInWorksite: 3 })] }) })
     fireEvent.click(screen.getByRole("button", { name: "Reservar de bodega" }))
     let dialog = within(await screen.findByRole("dialog"))
-    expect((dialog.getByRole("textbox", { name: /Cantidad/ }) as HTMLInputElement).value).toBe("3")
+    const quantity = dialog.getByRole("textbox", { name: /Cantidad/ }) as HTMLInputElement
+    expect(quantity.value).toBe("3")
+    // Reservar menos de lo pedido resuelve sólo esa cantidad: el diálogo avisa, antes de confirmar, que el saldo queda como una línea pendiente nueva (NP4-3).
+    expect(dialog.getByText("Reservas 3 de 4: el saldo (1) queda como una línea pendiente nueva de esta nota, para comprarlo o rechazarlo.")).toBeTruthy()
+    fireEvent.change(quantity, { target: { value: "1,5" } })
+    expect(dialog.getByText("Reservas 1,5 de 4: el saldo (2,5) queda como una línea pendiente nueva de esta nota, para comprarlo o rechazarlo.")).toBeTruthy()
     fireEvent.click(dialog.getByRole("button", { name: "Cancelar" }))
     cleanup()
 

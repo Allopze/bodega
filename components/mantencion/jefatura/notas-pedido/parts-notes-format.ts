@@ -18,6 +18,11 @@ export const PARTS_NOTES_PAGE_SIZE = 50
 
 export type InboxTab = PartsNoteTab | "por_conciliar"
 
+/**
+ * «Pendientes» son las notas por resolver: abiertas y con al menos una línea pendiente, aunque tengan otras ya
+ * resueltas (también es la cifra «Notas de pedido por resolver» del Panel). «En gestión», las que no tienen nada
+ * pendiente pero esperan una compra que aún no llega. «Cerradas», lo cerrado y lo anulado.
+ */
 export const INBOX_TAB_LABELS: Record<InboxTab, string> = {
   pendientes: "Pendientes",
   en_gestion: "En gestión",

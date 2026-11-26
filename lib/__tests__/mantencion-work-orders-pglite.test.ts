@@ -840,6 +840,86 @@ describe("OT de un hallazgo de inspección: la conformidad acredita la CAPA", ()
     ok(await conform(id))
     expect((await row(id)).status).toBe("cerrada")
   })
+
+  describe("anular la OT de un hallazgo no deja trabada su CAPA (OT-1)", () => {
+    const capaOf = async (id: string) => (await testDb.select().from(schema.preventionCapaActions).where(eq(schema.preventionCapaActions.id, id)))[0]!
+    const findingOf = async (id: string) => (await testDb.select().from(schema.preventionInspectionFindings).where(eq(schema.preventionInspectionFindings.id, id)))[0]!
+    const transitionsOf = (id: string) => testDb.select().from(schema.preventionCapaTransitions).where(eq(schema.preventionCapaTransitions.actionId, id)).orderBy(asc(schema.preventionCapaTransitions.createdAt))
+    const voidOt = async (id: string, reason = "El equipo era otro: orden duplicada") => transitions.voidWorkOrder(await actorOf(IDS.jefe), { workOrderId: id, reason })
+    /** Todo lo que toca la anulación en Prevención, para comparar antes y después de repetir. */
+    const prevention = async (capaId: string, findingId: string) => ({
+      capa: await capaOf(capaId), finding: await findingOf(findingId), transitions: await transitionsOf(capaId),
+      activity: await testDb.select().from(schema.operationalActivityEvents).where(eq(schema.operationalActivityEvents.entityId, capaId)),
+      audits: await testDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, capaId)),
+    })
+
+    it("cancela la CAPA con el motivo, el hallazgo vuelve a quedar abierto sin vínculo y el rastro queda en la OT, la CAPA y la auditoría", async () => {
+      const { findingId, capaId } = await seedFindingWithCapa()
+      const id = await otFromFinding(findingId)
+      const folio = (await row(id)).folio
+      const reason = "El equipo era otro: orden duplicada"
+
+      expect(await voidOt(id, reason)).toMatchObject({ ok: true, value: { status: "anulada" } })
+
+      expect(await capaOf(capaId)).toMatchObject({
+        status: "cancelled", cancelledByUserId: IDS.jefe, cancellationReason: `OT ${folio} anulada: ${reason}`, version: 2,
+      })
+      expect((await capaOf(capaId)).cancelledAt).toBeTruthy()
+      expect(await findingOf(findingId)).toMatchObject({ status: "open", capaActionId: null, closedAt: null, closedByUserId: null })
+      const [step] = await transitionsOf(capaId)
+      expect(step).toMatchObject({ changeType: "status", fromStatus: "pending", toStatus: "cancelled", actorUserId: IDS.jefe, reason: `OT ${folio} anulada: ${reason}` })
+      expect(step?.changeSet).toMatchObject({ workOrderId: id, workOrderFolio: folio, findingId, lifecycle: "work_order_voided", automatic: true })
+      const activity = await testDb.select().from(schema.operationalActivityEvents).where(eq(schema.operationalActivityEvents.entityId, capaId))
+      expect(activity).toEqual([expect.objectContaining({ eventType: "capa.transitioned", module: "capa", actorUserId: IDS.jefe })])
+      const audits = (await testDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, capaId))).filter((entry) => entry.entityType === "prevention_capa_action")
+      expect(audits).toHaveLength(1)
+      expect(audits[0]).toMatchObject({ action: "status_change", userId: IDS.jefe, reason: `OT ${folio} anulada: ${reason}` })
+      // El evento de la anulación en la OT dice qué se canceló.
+      const voided = (await eventsOf(id)).find((event) => event.type === "voided")
+      expect(voided).toMatchObject({ reason, actorUserId: IDS.jefe })
+      expect(voided?.changeSet).toMatchObject({ capaCancelled: { findingId, capaActionId: capaId, fromStatus: "pending" } })
+
+      // Cero diferencias: repetirlo (la función y la anulación) no escribe ni cambia nada.
+      const before = await prevention(capaId, findingId)
+      const { releaseWorkOrderCapaOnVoid } = await import("@/lib/services/mantencion/work-orders/capa-link")
+      expect(await testDb.transaction((tx) => releaseWorkOrderCapaOnVoid(tx, { workOrder: { id, folio, inspectionFindingId: findingId }, actorUserId: IDS.jefe, reason }))).toBeNull()
+      expect(refused(await voidOt(id, reason)).code).toBe("conflict")
+      expect(await prevention(capaId, findingId)).toEqual(before)
+      // Y el hallazgo admite otra OT (el índice sólo frena a la viva).
+      expect(await otFromFinding(findingId)).not.toBe(id)
+    })
+
+    it.each(["in_progress", "reopened"])("también cancela una CAPA «%s»", async (status) => {
+      const { findingId, capaId } = await seedFindingWithCapa(status)
+      const id = await otFromFinding(findingId)
+      expect(await voidOt(id)).toMatchObject({ ok: true })
+      expect(await capaOf(capaId)).toMatchObject({ status: "cancelled" })
+      expect(await findingOf(findingId)).toMatchObject({ status: "open", capaActionId: null })
+      expect((await transitionsOf(capaId))[0]).toMatchObject({ fromStatus: status, toStatus: "cancelled" })
+    })
+
+    it.each(["pending_verification", "verified", "closed", "cancelled"])("una CAPA «%s» manda: se anula la OT y no se toca ni la acción ni el hallazgo", async (status) => {
+      const { findingId, capaId } = await seedFindingWithCapa(status)
+      const id = await otFromFinding(findingId)
+      const before = await prevention(capaId, findingId)
+      expect(await voidOt(id)).toMatchObject({ ok: true, value: { status: "anulada" } })
+      expect(await prevention(capaId, findingId)).toEqual(before)
+      expect((await eventsOf(id)).find((event) => event.type === "voided")?.changeSet).toBeNull()
+    })
+
+    it("un hallazgo ya cerrado por Prevención no se reabre, y una OT sin hallazgo se anula como siempre", async () => {
+      const { findingId, capaId } = await seedFindingWithCapa()
+      const id = await otFromFinding(findingId)
+      await testDb.update(schema.preventionInspectionFindings).set({ status: "closed", closedByUserId: AUTOR, closedAt: new Date().toISOString() }).where(eq(schema.preventionInspectionFindings.id, findingId))
+      const before = await prevention(capaId, findingId)
+      expect(await voidOt(id)).toMatchObject({ ok: true })
+      expect(await prevention(capaId, findingId)).toEqual(before)
+
+      const manual = ok(await createWorkOrder(await actorOf(IDS.jefe), adminInput({ assignedToUserId: null }))).id
+      expect(await voidOt(manual, "Se creó por error")).toMatchObject({ ok: true })
+      expect(await prevention(capaId, findingId)).toEqual(before)
+    })
+  })
 })
 
 describe("avisos: sólo después del commit", () => {

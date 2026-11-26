@@ -11,6 +11,7 @@ import type { PartsActionResult } from "../parts/types"
 import { assertCanManage, guarded, loadItemContext, loadNoteContext, lockWorkOrdersShare, NOT_FOUND_ITEM, NOT_FOUND_NOTE, NoteRefusal, requireReason, type NoteItemContext } from "./context"
 import { loadPurchases } from "./lines"
 import { rejectLineTx } from "./line-rejection"
+import { splitLineRemainderTx } from "./line-split"
 import { notifyPartsNoteItemRejected } from "./notifications"
 import { allPurchasesDead, isResolvableLine, recalcNoteStatusTx } from "./status"
 import { writeTrail } from "./trail"
@@ -27,6 +28,10 @@ import { writeTrail } from "./trail"
  * la OT (`FOR UPDATE`) rechaza sus líneas pendientes (`line-rejection.ts`) y así no se
  * cruzan. Todo rechazo ocurre antes de escribir. Cada escritura deja evento en la OT,
  * estado de la NP recalculado y auditoría.
+ *
+ * Reservar menos de lo pedido resuelve sólo esa cantidad: el saldo queda como una línea
+ * pendiente nueva de la misma NP (`line-split.ts`), con la fila de la NP tomada después
+ * de la de la línea. Devolver una reserva liberada a pendiente vive en `line-release.ts`.
  */
 
 const OPEN: readonly string[] = OT_OPEN_STATUSES
@@ -72,6 +77,8 @@ export async function resolveNoteItemFromStock(viewer: MantViewer, input: { item
       if (line.vehicleWorksiteId !== worksiteId) throw new NoteRefusal("El equipo cambió de faena mientras se resolvía la línea. Vuelve a intentarlo.")
       const blocked = await whyNotResolvable(tx, line)
       if (blocked) throw new NoteRefusal(blocked)
+      // Con la línea bloqueada lo pedido es lo que vale: la lectura de arriba pudo quedar vieja.
+      if (toCents(quantity) > toCents(line.quantity)) throw new NoteRefusal(`La línea pide ${formatQty(line.quantity)}: no puedes sacar más.`, "quantity")
       const ot = locks.workOrders.get(line.workOrderId)
       if (!ot || !OPEN.includes(ot.status)) {
         throw new NoteRefusal(`La orden ${line.workOrderFolio} ya está cerrada o anulada: no se reservan repuestos para ella.`)
@@ -92,6 +99,11 @@ export async function resolveNoteItemFromStock(viewer: MantViewer, input: { item
       })
       if (!allocation) throw new NoteRefusal(`La orden ${line.workOrderFolio} ya está cerrada o anulada: no se reservan repuestos para ella.`)
 
+      // Reservar menos de lo pedido resuelve sólo esa cantidad (NP4-3): lo que falta queda como una línea pendiente nueva
+      // de la misma NP, para comprarlo, reservarlo o rechazarlo. La línea conserva lo reservado.
+      const split = toCents(quantity) < toCents(line.quantity)
+        ? await splitLineRemainderTx(tx, { itemId: line.itemId, keepQuantity: quantity, remainderProductId: line.productId })
+        : null
       await tx.update(mantPartsNoteItems).set({
         resolution: "desde_stock",
         // Lo que se aparta manda: si la línea traía otro repuesto, el evento deja cuál era.
@@ -104,15 +116,17 @@ export async function resolveNoteItemFromStock(viewer: MantViewer, input: { item
       await writeTrail(tx, {
         workOrderId: line.workOrderId, worksiteId: line.noteWorksiteId, noteId: line.noteId, code: line.code,
         actor: viewer, action: "update",
-        oldState: { itemId: line.itemId, resolution: line.resolution },
+        oldState: { itemId: line.itemId, resolution: line.resolution, quantity: line.quantity },
         changeSet: {
           itemId: line.itemId, resolution: "desde_stock", productId: input.productId, quantity, allocationId: allocation.allocationId,
           ...(line.productId && line.productId !== input.productId ? { previousProductId: line.productId } : {}),
+          ...(split ? { originalQuantity: split.originalQuantity, remainderItemId: split.remainderItemId, remainderQuantity: split.remainderQuantity } : {}),
         },
       })
       // Una sola unidad va en singular; cualquier otra cantidad (también 0,5 o 1,5) en plural.
       const reserved = quantity === 1 ? "Se reservó" : "Se reservaron"
-      return { ok: true, message: `${reserved} ${formatQty(quantity)} de «${product.name}» del stock de ${line.vehicleWorksiteName} para la orden ${line.workOrderFolio}.` }
+      const rest = split ? ` El saldo (${formatQty(split.remainderQuantity)}) quedó como una línea pendiente de la nota.` : ""
+      return { ok: true, message: `${reserved} ${formatQty(quantity)} de «${product.name}» del stock de ${line.vehicleWorksiteName} para la orden ${line.workOrderFolio}.${rest}` }
     })
   })
 }

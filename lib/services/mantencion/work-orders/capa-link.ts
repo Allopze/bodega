@@ -3,7 +3,9 @@ import type { Tx } from "@/db"
 import {
   preventionCapaActions, preventionCapaEvidence, preventionCapaTransitions, preventionInspectionFindings,
 } from "@/db/schema"
+import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
+import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { formatDate } from "@/lib/utils"
 import { OtRefusal } from "./core"
 
@@ -249,4 +251,124 @@ export async function supersedeWorkOrderCapaEvidence(
       createdAt: now,
     })
   }
+}
+
+/** Estados de la CAPA que siguen vivos sin haber llegado a verificación: la OT era el camino de esta acción. */
+const CAPA_CANCELLABLE_BY_VOID: readonly string[] = ["pending", "in_progress", "reopened"]
+
+export interface ReleasedCapa {
+  findingId: string
+  capaActionId: string
+  capaCode: string
+  /** Estado en que estaba la CAPA antes de cancelarse. */
+  fromStatus: string
+}
+
+/**
+ * Anular la OT de un hallazgo no puede dejar trabada su CAPA (OT-1). La OT era la forma de corregir el hallazgo; sin ella
+ * la acción correctiva queda viva y enlazada, y «Derivar a CAPA» responde «El hallazgo ya tiene una acción CAPA
+ * enlazada»: la única salida era que Prevención cancelara la acción a mano y derivara otra.
+ *
+ * Se hace lo que haría esa cancelación (`transitionCapaActionWithClient`, «lo que se canceló es el intento de
+ * corregirla»): la CAPA pasa a `cancelled` con el motivo de la anulación y el hallazgo vuelve a `open` sin vínculo, para
+ * que Prevención lo derive de nuevo (acción y OT nuevas). Se escribe directo, como la evidencia de la conformidad
+ * (`activateWorkOrderCapaEvidence`): es un efecto del sistema de la anulación, y quien anula la OT no tiene por qué tener
+ * permisos de Prevención. Queda en las transiciones de la CAPA, en la actividad operacional y en la auditoría.
+ *
+ * Sólo si la CAPA sigue viva sin haber llegado a verificación (`pending`, `in_progress` o `reopened`) y el hallazgo no
+ * está cerrado. Una CAPA ya verificada, cerrada, cancelada o en verificación manda: no se toca. Sin hallazgo, o sin CAPA
+ * enlazada, no hace nada; repetirlo tampoco (el vínculo ya no existe).
+ *
+ * Bloqueo: con el equipo y la OT ya tomados por `runLocked`, primero la CAPA y después el hallazgo, el orden de
+ * `transitionCapaActionWithClient` (Prevención), para no cruzarse con ella.
+ */
+export async function releaseWorkOrderCapaOnVoid(
+  client: Tx,
+  args: { workOrder: CapaLinkedWorkOrder; actorUserId: string; reason: string },
+): Promise<ReleasedCapa | null> {
+  const findingId = args.workOrder.inspectionFindingId
+  if (!findingId) return null
+  const [link] = await client.select({ capaActionId: preventionInspectionFindings.capaActionId })
+    .from(preventionInspectionFindings).where(eq(preventionInspectionFindings.id, findingId)).limit(1)
+  if (!link?.capaActionId) return null
+
+  const [capa] = await client.select({
+    id: preventionCapaActions.id,
+    code: preventionCapaActions.code,
+    status: preventionCapaActions.status,
+    priority: preventionCapaActions.priority,
+    worksiteId: preventionCapaActions.worksiteId,
+  }).from(preventionCapaActions)
+    .where(eq(preventionCapaActions.id, link.capaActionId)).for("update").limit(1)
+  if (!capa || !CAPA_CANCELLABLE_BY_VOID.includes(capa.status)) return null
+
+  const [finding] = await client.select({
+    id: preventionInspectionFindings.id,
+    capaActionId: preventionInspectionFindings.capaActionId,
+    status: preventionInspectionFindings.status,
+  }).from(preventionInspectionFindings)
+    .where(eq(preventionInspectionFindings.id, findingId)).for("update").limit(1)
+  // Prevención pudo cancelarla o cerrar el hallazgo mientras se esperaban los bloqueos.
+  if (!finding || finding.capaActionId !== capa.id || finding.status === "closed") return null
+
+  const now = new Date().toISOString()
+  const cancellation = `OT ${args.workOrder.folio} anulada: ${args.reason}`
+  const [cancelled] = await client.update(preventionCapaActions).set({
+    status: "cancelled",
+    cancelledByUserId: args.actorUserId,
+    cancelledAt: now,
+    cancellationReason: cancellation,
+    version: sql`${preventionCapaActions.version} + 1`,
+    updatedAt: now,
+  }).where(and(eq(preventionCapaActions.id, capa.id), eq(preventionCapaActions.status, capa.status)))
+    .returning({ id: preventionCapaActions.id })
+  if (!cancelled) return null
+
+  await client.update(preventionInspectionFindings).set({
+    status: "open",
+    capaActionId: null,
+    closedByUserId: null,
+    closedAt: null,
+    updatedAt: now,
+  }).where(eq(preventionInspectionFindings.id, finding.id))
+
+  await client.insert(preventionCapaTransitions).values({
+    id: `capat-${nanoid()}`,
+    actionId: capa.id,
+    changeType: "status",
+    fromStatus: capa.status,
+    toStatus: "cancelled",
+    reason: cancellation,
+    changeSet: {
+      workOrderId: args.workOrder.id,
+      workOrderFolio: args.workOrder.folio,
+      findingId: finding.id,
+      lifecycle: "work_order_voided",
+      automatic: true,
+    },
+    actorUserId: args.actorUserId,
+    createdAt: now,
+  })
+  await recordOperationalActivity({
+    eventType: "capa.transitioned",
+    module: "capa",
+    entityType: "capa_action",
+    entityId: capa.id,
+    entityCode: capa.code,
+    worksiteId: capa.worksiteId,
+    actorUserId: args.actorUserId,
+    payload: { fromStatus: capa.status, toStatus: "cancelled", priority: capa.priority, automatic: true },
+  }, client)
+  await recordAudit({
+    userId: args.actorUserId,
+    action: "status_change",
+    entityType: "prevention_capa_action",
+    entityId: capa.id,
+    entityCode: capa.code,
+    oldState: { status: capa.status, capaActionId: capa.id, findingStatus: finding.status },
+    newState: { status: "cancelled", findingStatus: "open", workOrderId: args.workOrder.id, workOrderFolio: args.workOrder.folio, automatic: true },
+    reason: cancellation,
+    worksiteId: capa.worksiteId,
+  }, client)
+  return { findingId: finding.id, capaActionId: capa.id, capaCode: capa.code, fromStatus: capa.status }
 }

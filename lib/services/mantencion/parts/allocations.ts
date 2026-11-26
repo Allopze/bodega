@@ -26,6 +26,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { OT_OPEN_STATUSES } from "@/lib/mantencion/work-order-states"
 import { activeReservationsTx, remainingSql, roundQty, toCents } from "@/lib/services/stock-reservations"
+import { recalcNoteStatusOfLineTx } from "../parts-notes/status"
 import type { AllocationShrinkSource, AllocationSource } from "./types"
 
 type Reader = Pick<Tx, "select">
@@ -213,6 +214,10 @@ export async function addToAllocationTx(tx: Tx, input: {
     newState: { workOrderId: input.workOrderId, productId: input.productId, quantity, source: input.source },
     worksiteId: input.worksiteId,
   }, tx)
+  // Lo que llega para una línea de nota puede completarla: la NP deja de esperar su compra (NP4-2). Sin escribir si el
+  // estado no cambia. La OT ya está tomada `FOR SHARE` por `lockForStockTx`, así que esto sigue el orden global
+  // (OT → faena → stock → reservas → fila de la NP).
+  if (input.noteItemId) await recalcNoteStatusOfLineTx(tx, input.noteItemId, { onlyIfChanged: true })
   return { allocationId }
 }
 

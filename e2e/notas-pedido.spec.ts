@@ -17,7 +17,8 @@ import {
  *   2  SIN señal, el mecánico pide dos repuestos (uno con el nombre del repuesto de catálogo, otro
  *      texto libre) con «Enviar pedido»; vuelve la señal y la nota se envía sola.
  *   3  jefatura ve la nota en «Pendientes», resuelve la línea del catálogo con «Reservar de bodega» y
- *      comprueba el enlace «Comprar» de la otra (solicitud de repuestos prellenada desde la nota).
+ *      comprueba el enlace «Comprar» de la otra (solicitud de repuestos prellenada desde la nota). Con una línea
+ *      resuelta y otra pendiente, la nota sigue en «Pendientes» (por resolver: 1 de 2).
  *   4  el mecánico refresca el catálogo, ve «Llegó · 1 disponible» y registra una correctiva de la
  *      OT con el chip «Disponibles para esta OT».
  *   5  el kárdex de Bodega muestra «Uso en mantención» enlazado al registro y a la OT; el stock bajó 1.
@@ -273,6 +274,12 @@ test.describe("Notas de pedido de repuestos", () => {
     await expect(textoVisible(page, "Viene de una nota de pedido: el equipo y la OT no se pueden cambiar.")).toBeVisible()
     // El equipo estaba detenido: la urgencia sale crítica.
     await expect(page.locator("#urgency")).toContainText("Crítica")
+
+    // «Por resolver» es toda nota abierta con una línea pendiente, aunque tenga otra ya resuelta: sigue en «Pendientes», con lo que falta.
+    await page.goto("/mantencion/notas-pedido?estado=pendientes")
+    const filaPendiente = listRecord(page, nota.code)
+    await expect(filaPendiente).toBeVisible({ timeout: 30_000 })
+    await expect(filaPendiente).toContainText("1 de 2")
 
     // La OT lo muestra: lo reservado sin usar (con «Liberar») y la nota con su avance.
     await page.goto(`/mantencion/ot/${otId}`)

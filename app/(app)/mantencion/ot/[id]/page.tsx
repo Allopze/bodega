@@ -136,6 +136,7 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
             executionWorksites={executionWorksites}
             actionTypeRequired={settings?.mantencionActionTypeRequired === 1}
             reservedUnused={partsOverview ? reservedUnusedNotice(partsOverview.available) : null}
+            hasInspectionCapa={detail.inspectionFinding?.capaActionId != null}
             availableParts={partsOverview?.available}
             request={{
               equipmentLabel: equipmentText(detail),
