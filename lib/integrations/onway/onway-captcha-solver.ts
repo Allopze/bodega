@@ -141,9 +141,12 @@ export async function onwayCaptchaChallengeTokenLength(page: Page): Promise<numb
   let longest = 0
   for (const frame of page.frames()) {
     if (!frame.url().includes("recaptcha")) continue
+    // `getAttribute` no acepta `timeout` y cae al default de Playwright (30 s).
+    // Sin acotarlo, un solo sondeo tardaba ~30 s y el bucle de espera hacía un
+    // chequeo en vez de los ~15 previstos (medido el 2026-11-25).
     const length = await frame
       .locator("#recaptcha-token")
-      .getAttribute("value")
+      .getAttribute("value", { timeout: 1_000 })
       .then((value) => value?.length ?? 0)
       .catch(() => 0)
     longest = Math.max(longest, length)
@@ -154,7 +157,10 @@ export async function onwayCaptchaChallengeTokenLength(page: Page): Promise<numb
 async function isCheckboxChecked(page: Page): Promise<boolean> {
   for (const frame of page.frames()) {
     if (!frame.url().includes("recaptcha") || !frame.url().includes("anchor")) continue
-    const checked = await frame.locator("#recaptcha-anchor.recaptcha-checkbox-checked").count().catch(() => 0)
+    const checked = await frame
+      .locator("#recaptcha-anchor.recaptcha-checkbox-checked")
+      .count()
+      .catch(() => 0)
     if (checked > 0) return true
   }
   return false
