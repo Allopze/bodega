@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm"
+import { asc, eq, inArray } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import type { Tx } from "@/db"
 import { fuelVehicles, mantPartsNoteItems, mantPartsNotes, mantWorkOrders, worksites } from "@/db/schema"
@@ -30,6 +30,18 @@ export async function guarded(operation: () => Promise<PartsActionResult>): Prom
     if (error instanceof NoteRefusal) return { ok: false, message: error.message, ...(error.field ? { field: error.field } : {}) }
     throw error
   }
+}
+
+/**
+ * Toma las OT `FOR SHARE`, ordenadas por id: el primer paso de toda escritura sobre las líneas de una NP, como manda el
+ * orden global de bloqueo (equipo → OT → faena → stock → reservas, ver `parts/allocations.ts`). Así una transición de
+ * la OT (`FOR UPDATE`, que al cerrar o anular rechaza las líneas pendientes) espera AQUÍ y no se cruza con quien ya
+ * tiene tomadas las filas de la NP y espera a la OT (el evento de la OT lleva una FK). Llamarla dos veces es inocuo.
+ */
+export async function lockWorkOrdersShare(tx: Tx, workOrderIds: readonly string[]): Promise<void> {
+  const ids = [...new Set(workOrderIds)].sort()
+  if (ids.length === 0) return
+  await tx.select({ id: mantWorkOrders.id }).from(mantWorkOrders).where(inArray(mantWorkOrders.id, ids)).orderBy(asc(mantWorkOrders.id)).for("share")
 }
 
 const currentWorksite = alias(worksites, "np_current_worksite")

@@ -83,7 +83,7 @@ describe("notifyWorkOrderPartsReceived", () => {
     expect(state.sent[0]!.input).toMatchObject({
       type: "mant_ot_parts_received",
       title: "Repuestos recibidos para OT OT-BIO-0007",
-      body: "KA-135 · Camión · 2 líneas recibidas en faena. Revisa «Repuestos pedidos» en la OT.",
+      body: "KA-135 · Camión · 2 líneas recibidas en faena. Revisa «Solicitudes de compra» en la OT.",
       entityType: "mant_work_order",
       entityId: "ot-1",
       entityHref: "/mantencion/ot/ot-1",
@@ -93,7 +93,7 @@ describe("notifyWorkOrderPartsReceived", () => {
 
   it("en singular dice «1 línea recibida»", async () => {
     await notifyWorkOrderPartsReceived({ ...arrival, itemCount: 1 })
-    expect(state.sent[0]!.input.body).toBe("KA-135 · Camión · 1 línea recibida en faena. Revisa «Repuestos pedidos» en la OT.")
+    expect(state.sent[0]!.input.body).toBe("KA-135 · Camión · 1 línea recibida en faena. Revisa «Solicitudes de compra» en la OT.")
   })
 
   it("si nadie más administra la faena, el aviso llega al administrador para no perderse", async () => {

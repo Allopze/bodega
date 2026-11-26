@@ -1,5 +1,6 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { eq } from "drizzle-orm"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
@@ -11,7 +12,8 @@ import type { MantViewer } from "@/lib/services/mantencion/access"
  * «Trabajos de mantención» y el corte de los formularios (2026-12-01) contra Postgres de verdad:
  * - una OT cuenta sólo si ya entró a taller, fechada por el ingreso (hora de Chile);
  * - el historial de formularios cuenta hasta el 30-11-2026 y no desde el 01-12-2026;
- * - los registros de la plataforma cuentan desde el 01-12-2026, vigentes y sin OT, con la visibilidad de la lista;
+ * - los registros de la plataforma cuentan desde el 01-12-2026, vigentes y sin OT que cuente, con la visibilidad de la lista;
+ * - una OT anulada (o que nunca entró a taller) no cuenta: su registro firmado vigente pasa a contar por sí mismo (REG4-1);
  * - «¿hubo trabajo después del hallazgo?» es un hecho del equipo: suma los registros sin corte.
  */
 
@@ -21,14 +23,14 @@ const testGlobal = globalThis as typeof globalThis & { __corteDb?: DB }
 testGlobal.__corteDb = testDb
 vi.mock("@/db", () => ({ get db() { return testGlobal.__corteDb }, get Tx() { return undefined } }))
 
-const { loadFindingsWithoutWork, loadMaintenanceWork, summarizeMaintenanceWork } = await import("@/lib/services/mantencion/maintenance-work")
+const { loadEquipmentTimeline, loadFindingsWithoutWork, loadMaintenanceHistory, loadMaintenanceWork, summarizeMaintenanceWork } = await import("@/lib/services/mantencion/maintenance-work")
 
 const TODAY = "2026-12-20"
 const period = resolveIndicatorPeriod({ desde: "2026-11-01", hasta: "2026-12-31" }, TODAY)
 const QUERY = { from: period.from, to: period.to, today: TODAY }
 
 const WS = { a: "ws-cut-a", b: "ws-cut-b" } as const
-const V = { a1: "v-cut-a1", a2: "v-cut-a2", a3: "v-cut-a3" } as const
+const V = { a1: "v-cut-a1", a2: "v-cut-a2", a3: "v-cut-a3", a4: "v-cut-a4", a5: "v-cut-a5", a6: "v-cut-a6", a7: "v-cut-a7" } as const
 const U = { actor: "u-cut-actor", mech: "u-cut-mech" } as const
 
 const GLOBAL: MantViewer = { userId: "u-cut-viewer", email: null, permissions: ["mant:records:view_all", "mant:ot:view_all"], worksiteIds: [], isGlobal: true }
@@ -36,7 +38,7 @@ const SCOPED_A: MantViewer = { userId: "u-cut-viewer", email: null, permissions:
 const SCOPED_B: MantViewer = { userId: "u-cut-viewer", email: null, permissions: ["mant:records:view_worksite", "mant:ot:view_worksite"], worksiteIds: [WS.b], isGlobal: false }
 
 const snapshot = (code: string, plate: string) => ({ code, plate, noPlate: false, type: "Camión", brand: "Scania", model: "R450", year: 2021, worksite: "Faena A", unit: "km" as const })
-const SNAP = { [V.a1]: snapshot("KA-C1", "CCCC-01"), [V.a2]: snapshot("KA-C2", "CCCC-02"), [V.a3]: snapshot("KA-C3", "CCCC-03") }
+const SNAP = { [V.a1]: snapshot("KA-C1", "CCCC-01"), [V.a2]: snapshot("KA-C2", "CCCC-02"), [V.a3]: snapshot("KA-C3", "CCCC-03"), [V.a4]: snapshot("KA-C4", "CCCC-04"), [V.a5]: snapshot("KA-C5", "CCCC-05"), [V.a6]: snapshot("KA-C6", "CCCC-06"), [V.a7]: snapshot("KA-C7", "CCCC-07") }
 
 async function insertOt(id: string, vehicleId: keyof typeof SNAP | string, requestDate: string, entryAt?: string) {
   await testDb.insert(schema.mantWorkOrders).values({
@@ -110,7 +112,7 @@ beforeAll(async () => {
   await testDb.insert(schema.mantWorksiteSettings).values([{ worksiteId: WS.a, folioCode: "AAA" }, { worksiteId: WS.b, folioCode: "BBB" }])
   await testDb.insert(schema.fuelEquipmentTypes).values({ id: "fet-cut", slug: "cut-km", name: "Camión", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter" })
   const vehicle = (id: string, code: string, plate: string) => ({ id, code, plate, type: "Camión", equipmentTypeId: "fet-cut", worksiteId: WS.a, model: "R450", year: 2021, brand: "Scania" })
-  await testDb.insert(schema.fuelVehicles).values([vehicle(V.a1, "KA-C1", "CCCC-01"), vehicle(V.a2, "KA-C2", "CCCC-02"), vehicle(V.a3, "KA-C3", "CCCC-03")])
+  await testDb.insert(schema.fuelVehicles).values([vehicle(V.a1, "KA-C1", "CCCC-01"), vehicle(V.a2, "KA-C2", "CCCC-02"), vehicle(V.a3, "KA-C3", "CCCC-03"), vehicle(V.a4, "KA-C4", "CCCC-04"), vehicle(V.a5, "KA-C5", "CCCC-05"), vehicle(V.a6, "KA-C6", "CCCC-06"), vehicle(V.a7, "KA-C7", "CCCC-07")])
   await testDb.insert(schema.mantWorkshops).values({ id: "wk-cut", name: "Taller Externo", nameKey: "taller externo" })
 })
 
@@ -136,17 +138,18 @@ describe("historial: sólo antes del corte", () => {
   })
 })
 
-describe("registros de la plataforma: desde el corte, vigentes y sin OT", () => {
+describe("registros de la plataforma: desde el corte, vigentes y sin OT que cuente", () => {
   beforeAll(async () => {
     await insertRecord({ id: "r-corr", kind: "C", vehicleId: V.a3, workDate: "2026-12-01", hours: 3.5, external: true, inWorkshop: { entry: "2026-12-01", exit: "2026-12-04" } })
     await insertRecord({ id: "r-prev", kind: "P", vehicleId: V.a3, workDate: "2026-12-02" })
     await insertRecord({ id: "r-nov", kind: "C", vehicleId: V.a3, workDate: "2026-11-30" })
     await insertRecord({ id: "r-anulado", kind: "C", vehicleId: V.a3, workDate: "2026-12-03", status: "anulado" })
-    await insertOt("ot-del-registro", V.a3, "2026-12-05")
+    // Una OT que ya entró a taller (12:00 en Chile del 05-12) cuenta como trabajo: ella es el trabajo y su registro no se repite.
+    await insertOt("ot-del-registro", V.a3, "2026-12-05", "2026-12-05T15:00:00Z")
     await insertRecord({ id: "r-con-ot", kind: "C", vehicleId: V.a3, workDate: "2026-12-05", workOrderId: "ot-del-registro" })
   })
 
-  it("el vigente sin OT del 01-12-2026 entra; el del 30-11, el anulado y el que tiene OT, no", async () => {
+  it("el vigente sin OT del 01-12-2026 entra; el del 30-11, el anulado y el que ya cuenta su OT, no", async () => {
     const ids = (await loadMaintenanceWork(GLOBAL, QUERY)).rows.map((row) => row.id)
     expect(ids).toContain("r:r-corr")
     expect(ids).toContain("r:r-prev")
@@ -167,8 +170,8 @@ describe("registros de la plataforma: desde el corte, vigentes y sin OT", () => 
   it("el agregado cuenta cada fuente aparte", async () => {
     const { rows } = await loadMaintenanceWork(GLOBAL, QUERY)
     const summary = summarizeMaintenanceWork(rows, { ...QUERY, chart: period.chart })
-    expect(summary.bySource).toEqual({ historial: 1, ot: 1, registro: 2 })
-    expect(summary.total).toBe(4)
+    expect(summary.bySource).toEqual({ historial: 1, ot: 2, registro: 2 })
+    expect(summary.total).toBe(5)
   })
 
   it("un supervisor de la faena los ve; el de otra faena, no", async () => {
@@ -185,5 +188,74 @@ describe("¿hubo trabajo después del hallazgo?: un hecho del equipo, sin corte"
     const result = await loadFindingsWithoutWork(GLOBAL, { from: "2026-11-01", to: "2026-12-10", today: TODAY })
     expect(result).toMatchObject({ total: 2, withWork: 1, withoutWork: 1 })
     expect(result.byEquipment.map((row) => row.label)).toEqual(["KA-C1 · CCCC-01"])
+  })
+})
+
+describe("REG4-1: anular una OT no esconde el trabajo que el mecánico ya firmó", () => {
+  /** Anula la OT como lo deja la base: con quién, cuándo y por qué (los `check` de la tabla lo exigen). */
+  async function voidOt(id: string) {
+    await testDb.update(schema.mantWorkOrders)
+      .set({ status: "anulada", voidedAt: "2026-12-12T15:00:00Z", voidedByUserId: U.actor, voidReason: "Pedida por error" })
+      .where(eq(schema.mantWorkOrders.id, id))
+  }
+  const panelOf = (viewer: MantViewer, vehicleId: string) => loadMaintenanceWork(viewer, { ...QUERY, vehicleId })
+  const panelIds = async (vehicleId: string, viewer: MantViewer = GLOBAL) => (await panelOf(viewer, vehicleId)).rows.map((row) => row.id)
+  const historyIds = async (vehicleId: string) => (await loadMaintenanceHistory(GLOBAL, { ...QUERY, vehicleId })).rows.map((row) => row.id)
+  const timelineIds = async (vehicleId: string) => (await loadEquipmentTimeline(GLOBAL, vehicleId, { today: TODAY })).rows.map((row) => row.id)
+
+  it("un registro posterior al corte: con la OT en taller hay 1 trabajo (la OT); anulada la OT, sigue habiendo 1 (el registro). Igual en el Panel, la lista y la hoja de vida", async () => {
+    await insertOt("ot-reg4-1", V.a4, "2026-12-08", "2026-12-08T15:00:00Z")
+    await insertRecord({ id: "r-reg4-1", kind: "C", vehicleId: V.a4, workDate: "2026-12-09", hours: 2.5, workOrderId: "ot-reg4-1" })
+
+    const before = await panelOf(GLOBAL, V.a4)
+    expect(before.rows.map((row) => row.id)).toEqual(["ot:ot-reg4-1"])
+    expect(summarizeMaintenanceWork(before.rows, { ...QUERY, chart: period.chart })).toMatchObject({ total: 1, bySource: { historial: 0, ot: 1, registro: 0 } })
+    expect(await historyIds(V.a4)).toEqual(["ot:ot-reg4-1"])
+    expect(await timelineIds(V.a4)).toEqual(["ot:ot-reg4-1"])
+
+    await voidOt("ot-reg4-1")
+
+    const after = await panelOf(GLOBAL, V.a4)
+    expect(after.rows.map((row) => row.id)).toEqual(["r:r-reg4-1"])
+    expect(after.rows[0]).toMatchObject({
+      source: "registro", reference: "MR-r-reg4-1", date: "2026-12-09", actionType: "correctiva", laborHours: 2.5, equipmentLabel: "KA-C4 · CCCC-04", worksiteId: WS.a,
+    })
+    expect(summarizeMaintenanceWork(after.rows, { ...QUERY, chart: period.chart })).toMatchObject({ total: 1, bySource: { historial: 0, ot: 0, registro: 1 } })
+    // La lista del Historial (la que reutilizan la matriz y el Excel) cuenta lo mismo que el Panel; la hoja de vida, también.
+    expect(await historyIds(V.a4)).toEqual(["r:r-reg4-1"])
+    expect(await timelineIds(V.a4)).toEqual(["r:r-reg4-1"])
+    // El alcance no cambia: quien ve la faena del trabajo lo sigue viendo y quien ve otra faena, no.
+    expect(await panelIds(V.a4, SCOPED_A)).toEqual(["r:r-reg4-1"])
+    expect(await panelIds(V.a4, SCOPED_B)).toEqual([])
+  })
+
+  it("el corte se mantiene en el Panel: un registro anterior al 01-12-2026 sigue sin contar ahí, pero la hoja de vida (sin corte) lo muestra", async () => {
+    // El registro es del 21-11: antes del corte cuentan los formularios, así que el Panel no lo suma; la hoja de vida sí.
+    await insertOt("ot-reg4-2", V.a5, "2026-11-20", "2026-11-20T15:00:00Z")
+    await insertRecord({ id: "r-reg4-2", kind: "C", vehicleId: V.a5, workDate: "2026-11-21", workOrderId: "ot-reg4-2" })
+
+    expect(await panelIds(V.a5)).toEqual(["ot:ot-reg4-2"])
+    expect(await timelineIds(V.a5)).toEqual(["ot:ot-reg4-2"])
+
+    await voidOt("ot-reg4-2")
+
+    expect(await panelIds(V.a5)).toEqual([])
+    expect(await historyIds(V.a5)).toEqual([])
+    expect(await timelineIds(V.a5)).toEqual(["r:r-reg4-2"])
+  })
+
+  it("una OT que nunca entró a taller no es un trabajo: su registro vigente cuenta por sí mismo, en el Panel y en la hoja de vida", async () => {
+    await insertOt("ot-reg4-3", V.a6, "2026-12-10")
+    await insertRecord({ id: "r-reg4-3", kind: "C", vehicleId: V.a6, workDate: "2026-12-10", workOrderId: "ot-reg4-3" })
+    expect(await panelIds(V.a6)).toEqual(["r:r-reg4-3"])
+    expect(await timelineIds(V.a6)).toEqual(["r:r-reg4-3"])
+  })
+
+  it("un registro anulado no cuenta aunque su OT esté anulada: nada reaparece de lo que ya no vale", async () => {
+    await insertOt("ot-reg4-4", V.a7, "2026-12-10", "2026-12-10T15:00:00Z")
+    await insertRecord({ id: "r-reg4-4", kind: "C", vehicleId: V.a7, workDate: "2026-12-11", status: "anulado", workOrderId: "ot-reg4-4" })
+    await voidOt("ot-reg4-4")
+    expect(await panelIds(V.a7)).toEqual([])
+    expect(await timelineIds(V.a7)).toEqual([])
   })
 })

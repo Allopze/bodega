@@ -16,9 +16,10 @@ import { getRequest, jsonRequest, readJson } from "./mantencion-sync-http-helper
 /**
  * Notas de pedido (NP) de repuestos del mecánico (ADR mantención 0001) contra Postgres de
  * verdad: alta idempotente desde el teléfono, resolución por jefatura (desde stock, rechazo,
- * anulación, enlace con la solicitud), estado derivado de las líneas, lecturas con alcance y
- * catálogo del teléfono. PGlite es de una sola conexión: la concurrencia real la cubre la
- * revisión de bloqueos del servicio, no esta suite.
+ * anulación, enlace con la solicitud), estado derivado de las líneas, lecturas con alcance,
+ * catálogo del teléfono y lo que le pasa a las líneas sin resolver cuando su OT se cierra o se
+ * anula (NP4-7). PGlite es de una sola conexión: la concurrencia real la cubre la revisión de
+ * bloqueos del servicio, no esta suite.
  */
 
 const pg = new PGlite()
@@ -41,6 +42,8 @@ vi.mock("@/lib/email/smtp", () => ({
 const { createPartsNoteFromDevice } = await import("@/lib/services/mantencion/parts-notes/create")
 const resolver = await import("@/lib/services/mantencion/parts-notes/resolve")
 const query = await import("@/lib/services/mantencion/parts-notes/query")
+const transitions = await import("@/lib/services/mantencion/work-orders/transitions")
+const { rejectOpenLinesOfWorkOrderTx } = await import("@/lib/services/mantencion/parts-notes/line-rejection")
 const { deriveNoteStatus, allocateUsed, recalcNoteStatusTx } = await import("@/lib/services/mantencion/parts-notes/status")
 const parts = await import("@/lib/services/mantencion/parts")
 const { applyMovementTx } = await import("@/lib/services/stock-movement")
@@ -67,6 +70,13 @@ const OTS = {
   cho: { vehicleId: IDS.truckCho, worksiteId: IDS.wsCho, snapshot: SNAPSHOT_CHO, status: "en_ejecucion", assignedTo: IDS.mecCho },
   /** Equipo de Cholguán asignado a Javier (mecánico de Biodiversa): la jefatura asigna en cualquier faena. */
   choToBio: { vehicleId: IDS.truckCho, worksiteId: IDS.wsCho, snapshot: SNAPSHOT_CHO, status: "en_ejecucion", assignedTo: IDS.mecBio },
+  // Las que terminan en las pruebas de «al cerrar o anular la OT» (NP4-7): una por caso, porque cerrar y anular no se deshacen.
+  endVoid1: { vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, snapshot: SNAPSHOT_BIO, status: "en_ejecucion", assignedTo: IDS.mecBio },
+  endVoid2: { vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, snapshot: SNAPSHOT_BIO, status: "en_ejecucion", assignedTo: IDS.mecBio },
+  endVoid3: { vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, snapshot: SNAPSHOT_BIO, status: "en_ejecucion", assignedTo: IDS.mecBio },
+  endVoid4: { vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, snapshot: SNAPSHOT_BIO, status: "en_ejecucion", assignedTo: IDS.mecBio },
+  /** La que recibe la conformidad: se pide en taller y después pasa a «recepcionada» (una NP no se crea con la OT ya recibida). */
+  endConform1: { vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, snapshot: SNAPSHOT_BIO, status: "en_ejecucion", assignedTo: IDS.mecBio },
 } satisfies Record<string, OtSpec>
 type OtKey = keyof typeof OTS
 const OT_KEYS = Object.keys(OTS) as OtKey[]
@@ -441,7 +451,7 @@ describe("resolver una línea desde el stock de la faena", () => {
     expect(await testDb.select().from(schema.mantPartsAllocations).where(eq(schema.mantPartsAllocations.workOrderId, OT.asig))).toHaveLength(0)
 
     const done = await resolver.resolveNoteItemFromStock(jefe, { itemId: note.itemIds[0]!, productId: filter, quantity: 2 })
-    expect(done.ok).toBe(true)
+    expect(done).toEqual({ ok: true, message: "Se reservaron 2 de «Filtro de aceite» del stock de Biodiversa para la orden OT-L3-asig." })
     const [allocation] = await testDb.select().from(schema.mantPartsAllocations).where(and(eq(schema.mantPartsAllocations.workOrderId, OT.asig), eq(schema.mantPartsAllocations.productId, filter)))
     expect(allocation).toMatchObject({ worksiteId: IDS.wsBio, status: "activa" })
     expect(Number(allocation?.quantity)).toBe(2)
@@ -465,6 +475,33 @@ describe("resolver una línea desde el stock de la faena", () => {
     const second = await resolver.resolveNoteItemFromStock(jefe, { itemId: note.itemIds[1]!, productId: aceite, quantity: 20 })
     expect(second.ok).toBe(true)
     expect((await noteRow(note.noteId)).status).toBe("cerrada")
+  })
+
+  it("el aviso concuerda con la cantidad: «Se reservó 1 de…» en singular y «Se reservaron N de…» en plural, también con decimales (NAV-13)", async () => {
+    const filter = await makeProduct("Filtro de aire")
+    const aceite = await makeProduct("Aceite hidráulico", "litro")
+    await ingress(filter, 6)
+    await ingress(aceite, 40)
+    const note = await createNote(IDS.mecBio, OT.asig, {
+      lines: [
+        { description: "Filtro de aire", quantity: 3, unitOfMeasure: "unidad", partNumber: null, productId: null },
+        { description: "Filtro de aire grande", quantity: 3, unitOfMeasure: "unidad", partNumber: null, productId: null },
+        { description: "Aceite hidráulico", quantity: 20, unitOfMeasure: "litro", partNumber: null, productId: null },
+        { description: "Aceite hidráulico (resto)", quantity: 20, unitOfMeasure: "litro", partNumber: null, productId: null },
+      ],
+    })
+    const jefe = await viewerOf(IDS.jefe)
+    const ot = "para la orden OT-L3-asig."
+    expect(await resolver.resolveNoteItemFromStock(jefe, { itemId: note.itemIds[0]!, productId: filter, quantity: 1 }))
+      .toEqual({ ok: true, message: `Se reservó 1 de «Filtro de aire» del stock de Biodiversa ${ot}` })
+    expect(await resolver.resolveNoteItemFromStock(jefe, { itemId: note.itemIds[1]!, productId: filter, quantity: 3 }))
+      .toEqual({ ok: true, message: `Se reservaron 3 de «Filtro de aire» del stock de Biodiversa ${ot}` })
+    // Una cantidad decimal no es «1»: va en plural (1,5 litros; 0,5 litros).
+    expect(await resolver.resolveNoteItemFromStock(jefe, { itemId: note.itemIds[2]!, productId: aceite, quantity: 1.5 }))
+      .toEqual({ ok: true, message: `Se reservaron 1,5 de «Aceite hidráulico» del stock de Biodiversa ${ot}` })
+    // Un litro exacto sí es uno solo.
+    expect(await resolver.resolveNoteItemFromStock(jefe, { itemId: note.itemIds[3]!, productId: aceite, quantity: 1 }))
+      .toEqual({ ok: true, message: `Se reservó 1 de «Aceite hidráulico» del stock de Biodiversa ${ot}` })
   })
 
   it("el stock que se aparta es el de la faena ACTUAL del equipo, no el de otra", async () => {
@@ -962,5 +999,197 @@ describe("catálogo del teléfono con NP y reservas por OT", () => {
     const beforeReject = await catalogVersion(viewer, "mias")
     await resolver.rejectNoteItem(await viewerOf(IDS.jefe), { itemId: note.itemIds[1]!, reason: "No corresponde al equipo" })
     expect(await catalogVersion(viewer, "mias")).not.toBe(beforeReject)
+  })
+})
+
+// ── Al terminar la OT (NP4-7) ────────────────────────────────────────────────
+
+describe("cerrar o anular la OT rechaza las líneas de nota que nadie resolvió", () => {
+  const CLOSED_REASON = "La orden de trabajo se cerró antes de resolver esta línea."
+
+  async function actorOf(userId: string) {
+    const rbac = (await getUserRbacById(userId, true))!
+    return { userId: rbac.id, name: rbac.name, permissions: rbac.permissions, worksiteIds: rbac.worksiteIds, isGlobal: rbac.isGlobal }
+  }
+  const void_ = async (workOrderId: string, reason: string) => transitions.voidWorkOrder(await actorOf(IDS.jefe), { workOrderId, reason })
+  /** La OT sale de taller y se recibe el equipo: queda esperando la conformidad de la faena (los `check` de la tabla piden todo esto). */
+  const receive = (workOrderId: string) => testDb.update(schema.mantWorkOrders).set({
+    status: "recepcionada",
+    workshopExitAt: "2026-11-04T08:00:00Z", finishedAt: "2026-11-04T08:00:00Z", finishedByUserId: IDS.mecBio,
+    receivedAt: "2026-11-04T09:00:00Z", receiverName: "Pedro Soto", receivedByUserId: IDS.jefe, receivedRecordedAt: "2026-11-04T09:00:00Z",
+  }).where(eq(schema.mantWorkOrders.id, workOrderId))
+  const conform = async (workOrderId: string) => transitions.conformWorkOrder(await actorOf(IDS.adminBio), {
+    workOrderId, faenaReceivedAt: new Date().toISOString(), faenaReceiverName: "Ana Faena",
+  })
+  /** Todo lo que la prueba compara de una nota: ella y sus líneas, tal como están en la base. */
+  const snapshotOf = async (note: Created) => ({ note: await noteRow(note.noteId), lines: await Promise.all(note.itemIds.map(itemRow)) })
+  const auditsOf = async (noteId: string) => (await testDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, noteId))).filter((row) => row.action === "update")
+  async function fetchCatalog(userId: string): Promise<MantCatalog> {
+    const response = await catalogo.GET(getRequest("/api/mantencion/sync/catalogo", await tokenOf(userId)))
+    expect(response.status).toBe(200)
+    return (await response.json()) as MantCatalog
+  }
+
+  it("anular una OT con una nota «enviada»: la nota queda cerrada y sus líneas rechazadas con el motivo, con rastro y sin aviso al mecánico", async () => {
+    const note = await createNote(IDS.mecBio, OT.endVoid1)
+    expect((await noteRow(note.noteId)).status).toBe("enviada")
+    const motive = "Se pidió el equipo equivocado"
+
+    expect(await void_(OT.endVoid1, motive)).toMatchObject({ ok: true, value: { status: "anulada" } })
+
+    const reason = `La orden de trabajo se anuló: ${motive}`
+    expect((await noteRow(note.noteId)).status).toBe("cerrada")
+    for (const itemId of note.itemIds) {
+      const line = await itemRow(itemId)
+      expect(line).toMatchObject({ resolution: "rechazada", resolutionReason: reason, resolvedByUserId: IDS.jefe })
+      expect(line.resolvedAt).toBeTruthy()
+    }
+    // El rastro es el de un rechazo de jefatura (evento en la OT + auditoría de la NP), una vez por línea, marcado como automático.
+    const events = await eventsOf(OT.endVoid1, "parts_note_resolved")
+    expect(events).toHaveLength(2)
+    for (const event of events) {
+      expect(event).toMatchObject({ actorUserId: IDS.jefe, reason })
+      expect(event.changeSet).toMatchObject({ noteId: note.noteId, code: note.code, resolution: "rechazada", reason, automatic: true, cause: "ot_anulada" })
+    }
+    expect(events.map((event) => (event.changeSet as { itemId: string }).itemId).sort()).toEqual([...note.itemIds].sort())
+    const audits = await auditsOf(note.noteId)
+    expect(audits).toHaveLength(2)
+    for (const audit of audits) {
+      expect(audit).toMatchObject({ entityType: "mant_parts_note", entityCode: note.code, userId: IDS.jefe, reason, worksiteId: IDS.wsBio })
+      expect(JSON.parse(audit.oldState as string)).toMatchObject({ resolution: "pendiente" })
+      expect(JSON.parse(audit.newState as string)).toMatchObject({ resolution: "rechazada", automatic: true, cause: "ot_anulada" })
+    }
+
+    // Sale de «Pendientes» y de «En gestión»; el aviso de la anulación le llega al mecánico y los rechazos automáticos no suman otro.
+    const jefe = await viewerOf(IDS.jefe)
+    const tray = await query.listPartsNotes(jefe, { tab: "pendientes", page: 1, pageSize: 25 })
+    expect(tray.rows).toHaveLength(0)
+    expect(tray.counts).toEqual({ pendientes: 0, en_gestion: 0, cerradas: 1 })
+    await vi.waitFor(async () => expect((await notificationsOf("mant_ot_voided")).map((row) => row.userId)).toEqual([IDS.mecBio]))
+    expect(await notificationsOf("mant_np_rejected")).toHaveLength(0)
+
+    // Lo que la línea ya no puede hacer: resolverse otra vez, a mano.
+    expect(await resolver.rejectNoteItem(jefe, { itemId: note.itemIds[0]!, reason: "Otra vez, por favor" })).toMatchObject({ ok: false, message: expect.stringContaining("ya está rechazada") })
+    expect(await resolver.resolveNoteItemFromStock(jefe, { itemId: note.itemIds[0]!, productId: await makeProduct("Filtro de aceite"), quantity: 1 }))
+      .toMatchObject({ ok: false, message: expect.stringContaining("ya está rechazada") })
+  })
+
+  it("repetir no duplica: anular otra vez la OT se rechaza y el paso que rechaza las líneas no escribe nada si no queda ninguna pendiente", async () => {
+    const note = await createNote(IDS.mecBio, OT.endVoid2)
+    expect(await void_(OT.endVoid2, "Ya no hace falta la OT")).toMatchObject({ ok: true })
+    const after = { events: await eventsOf(OT.endVoid2, "parts_note_resolved"), audits: await auditsOf(note.noteId), snapshot: await snapshotOf(note) }
+    expect(after.events).toHaveLength(2)
+
+    expect(await void_(OT.endVoid2, "Ya no hace falta la OT")).toMatchObject({ ok: false, code: "conflict" })
+    const again = await testDb.transaction((tx) => rejectOpenLinesOfWorkOrderTx(tx as unknown as Tx, {
+      workOrderId: OT.endVoid2, actor: { userId: IDS.jefe }, end: { kind: "anulada", reason: "Ya no hace falta la OT" },
+    }))
+    expect(again).toEqual({ notes: 0, lines: 0 })
+
+    expect(await eventsOf(OT.endVoid2, "parts_note_resolved")).toHaveLength(after.events.length)
+    expect(await auditsOf(note.noteId)).toHaveLength(after.audits.length)
+    expect(await snapshotOf(note)).toEqual(after.snapshot)
+  })
+
+  it("dar conformidad a una OT con una nota «en gestión»: sólo la línea pendiente se rechaza; lo ya resuelto no se toca y el teléfono ve el motivo", async () => {
+    const filter = await makeProduct("Filtro de aceite")
+    await ingress(filter, 5)
+    const note = await createNote(IDS.mecBio, OT.endConform1, {
+      lines: ["desde stock", "en compra", "rechazada a mano", "pendiente"].map((name) => ({
+        description: `Repuesto ${name}`, quantity: 1, unitOfMeasure: "unidad", partNumber: null, productId: null,
+      })),
+    })
+    const [fromStock, inPurchase, manual, pending] = note.itemIds as [string, string, string, string]
+    const jefe = await viewerOf(IDS.jefe)
+    expect((await resolver.resolveNoteItemFromStock(jefe, { itemId: fromStock, productId: filter, quantity: 1 })).ok).toBe(true)
+    await markInPurchase(inPurchase)
+    await insertPurchase({ noteItemId: inPurchase, workOrderId: OT.endConform1, itemStatus: "approved" })
+    expect((await resolver.rejectNoteItem(jefe, { itemId: manual, reason: "No corresponde al equipo" })).ok).toBe(true)
+    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    const resolved = await Promise.all([fromStock, inPurchase, manual].map(itemRow))
+    const eventsBefore = (await eventsOf(OT.endConform1, "parts_note_resolved")).length
+    // El único rechazo que avisó fue el de jefatura a mano.
+    await vi.waitFor(async () => expect(await notificationsOf("mant_np_rejected")).toHaveLength(1))
+
+    await receive(OT.endConform1)
+    expect(await conform(OT.endConform1)).toMatchObject({ ok: true, value: { status: "cerrada" } })
+
+    expect(await itemRow(pending)).toMatchObject({ resolution: "rechazada", resolutionReason: CLOSED_REASON, resolvedByUserId: IDS.adminBio })
+    expect(await Promise.all([fromStock, inPurchase, manual].map(itemRow))).toEqual(resolved)
+    expect((await noteRow(note.noteId)).status).toBe("cerrada")
+    const events = await eventsOf(OT.endConform1, "parts_note_resolved")
+    expect(events).toHaveLength(eventsBefore + 1)
+    expect(events.find((event) => (event.changeSet as { itemId?: string } | null)?.itemId === pending)).toMatchObject({
+      actorUserId: IDS.adminBio, reason: CLOSED_REASON, changeSet: expect.objectContaining({ automatic: true, cause: "ot_cerrada" }),
+    })
+    // La reserva de lo sacado de bodega se libera como siempre; la línea sigue «desde stock».
+    const [allocation] = await testDb.select().from(schema.mantPartsAllocations).where(eq(schema.mantPartsAllocations.workOrderId, OT.endConform1))
+    expect(allocation).toMatchObject({ status: "liberada" })
+    await vi.waitFor(async () => expect(await notificationsOf("mant_ot_closed")).toHaveLength(1))
+    expect(await notificationsOf("mant_np_rejected")).toHaveLength(1)
+
+    // El catálogo del teléfono (OT cerrada hace menos de 7 días) muestra el motivo de la línea rechazada, sin cambios.
+    const order = (await fetchCatalog(IDS.mecBio)).workOrders?.find((candidate) => candidate.id === OT.endConform1)
+    expect(order).toMatchObject({ status: "cerrada" })
+    const lines = order?.partsNotes?.[0]?.lines ?? []
+    expect(lines.find((line) => line.id === pending)).toMatchObject({ stage: "rechazado", rejectionReason: CLOSED_REASON })
+    expect(lines.find((line) => line.id === manual)).toMatchObject({ stage: "rechazado", rejectionReason: "No corresponde al equipo" })
+  })
+
+  it("una nota ya cerrada o anulada no se toca: ni sus líneas, ni su estado, ni su rastro; la abierta de la misma OT sí se cierra", async () => {
+    const jefe = await viewerOf(IDS.jefe)
+    const closedNote = await createNote(IDS.mecBio, OT.endVoid3)
+    for (const itemId of closedNote.itemIds) expect((await resolver.rejectNoteItem(jefe, { itemId, reason: "No corresponde al equipo" })).ok).toBe(true)
+    const voidedNote = await createNote(IDS.mecBio, OT.endVoid3)
+    expect((await resolver.voidPartsNote(jefe, { noteId: voidedNote.noteId, reason: "Se pidió por error" })).ok).toBe(true)
+    const openNote = await createNote(IDS.mecBio, OT.endVoid3, { lines: [{ description: "Bomba de agua", quantity: 1, unitOfMeasure: "unidad", partNumber: null, productId: null }] })
+    expect([(await noteRow(closedNote.noteId)).status, (await noteRow(voidedNote.noteId)).status, (await noteRow(openNote.noteId)).status]).toEqual(["cerrada", "anulada", "enviada"])
+    const frozen = { closed: await snapshotOf(closedNote), voided: await snapshotOf(voidedNote) }
+    const eventsBefore = (await eventsOf(OT.endVoid3, "parts_note_resolved")).length
+
+    expect(await void_(OT.endVoid3, "El equipo se dio de baja")).toMatchObject({ ok: true })
+
+    expect(await snapshotOf(closedNote)).toEqual(frozen.closed)
+    expect(await snapshotOf(voidedNote)).toEqual(frozen.voided)
+    // La anulada conserva sus líneas pendientes y su estado: no era una nota abierta.
+    expect(frozen.voided.note.status).toBe("anulada")
+    expect(frozen.voided.lines.map((line) => line.resolution)).toEqual(["pendiente", "pendiente"])
+    expect(await itemRow(openNote.itemIds[0]!)).toMatchObject({ resolution: "rechazada", resolutionReason: "La orden de trabajo se anuló: El equipo se dio de baja" })
+    expect((await noteRow(openNote.noteId)).status).toBe("cerrada")
+    expect(await eventsOf(OT.endVoid3, "parts_note_resolved")).toHaveLength(eventsBefore + 1)
+  })
+
+  it("una línea «en compra» cuya compra muere después de anular la OT no vuelve a «pendiente»: se rechaza sola y la nota sigue cerrada", async () => {
+    const jefe = await viewerOf(IDS.jefe)
+    const note = await createNote(IDS.mecBio, OT.endVoid4)
+    const [bought, other] = note.itemIds as [string, string]
+    await markInPurchase(bought)
+    const purchase = await insertPurchase({ noteItemId: bought, workOrderId: OT.endVoid4, itemStatus: "approved" })
+
+    expect(await void_(OT.endVoid4, "El equipo se dio de baja")).toMatchObject({ ok: true })
+    // Con la compra viva, la línea en compra queda como está; sólo la pendiente se rechaza.
+    expect((await itemRow(bought)).resolution).toBe("en_compra")
+    expect((await itemRow(other)).resolution).toBe("rechazada")
+    expect((await noteRow(note.noteId)).status).toBe("cerrada")
+
+    // Cancelan la solicitud que la compraba: en una OT abierta volvería a pendiente; aquí la OT ya no existe para nadie.
+    await testDb.update(schema.purchaseRequests).set({ status: "cancelled" }).where(eq(schema.purchaseRequests.id, purchase.requestId))
+    const unlink = () => testDb.transaction((tx) => resolver.unlinkNoteItemsFromRequestTx(tx as unknown as Tx, { noteItemIds: [bought], actorUserId: IDS.supBio }))
+    await unlink()
+    expect(await itemRow(bought)).toMatchObject({
+      resolution: "rechazada", resolutionReason: "La orden de trabajo se anuló: El equipo se dio de baja", resolvedByUserId: IDS.supBio,
+    })
+    expect((await noteRow(note.noteId)).status).toBe("cerrada")
+    expect((await query.listPartsNotes(jefe, { tab: "pendientes", page: 1, pageSize: 25 })).rows).toHaveLength(0)
+    const events = await eventsOf(OT.endVoid4, "parts_note_resolved")
+    expect(events.find((event) => (event.changeSet as { itemId?: string } | null)?.itemId === bought && (event.changeSet as { cause?: string }).cause)).toMatchObject({
+      changeSet: expect.objectContaining({ automatic: true, cause: "ot_anulada", previousResolution: "en_compra" }),
+    })
+
+    // Repetirlo no cambia nada.
+    const snapshot = await snapshotOf(note)
+    await unlink()
+    expect(await snapshotOf(note)).toEqual(snapshot)
+    expect(await eventsOf(OT.endVoid4, "parts_note_resolved")).toHaveLength(events.length)
   })
 })

@@ -292,7 +292,7 @@ export async function notifyWorkOrderPartsReceived(input: PartsReceivedNotice): 
   await notifyManyUser(userIds, {
     type: "mant_ot_parts_received",
     title: `Repuestos recibidos para OT ${order.folio}`,
-    body: `${equipment} · ${lines} en faena. Revisa «Repuestos pedidos» en la OT.`,
+    body: `${equipment} · ${lines} en faena. Revisa «Solicitudes de compra» en la OT.`,
     ...link,
     dedupeKey: `mant-ot-parts:${order.id}:${input.receiptId}`,
   })
