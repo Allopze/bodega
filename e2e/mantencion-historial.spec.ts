@@ -237,13 +237,14 @@ test("«Órdenes de trabajo cerradas» avisa dónde están los trabajos anterior
   await login(page, ADMIN)
   await page.goto("/mantencion/ot?estado=cerrada")
   await expectPageTitle(page, "Órdenes de trabajo")
-  const link = page.getByRole("link", { name: "Historial de mantenciones", exact: true })
+  // Acotado al contenido: el menú lateral también tiene un ítem «Historial de mantenciones» (desde 2026-11-26).
+  const link = page.getByRole("main").getByRole("link", { name: "Historial de mantenciones", exact: true })
   await expect(link).toHaveAttribute("href", "/mantencion/registros/historicos")
   await expect(textoVisible(page, /Los trabajos de los formularios y los registros firmados están en el/)).toBeVisible()
   // Sólo en «Cerradas»: en las otras pestañas el aviso sobra.
   await page.goto("/mantencion/ot?estado=en_ejecucion")
   await expectPageTitle(page, "Órdenes de trabajo")
-  await expect(page.getByRole("link", { name: "Historial de mantenciones", exact: true })).toHaveCount(0)
+  await expect(page.getByRole("main").getByRole("link", { name: "Historial de mantenciones", exact: true })).toHaveCount(0)
   // Y el enlace lleva a la lista unificada.
   await page.goto("/mantencion/ot?estado=cerrada")
   await link.click()

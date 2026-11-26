@@ -26,8 +26,10 @@ export interface NavItem {
   roles?:       string[]
   badge?:       "count"
   children?:    NavChild[]
+  /** Con hijos: se pinta desplegado sin que la pantalla actual sea suya (ver `modules/manifest-types.ts`). */
+  defaultOpen?: boolean
   group?:       string
-  /** Prefijos de otro árbol que también son este ítem (ver `modules/manifest-types.ts`). */
+  /** Prefijos de otro árbol que también son este ítem; un segmento `*` vale por cualquiera (ver `modules/manifest-types.ts`). */
   aliases?:     string[]
 }
 
@@ -94,21 +96,40 @@ const NAV_PREFIX_OWNERS = new Map<string, string>(
   ])),
 )
 
+// Comodín de un segmento dentro de un alias: el de «Equipos» cubre la ficha de mantención de cualquier equipo.
+const SEGMENT_WILDCARD = "*"
+
+/**
+ * `pathname` está bajo `href`: es el propio `href` o cuelga de él. Un segmento `*` del `href` vale por
+ * cualquier segmento no vacío de la ruta (y, como todo prefijo, lo que venga después también cuenta).
+ */
 function pathBelongsToHref(pathname: string, href: string): boolean {
-  return pathname === href || pathname.startsWith(`${href}/`)
+  if (!href.includes(SEGMENT_WILDCARD)) return pathname === href || pathname.startsWith(`${href}/`)
+  const pathSegments = pathname.split("/")
+  const hrefSegments = href.split("/")
+  if (pathSegments.length < hrefSegments.length) return false
+  return hrefSegments.every((segment, index) =>
+    segment === SEGMENT_WILDCARD ? pathSegments[index] !== "" : segment === pathSegments[index])
 }
 
 function withoutSearchOrHash(pathname: string): string {
   return pathname.split(/[?#]/, 1)[0] || "/"
 }
 
-/** `href` del ítem dueño del prefijo registrado más específico, o null. */
-function findMostSpecificRegisteredNavHref(pathname: string): string | null {
+/**
+ * `href` del ítem dueño del prefijo registrado más específico, o null.
+ *
+ * `visibleHrefs`: lo que la persona ve en el menú. Un alias con comodín sólo vale para quien ve a su
+ * dueño: sin esto, la ficha de mantención de un equipo (`/flota/<id>/mantencion`) dejaba SIN ítem marcado
+ * a quien no ve «Equipos». Con el comodín descartado manda el siguiente prefijo («Vehículos»). Los
+ * prefijos sin comodín se resuelven como siempre: ocultar un ítem no cambia a quién pertenece su ruta.
+ */
+function findMostSpecificRegisteredNavHref(pathname: string, visibleHrefs?: ReadonlySet<string>): string | null {
   let matchPrefix: string | null = null
-  for (const prefix of NAV_PREFIX_OWNERS.keys()) {
-    if (pathBelongsToHref(pathname, prefix) && (matchPrefix === null || prefix.length > matchPrefix.length)) {
-      matchPrefix = prefix
-    }
+  for (const [prefix, owner] of NAV_PREFIX_OWNERS) {
+    if (!pathBelongsToHref(pathname, prefix)) continue
+    if (visibleHrefs && prefix.includes(SEGMENT_WILDCARD) && !visibleHrefs.has(owner)) continue
+    if (matchPrefix === null || prefix.length > matchPrefix.length) matchPrefix = prefix
   }
   return matchPrefix === null ? null : NAV_PREFIX_OWNERS.get(matchPrefix) ?? null
 }
@@ -184,10 +205,19 @@ export function getVisibleAreas(
   return areas
 }
 
-export function isHrefActive(href: string, pathname: string): boolean {
+/** Los `href` (ítems e hijos) que estas áreas muestran: la entrada de `isHrefActive` para los alias con comodín. */
+export function visibleHrefsOf(areas: readonly AreaNode[]): Set<string> {
+  return new Set(areas.flatMap((area) => area.items.flatMap((item) => [item.href, ...(item.children ?? []).map((child) => child.href)])))
+}
+
+/**
+ * ¿`href` es el ítem activo para esta ruta? `visibleHrefs` (opcional) son los ítems que la persona ve:
+ * ver `findMostSpecificRegisteredNavHref`. Sin él se responde por el árbol completo.
+ */
+export function isHrefActive(href: string, pathname: string, visibleHrefs?: ReadonlySet<string>): boolean {
   const currentPathname = withoutSearchOrHash(pathname)
   if (href === "/dashboard") return currentPathname === "/dashboard"
-  const mostSpecificNavHref = findMostSpecificRegisteredNavHref(currentPathname)
+  const mostSpecificNavHref = findMostSpecificRegisteredNavHref(currentPathname, visibleHrefs)
 
   if (href === "/prevencion/evaluaciones") {
     if (currentPathname === href) return true
@@ -205,10 +235,11 @@ const matchesHref = isHrefActive
 
 /** id del área que contiene el route activo (o null si ninguna). */
 export function findActiveArea(areas: AreaNode[], pathname: string): string | null {
+  const visibleHrefs = visibleHrefsOf(areas)
   for (const area of areas) {
     for (const item of area.items) {
-      if (matchesHref(item.href, pathname)) return area.id
-      if (item.children?.some((child) => matchesHref(child.href, pathname))) return area.id
+      if (matchesHref(item.href, pathname, visibleHrefs)) return area.id
+      if (item.children?.some((child) => matchesHref(child.href, pathname, visibleHrefs))) return area.id
     }
   }
   return null

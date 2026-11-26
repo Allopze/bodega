@@ -4,7 +4,7 @@ import type { ModuleManifest } from "@/modules/manifest-types"
  * Mantención de equipos (preventiva y correctiva), 2026-10-28.
  *
  * El mecánico registra desde la PWA `/m/mantencion`, distribuida por QR desde
- * Equipos y Dispositivos; jefatura y supervisión revisan en `/mantencion/*`.
+ * Equipos y «App del mecánico»; jefatura y supervisión revisan en `/mantencion/*`.
  * Desde 2026-11 incluye las órdenes de trabajo (`/mantencion/ot`), que
  * reemplazan al módulo antiguo `mantenciones`.
  * Los permisos se validan siempre en el servidor; la navegación sólo los refleja.
@@ -65,8 +65,8 @@ export const mantencionEquiposModule = {
     {
       areaId: "control-operacional",
       // Orden por la tarea de quien mantiene (reorganización 2026-11-13): primero lo
-      // que se mira cada día (Panel, OT, Registros, Equipos) y al final la
-      // «Configuración», que se toca poco y se pliega bajo un solo padre.
+      // que se mira cada día (Panel, OT, Registros, Historial, Equipos) y al final la
+      // «Configuración», que se toca poco y agrupa sus tres pantallas bajo un solo padre.
       items: [
         {
           label: "Panel de mantención",
@@ -102,11 +102,27 @@ export const mantencionEquiposModule = {
           group: "Mantención",
         },
         {
+          // El Historial de mantenciones (también su importación y cada trabajo) vive bajo
+          // `/mantencion/registros/historicos`: con este ítem propio la regla del `href` más
+          // específico lo marca a él y no a «Registros firmados». Mismos permisos que su página.
+          label: "Historial de mantenciones",
+          href: "/mantencion/registros/historicos",
+          iconName: "Archive",
+          permissions: ["mant:records:view_worksite", "mant:records:view_all"],
+          group: "Mantención",
+        },
+        {
           label: "Equipos",
           href: "/mantencion/equipos",
-          iconName: "Truck",
+          // Distinto del camión de «Vehículos» (Flota): dos filas con el mismo ícono se leían como la misma pantalla.
+          iconName: "Toolbox",
           permissions: ["mant:records:view_worksite", "mant:records:view_all", "mant:equipment:manage"],
           group: "Mantención",
+          // La ficha de un equipo se abre en `/flota/[id]/mantencion` y su miga dice «Mantención › Equipos»:
+          // el menú tiene que marcar «Equipos» y no «Vehículos». Para quien no ve «Equipos», `isHrefActive`
+          // ignora el comodín y «Vehículos» sigue marcado. El interruptor de submódulo no lo entiende (prefijos
+          // literales): esa ruta sigue gobernada por Flota.
+          aliases: ["/flota/*/mantencion"],
         },
         {
           // Padre sin permisos propios: es sólo un contenedor y se ve cuando la
@@ -120,14 +136,17 @@ export const mantencionEquiposModule = {
           iconName: "GearSix",
           permissions: [],
           group: "Mantención",
+          // Sus tres destinos se ven sin abrir el padre (auditoría de encontrabilidad 2026-11-26): plegados
+          // no se sabía que Pautas, los catálogos y la app del mecánico estaban ahí.
+          defaultOpen: true,
           children: [
             { label: "Pautas", href: "/mantencion/pautas", permissions: ["mant:schedules:manage"] },
             // Marcas, talleres, conductores, tipos de trabajo y aceites. Mismo permiso
             // que exige la página y sus acciones (`mant:equipment:manage`).
             { label: "Marcas y talleres", href: "/mantencion/catalogos", permissions: ["mant:equipment:manage"] },
-            // Quién tiene la app conectada y el botón para desconectarla. Mismo permiso
-            // que exige la página y su acción (`mant:devices:manage`).
-            { label: "Dispositivos", href: "/mantencion/dispositivos", permissions: ["mant:devices:manage"] },
+            // Los teléfonos con la app del mecánico conectada, el botón para desconectarlos y el de
+            // instalar la app. Mismo permiso que exige la página y su acción (`mant:devices:manage`).
+            { label: "App del mecánico", href: "/mantencion/dispositivos", permissions: ["mant:devices:manage"] },
           ],
         },
       ],

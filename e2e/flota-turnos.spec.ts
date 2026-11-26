@@ -42,6 +42,13 @@ test.describe.serial("Turnos y ralentí", () => {
   test("el admin. de contrato registra un turno y ve su % de ralentí y el ranking", async ({ page }) => {
     await login(page, CONTRATO)
     await page.goto("/control-operacional")
+    // En el Panel el grupo abierto del menú es Seguimiento: Flota queda plegado y su enlace no existe hasta abrirlo.
+    // Se reintenta el clic: uno anterior a la hidratación mueve el foco pero no corre el manejador.
+    const grupoFlota = page.getByRole("navigation", { name: "Navegación", exact: true }).getByRole("button", { name: /^Flota/ })
+    await expect(async () => {
+      if ((await grupoFlota.getAttribute("aria-expanded")) === "false") await grupoFlota.click()
+      await expect(grupoFlota).toHaveAttribute("aria-expanded", "true", { timeout: 2_000 })
+    }).toPass({ timeout: 20_000 })
     await page.getByRole("link", { name: "Turnos y ralentí", exact: true }).first().click()
     await expect(page).toHaveURL(/\/flota\/turnos/)
     await expectPageTitle(page, "Turnos y ralentí")
