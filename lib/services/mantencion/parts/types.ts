@@ -60,21 +60,14 @@ export type WorkOrderAvailablePart = CatalogPartsAvailable & { workOrderId: stri
 
 export type { MantViewer } from "@/lib/services/mantencion/access"
 
-// ── Contratos de servicio de las líneas (firmas; las implementa el dueño) ────
+// ── Contratos de servicio de las líneas ─────────────────────────────────────
 //
-// L3 · lib/services/mantencion/parts-notes/*
-//   createPartsNoteFromDevice(payload: SyncPartsNote, ctx: SyncContext): Promise<{ status: number; body: SyncPartsNoteResponse }>
-//   listPartsNotes(viewer: MantViewer, filters: PartsNoteListFilters): Promise<{ rows: PartsNoteListRow[]; total: number; counts: Record<PartsNoteTab, number> }>
-//   getPartsNote(viewer: MantViewer, noteId: string): Promise<PartsNoteDetail | null>
-//   resolveNoteItemFromStock(viewer: MantViewer, input: { itemId: string; productId: string; quantity: number }): Promise<PartsActionResult>
-//   rejectNoteItem(viewer: MantViewer, input: { itemId: string; reason: string }): Promise<PartsActionResult>
-//   voidPartsNote(viewer: MantViewer, input: { noteId: string; reason: string }): Promise<PartsActionResult>
-//   loadPartsNotePrefill(viewer: MantViewer, noteId: string): Promise<PartsNotePrefill | null>
-//   linkNoteItemsToRequestTx(tx: Tx, input: { links: Array<{ noteItemId: string; requestItemId: string }>; actorUserId: string }): Promise<void>
-//   loadWorkOrderPartsOverview(viewer: MantViewer, workOrderId: string): Promise<WorkOrderPartsOverview>
-// L4 · lib/services/mantencion/parts/conciliation.ts
-//   conciliatePart(viewer: MantViewer, input: ConciliateInput): Promise<PartsActionResult>
-//   listPendingConciliation(viewer: MantViewer, filters: { worksiteId?: string; page?: number }): Promise<{ rows: PendingConciliationRow[]; total: number }>
+// Las firmas viven como stubs tipados (lanzan «pendiente») en:
+//   L3 · lib/services/mantencion/parts-notes/create.ts   createPartsNoteFromDevice
+//        lib/services/mantencion/parts-notes/query.ts    listPartsNotes, getPartsNote, loadPartsNotePrefill, loadWorkOrderPartsOverview
+//        lib/services/mantencion/parts-notes/resolve.ts  resolveNoteItemFromStock, rejectNoteItem, voidPartsNote, linkNoteItemsToRequestTx
+//   L4 · lib/services/mantencion/parts/conciliation.ts   conciliatePart, listPendingConciliation
+// El dueño reemplaza el cuerpo sin cambiar la firma; los demás programan contra ella.
 
 export type PartsActionResult = { ok: true; message?: string } | { ok: false; message: string; field?: string }
 
