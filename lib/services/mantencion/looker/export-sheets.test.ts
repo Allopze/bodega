@@ -264,7 +264,7 @@ describe("matriz de checklist", () => {
     expect(notes).toMatch(/hasta 60 pautas/)
     expect(notes).toMatch(/últimas 8/)
     expect(notes).toMatch(/2 de las últimas pautas no traen detalle/)
-    expect(workNotes("h", { ...matrix, withoutDetail: 0 }, 60).join("\n")).toMatch(/máquinas por horas/)
+    expect(workNotes("h", { ...matrix, withoutDetail: 0 }, 60).join("\n")).toMatch(/equipos por horas/)
     expect(workNotes("h", { ...matrix, withoutDetail: 0 }, 60).join("\n")).not.toMatch(/no traen detalle/)
   })
 })
@@ -295,7 +295,7 @@ describe("hoja «Filtros»", () => {
     const sheet = filtersSheet({ tab: "camiones", context: context(), notes: [] })
     expect(sheet.worksheetName).toBe("Filtros")
     expect(sheet.headers).toEqual(["Concepto", "Detalle"])
-    expect(detail(sheet, "Pestaña")).toEqual(["Camiones (equipos por kilómetros)"])
+    expect(detail(sheet, "Pestaña")).toEqual(["Por kilómetros"])
     expect(detail(sheet, "Período")).toEqual(["01-10-2026 al 31-10-2026"])
     expect(detail(sheet, "Faenas")).toEqual(["Todas las faenas de tu alcance"])
     expect(detail(sheet, "Códigos (equipos)")).toEqual(["Todos"])
@@ -343,7 +343,7 @@ describe("hoja «Filtros»", () => {
       context: context({ filters: { tab: "maquinas", worksiteIds: ["ws-ajena"], requestedTo: "2026-11-30", to: "2026-11-24", from: "2026-11-01", requestedFrom: "2026-11-01" } }),
       notes: [],
     })
-    expect(detail(sheet, "Pestaña")).toEqual(["Máquinas (equipos por horas)"])
+    expect(detail(sheet, "Pestaña")).toEqual(["Por horas"])
     // Las opciones traen sólo faenas ACTIVAS del alcance: una faena que no está ahí puede ser ajena o estar cerrada, y el
     // libro puede traer filas de ella. Por eso no dice «sin datos» ni «fuera de tu alcance» a secas.
     expect(detail(sheet, "Faenas")).toEqual(["1 faena sin nombre disponible (fuera de tu alcance o inactiva)"])

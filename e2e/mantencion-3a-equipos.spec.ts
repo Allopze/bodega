@@ -120,9 +120,9 @@ test.describe("E2E 6 · Equipos", () => {
     const errors = trackConsole(page)
     await asJefe(page)
     await page.goto(`/mantencion/equipos/${ids.eq1}`)
-    // «Editar mantención» ya no trae la identidad: sólo pauta, lectura inicial y baja (paso 4b).
-    await page.getByRole("button", { name: "Editar mantención", exact: true }).click()
-    const plan = page.getByRole("form", { name: "Editar mantención" })
+    // «Editar plan de mantención» ya no trae la identidad: sólo pauta, lectura inicial y baja (paso 4b).
+    await page.getByRole("button", { name: "Editar plan de mantención", exact: true }).click()
+    const plan = page.getByRole("form", { name: "Editar plan de mantención" })
     await expect(plan.getByRole("combobox", { name: /^Pauta de mantención/ })).toBeVisible()
     await expect(plan.getByRole("textbox", { name: "Modelo", exact: true })).toHaveCount(0)
     await plan.getByRole("button", { name: "Cancelar", exact: true }).click()
@@ -221,7 +221,7 @@ test.describe("E2E 6 · Equipos", () => {
     const errors = trackConsole(page)
     await asJefe(page)
     await page.goto(`/mantencion/equipos/${ids.im1}`)
-    await page.getByRole("button", { name: "Editar mantención", exact: true }).click()
+    await page.getByRole("button", { name: "Editar plan de mantención", exact: true }).click()
     await page.getByRole("radio", { name: "Dado de baja", exact: true }).check()
     // Sin motivo no se da de baja.
     await page.getByRole("button", { name: "Guardar cambios", exact: true }).click()
@@ -239,9 +239,16 @@ test.describe("E2E 6 · Equipos", () => {
     await expect(page).toHaveURL(/bajas=1/)
     await expect(page.getByRole("row").filter({ hasText: "QA-IM1" })).toContainText("Dado de baja")
 
+    // «En taller» tiene su casilla junto a «Mostrar dados de baja» (antes sólo llegaba desde la cifra del Panel) y viaja en la URL.
+    await page.getByLabel("En taller", { exact: true }).check()
+    await expect(page).toHaveURL(/taller=1/)
+    await expect(page).toHaveURL(/bajas=1/)
+    await page.getByLabel("En taller", { exact: true }).uncheck()
+    await expect(page).not.toHaveURL(/taller=1/)
+
     // Reactivar lo devuelve a la lista normal.
     await page.goto(`/mantencion/equipos/${ids.im1}`)
-    await page.getByRole("button", { name: "Editar mantención", exact: true }).click()
+    await page.getByRole("button", { name: "Editar plan de mantención", exact: true }).click()
     await page.getByRole("radio", { name: "Activo", exact: true }).check()
     await page.getByRole("button", { name: "Guardar cambios", exact: true }).click()
     await expect(fichaValue(page, "Estado")).toHaveText("Activo")

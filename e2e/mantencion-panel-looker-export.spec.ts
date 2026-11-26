@@ -8,7 +8,7 @@ import {
 } from "./mantencion-panel-looker-seed-extra"
 
 /**
- * «Exportar Excel» de Planificación, Camiones y Máquinas del Panel de mantención (2026-11-24). Se pulsa el botón del encabezado,
+ * «Exportar Excel» de Planificación, «Por kilómetros» y «Por horas» del Panel de mantención (2026-11-24). Se pulsa el botón del encabezado,
  * se descarga el .xlsx y se lee con exceljs: lo que se comprueba es el archivo, no el servicio. Siembra SUS PROPIOS datos QA
  * (`seedLooker` + `seedExtra`: 30 correctivos del formulario, diez pautas de un equipo y una máquina con preventiva declarada)
  * y los borra al terminar. El alcance por faena y el permiso `mant:export` se prueban con usuarios del fixture E2E cuyo acceso
@@ -19,7 +19,9 @@ test.describe.configure({ mode: "serial" })
 test.setTimeout(180_000)
 
 type Tab = "planificacion" | "camiones" | "maquinas"
-const SHORT: Record<Tab, string> = { planificacion: "Planificación", camiones: "Camiones", maquinas: "Máquinas" }
+const SHORT: Record<Tab, string> = { planificacion: "Planificación", camiones: "Por kilómetros", maquinas: "Por horas" }
+/** El nombre del archivo sale del título del libro («Panel de mantención · Por kilómetros»), no del valor de la URL. */
+const FILE_SLUG: Record<Tab, string> = { planificacion: "planificacion", camiones: "por_kilometros", maquinas: "por_horas" }
 const PLANNING_SHEETS = ["Consolidado por kilómetros", "Consolidado por horas"]
 const WORK_SHEETS = [
   "Correctivos", "Conductores", "Horas y registros", "Cumplimiento por mes", "Cumplimiento faena y mecánico",
@@ -64,7 +66,7 @@ async function exportFrom(page: Page, tab: Tab, url: string, { cross = true }: {
   await expect(page.getByRole("button", { name: buttonName(tab), exact: true })).toHaveCount(1)
   await ready(page, { cross })
   const [download] = await Promise.all([page.waitForEvent("download", { timeout: 30_000 }), button.click()])
-  expect(download.suggestedFilename()).toMatch(new RegExp(`^panel_de_mantencion_${tab}_\\d{4}-\\d{2}-\\d{2}\\.xlsx$`))
+  expect(download.suggestedFilename()).toMatch(new RegExp(`^panel_de_mantencion_${FILE_SLUG[tab]}_\\d{4}-\\d{2}-\\d{2}\\.xlsx$`))
   const book = await readBook(download)
   expect([...book.keys()]).toEqual(sheetNames(tab))
   return book
@@ -175,7 +177,7 @@ test("Camiones: «Correctivos» trae TODAS las filas del filtro y no sólo la p�
   expect([field(checks, checks.rows[0]!, "Mecánico"), field(checks, checks.rows[0]!, "Observaciones"), field(checks, checks.rows[0]!, "Fotos en la plataforma")])
     .toEqual([QA.mechanicA, `QA_ Observación ${QA.a1.code}`, 0])
 
-  expect(filtros(book, "Pestaña")).toEqual(["Camiones (equipos por kilómetros)"])
+  expect(filtros(book, "Pestaña")).toEqual(["Por kilómetros"])
   expect(filtros(book, "Período")).toEqual(["01-10-2026 al 20-11-2026"])
   expect(filtros(book, "Faenas")).toEqual([QA.wsA.name])
   expect(filtros(book, "Frecuencia")).toEqual(["40.000 km"])
@@ -185,7 +187,7 @@ test("Camiones: «Correctivos» trae TODAS las filas del filtro y no sólo la p�
   const meta = sheet(book, "Metadatos")
   expect(pairs(meta, "Alcance de faena")).toEqual(["Todas las faenas (usuario global)"])
   expect([pairs(meta, "Período (desde)"), pairs(meta, "Período (hasta)")]).toEqual([["2026-10-01"], ["2026-11-20"]])
-  expect(pairs(meta, "Filtros aplicados")[0]).toContain('"pestana":"Camiones"')
+  expect(pairs(meta, "Filtros aplicados")[0]).toContain('"pestana":"Por kilómetros"')
 
   // La exportación se audita con la pestaña, los parámetros y las filas de cada hoja.
   const audit = await withSql(async (sql) => (await sql`
@@ -240,7 +242,7 @@ test("Máquinas: el libro trae lo de la máquina por horas, con Horómetro, y na
   const matrix = sheet(book, "Matriz de checklist")
   expect(matrix.header).toEqual(["Ítem", "Sistema", `${QA.m1.code} · 05-11-2026 · 300 H`, `${QA.m1.code} · 20-10-2026 · 600 H`])
   expect(matrix.rows.map((cells) => cells[0])).toEqual(["QA_ Nivel hidráulico", "QA_ Filtro de aire", "QA_ Mangueras"])
-  expect(filtros(book, "Pestaña")).toEqual(["Máquinas (equipos por horas)"])
+  expect(filtros(book, "Pestaña")).toEqual(["Por horas"])
   expect(filtros(book, "Filtro cruzado: Equipo")).toEqual([`${QA.m1.code} · ${QA.m1.plate}`])
   const text = bookText(book)
   for (const other of [QA.a1.code, QA.a1.plate, QA.b1.code, EX.bulk.code, QA.otA1, QA.otB1, QA.driverA.name]) expect(text).not.toContain(other)

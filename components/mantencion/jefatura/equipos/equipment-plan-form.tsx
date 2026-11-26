@@ -23,7 +23,7 @@ export interface EquipmentPlanFormValues extends EquipmentPlanValues {
 }
 
 /**
- * «Editar mantención» de la pestaña Mantención (crítica 2026-11-15, paso 4b): la pauta, la
+ * «Editar plan de mantención» de la pestaña Mantención (crítica 2026-11-15, paso 4b): la pauta, la
  * lectura inicial y el estado (activo o dado de baja). La identidad del equipo —código, patente,
  * tipo, marca, modelo, año y faena— se edita en un solo lugar, «Editar vehículo», con las mismas
  * reglas de Mantención; antes este formulario la repetía y dos personas podían dejarla distinta.
@@ -67,7 +67,7 @@ export function EquipmentPlanForm({
   }, [state, onSaved])
 
   return (
-    <form action={formAction} noValidate aria-label="Editar mantención" className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:p-6">
+    <form action={formAction} noValidate aria-label="Editar plan de mantención" className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:p-6">
       <input type="hidden" name="vehicleId" value={vehicleId} />
       {expectedUpdatedAt ? <input type="hidden" name="expectedUpdatedAt" value={expectedUpdatedAt} /> : null}
       {!state.ok && state.message && !hasFieldErrors(state) && <Callout tone="danger" role="alert" className="mb-4">{state.message}</Callout>}

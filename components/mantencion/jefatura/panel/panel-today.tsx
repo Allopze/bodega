@@ -16,7 +16,7 @@ export function workshopBreakdown(total: number, byOrder: number | null): string
 }
 
 /**
- * Franja «Hoy» del Panel de mantención: lo pendiente ahora, antes de los gráficos del período
+ * Franja de pendientes de la pestaña «Hoy» del Panel de mantención: lo pendiente ahora, antes de los gráficos del período
  * (decisión del usuario 2026-11-14: el Panel abre con lo pendiente y debajo van los gráficos).
  * No depende del período elegido, sólo de la faena: un equipo en taller o una orden sin
  * mecánico es trabajo de hoy, no una cifra de los últimos seis meses.
@@ -87,8 +87,8 @@ export function PanelToday({
   if (stats.length === 0) return null
 
   return (
-    <section aria-labelledby="panel-hoy" className="mb-6">
-      <h2 id="panel-hoy" className="text-eyebrow mb-2 text-[var(--color-text-muted)]">Hoy</h2>
+    // Sin título visible: la pestaña «Hoy» ya lo dice. El nombre accesible mantiene la franja como región.
+    <section aria-label="Pendientes de hoy" className="mb-6">
       <SummaryBar numerals="sans" stats={stats} />
     </section>
   )

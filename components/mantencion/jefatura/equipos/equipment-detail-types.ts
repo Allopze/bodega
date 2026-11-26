@@ -72,7 +72,7 @@ export interface PriorPreventiveView {
 }
 
 /**
- * Lo que hace falta para «Editar mantención» (pauta, lectura inicial y baja): sólo se carga si la
+ * Lo que hace falta para «Editar plan de mantención» (pauta, lectura inicial y baja): sólo se carga si la
  * persona puede administrar equipos. La identidad se edita en «Editar vehículo» (paso 4b).
  */
 export interface EquipmentEditData {

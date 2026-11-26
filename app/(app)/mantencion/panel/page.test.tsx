@@ -116,7 +116,7 @@ function findElement(node: ReactNode, type: unknown): Found | null {
 const page = (searchParams: Record<string, string> = {}) => MantencionPanelPage({ searchParams: Promise.resolve(searchParams) })
 
 describe("/mantencion/panel · menú de pestañas", () => {
-  // Sin este menú, desde el Panel por defecto no se llega a Planificación, Camiones ni Máquinas
+  // Sin este menú, desde el Panel por defecto no se llega a Planificación, «Por kilómetros» ni «Por horas»
   // si no es escribiendo la URL (verificado en navegador el 2026-11-24).
   it("la pestaña Hoy, por defecto y con ?pestana=hoy, ofrece el menú para llegar a las otras tres", async () => {
     const cases: Array<Record<string, string>> = [{}, { pestana: "hoy" }]
@@ -124,6 +124,25 @@ describe("/mantencion/panel · menú de pestañas", () => {
       const tabs = findElement(await page(params), PanelTabs)
       expect(tabs, JSON.stringify(params)).not.toBeNull()
       expect(tabs!.props).toMatchObject({ active: "hoy" })
+    }
+  })
+
+  // PAN4-9 (2026-11-26): los enlaces llevaban sólo `pestana` y cambiar de pestaña borraba el período y la faena.
+  it("el menú recibe los parámetros de la URL en las cuatro pestañas, para conservar el período y la faena", async () => {
+    const params = { desde: "2026-01-01", hasta: "2026-10-31", faena: "ws-1", x_equipo: "v-1" }
+    for (const pestana of [undefined, "hoy", "planificacion", "camiones", "maquinas"]) {
+      const tabs = findElement(await page({ ...params, ...(pestana ? { pestana } : {}) }), PanelTabs)
+      expect(tabs, String(pestana)).not.toBeNull()
+      expect(tabs!.props.params, String(pestana)).toMatchObject(params)
+    }
+  })
+
+  it("las pestañas por unidad se llaman «Por kilómetros» y «Por horas» en la miga y en la descripción", async () => {
+    for (const [pestana, label, unit] of [["camiones", "Por kilómetros", "kilómetros"], ["maquinas", "Por horas", "horas"]] as const) {
+      const header = findElement(await page({ pestana }), PageHeader)!
+      const items = (header.props.breadcrumb as { props: { items: Array<{ label: string }> } }).props.items
+      expect(items.at(-1)!.label).toBe(label)
+      expect(header.props.description).toContain(`equipos controlados por ${unit}`)
     }
   })
 
@@ -330,7 +349,7 @@ describe("/mantencion/panel · trabajos de mantención y equipo elegido", () => 
   })
 })
 
-describe("/mantencion/panel · Exportar Excel de Planificación, Camiones y Máquinas", () => {
+describe("/mantencion/panel · Exportar Excel de Planificación, «Por kilómetros» y «Por horas»", () => {
   const tabs = ["planificacion", "camiones", "maquinas"] as const
 
   it("«Exportar Excel» sólo aparece con `mant:export`: sin él, la cabecera de las tres pestañas no lo trae", async () => {

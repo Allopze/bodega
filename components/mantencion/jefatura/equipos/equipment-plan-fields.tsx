@@ -19,7 +19,7 @@ export interface EquipmentPlanValues {
 
 /**
  * La pauta y la lectura inicial del equipo: lo propio de Mantención. Las comparten el alta
- * («Nuevo equipo») y «Editar mantención» de la ficha (crítica 2026-11-15, paso 4b), para que
+ * («Nuevo equipo») y «Editar plan de mantención» de la ficha (crítica 2026-11-15, paso 4b), para que
  * las dos ofrezcan lo mismo. Sólo se ofrecen pautas de la unidad del equipo; con registros, la
  * lectura queda fija. Son campos sueltos: el formulario que los usa decide la grilla.
  */

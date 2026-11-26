@@ -118,9 +118,9 @@ describe("Trabajos de mantención", () => {
     expect(within(days).queryByText(/Faena B/)).toBeNull()
   })
 
-  it("con un equipo elegido enlaza a su hoja de vida y no repite el reparto por faena", () => {
+  it("con un equipo elegido enlaza a su ficha y no repite el reparto por faena", () => {
     render(<MaintenanceWorkSection {...common} equipment={{ id: "v-1", code: "KA-1", plate: "AAAA-01", worksiteId: "ws-a", label: "KA-1 · AAAA-01" }} summary={summary()} includesOrders />)
-    expect(screen.getByRole("link", { name: "Hoja de vida del equipo" }).getAttribute("href")).toBe("/flota/v-1/mantencion")
+    expect(screen.getByRole("link", { name: "Ficha del equipo" }).getAttribute("href")).toBe("/flota/v-1/mantencion")
     expect(screen.queryByRole("img", { name: /Días en taller por faena/ })).toBeNull()
   })
 

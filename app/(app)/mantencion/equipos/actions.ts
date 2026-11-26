@@ -100,7 +100,7 @@ export async function createEquipmentAction(_prev: ActionState, formData: FormDa
 }
 
 /**
- * «Editar mantención» de la pestaña Mantención: pauta, lectura inicial y baja. La identidad
+ * «Editar plan de mantención» de la pestaña Mantención: pauta, lectura inicial y baja. La identidad
  * del equipo (código, patente, tipo, marca, modelo, año y faena) se edita en el padrón, con las
  * reglas de Mantención (crítica 2026-11-15, paso 4b); aquí no viaja.
  */

@@ -6,7 +6,7 @@ import {
 } from "./mantencion-panel-looker-seed"
 
 /**
- * Panel de mantención estilo Looker (2026-11-23): las pestañas Hoy, Planificación, Camiones y Máquinas,
+ * Panel de mantención estilo Looker (2026-11-23): las pestañas Hoy, Planificación, «Por kilómetros» (`pestana=camiones`) y «Por horas» (`pestana=maquinas`),
  * la barra de filtros y el filtro cruzado por URL. Siembra SUS PROPIOS datos QA y los borra al terminar
  * (`mantencion-panel-looker-seed.ts`; fechas fijas, `PERIOD` las contiene). Los controles existen en el
  * HTML del servidor pero NO responden hasta hidratar: antes de cada clic se espera `ready`.
@@ -171,8 +171,27 @@ test("Borrar filtros, recarga con la URL y cambio de pestaña que reinicia", asy
   await expect(page).toHaveURL(`${RUTA}?pestana=camiones`)
   await expect(filterBar(page)).not.toContainText("Filtros activos:")
 
-  await page.getByRole("link", { name: "Máquinas", exact: true }).click()
+  await page.getByRole("link", { name: "Por horas", exact: true }).click()
   await expect(page).toHaveURL(`${RUTA}?pestana=maquinas`)
+})
+
+test("cambiar de pestaña conserva el período y la faena, y suelta el filtro cruzado", async ({ page }) => {
+  // PAN4-9 (2026-11-26): los enlaces de las pestañas llevaban sólo `pestana` y quien elegía un período y una faena los perdía.
+  await page.goto(tabUrl("camiones", { faena: QA.wsA.id }))
+  await ready(page)
+  await row(plateTable(page), QA.a1.plate).getByRole("button").first().click()
+  await expect(page).toHaveURL(/x_equipo=/)
+
+  const nav = page.getByRole("navigation", { name: "Secciones del panel de mantención" })
+  await nav.getByRole("link", { name: "Por horas", exact: true }).click()
+  // Período y faena siguen; el equipo elegido en la otra pestaña no viaja.
+  await expect(page).toHaveURL(tabUrl("maquinas", { faena: QA.wsA.id }))
+  // Sólo la barra de filtros: con esta faena «Por horas» puede no traer ningún control cruzado que esperar.
+  await expect(page.locator("[data-looker-filter-ready]")).toBeVisible({ timeout: 30_000 })
+
+  // «Hoy» es la página sin `pestana`, con el mismo período y la misma faena.
+  await nav.getByRole("link", { name: "Hoy", exact: true }).click()
+  await expect(page).toHaveURL(`${RUTA}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(PERIOD)), faena: QA.wsA.id }).toString()}`)
 })
 
 test("la barra filtra por faena múltiple, código con buscador y frecuencia, y cada uno queda en la URL y en un chip", async ({ page }) => {
@@ -385,12 +404,12 @@ test("el teclado opera una fila de OT, una columna de la matriz y una barra con 
   }
 })
 
-test("Máquinas por horas muestra de punta a punta lo de la máquina y nada de los camiones", async ({ page }) => {
+test("«Por horas» muestra de punta a punta lo de la máquina y nada de los camiones", async ({ page }) => {
   await page.goto(tabUrl("maquinas"))
   await expectPageTitle(page, "Panel de mantención")
   await ready(page)
-  await expect(page.getByText("OT con ingreso a taller y correctivas del período, sólo máquinas por horas.")).toBeVisible()
-  await expect(page.getByText(/Pautas de formularios hasta el 30-11-2026 .* sólo máquinas por horas\./)).toBeVisible()
+  await expect(page.getByText("OT con ingreso a taller y correctivas del período, sólo equipos por horas.")).toBeVisible()
+  await expect(page.getByText(/Pautas de formularios hasta el 30-11-2026 .* sólo equipos por horas\./)).toBeVisible()
 
   // Correctivo: la OT de la máquina, con su horómetro (no «Odómetro») y sus horas.
   await expect(otTable(page).getByRole("columnheader", { name: "Horómetro" })).toBeVisible()
@@ -464,33 +483,33 @@ test("el visor de la matriz abre y cierra la foto de una preventiva de la plataf
   await expect(thumb).toBeFocused()
 })
 
-test("la pestaña Hoy carga el título, la franja Hoy y las secciones de siempre", async ({ page }) => {
+test("la pestaña Hoy carga el título, la franja de pendientes y las secciones de siempre", async ({ page }) => {
   await page.goto(`${RUTA}?pestana=hoy`)
   await expectPageTitle(page, "Panel de mantención")
-  await expect(page.getByRole("heading", { name: "Hoy", exact: true })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Pendientes de hoy" })).toBeVisible()
   // «Reportes de equipos» no se pinta sin reportes diarios transcritos, así que no es parte de la pasada de humo.
   for (const section of ["Órdenes de trabajo", "Trabajos de mantención", "Pautas y disponibilidad", "Pautas y hallazgos de formularios"]) {
     await expect(page.getByRole("heading", { name: section, exact: true }).first()).toBeVisible()
   }
   // Sin parámetros abre la misma pestaña.
   await page.goto(RUTA)
-  await expect(page.getByRole("heading", { name: "Hoy", exact: true })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Pendientes de hoy" })).toBeVisible()
 })
 
-test("la pestaña Hoy ofrece el menú para llegar a Planificación, Camiones y Máquinas", async ({ page }) => {
+test("la pestaña Hoy ofrece el menú para llegar a Planificación, Por kilómetros y Por horas", async ({ page }) => {
   // Regresión (2026-11-24): `renderHoyTab` armaba su encabezado sin `PanelTabs` y las tres pestañas nuevas
   // sólo se alcanzaban escribiendo la URL. La cubre también `page.test.tsx` («menú de pestañas»).
   await page.goto(RUTA)
   const nav = page.getByRole("navigation", { name: "Secciones del panel de mantención" })
   await expect(nav).toBeVisible()
   await expect(nav.getByRole("link", { name: "Hoy", exact: true })).toHaveAttribute("aria-current", "page")
-  for (const nombre of ["Planificación", "Camiones", "Máquinas"]) {
+  for (const nombre of ["Planificación", "Por kilómetros", "Por horas"]) {
     await expect(nav.getByRole("link", { name: nombre, exact: true })).toBeVisible()
   }
   // «Hoy» no tiene marca de hidratación (`data-looker-filter-ready` sólo existe donde hay barra de filtros):
   // un clic que cae antes de hidratar lo cancela el `history.replaceState` inicial de Next y no llega al
   // servidor. Se reintenta el clic hasta que navegue, como `openLatestDraft` en `helpers.ts`.
-  const camiones = nav.getByRole("link", { name: "Camiones", exact: true })
+  const camiones = nav.getByRole("link", { name: "Por kilómetros", exact: true })
   await expect(async () => {
     await camiones.click()
     await expect(page).toHaveURL(`${RUTA}?pestana=camiones`, { timeout: 3_000 })

@@ -204,6 +204,63 @@ describe("chips y limpieza", () => {
   })
 })
 
+describe("enlace entre pestañas del Panel", () => {
+  const PANEL = "/mantencion/panel"
+  // Lo que hay en la URL de «Por kilómetros» cuando alguien filtró de todo.
+  const CURRENT = {
+    pestana: "camiones", desde: "2026-01-01", hasta: "2026-10-31", faena: "ws-1,ws-2",
+    equipo: "v-1", frecuencia: "40000", page: "3",
+    x_equipo: "v-1", x_ot: "ot:1", x_check: "h:1", x_conductor: "JUAN PEREZ", x_mes: "2026-10", x_faena: "ws-1", x_mecanico: "Javier Roa",
+  }
+  const queryOf = (href: string) => new URLSearchParams(href.split("?")[1])
+
+  it("sin parámetros actuales lleva sólo la pestaña, y «Hoy» es la página sin parámetro", () => {
+    expect(tabHref(PANEL, "planificacion")).toBe(`${PANEL}?pestana=planificacion`)
+    expect(tabHref(PANEL, "maquinas", {})).toBe(`${PANEL}?pestana=maquinas`)
+    expect(tabHref(PANEL, "hoy")).toBe(PANEL)
+    expect(tabHref(PANEL, "hoy", {})).toBe(PANEL)
+  })
+
+  it("conserva el período y la faena al cambiar de pestaña, en el mismo orden para toda pestaña", () => {
+    for (const tab of ["planificacion", "camiones", "maquinas"] as const) {
+      const params = queryOf(tabHref(PANEL, tab, CURRENT))
+      expect([...params.keys()]).toEqual(["pestana", "desde", "hasta", "faena"])
+      expect(params.get("pestana")).toBe(tab)
+      expect(params.get("desde")).toBe("2026-01-01")
+      expect(params.get("hasta")).toBe("2026-10-31")
+      // Varias faenas viajan igual que las deja la barra de filtros: separadas por coma.
+      expect(params.get("faena")).toBe("ws-1,ws-2")
+    }
+  })
+
+  it("«Hoy» conserva período y faena, sin `pestana`", () => {
+    expect(tabHref(PANEL, "hoy", CURRENT)).toBe(`${PANEL}?desde=2026-01-01&hasta=2026-10-31&faena=ws-1%2Cws-2`)
+  })
+
+  it("descarta los filtros cruzados, el equipo, la frecuencia y la página de la pestaña que se deja", () => {
+    for (const tab of ["hoy", "planificacion", "camiones", "maquinas"] as const) {
+      const params = queryOf(tabHref(PANEL, tab, CURRENT))
+      for (const dropped of ["equipo", "frecuencia", "page", "x_equipo", "x_ot", "x_check", "x_conductor", "x_mes", "x_faena", "x_mecanico"]) {
+        expect(params.has(dropped), `${tab} no debe llevar ${dropped}`).toBe(false)
+      }
+    }
+  })
+
+  it("una faena repetida (`?faena=a&faena=b`) sigue repetida, y los valores vacíos no viajan", () => {
+    const href = tabHref(PANEL, "camiones", { desde: "2026-10-01", hasta: " ", faena: ["ws-1", "", "ws-2"] })
+    expect(queryOf(href).getAll("faena")).toEqual(["ws-1", "ws-2"])
+    expect(queryOf(href).has("hasta")).toBe(false)
+    expect(tabHref(PANEL, "hoy", { desde: undefined, faena: "" })).toBe(PANEL)
+  })
+
+  it("lo que viaja se lee igual en la pestaña de llegada (mismo período y misma faena)", () => {
+    const raw = Object.fromEntries(queryOf(tabHref(PANEL, "maquinas", CURRENT)).entries())
+    const arrived = parseLookerFilters(raw, "2026-11-26")
+    expect(arrived).toMatchObject({ tab: "maquinas", from: "2026-01-01", to: "2026-10-31", worksiteIds: ["ws-1", "ws-2"], equipmentIds: [], frequencies: [], page: 1 })
+    expect(arrived.cross).toEqual({})
+  })
+})
+
 describe("parámetros que mueven una pestaña", () => {
   it("se queda con el período, los filtros manuales y los cruzados; descarta la pestaña, la página y lo desconocido", () => {
     expect(pickFilterParams({

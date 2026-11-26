@@ -8,7 +8,7 @@ import { vehicleFichaHref } from "@/lib/routing/vehicle-ficha"
 
 /**
  * Filtro «Equipo» del Panel de mantención (`?equipo=`): el último escalón de Chome → faena → equipo. Elegir un
- * equipo acota las secciones que se miden por equipo y deja un enlace a su hoja de vida. Viaja en la URL y se
+ * equipo acota las secciones que se miden por equipo y deja un enlace a su ficha. Viaja en la URL y se
  * aplica al cambiar, con `router.replace` + `scroll: false` (patrón de filtros de AGENTS.md). Las opciones ya
  * vienen acotadas por el alcance y la faena elegida; la página valida además el valor de la URL.
  */
@@ -47,7 +47,7 @@ export function PanelEquipmentFilter({ options, value }: {
       />
       {value ? (
         <Link href={vehicleFichaHref(value, "mantencion")} className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">
-          Ver hoja de vida
+          Ficha del equipo
         </Link>
       ) : null}
     </div>

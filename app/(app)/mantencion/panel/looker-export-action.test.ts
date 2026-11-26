@@ -16,7 +16,7 @@ import { exportLookerPanelAction } from "./looker-export-action"
 const session = { user: { id: "u1", email: "jefe@chome.cl", isGlobal: false, worksiteIds: ["ws-1"], permissions: ["mant:export", "mant:records:view_worksite"] } }
 const built = {
   base64: "QUJD",
-  title: "Panel de mantención · Camiones",
+  title: "Panel de mantención · Por kilómetros",
   sheets: [{ title: "Correctivos", rowCount: 30 }, { title: "Conductores", rowCount: 4 }],
   truncated: false,
 }
@@ -104,14 +104,14 @@ describe("exportLookerPanelAction", () => {
 
   it("devuelve el libro con su nombre de archivo y deja la auditoría de la exportación", async () => {
     const result = await exportLookerPanelAction({ tab: "camiones", params: { faena: "ws-1" } })
-    expect(result).toEqual({ ok: true, data: { base64: "QUJD", filename: `panel_de_mantencion_camiones_${todayInChile()}.xlsx` } })
+    expect(result).toEqual({ ok: true, data: { base64: "QUJD", filename: `panel_de_mantencion_por_kilometros_${todayInChile()}.xlsx` } })
     expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
       userId: "u1",
       userEmail: "jefe@chome.cl",
       action: "export",
       entityType: "board_data_export",
       newState: {
-        title: "Panel de mantención · Camiones",
+        title: "Panel de mantención · Por kilómetros",
         tab: "camiones",
         params: { faena: "ws-1" },
         tables: [{ title: "Correctivos", rowCount: 30 }, { title: "Conductores", rowCount: 4 }],

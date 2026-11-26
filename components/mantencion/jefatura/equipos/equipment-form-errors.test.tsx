@@ -30,7 +30,7 @@ async function submit(button: string) {
   await act(async () => { fireEvent.submit(screen.getByRole("button", { name: button }).closest("form")!) })
 }
 
-describe("«Editar mantención»: el error sin campo se ve", () => {
+describe("«Editar plan de mantención»: el error sin campo se ve", () => {
   const renderPlan = (state: ActionState) => render(
     <EquipmentPlanForm
       action={vi.fn(async () => state)} vehicleId="veh-9" unit="km" schedules={CATALOGS.schedules}

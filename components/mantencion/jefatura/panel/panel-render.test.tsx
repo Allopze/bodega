@@ -6,16 +6,24 @@ import { PanelToday, workshopBreakdown } from "./panel-today"
 
 afterEach(cleanup)
 
-describe("franja «Hoy» del Panel de mantención", () => {
+describe("franja de pendientes de «Hoy» del Panel de mantención", () => {
   const hrefOf = (name: RegExp) => screen.getByRole("link", { name }).getAttribute("href")
 
   it("cada cifra lleva a su subconjunto con la faena elegida", () => {
     render(<PanelToday unassignedOrders={2} inWorkshop={3} pendingReview={5} worksiteId="ws-1" />)
-    const today = screen.getByRole("region", { name: "Hoy" })
+    const today = screen.getByRole("region", { name: "Pendientes de hoy" })
     expect(within(today).getAllByRole("link")).toHaveLength(3)
     expect(hrefOf(/Órdenes por asignar/)).toBe("/mantencion/ot?estado=solicitada&faena=ws-1")
     expect(hrefOf(/Equipos en taller/)).toBe("/mantencion/equipos?taller=1&faena=ws-1")
     expect(hrefOf(/Registros por revisar/)).toBe("/mantencion/registros?revision=pendiente&estado=vigente&faena=ws-1")
+  })
+
+  it("no repite el título de la pestaña: la franja es una región con nombre y sin encabezado visible", () => {
+    render(<PanelToday unassignedOrders={2} inWorkshop={3} pendingReview={5} worksiteId={null} />)
+    expect(screen.queryByRole("heading")).toBeNull()
+    expect(screen.queryByText("Hoy")).toBeNull()
+    expect(screen.queryByRole("region", { name: "Hoy" })).toBeNull()
+    expect(screen.getByRole("region", { name: "Pendientes de hoy" })).toBeTruthy()
   })
 
   it("sin nada pendiente lo dice con palabras, no con ceros pelados", () => {
@@ -34,7 +42,7 @@ describe("franja «Hoy» del Panel de mantención", () => {
 
   it("dice de qué se componen los equipos en taller: el gráfico de al lado cuenta OT, no equipos", () => {
     render(<PanelToday unassignedOrders={null} inWorkshop={6} inWorkshopByOrder={4} pendingReview={null} worksiteId={null} />)
-    expect(screen.getByRole("region", { name: "Hoy" }).textContent).toContain("4 por una OT · 2 por una correctiva")
+    expect(screen.getByRole("region", { name: "Pendientes de hoy" }).textContent).toContain("4 por una OT · 2 por una correctiva")
   })
 
   it("el desglose omite la parte en cero y calla si no hay dato", () => {
@@ -46,7 +54,7 @@ describe("franja «Hoy» del Panel de mantención", () => {
 
   it("«Notas de pedido por resolver» lleva a la bandeja de pendientes con la faena elegida, sin sumar un tile", () => {
     render(<PanelToday unassignedOrders={2} inWorkshop={3} pendingReview={5} pendingPartsNotes={4} worksiteId="ws-1" />)
-    const today = screen.getByRole("region", { name: "Hoy" })
+    const today = screen.getByRole("region", { name: "Pendientes de hoy" })
     // Cuatro cifras en la misma tira compacta (regla A1: máximo 4, cada una accionable).
     expect(within(today).getAllByRole("link")).toHaveLength(4)
     expect(hrefOf(/Notas de pedido por resolver/)).toBe("/mantencion/notas-pedido?estado=pendientes&faena=ws-1")

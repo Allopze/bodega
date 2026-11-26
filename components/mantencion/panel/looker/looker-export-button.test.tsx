@@ -11,14 +11,14 @@ vi.mock("@/lib/toast", () => ({ toast }))
 import { LookerExcelButton } from "./looker-export-button"
 
 /**
- * «Exportar Excel» de Planificación, Camiones y Máquinas: lleva a la acción de servidor la pestaña y los
+ * «Exportar Excel» de Planificación, «Por kilómetros» y «Por horas»: lleva a la acción de servidor la pestaña y los
  * parámetros de la URL, y nada más. Las filas no viajan desde el navegador: el servidor las vuelve a consultar.
  */
 describe("LookerExcelButton", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
-    exportLookerPanelAction.mockResolvedValue({ ok: true, data: { base64: "AAAA", filename: "panel_de_mantencion_camiones_2026-11-24.xlsx" } })
+    exportLookerPanelAction.mockResolvedValue({ ok: true, data: { base64: "AAAA", filename: "panel_de_mantencion_por_kilometros_2026-11-24.xlsx" } })
   })
   afterEach(cleanup)
 
@@ -26,7 +26,7 @@ describe("LookerExcelButton", () => {
     render(<LookerExcelButton tab="camiones" params={{}} />)
     const button = screen.getByRole("button", { name: /Exportar Excel/ })
     expect(button).toBeEnabled()
-    expect(button.getAttribute("aria-label")).toBe("Exportar Excel: Panel de mantención, pestaña Camiones, con los filtros elegidos")
+    expect(button.getAttribute("aria-label")).toBe("Exportar Excel: Panel de mantención, pestaña Por kilómetros, con los filtros elegidos")
     expect(button.textContent).toContain("Exportar Excel")
   })
 

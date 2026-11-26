@@ -24,7 +24,7 @@ export interface PriorPreventiveValues {
 export const EMPTY_PRIOR_PREVENTIVE: PriorPreventiveValues = { date: "", reading: "", interval: "", evidence: "" }
 
 /**
- * «Preventiva anterior a la plataforma (declarada)» de «Editar mantención»: la última preventiva
+ * «Preventiva anterior a la plataforma (declarada)» de «Editar plan de mantención»: la última preventiva
  * que se hizo antes de que el equipo estuviera en la plataforma, con su respaldo. Es una
  * declaración de jefatura, NO un registro firmado: por eso lleva siempre su rótulo y el respaldo
  * (número de orden de trabajo o factura) es obligatorio. El servidor valida todo

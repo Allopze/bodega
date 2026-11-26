@@ -79,7 +79,7 @@ export function MaintenanceWorkSection({
   const links = [
     { label: "Historial de mantenciones", href: historyHref },
     ...(includesOrders ? [{ label: "Órdenes de trabajo", href: withParams("/mantencion/ot", { faena }) }] : []),
-    ...(common.equipment ? [{ label: "Hoja de vida del equipo", href: vehicleFichaHref(common.equipment.id, "mantencion") }] : []),
+    ...(common.equipment ? [{ label: "Ficha del equipo", href: vehicleFichaHref(common.equipment.id, "mantencion") }] : []),
   ]
   const cutover = formatDate(FORMS_CUTOVER_DATE)
   const source = includesOrders
@@ -285,7 +285,7 @@ export function MaintenanceWorkSection({
                     key: row.vehicleId,
                     label: row.label,
                     value: row.count,
-                    // Chome → faena → equipo: el equipo acota el Panel; desde ahí se llega a su hoja de vida.
+                    // Chome → faena → equipo: el equipo acota el Panel; desde ahí se llega a su ficha.
                     href: panelHref(common, { equipo: row.vehicleId }),
                   }))}
                 />
@@ -318,7 +318,7 @@ export function FormsIndicatorsSection({
   const note = common.equipment ? `${common.scopeNote} · ${common.equipment.label}` : common.scopeNote
   const links = [
     { label: "Equipos", href: withParams("/mantencion/equipos", { faena }) },
-    ...(common.equipment ? [{ label: "Hoja de vida del equipo", href: vehicleFichaHref(common.equipment.id, "mantencion") }] : []),
+    ...(common.equipment ? [{ label: "Ficha del equipo", href: vehicleFichaHref(common.equipment.id, "mantencion") }] : []),
   ]
   const stats: SummaryStat[] = []
 

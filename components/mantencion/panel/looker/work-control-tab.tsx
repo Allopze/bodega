@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 
 /**
- * Las dos columnas de Camiones y Máquinas. Correctivo a la izquierda y Preventivo a la
+ * Las dos columnas de «Por kilómetros» y «Por horas». Correctivo a la izquierda y Preventivo a la
  * derecha; bajo `xl` se apilan en el mismo orden. El encabezado es `h2` y cada bloque usa
  * `h3`, igual que el resto de los tableros.
  */

@@ -51,7 +51,7 @@ function first(value: string | string[] | undefined): string | undefined {
 /**
  * El Panel operativo de siempre: la franja «Hoy» (lo pendiente ahora) y los gráficos del
  * período. Es la pestaña `hoy`, la que abre el Panel sin parámetros; las tres pestañas nuevas
- * (Planificación, Camiones, Máquinas) viven en `planificacion-tab.tsx` y `work-tab.tsx`.
+ * (Planificación, «Por kilómetros», «Por horas») viven en `planificacion-tab.tsx` y `work-tab.tsx`.
  *
  * Se devuelve el árbol directamente (no un componente) para que las pruebas del Panel sigan
  * viendo las secciones que la página monta, sin un nivel extra que las oculte.
@@ -180,7 +180,7 @@ export async function renderHoyTab(session: Session, params: SearchParams) {
     <PageContainer>
       <PageHeader
         title="Panel de mantención"
-        description="Lo pendiente hoy y cómo avanzan las órdenes de trabajo, las pautas, la disponibilidad y los reportes de turno de los equipos."
+        description="Lo pendiente hoy y el avance de órdenes, pautas, disponibilidad y reportes de turno."
         breadcrumb={<Breadcrumbs items={[
           { label: "Control operacional", href: "/control-operacional" },
           { label: "Mantención" },
@@ -206,8 +206,8 @@ export async function renderHoyTab(session: Session, params: SearchParams) {
         }
       />
 
-      {/* Sin este menú, desde «Hoy» no se llega a Planificación, Camiones ni Máquinas sin escribir la URL. */}
-      <PanelTabs active="hoy" />
+      {/* Sin este menú, desde «Hoy» no se llega a Planificación, «Por kilómetros» ni «Por horas» sin escribir la URL. */}
+      <PanelTabs active="hoy" params={params} />
 
       {period.invalid && (
         <Callout tone="warning" className="mb-4">El rango de fechas de la dirección no es válido: se muestra {DEFAULT_RANGE_LABEL}.</Callout>

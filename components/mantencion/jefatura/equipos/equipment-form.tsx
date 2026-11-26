@@ -32,7 +32,7 @@ type FormAction = (prev: ActionState, formData: FormData) => Promise<ActionState
  *
  * Un equipo que ya existe no se edita aquí (crítica 2026-11-15, paso 4b): su identidad se edita
  * en «Editar vehículo» (el padrón, con estas mismas reglas) y su pauta, lectura inicial y baja en
- * «Editar mantención» (`EquipmentPlanForm`, que comparte los campos de la pauta).
+ * «Editar plan de mantención» (`EquipmentPlanForm`, que comparte los campos de la pauta).
  */
 export function EquipmentForm({
   action,
