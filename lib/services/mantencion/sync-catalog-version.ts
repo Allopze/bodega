@@ -4,6 +4,7 @@ import type { AnyPgColumn, AnyPgTable } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
   fuelEquipmentTypes, fuelVehicles, mantBrands, mantDrivers, mantEquipmentProfiles, mantOils, mantRecordObservations,
+  mantPartsAllocations, mantPartsAllocationSources, mantPartsNoteItems, mantPartsNotes,
   mantRecords, mantSchedules, mantScheduleVersions, mantWorkOrderEvents, mantWorkOrderItems, mantWorkOrders, mantWorkshops,
   mantWorkshopUpdates, mantWorkTypes, rolePermissions, userPermissions, userRoles, users, worksites, worksiteUsers,
 } from "@/db/schema"
@@ -29,7 +30,9 @@ import type { MantViewer } from "./access"
 // 4 (2026-11): `equipment[].workshop.workOrderId`, para abrir la OT del equipo en taller.
 // 5 (2026-11-22): estado `sin_preventiva` y `equipment[].lastPreventive.origin/evidence` (preventiva
 //    declarada anterior a la plataforma, Trinorma).
-export const CATALOG_FORMAT = 5
+// 6 (2026-11-26): `workOrders[].partsNotes` y `partsAvailable` (notas de pedido y repuestos reservados por OT, ADR
+//    mantención 0001).
+export const CATALOG_FORMAT = 6
 
 type Source = readonly [AnyPgTable, readonly AnyPgColumn[]]
 
@@ -41,6 +44,11 @@ const SOURCES: readonly Source[] = [
   [mantWorkOrderItems, [mantWorkOrderItems.markedAt, mantWorkOrderItems.createdAt]],
   [mantWorkOrderEvents, [mantWorkOrderEvents.createdAt]],
   [mantRecordObservations, [mantRecordObservations.createdAt, mantRecordObservations.respondedAt]],
+  // Notas de pedido y reservas por OT (formato 6): una NP nueva o resuelta, o un repuesto que llega, cambia lo que el mecánico ve.
+  [mantPartsNotes, [mantPartsNotes.updatedAt]],
+  [mantPartsNoteItems, [mantPartsNoteItems.createdAt, mantPartsNoteItems.resolvedAt]],
+  [mantPartsAllocations, [mantPartsAllocations.updatedAt]],
+  [mantPartsAllocationSources, [mantPartsAllocationSources.createdAt]],
   [mantEquipmentProfiles, [mantEquipmentProfiles.updatedAt]],
   [fuelVehicles, [fuelVehicles.updatedAt]],
   [fuelEquipmentTypes, [fuelEquipmentTypes.updatedAt]],
