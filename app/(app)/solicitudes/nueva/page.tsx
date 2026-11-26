@@ -38,6 +38,8 @@ export default async function NuevaSolicitudPage({
     vehiculo?: string | string[]
     /** Repuesto de catálogo preelegido (`?tipo=repuestos&repuesto=`, desde su ficha). */
     repuesto?: string | string[]
+    /** Nota de pedido del mecánico que se convierte en solicitud (`?tipo=repuestos&np=`). */
+    np?: string | string[]
   }>
 }) {
   let session
@@ -173,9 +175,10 @@ export default async function NuevaSolicitudPage({
   // debe delatar el parque de instrumentos de otra faena.
   const equipmentOptions = allEquipment.filter((e) => scopedWorksiteIds.has(e.worksiteId))
 
-  // ── Ítems precargados: repuestos para una OT o un equipo, reposición de EPP o
-  // copia de otra solicitud. `?ot=` y `?vehiculo=` sólo valen para repuestos: con
-  // otro tipo (o sin permiso para crearlo) el enlace no precarga nada. ──────────
+  // ── Ítems precargados: repuestos para una nota de pedido, una OT o un equipo,
+  // reposición de EPP o copia de otra solicitud. `?np=`, `?ot=` y `?vehiculo=` sólo
+  // valen para repuestos: con otro tipo (o sin permiso para crearlo) el enlace no
+  // precarga nada. ───────────────────────────────────────────────────────────────
   const fleetPrefillAllowed = initialType.requestType === "repuestos"
   const prefill = await buildPrefill({
     session,
@@ -187,6 +190,7 @@ export default async function NuevaSolicitudPage({
     workOrderId: fleetPrefillAllowed ? firstParam(query.ot) : "",
     vehicleId: fleetPrefillAllowed ? firstParam(query.vehiculo) : "",
     sparePartId: fleetPrefillAllowed && canPickSpareParts ? firstParam(query.repuesto) : "",
+    partsNoteId: fleetPrefillAllowed ? firstParam(query.np) : "",
   })
 
   // La faena del equipo vinculado (OT, equipo o copia con equipo) manda: el

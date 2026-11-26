@@ -204,7 +204,7 @@ function useDraftPersistence({
 /** El equipo y la OT son de una faena: al dejarla, el vínculo ya no tiene sentido. */
 function withoutFleetLink(item: ItemRow): ItemRow {
   return item.vehicleId || item.workOrderId
-    ? { ...item, vehicleId: "", vehicleLabel: "", workOrderId: "", workOrderFolio: "" }
+    ? { ...item, vehicleId: "", vehicleLabel: "", workOrderId: "", workOrderFolio: "", partsNoteItemId: "" }
     : item
 }
 
@@ -320,6 +320,7 @@ export function useRequestForm({
           vehicleId: item.vehicleId ?? "",
           vehicleLabel: item.vehicleLabel ?? vehicles.find((vehicle) => vehicle.id === item.vehicleId)?.label ?? "",
           workOrderId: item.workOrderId ?? "", workOrderFolio: item.workOrderFolio ?? "",
+          partsNoteItemId: item.partsNoteItemId ?? "",
           estimatedUnitPrice: item.estimatedUnitPrice == null ? "" : String(item.estimatedUnitPrice),
           showAttrs: !isQuotation && item.attributes.length > 0, cotizaciones: [],
           ...equipmentFromAttributes(editRequest.requestType, item.attributes),
@@ -364,6 +365,7 @@ export function useRequestForm({
           vehicleLabel:        prefill.vehicleLabel ?? vehicles.find((vehicle) => vehicle.id === prefill.vehicleId)?.label ?? "",
           workOrderId:         prefill.workOrderId ?? "",
           workOrderFolio:      prefill.workOrderFolio ?? "",
+          partsNoteItemId:     prefill.partsNoteItemId ?? "",
           estimatedUnitPrice:  prefill.estimatedUnitPrice == null ? "" : String(prefill.estimatedUnitPrice),
           isEpp:               prod?.isEpp ?? false,
           attributes:          attrs,
@@ -546,7 +548,7 @@ export function useRequestForm({
     setItems((prev) => prev.map((i) => i._key !== key ? i : {
       ...i,
       vehicleId: vehicle?.id ?? "", vehicleLabel: vehicle?.label ?? "",
-      workOrderId: "", workOrderFolio: "",
+      workOrderId: "", workOrderFolio: "", partsNoteItemId: "",
     }))
   }, [invalidateStockWarning, vehicles])
 
@@ -557,7 +559,11 @@ export function useRequestForm({
       const order = workOrderId
         ? vehicles.find((vehicle) => vehicle.id === i.vehicleId)?.openWorkOrders.find((candidate) => candidate.id === workOrderId)
         : undefined
-      return order ? { ...i, workOrderId: order.id, workOrderFolio: order.folio } : { ...i, workOrderId: "", workOrderFolio: "" }
+      // La línea de la nota de pedido es de una OT: cambiar de OT la suelta.
+      const noteLine = order && order.id === i.workOrderId ? i.partsNoteItemId ?? "" : ""
+      return order
+        ? { ...i, workOrderId: order.id, workOrderFolio: order.folio, partsNoteItemId: noteLine }
+        : { ...i, workOrderId: "", workOrderFolio: "", partsNoteItemId: "" }
     }))
   }, [invalidateStockWarning, vehicles])
 
@@ -640,6 +646,7 @@ export function useRequestForm({
         // registro del vehículo: no se mandan (el servidor tampoco los guarda).
         vehicleId: item.vehicleId || null,
         workOrderId: item.vehicleId ? (item.workOrderId || null) : null,
+        partsNoteItemId: item.vehicleId && item.workOrderId ? (item.partsNoteItemId || null) : null,
         estimatedUnitPrice: parseEstimatedPrice(item.estimatedUnitPrice),
         partNumber: item.partNumber || null, location: item.location || null,
         equipmentName: item.vehicleId ? null : (item.equipmentName || null),

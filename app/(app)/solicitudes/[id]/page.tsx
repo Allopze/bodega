@@ -511,6 +511,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       vehicleLabel:        item.vehicleId ? (vehicleLabelById.get(item.vehicleId) ?? null) : null,
       workOrderId:         item.workOrderId,
       workOrderFolio:      item.workOrderId ? (workOrderFolioById.get(item.workOrderId) ?? null) : null,
+      partsNoteItemId:     item.partsNoteItemId,
       estimatedUnitPrice:  item.estimatedUnitPrice,
       attributes:          item.attributes.map((a) => ({
         attributeId:   a.attributeId,

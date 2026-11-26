@@ -11,7 +11,9 @@ import {
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
+import { linkNoteItemsToRequestTx } from "@/lib/services/mantencion/parts-notes/resolve"
 import { assertLinkedWorkOrderOpen } from "./linked-work-order"
+import { assertPartsNoteLineBuyable } from "./linked-parts-note"
 import type { RequestModuleConfig, RequestServiceInput } from "../request-config"
 import type { Session } from "next-auth"
 
@@ -94,6 +96,11 @@ export async function persistDraft(
   await db.transaction(async (tx) => {
     // Repuestos que el borrador ya tenía guardados (ver `assertCatalogSparePart`).
     const savedProductIds = new Set<string>()
+    // Líneas de nota de pedido que el borrador ya compraba: sólo las nuevas se vinculan, y
+    // una ya guardada no frena el autoguardado si la NP cambió después. Se identifican por la
+    // línea y no por el ítem: el formulario no conoce los ids de los ítems que guardó, así que
+    // cada autoguardado los recrea con ids nuevos.
+    const savedNoteItemIds = new Set<string>()
     if (isEdit) {
       // DAT-3: lockeado — sin esto, un submitRequest concurrente puede mover
       // la solicitud a 'submitted' con ítems 'requested' justo entre esta
@@ -126,10 +133,14 @@ export async function persistDraft(
       )
 
       for (const saved of await tx
-        .select({ productId: purchaseRequestItems.productId })
+        .select({
+          productId: purchaseRequestItems.productId,
+          partsNoteItemId: purchaseRequestItems.partsNoteItemId,
+        })
         .from(purchaseRequestItems)
         .where(eq(purchaseRequestItems.requestId, requestId))) {
         if (saved.productId) savedProductIds.add(saved.productId)
+        if (saved.partsNoteItemId) savedNoteItemIds.add(saved.partsNoteItemId)
       }
       await tx.delete(purchaseRequestItems).where(eq(purchaseRequestItems.requestId, requestId))
     } else {
@@ -160,10 +171,21 @@ export async function persistDraft(
       }, tx)
     }
 
+    const noteLinks: Array<{ noteItemId: string; requestItemId: string }> = []
+
     for (const [i, item] of data.items.entries()) {
       const itemId = item.id ?? nanoid()
       await assertItemFleetLink(tx, data.worksiteId, item)
       const vehicleId = item.vehicleId?.trim() || null
+      const workOrderId = vehicleId ? (item.workOrderId?.trim() || null) : null
+      // Sólo una solicitud de repuestos compra líneas de nota de pedido, y la línea es de una OT:
+      // sin OT no hay nota a la que apuntar (la base lo exige también, con un CHECK).
+      const partsNoteItemId = config.requestType === "repuestos" && workOrderId ? (item.partsNoteItemId?.trim() || null) : null
+      if (partsNoteItemId && workOrderId) {
+        const alreadySaved = savedNoteItemIds.has(partsNoteItemId)
+        await assertPartsNoteLineBuyable(tx, { partsNoteItemId, workOrderId }, { alreadySaved, actor: session })
+        if (!alreadySaved) noteLinks.push({ noteItemId: partsNoteItemId, requestItemId: itemId })
+      }
       // Sólo repuestos ofrece catálogo; servicios sigue siendo texto libre.
       const productId = config.requestType === "repuestos" ? (item.productId?.trim() || null) : null
       if (productId) await assertCatalogSparePart(tx, productId, savedProductIds.has(productId))
@@ -184,7 +206,8 @@ export async function persistDraft(
         sortOrder:       item.sortOrder ?? i,
         notes:           item.notes ?? null,
         vehicleId,
-        workOrderId:     vehicleId ? (item.workOrderId?.trim() || null) : null,
+        workOrderId,
+        partsNoteItemId,
         estimatedUnitPrice: item.estimatedUnitPrice ?? null,
         createdAt:       now,
         updatedAt:       now,
@@ -204,6 +227,12 @@ export async function persistDraft(
           })
         }
       }
+    }
+
+    // La línea de la nota pasa a «en compra» en la misma transacción que el ítem: si el
+    // servicio de notas la rechaza, la solicitud no queda a medias.
+    if (noteLinks.length > 0) {
+      await linkNoteItemsToRequestTx(tx, { links: noteLinks, actorUserId: session.user.id })
     }
   })
 

@@ -39,7 +39,7 @@ function form(requestType: string, items: Record<string, unknown>[]) {
 
 const ITEM = { quantity: 2, unitOfMeasure: "unidad", urgency: "normal", attributes: [] }
 
-type DraftCall = { items: { productId?: string | null; description: string }[] }
+type DraftCall = { items: { productId?: string | null; description: string; partsNoteItemId?: string | null }[] }
 const lastInput = (mock: typeof persistRepuestoDraft) => (mock.mock.calls.at(-1) as unknown as [Session, DraftCall])[1]
 
 describe("persistDraft (acción de borrador)", () => {
@@ -66,6 +66,28 @@ describe("persistDraft (acción de borrador)", () => {
 
     expect(result.ok).toBe(false)
     expect(persistRepuestoDraft).not.toHaveBeenCalled()
+  })
+
+  it("repuestos: la línea de la nota de pedido viaja con la OT del ítem", async () => {
+    await persistDraft(session, form("repuestos", [{
+      ...ITEM, productId: null, productNameFree: "Manguera", vehicleId: "v-1", workOrderId: "ot-1", partsNoteItemId: "npi-1",
+    }]))
+
+    expect(lastInput(persistRepuestoDraft).items[0]).toMatchObject({ vehicleId: "v-1", workOrderId: "ot-1", partsNoteItemId: "npi-1" })
+  })
+
+  it("repuestos: sin línea de nota (o vacía) manda null", async () => {
+    await persistDraft(session, form("repuestos", [{ ...ITEM, productId: null, productNameFree: "Manguera", partsNoteItemId: "" }]))
+
+    expect(lastInput(persistRepuestoDraft).items[0]).toMatchObject({ partsNoteItemId: null })
+  })
+
+  it("servicios no compra líneas de nota de pedido: nunca la manda", async () => {
+    await persistDraft(session, form("servicios", [{
+      ...ITEM, productNameFree: "Cambio de filtros", location: "Taller", vehicleId: "v-1", workOrderId: "ot-1", partsNoteItemId: "npi-1",
+    }]))
+
+    expect(lastInput(persistServiceDraft).items[0]).toMatchObject({ workOrderId: "ot-1", partsNoteItemId: null })
   })
 
   it("servicios no ofrece catálogo: nunca manda producto", async () => {

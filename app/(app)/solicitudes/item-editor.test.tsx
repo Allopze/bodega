@@ -354,6 +354,21 @@ describe("ItemEditor — equipo de flota en repuestos y servicios", () => {
     expect(onSelectWorkOrder).toHaveBeenCalledWith("ot-1")
   })
 
+  it("un ítem que viene de una nota de pedido no deja cambiar el equipo ni la OT", () => {
+    renderQuotation("repuestos", {
+      vehicleId: "v-1", vehicleLabel: "KA-135 · RBYD-98", workOrderId: "ot-1", workOrderFolio: "OT-BIO-0007", partsNoteItemId: "npi-1",
+    })
+    expect(screen.getByRole("combobox", { name: /Equipo de flota/ })).toBeDisabled()
+    expect(screen.getByRole("combobox", { name: /Orden de trabajo/ })).toBeDisabled()
+    expect(screen.getByText("Viene de una nota de pedido: el equipo y la OT no se pueden cambiar.")).toBeInTheDocument()
+
+    // Sin nota de pedido siguen editables.
+    cleanup()
+    renderQuotation("repuestos", { vehicleId: "v-1", vehicleLabel: "KA-135 · RBYD-98", workOrderId: "ot-1", workOrderFolio: "OT-BIO-0007" })
+    expect(screen.getByRole("combobox", { name: /Equipo de flota/ })).not.toBeDisabled()
+    expect(screen.getByRole("combobox", { name: /Orden de trabajo/ })).not.toBeDisabled()
+  })
+
   it("un equipo sin OT abiertas lo dice en vez de ofrecer una lista vacía", () => {
     renderQuotation("repuestos", { vehicleId: "v-2", vehicleLabel: "MQ-01" })
     expect(screen.getByText("Este equipo no tiene OT abiertas.")).toBeInTheDocument()
