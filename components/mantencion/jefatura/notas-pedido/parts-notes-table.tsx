@@ -12,10 +12,10 @@ import { formatDateTime } from "@/lib/utils"
 import { ageText, isNotePending, NOTE_STATUS_TEXT, PARTS_NOTES_PAGE_SIZE, pendingLinesText } from "./parts-notes-format"
 
 const COLUMNS = [
-  { key: "code", label: "NP" },
+  { key: "code", label: "Nota" },
   { key: "equipmentCode", label: "Equipo y OT" },
   { key: "worksiteName", label: "Faena" },
-  { key: "requestedByName", label: "Pedido por" },
+  { key: "requestedByName", label: "Pedida por" },
   { key: "pendingLines", label: "Líneas pendientes" },
   { key: "createdAt", label: "Antigüedad" },
 ]
@@ -72,7 +72,7 @@ export function PartsNotesTable({ rows }: { rows: PartsNoteListRow[] }) {
             <Link href={`/mantencion/ot/${row.workOrderId}`} aria-label={`Ver la OT ${row.workOrderFolio}`} className={OT_LINK}>{row.workOrderFolio}</Link>
           </ResponsiveDataListField>
           <ResponsiveDataListField label="Líneas pendientes"><span className="font-mono tabular-nums text-[var(--color-text)]">{pendingLinesText(row.pendingLines, row.totalLines)}</span></ResponsiveDataListField>
-          <ResponsiveDataListField label="Pedido por"><span className="text-[var(--color-text)]">{row.requestedByName}</span></ResponsiveDataListField>
+          <ResponsiveDataListField label="Pedida por"><span className="text-[var(--color-text)]">{row.requestedByName}</span></ResponsiveDataListField>
           <ResponsiveDataListField label="Antigüedad"><span className="text-[var(--color-text)]">{ageText(row.createdAt)}</span></ResponsiveDataListField>
         </ResponsiveDataListCard>
       )}

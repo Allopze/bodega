@@ -78,6 +78,7 @@ describe("«Repuestos» de la OT: reservados sin usar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Liberar Filtro de aceite" }))
     const dialog = within(await screen.findByRole("dialog"))
     expect(dialog.getByText(/pasa a stock libre de Santa Fe/)).toBeTruthy()
+    expect(dialog.getByText(/deja de estar reservado para esta orden/)).toBeTruthy()
     const quantity = dialog.getByRole("textbox", { name: /Cantidad a liberar/ }) as HTMLInputElement
     expect(quantity.value).toBe("2")
     const submit = dialog.getByRole("button", { name: "Liberar" }) as HTMLButtonElement

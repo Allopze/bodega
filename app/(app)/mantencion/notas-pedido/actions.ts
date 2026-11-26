@@ -59,7 +59,7 @@ const conciliateSchema = z.discriminatedUnion("mode", [
   z.object({ recordPartId: id, mode: z.literal("sin_movimiento"), reason }),
 ])
 
-/** «Sacar de bodega»: aparta lo libre de la faena para la OT y deja la línea resuelta. */
+/** «Reservar de bodega»: reserva lo libre de la faena para la OT y deja la línea resuelta. */
 export async function resolveNoteItemFromStockAction(input: unknown): Promise<NoteActionState> {
   const guard = await guardAnyPermission(MANAGE, PATH)
   if (guard.error) return guard.error
@@ -71,11 +71,11 @@ export async function resolveNoteItemFromStockAction(input: unknown): Promise<No
     if (result.ok) refreshNotes(noteId)
     return toState(result)
   } catch (error) {
-    return actionErrorResult(error, "No se pudo sacar el repuesto de la bodega.")
+    return actionErrorResult(error, "No se pudo reservar el repuesto de la bodega.")
   }
 }
 
-/** «Rechazar»: la línea no se compra ni se saca; el motivo lo lee el mecánico. */
+/** «Rechazar»: la línea no se compra ni se reserva; el motivo lo lee el mecánico. */
 export async function rejectNoteItemAction(input: unknown): Promise<NoteActionState> {
   const guard = await guardAnyPermission(MANAGE, PATH)
   if (guard.error) return guard.error

@@ -35,7 +35,7 @@ export interface SparePartLinkAccess {
   /** `purchasing:view`: abre la OC. */
   canOpenOrders: boolean
   /**
-   * `repuestos:create`: el destino de «Pedir repuestos» en los vacíos (con el repuesto ya elegido si está
+   * `repuestos:create`: el destino de «Solicitar compra» en los vacíos (con el repuesto ya elegido si está
    * activo); `null` sin permiso.
    */
   requestPartsHref: string | null
@@ -43,7 +43,7 @@ export interface SparePartLinkAccess {
 
 function RequestPartsButton({ access }: { access: SparePartLinkAccess }) {
   if (!access.requestPartsHref) return null
-  return <Button asChild size="sm" variant="secondary"><Link href={access.requestPartsHref}>Pedir repuestos</Link></Button>
+  return <Button asChild size="sm" variant="secondary"><Link href={access.requestPartsHref}>Solicitar compra</Link></Button>
 }
 
 /** La tabla en escritorio y las tarjetas en móvil; las dos quedan en el DOM. */

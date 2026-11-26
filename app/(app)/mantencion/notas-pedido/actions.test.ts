@@ -99,7 +99,7 @@ describe("resolveNoteItemFromStockAction", () => {
   it("un error inesperado del servicio no se filtra: sale el mensaje seguro", async () => {
     services.resolveNoteItemFromStock.mockRejectedValue(Object.assign(new Error("Failed query: select ..."), { query: "select ...", params: [] }))
     expect(await actions.resolveNoteItemFromStockAction({ noteId: "n1", itemId: "i1", productId: "p1", quantity: 1 }))
-      .toEqual({ ok: false, message: "No se pudo sacar el repuesto de la bodega." })
+      .toEqual({ ok: false, message: "No se pudo reservar el repuesto de la bodega." })
   })
 })
 

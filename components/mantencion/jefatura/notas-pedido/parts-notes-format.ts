@@ -97,10 +97,11 @@ export function ageText(createdAt: string, now: Date = new Date()): string {
 
 // ── Etapa de una línea ───────────────────────────────────────────────────────
 
+/** La clave `en_bodega` es del contrato con el servicio; el rótulo dice «Reservado», porque lo que llega o sale del stock de la faena para una OT queda reservado para ella. */
 export const STAGE_TEXT: Record<PartsNoteLineStage, string> = {
   pedido: "Pedido",
   en_compra: "En compra",
-  en_bodega: "En bodega",
+  en_bodega: "Reservado",
   rechazado: "Rechazada",
 }
 
