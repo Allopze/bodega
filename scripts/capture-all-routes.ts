@@ -701,6 +701,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "mantencion-registro-print", path: "/mantencion/registros/mant-record-audit-1/print", auth: true },
   { slug: "mantencion-ot-detalle", path: "/mantencion/ot/mant-ot-audit-1", auth: true },
   { slug: "mantencion-ot-print", path: "/mantencion/ot/mant-ot-audit-1/print", auth: true },
+  { slug: "mantencion-nota-pedido-detalle", path: "/mantencion/notas-pedido/mant-np-audit-1", auth: true },
   { slug: "mantencion-equipos", path: "/mantencion/equipos", auth: true },
   { slug: "mantencion-equipo-detalle-legacy", path: "/mantencion/equipos/fuel-veh-audit-1", auth: true, allowedPaths: ["/flota/fuel-veh-audit-1/mantencion"], captureView: false, notes: "Compatibilidad: redirige a la pestaña Mantención de la ficha del vehículo." },
   { slug: "mantencion-equipo-nuevo", path: "/mantencion/equipos/nuevo", auth: true },
@@ -5957,6 +5958,15 @@ async function prepareDatabase(captureDbUrl: string) {
   await db.insert(schema.mantWorkOrderItems).values({
     id: "mant-ot-item-audit-1", workOrderId: "mant-ot-audit-1", kind: "anexo", description: "Revisar pastillas y discos",
     createdByUserId: userId, createdAt: now,
+  }).onConflictDoNothing()
+  // Nota de pedido del mecánico para esa OT (ADR mantención 0001): una línea por resolver.
+  await db.insert(schema.mantPartsNotes).values({
+    id: "mant-np-audit-1", code: "NP-AUD-0001", workOrderId: "mant-ot-audit-1", vehicleId: "fuel-veh-audit-1",
+    worksiteId, requestedByUserId: userId, equipmentStopped: true, status: "enviada", createdAt: now, updatedAt: now,
+  }).onConflictDoNothing()
+  await db.insert(schema.mantPartsNoteItems).values({
+    id: "mant-np-item-audit-1", noteId: "mant-np-audit-1", description: "Pastillas de freno delanteras", quantity: 1,
+    unitOfMeasure: "juego", sortOrder: 0, createdAt: now,
   }).onConflictDoNothing()
   await db.insert(schema.mantDeviceCredentials).values({
     id: "mant-dev-audit-1", userId, deviceId: "00000000-0000-4000-8000-000000000001",
