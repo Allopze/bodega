@@ -390,7 +390,7 @@ describe("escalamiento: la fila sube al jefe cuando el nivel más cercano no exi
       title: "Resolver repuestos de KA-135", code: "NP-Q-0001", priority: "high", statusLabel: "Pendiente", ctaLabel: "Resolver nota",
       subtitle: `OT ${FOLIO("taller-bio")} · 2 por resolver · equipo detenido`, href: "/mantencion/notas-pedido/np-q-bio", worksiteName: "Biodiversa",
     })
-    expect(byId["np-q-cho"]).toMatchObject({ priority: "normal", statusLabel: "En gestión", subtitle: `OT ${FOLIO("asig-cho")} · 1 por resolver`, worksiteName: "Cholguán" })
+    expect(byId["np-q-cho"]).toMatchObject({ priority: "normal", statusLabel: "Pendiente", subtitle: `OT ${FOLIO("asig-cho")} · 1 por resolver`, worksiteName: "Cholguán" })
   })
 
   it("sin ningún global con permiso de notas, el supervisor y el administrador de contrato de la faena las reciben", async () => {

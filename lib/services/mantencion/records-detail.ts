@@ -66,6 +66,8 @@ export interface RecordDetail {
   offlineSince: string | null
   registeredById: string
   registeredByName: string
+  /** Mecánico que hizo el trabajo (con taller externo, null): nadie revisa lo que firmó o ejecutó. */
+  executorUserId: string | null
   executorKind: MantExecutorKind
   executorName: string
   readingJumpAlert: boolean
@@ -268,6 +270,7 @@ export async function loadRecordDetail(viewer: MantViewer, id: string): Promise<
     receivedAt: record.receivedAt,
     offlineSince: record.offlineSince,
     registeredById: record.registeredBy,
+    executorUserId: record.executorUserId,
     registeredByName: row.registeredByName,
     executorKind: record.executorKind as MantExecutorKind,
     executorName: record.executorName,

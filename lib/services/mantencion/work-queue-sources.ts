@@ -284,7 +284,7 @@ function myWorkBranch(userId: string, canRegisterWork: boolean): SQL {
 }
 
 /**
- * 6. Nota de pedido por resolver: no anulada y con al menos una línea `pendiente` (`enviada` + `en_gestion`). La faena
+ * 6. Nota de pedido por resolver: no anulada y con al menos una línea `pendiente`: la misma regla que la pestaña «Pendientes» de la bandeja (`TAB_CONDITIONS`). La faena
  * es la de la nota o aquella donde hoy está el equipo (`noteVisibilitySql`).
  */
 function notesBranch(resolution: OwnedResolution): SQL {
@@ -297,7 +297,8 @@ function notesBranch(resolution: OwnedResolution): SQL {
       CASE WHEN ${mantPartsNotes.equipmentStopped} THEN 'equipo detenido' END${notice ? sql`, ${notice}::text` : sql``})`,
     worksiteId: sql`${mantPartsNotes.worksiteId}`, worksiteName: sql`${worksites.name}`,
     status: sql`${mantPartsNotes.status}`,
-    statusLabel: sql`CASE ${mantPartsNotes.status} WHEN 'en_gestion' THEN 'En gestión' ELSE 'Pendiente' END`,
+    // Toda nota con una línea pendiente está en la pestaña «Pendientes» de la bandeja (NP4-2), aunque su estado sea `en_gestion`.
+    statusLabel: sql`'Pendiente'`,
     priority: sql`CASE WHEN ${mantPartsNotes.equipmentStopped} THEN 'high'::text ELSE 'normal'::text END`,
     blocked: NOT_BLOCKED, createdAt: sql`${mantPartsNotes.createdAt}::text`, sourceDueAt: NO_DATE,
     href: sql`CONCAT('/mantencion/notas-pedido/', ${mantPartsNotes.id})`, ctaLabel: "Resolver nota",

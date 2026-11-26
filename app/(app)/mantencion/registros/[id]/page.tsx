@@ -11,6 +11,7 @@ import { RecordListNav } from "@/components/mantencion/jefatura/registros/record
 import { CorrectiveSections, EquipmentSection, PreventiveSection, RecordAlerts, RecordDataSection } from "@/components/mantencion/jefatura/registros/record-sections"
 import { RecordAside } from "@/components/mantencion/jefatura/registros/record-aside"
 import { RecordStatusBadges } from "@/components/mantencion/jefatura/shared/record-badges"
+import { isOwnRecord } from "@/lib/mantencion/record-review-batch"
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { recordKindText } from "@/lib/mantencion/format"
 import { canObserveRecord, viewerFromSession } from "@/lib/services/mantencion/access"
@@ -76,7 +77,7 @@ export default async function RecordDetailPage({ params, searchParams }: { param
             review={detail.review}
             canExport={can(session, "mant:export")}
             canObserve={detail.canAct && can(session, "mant:records:observe") && canObserveRecord(viewer, detail)}
-            canReview={detail.canAct && can(session, "mant:records:review")}
+            canReview={detail.canAct && can(session, "mant:records:review") && !isOwnRecord({ registeredBy: detail.registeredById, executorUserId: detail.executorUserId }, session.user.id)}
             canVoid={detail.canAct && can(session, "mant:records:void")}
             canCorrect={detail.canAct && can(session, "mant:app:use")}
             queue={queue}
