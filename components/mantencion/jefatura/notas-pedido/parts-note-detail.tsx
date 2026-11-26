@@ -21,7 +21,7 @@ function lineResolvedText(line: PartsNoteDetailLine): string | null {
   const by = line.resolvedByName ? `${line.resolvedByName}${line.resolvedAt ? ` · ${formatDateTime(line.resolvedAt)}` : ""}` : null
   if (line.resolution === "rechazada") return `Motivo: ${line.resolutionReason ?? "sin motivo"}${by ? ` · ${by}` : ""}`
   if (!by) return null
-  if (line.resolution === "desde_stock") return `Sacada de la bodega por ${by}`
+  if (line.resolution === "desde_stock") return `Reservada por ${by}`
   if (line.resolution === "en_compra") return `Enviada a compra por ${by}`
   return null
 }
@@ -81,7 +81,7 @@ function Line({ note, line, canAct, buyHref, canOpenRequests, canOpenOrders }: {
 /**
  * Detalle de una nota de pedido: de quién es, para qué orden y equipo, y una fila por línea con su etapa, lo que
  * llegó y se usó, sus compras y —para quien la administra y mientras la línea siga pendiente— las tres salidas:
- * sacar de bodega, comprar o rechazar. «Anular nota» vive en el encabezado de la página (`VoidNoteButton`).
+ * reservar de bodega, comprar o rechazar. «Anular nota» vive en el encabezado de la página (`VoidNoteButton`).
  * Componente de servidor; sólo las acciones son de cliente.
  */
 export function PartsNoteDetailView({ note, buyHref, canOpenWorkOrder, canOpenRequests, canOpenOrders }: {
@@ -101,7 +101,7 @@ export function PartsNoteDetailView({ note, buyHref, canOpenWorkOrder, canOpenRe
           <p>Motivo: {note.voidReason ?? "sin motivo"}</p>
         </Callout>
       )}
-      <SectionCard title="Pedido">
+      <SectionCard title="Datos de la nota">
         <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
           <DetailItem
             layout="stacked"
@@ -121,11 +121,8 @@ export function PartsNoteDetailView({ note, buyHref, canOpenWorkOrder, canOpenRe
           <DetailItem layout="stacked" label="Comentario" value={note.notes ?? "Sin comentario"} className="sm:col-span-2 xl:col-span-3" />
         </dl>
       </SectionCard>
-      <SectionCard
-        title="Líneas del pedido"
-        description={canAct ? "Resuelve cada línea: sácala de la bodega, cómprala o recházala." : "Dónde está cada repuesto pedido."}
-      >
-        <ul aria-label="Líneas del pedido" className="flex flex-col gap-3">
+      <SectionCard title="Líneas de la nota">
+        <ul aria-label="Líneas de la nota" className="flex flex-col gap-3">
           {note.lines.map((line) => (
             <Line
               key={line.id}

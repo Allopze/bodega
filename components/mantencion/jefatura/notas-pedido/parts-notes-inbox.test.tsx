@@ -100,10 +100,10 @@ describe("PartsNotesTable", () => {
   const table = () => within(screen.getByRole("table", { name: "Notas de pedido" }))
   const cards = () => screen.getAllByRole("article")
 
-  it("columnas: NP, equipo y OT, faena, pedido por, líneas pendientes y antigüedad", () => {
+  it("columnas: nota, equipo y OT, faena, pedida por, líneas pendientes y antigüedad", () => {
     render(<PartsNotesTable rows={rows} />)
     expect(table().getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "NP", "Equipo y OT", "Faena", "Pedido por", "Líneas pendientes", "Antigüedad",
+      "Nota", "Equipo y OT", "Faena", "Pedida por", "Líneas pendientes", "Antigüedad",
     ])
     const first = table().getAllByRole("row")[1]!
     expect(within(first).getByRole("link", { name: "NP-2026-0001" }).getAttribute("href")).toBe("/mantencion/notas-pedido/n1")

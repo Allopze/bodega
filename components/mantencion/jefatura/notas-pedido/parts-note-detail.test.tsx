@@ -21,7 +21,7 @@ const { VoidNoteButton } = await import("./void-note-button")
 const BUY = "/solicitudes/nueva?tipo=repuestos&np=n1"
 /** Las filas de línea (no los renglones de compras que anidan dentro). */
 const lineItems = () => {
-  const list = screen.getByRole("list", { name: "Líneas del pedido" })
+  const list = screen.getByRole("list", { name: "Líneas de la nota" })
   return within(list).getAllByRole("listitem").filter((item) => item.parentElement === list)
 }
 
@@ -47,12 +47,23 @@ describe("PartsNoteDetailView: cabecera", () => {
     expect(header.getByText("Equipo detenido")).toBeTruthy()
   })
 
+  it("las dos tarjetas se llaman «Datos de la nota» y «Líneas de la nota», sin descripciones que repitan los botones", () => {
+    view()
+    expect(screen.getByRole("heading", { name: "Datos de la nota" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Líneas de la nota" })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Pedido" })).toBeNull()
+    expect(screen.queryByText(/Resuelve cada línea/)).toBeNull()
+    cleanup()
+    view({ note: noteDetail({ canManage: false }) })
+    expect(screen.queryByText(/Dónde está cada repuesto pedido/)).toBeNull()
+  })
+
   it("sin permiso para abrir la OT el folio es texto, y una nota anulada dice su motivo y no ofrece acciones", () => {
     view({ canOpenWorkOrder: false, note: noteDetail({ status: "anulada", voidReason: "Se pidió para el equipo equivocado", lines: [noteLine({ resolution: "rechazada", resolutionReason: "Anulada", stage: "rechazado" })] }) })
     expect(screen.queryByRole("link", { name: "OT-BIO-0001" })).toBeNull()
     expect(screen.getByText("Esta nota está anulada")).toBeTruthy()
     expect(screen.getByText(/Se pidió para el equipo equivocado/)).toBeTruthy()
-    expect(screen.queryByRole("button", { name: "Sacar de bodega" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Reservar de bodega" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Comprar" })).toBeNull()
   })
 })
@@ -74,7 +85,7 @@ describe("PartsNoteDetailView: líneas", () => {
     expect(items).toHaveLength(2)
     const first = within(items[0]!)
     expect(first.getByText("Filtro de aceite")).toBeTruthy()
-    expect(first.getByText("En bodega")).toBeTruthy()
+    expect(first.getByText("Reservado")).toBeTruthy()
     expect(first.getByText("Llegó 2 · Usado 1")).toBeTruthy()
     expect(first.getByRole("link", { name: "REP-0007" }).getAttribute("href")).toBe("/solicitudes/req-1")
     expect(first.getByRole("link", { name: "OC-2026-0100" }).getAttribute("href")).toBe("/compras/ord-1")
@@ -85,6 +96,18 @@ describe("PartsNoteDetailView: líneas", () => {
     expect(second.getByText("Rechazada")).toBeTruthy()
     expect(second.getByText(/Ya hay en la faena/)).toBeTruthy()
     expect(second.getByText(/Ana Pérez · 21-11-2026/)).toBeTruthy()
+  })
+
+  it("una línea reservada del stock dice «Reservado» y quién la reservó, no «En bodega» ni «Sacada de la bodega»", () => {
+    view({
+      note: noteDetail({
+        lines: [noteLine({ resolution: "desde_stock", stage: "en_bodega", arrived: 2, resolvedByName: "Ana Pérez", resolvedAt: "2026-11-21T10:00:00.000Z" })],
+      }),
+    })
+    const line = within(lineItems()[0]!)
+    expect(line.getByText("Reservado")).toBeTruthy()
+    expect(line.getByText(/^Reservada por Ana Pérez · 21-11-2026/)).toBeTruthy()
+    expect(line.queryByText(/En bodega|Sacada de la bodega/)).toBeNull()
   })
 
   it("sin permiso de solicitudes ni de compras, los códigos son texto", () => {
@@ -103,7 +126,7 @@ describe("PartsNoteDetailView: líneas", () => {
       note: noteDetail({ lines: [noteLine(), noteLine({ id: "i2", description: "Correa", resolution: "en_compra", stage: "en_compra", productId: null, freeInWorksite: null })] }),
     })
     const [pending, resolved] = lineItems().map((item) => within(item))
-    expect(pending!.getByRole("button", { name: "Sacar de bodega" })).toBeTruthy()
+    expect(pending!.getByRole("button", { name: "Reservar de bodega" })).toBeTruthy()
     expect(pending!.getByRole("link", { name: "Comprar" }).getAttribute("href")).toBe(BUY)
     expect(pending!.getByRole("button", { name: "Rechazar" })).toBeTruthy()
     expect(resolved!.queryByRole("button")).toBeNull()
@@ -112,7 +135,7 @@ describe("PartsNoteDetailView: líneas", () => {
 
   it("sin canManage sólo se ve el estado; sin permiso para pedir no hay «Comprar»", () => {
     view({ note: noteDetail({ canManage: false }) })
-    expect(screen.queryByRole("button", { name: "Sacar de bodega" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Reservar de bodega" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Rechazar" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Comprar" })).toBeNull()
     cleanup()
@@ -121,75 +144,77 @@ describe("PartsNoteDetailView: líneas", () => {
     expect(screen.queryByRole("link", { name: "Comprar" })).toBeNull()
   })
 
-  it("una línea en texto libre sin repuestos con stock en la faena no se saca de la bodega: lo dice y deja «Comprar»", () => {
+  it("una línea en texto libre sin repuestos con stock en la faena no se reserva de la bodega: lo dice y deja «Comprar»", () => {
     view({ note: noteDetail({ lines: [noteLine({ productId: null, freeInWorksite: null })], stockOptions: [] }) })
-    expect((screen.getByRole("button", { name: "Sacar de bodega" }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole("button", { name: "Reservar de bodega" }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText(/No hay repuestos con stock libre en Biodiversa/)).toBeTruthy()
     expect(screen.getByRole("link", { name: "Comprar" })).toBeTruthy()
   })
 
-  it("una línea en texto libre se saca de la bodega eligiendo el repuesto entre los que tienen stock (lo encontró la E2E)", async () => {
-    actions.resolveNoteItemFromStockAction.mockResolvedValue({ ok: true, message: "Apartado." })
+  it("una línea en texto libre se reserva de la bodega eligiendo el repuesto entre los que tienen stock (lo encontró la E2E)", async () => {
+    actions.resolveNoteItemFromStockAction.mockResolvedValue({ ok: true, message: "Reservado." })
     view({ note: noteDetail({
       lines: [noteLine({ productId: null, productName: null, freeInWorksite: null, description: "Filtro de aceite motor", quantity: 1 })],
       stockOptions: [{ productId: "p9", name: "Filtro de aceite FA-1", partNumber: "FA-1", unit: "unidad", free: 3 }],
     }) })
-    fireEvent.click(screen.getByRole("button", { name: "Sacar de bodega" }))
+    fireEvent.click(screen.getByRole("button", { name: "Reservar de bodega" }))
     const dialog = within(await screen.findByRole("dialog"))
     expect(dialog.getByText(/El mecánico pidió «Filtro de aceite motor»/)).toBeTruthy()
     // Aunque haya un solo repuesto con stock, no se preselecciona: puede no ser el que pidió el mecánico.
-    expect((dialog.getByRole("button", { name: "Sacar de bodega" }) as HTMLButtonElement).disabled).toBe(true)
+    expect((dialog.getByRole("button", { name: "Reservar de bodega" }) as HTMLButtonElement).disabled).toBe(true)
     // Sin repuesto elegido no se muestra saldo (ni el «no hay stock», que confundía).
     expect(dialog.queryByText(/libres en Biodiversa/)).toBeNull()
     expect(dialog.queryByText(/No hay stock libre/)).toBeNull()
     fireEvent.click(dialog.getByRole("combobox", { name: "Repuesto de la bodega" }))
     fireEvent.click(await screen.findByRole("option", { name: /Filtro de aceite FA-1/ }))
     expect(dialog.getByText("3 libres en Biodiversa")).toBeTruthy()
-    fireEvent.click(dialog.getByRole("button", { name: "Sacar de bodega" }))
+    fireEvent.click(dialog.getByRole("button", { name: "Reservar de bodega" }))
     await waitFor(() => expect(actions.resolveNoteItemFromStockAction).toHaveBeenCalledWith({ noteId: "n1", itemId: "i1", productId: "p9", quantity: 1 }))
   })
 })
 
-describe("«Sacar de bodega»", () => {
+describe("«Reservar de bodega»", () => {
   it("muestra lo libre en la faena, pide cantidad y llama a resolver desde el stock", async () => {
-    actions.resolveNoteItemFromStockAction.mockResolvedValue({ ok: true, message: "Apartaste 2 de «Filtro de aceite» para la OT." })
+    actions.resolveNoteItemFromStockAction.mockResolvedValue({ ok: true, message: "Reservaste 2 de «Filtro de aceite» para la OT." })
     view()
-    fireEvent.click(screen.getByRole("button", { name: "Sacar de bodega" }))
-    const dialog = within(await screen.findByRole("dialog"))
+    fireEvent.click(screen.getByRole("button", { name: "Reservar de bodega" }))
+    expect(await screen.findByRole("dialog", { name: "Reservar de bodega" })).toBeTruthy()
+    const dialog = within(screen.getByRole("dialog"))
     expect(dialog.getByText("5 libres en Biodiversa")).toBeTruthy()
     // Por omisión, lo pedido (tope: lo libre).
-    const quantity = dialog.getByRole("textbox", { name: /Cantidad/ }) as HTMLInputElement
+    const quantity = dialog.getByRole("textbox", { name: /Cantidad a reservar/ }) as HTMLInputElement
     expect(quantity.value).toBe("2")
     fireEvent.change(quantity, { target: { value: "9" } })
-    expect((dialog.getByRole("button", { name: "Sacar de bodega" }) as HTMLButtonElement).disabled).toBe(true)
+    expect(dialog.getByText("Puedes reservar hasta 2.")).toBeTruthy()
+    expect((dialog.getByRole("button", { name: "Reservar de bodega" }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.change(quantity, { target: { value: "2" } })
-    fireEvent.click(dialog.getByRole("button", { name: "Sacar de bodega" }))
+    fireEvent.click(dialog.getByRole("button", { name: "Reservar de bodega" }))
     await waitFor(() => expect(actions.resolveNoteItemFromStockAction).toHaveBeenCalledWith({ noteId: "n1", itemId: "i1", productId: "p1", quantity: 2 }))
     await waitFor(() => expect(refresh).toHaveBeenCalled())
-    expect(toastSuccess).toHaveBeenCalledWith("Apartaste 2 de «Filtro de aceite» para la OT.")
+    expect(toastSuccess).toHaveBeenCalledWith("Reservaste 2 de «Filtro de aceite» para la OT.")
   })
 
   it("con menos stock libre que lo pedido, el tope es lo libre; sin nada libre no se puede confirmar", async () => {
     view({ note: noteDetail({ lines: [noteLine({ quantity: 4, freeInWorksite: 3 })] }) })
-    fireEvent.click(screen.getByRole("button", { name: "Sacar de bodega" }))
+    fireEvent.click(screen.getByRole("button", { name: "Reservar de bodega" }))
     let dialog = within(await screen.findByRole("dialog"))
     expect((dialog.getByRole("textbox", { name: /Cantidad/ }) as HTMLInputElement).value).toBe("3")
     fireEvent.click(dialog.getByRole("button", { name: "Cancelar" }))
     cleanup()
 
     view({ note: noteDetail({ lines: [noteLine({ freeInWorksite: 0 })] }) })
-    fireEvent.click(screen.getByRole("button", { name: "Sacar de bodega" }))
+    fireEvent.click(screen.getByRole("button", { name: "Reservar de bodega" }))
     dialog = within(await screen.findByRole("dialog"))
     expect(dialog.getByText("0 libres en Biodiversa")).toBeTruthy()
-    expect((dialog.getByRole("button", { name: "Sacar de bodega" }) as HTMLButtonElement).disabled).toBe(true)
+    expect((dialog.getByRole("button", { name: "Reservar de bodega" }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it("el error del servidor queda dentro del diálogo, que sigue abierto", async () => {
     actions.resolveNoteItemFromStockAction.mockResolvedValue({ ok: false, message: "Otra orden ya reservó ese repuesto." })
     view()
-    fireEvent.click(screen.getByRole("button", { name: "Sacar de bodega" }))
+    fireEvent.click(screen.getByRole("button", { name: "Reservar de bodega" }))
     const dialog = within(await screen.findByRole("dialog"))
-    fireEvent.click(dialog.getByRole("button", { name: "Sacar de bodega" }))
+    fireEvent.click(dialog.getByRole("button", { name: "Reservar de bodega" }))
     expect((await dialog.findByRole("alert")).textContent).toContain("Otra orden ya reservó ese repuesto.")
     expect(screen.getByRole("dialog")).toBeTruthy()
     expect(toastSuccess).not.toHaveBeenCalled()

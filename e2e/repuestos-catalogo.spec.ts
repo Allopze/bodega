@@ -162,7 +162,7 @@ test("pedir desde la OT con el catálogo, catalogar al armar la OC, precio al em
   await login(page, JEFE)
   const { otId, folio } = await crearOt(page, equipo)
   await page.getByRole("button", { name: "Más acciones" }).click()
-  await page.getByRole("menuitem", { name: "Pedir repuestos" }).click()
+  await page.getByRole("menuitem", { name: "Solicitar compra" }).click()
   await expect(page).toHaveURL(new RegExp(`/solicitudes/nueva\\?tipo=repuestos&ot=${otId}`))
   await page.waitForLoadState("networkidle").catch(() => undefined)
   await expect(page.getByRole("combobox", { name: "Equipo de flota" })).toHaveValue(new RegExp(equipo.plate))

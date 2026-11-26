@@ -46,14 +46,14 @@ describe("fichas de repuesto — secciones", () => {
     expect(screen.getByText("Todavía no hay solicitudes ni órdenes con este repuesto")).toBeTruthy()
     // CTA reales (enlaces), no rutas pegadas como texto.
     expect(screen.getByRole("link", { name: "Ver órdenes de compra" }).getAttribute("href")).toBe("/compras")
-    // «Pedir repuestos» abre el pedido con este repuesto ya elegido.
-    expect(screen.getAllByRole("link", { name: "Pedir repuestos" })[0]!.getAttribute("href")).toBe("/solicitudes/nueva?tipo=repuestos&repuesto=rep-1")
+    // «Solicitar compra» abre la solicitud con este repuesto ya elegido.
+    expect(screen.getAllByRole("link", { name: "Solicitar compra" })[0]!.getAttribute("href")).toBe("/solicitudes/nueva?tipo=repuestos&repuesto=rep-1")
   })
 
   it("un repuesto sin actividad dice una sola vez qué falta, con su acción para llenarlo", () => {
     const { rerender } = render(<NoActivityNotice access={FULL_ACCESS} />)
     expect(screen.getByText("Todavía no se ha comprado")).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Pedir repuestos" }).getAttribute("href")).toBe("/solicitudes/nueva?tipo=repuestos&repuesto=rep-1")
+    expect(screen.getByRole("link", { name: "Solicitar compra" }).getAttribute("href")).toBe("/solicitudes/nueva?tipo=repuestos&repuesto=rep-1")
     rerender(<NoActivityNotice access={NO_ACCESS} />)
     expect(screen.queryByRole("link")).toBeNull()
   })

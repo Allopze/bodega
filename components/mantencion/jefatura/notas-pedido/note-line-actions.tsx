@@ -17,8 +17,8 @@ import { NoteReasonDialog } from "./note-reason-dialog"
 import { parseQty, qtyInputText } from "./parts-notes-format"
 
 /**
- * Sacar de la bodega: qué repuesto (el mecánico pide en texto libre, así que jefatura elige entre los que
- * tienen stock libre en la faena del equipo), cuánto hay libre, cuánto sacar y confirmar.
+ * Reservar de la bodega: qué repuesto (el mecánico pide en texto libre, así que jefatura elige entre los que
+ * tienen stock libre en la faena del equipo), cuánto hay libre, cuánto reservar y confirmar.
  */
 function TakeFromStockDialog({ noteId, line, worksiteName, stockOptions, onOpenChange }: {
   noteId: string
@@ -52,7 +52,7 @@ function TakeFromStockDialog({ noteId, line, worksiteName, stockOptions, onOpenC
     op.run(
       () => resolveNoteItemFromStockAction({ noteId, itemId: line.id, productId, quantity: parsed }),
       (result) => {
-        toast.success(result.message ?? "Línea resuelta desde la bodega")
+        toast.success(result.message ?? "Línea reservada de la bodega")
         onOpenChange(false)
         router.refresh()
       },
@@ -65,7 +65,7 @@ function TakeFromStockDialog({ noteId, line, worksiteName, stockOptions, onOpenC
       <DialogContent>
         <form onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>Sacar de bodega</DialogTitle>
+            <DialogTitle>Reservar de bodega</DialogTitle>
             <DialogDescription>{name}: queda reservado para esta orden de trabajo y el mecánico lo ve disponible.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">
@@ -87,11 +87,11 @@ function TakeFromStockDialog({ noteId, line, worksiteName, stockOptions, onOpenC
             )}
             {productId && free <= 0 && <p className="text-sm text-[var(--color-text-muted)]">No hay stock libre de este repuesto en la faena: cómpralo o espera a que llegue.</p>}
             <Field
-              label="Cantidad a sacar"
+              label="Cantidad a reservar"
               htmlFor="np-take-quantity"
               required
               helper={`Pediste ${formatQty(line.quantity)}${max < line.quantity && free > 0 ? `; el tope es lo libre (${formatQty(free)}).` : "."}`}
-              error={tooMuch ? `Puedes sacar hasta ${formatQty(max)}.` : undefined}
+              error={tooMuch ? `Puedes reservar hasta ${formatQty(max)}.` : undefined}
             >
               <Input id="np-take-quantity" inputMode="decimal" value={quantity} disabled={free <= 0} onChange={(event) => setQuantity(event.target.value)} />
             </Field>
@@ -99,7 +99,7 @@ function TakeFromStockDialog({ noteId, line, worksiteName, stockOptions, onOpenC
           {op.message && <p role="alert" className="mt-2 text-sm text-[var(--color-danger-ink)]">{op.message}</p>}
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={op.pending}>Cancelar</Button>
-            <Button type="submit" loading={op.pending} disabled={!valid}>Sacar de bodega</Button>
+            <Button type="submit" loading={op.pending} disabled={!valid}>Reservar de bodega</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -108,7 +108,7 @@ function TakeFromStockDialog({ noteId, line, worksiteName, stockOptions, onOpenC
 }
 
 /**
- * Las tres salidas de una línea pendiente: «Sacar de bodega», «Comprar» (abre la solicitud de repuestos con la
+ * Las tres salidas de una línea pendiente: «Reservar de bodega», «Comprar» (abre la solicitud de repuestos con la
  * nota precargada) y «Rechazar» (con motivo). Sólo se dibuja para quien administra la nota y mientras la línea
  * siga pendiente; el servidor vuelve a validar permiso, alcance y estado en cada acción.
  */
@@ -126,7 +126,7 @@ export function NoteLineActions({ noteId, line, worksiteName, buyHref, stockOpti
   return (
     <div className="mt-3 flex flex-col gap-2 border-t border-[var(--color-border)] pt-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="secondary" size="sm" disabled={!canTake} onClick={() => setDialog("take")}>Sacar de bodega</Button>
+        <Button type="button" variant="secondary" size="sm" disabled={!canTake} onClick={() => setDialog("take")}>Reservar de bodega</Button>
         {buyHref && <Button asChild variant="secondary" size="sm"><Link href={buyHref}>Comprar</Link></Button>}
         <Button type="button" variant="ghost-danger" size="sm" onClick={() => setDialog("reject")}>Rechazar</Button>
       </div>
@@ -136,7 +136,7 @@ export function NoteLineActions({ noteId, line, worksiteName, buyHref, stockOpti
         <NoteReasonDialog
           onOpenChange={(open) => { if (!open) setDialog(null) }}
           title="Rechazar la línea"
-          description={`${line.description}: el mecánico verá tu motivo y la línea no se compra ni se saca de la bodega.`}
+          description={`${line.description}: el mecánico verá tu motivo y la línea no se compra ni se reserva de la bodega.`}
           submitLabel="Rechazar"
           destructive
           action={(reason) => rejectNoteItemAction({ noteId, itemId: line.id, reason })}

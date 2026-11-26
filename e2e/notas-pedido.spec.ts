@@ -16,7 +16,7 @@ import {
  *      tiene stock en la faena (sembrado).
  *   2  SIN señal, el mecánico pide dos repuestos (uno con el nombre del repuesto de catálogo, otro
  *      texto libre) con «Enviar pedido»; vuelve la señal y la nota se envía sola.
- *   3  jefatura ve la nota en «Pendientes», resuelve la línea del catálogo con «Sacar de bodega» y
+ *   3  jefatura ve la nota en «Pendientes», resuelve la línea del catálogo con «Reservar de bodega» y
  *      comprueba el enlace «Comprar» de la otra (solicitud de repuestos prellenada desde la nota).
  *   4  el mecánico refresca el catálogo, ve «Llegó · 1 disponible» y registra una correctiva de la
  *      OT con el chip «Disponibles para esta OT».
@@ -203,7 +203,7 @@ test.describe("Notas de pedido de repuestos", () => {
 
   // ── 3 · Jefatura resuelve ─────────────────────────────────────────────────────────────────────────
 
-  test("3 · jefatura ve la nota en «Pendientes», saca el repuesto de la bodega y comprueba el enlace «Comprar» de la otra línea", async ({ page }) => {
+  test("3 · jefatura ve la nota en «Pendientes», reserva el repuesto de la bodega y comprueba el enlace «Comprar» de la otra línea", async ({ page }) => {
     expect(nota.id, "depende del paso 2").not.toBe("")
     const errores = vigilarConsola(page)
     await entrarPlataforma(page, JEFE)
@@ -225,19 +225,19 @@ test.describe("Notas de pedido de repuestos", () => {
     // Detalle de la nota.
     await expect(page).toHaveURL(new RegExp(`/mantencion/notas-pedido/${nota.id}$`))
     await expect(page.getByRole("heading", { level: 1, name: new RegExp(`^${nota.code} · ${esc(equipo.code)}`) })).toBeVisible()
-    const lineas = page.getByRole("list", { name: "Líneas del pedido", exact: true })
+    const lineas = page.getByRole("list", { name: "Líneas de la nota", exact: true })
     await expect(lineas.getByRole("listitem")).toHaveCount(2)
     const lineaCatalogo = lineas.getByRole("listitem").filter({ hasText: REPUESTO.name })
     const lineaLibre = lineas.getByRole("listitem").filter({ hasText: REPUESTO_LIBRE })
 
-    // El mecánico pide en texto libre (sin producto de catálogo): en «Sacar de bodega» jefatura elige cuál de los
+    // El mecánico pide en texto libre (sin producto de catálogo): en «Reservar de bodega» jefatura elige cuál de los
     // repuestos con stock libre en la faena es.
-    const sacar = lineaCatalogo.getByRole("button", { name: "Sacar de bodega", exact: true })
+    const reservar = lineaCatalogo.getByRole("button", { name: "Reservar de bodega", exact: true })
 
-    // Sacar de bodega, cantidad 1: lo libre se ve y el tope es lo pedido.
-    await expect(sacar).toBeEnabled()
-    await sacar.click()
-    const dialogo = page.getByRole("dialog", { name: "Sacar de bodega", exact: true })
+    // Reservar de bodega, cantidad 1: lo libre se ve y el tope es lo pedido.
+    await expect(reservar).toBeEnabled()
+    await reservar.click()
+    const dialogo = page.getByRole("dialog", { name: "Reservar de bodega", exact: true })
     const elegir = dialogo.getByRole("combobox", { name: "Repuesto de la bodega" })
     await expect(elegir).toBeVisible()
     if (!(await elegir.textContent())?.includes(REPUESTO.name)) {
@@ -246,13 +246,13 @@ test.describe("Notas de pedido de repuestos", () => {
     }
     await expect(elegir).toContainText(REPUESTO.name)
     await expect(dialogo.getByText(`${REPUESTO.stockInicial} libres en Biodiversa`)).toBeVisible()
-    await expect(dialogo.getByLabel("Cantidad a sacar")).toHaveValue("1")
-    await dialogo.getByRole("button", { name: "Sacar de bodega", exact: true }).click()
+    await expect(dialogo.getByLabel("Cantidad a reservar")).toHaveValue("1")
+    await dialogo.getByRole("button", { name: "Reservar de bodega", exact: true }).click()
     await expect(dialogo).toHaveCount(0)
-    await expect(textoVisible(page, /Se apartaron 1 de/).first()).toBeVisible({ timeout: 30_000 })
-    await expect(lineaCatalogo).toContainText("En bodega")
+    await expect(textoVisible(page, /Se reservó 1 de/).first()).toBeVisible({ timeout: 30_000 })
+    await expect(lineaCatalogo).toContainText("Reservado")
     await expect(lineaCatalogo).toContainText("Llegó 1 · Usado 0")
-    await expect(lineaCatalogo.getByRole("button", { name: "Sacar de bodega", exact: true })).toHaveCount(0)
+    await expect(lineaCatalogo.getByRole("button", { name: "Reservar de bodega", exact: true })).toHaveCount(0)
     const reserva = await reservaDeLaOt(otId)
     expect(reserva, "la OT tiene una reserva activa").toMatchObject({ status: "activa", quantity: 1 })
     expect(await stockDe(equipo.worksiteId), "reservar no mueve el stock").toBe(REPUESTO.stockInicial)
