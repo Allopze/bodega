@@ -304,6 +304,13 @@ ENV_WHITELIST=(
   PDTP_EVIDENCE_GC_DELETE
   COPEC_USERNAME COPEC_PASSWORD COPEC_CLIENT_RUT COPEC_SYNC_START_DATE COPEC_SYNC_IMPORTER_EMAIL
   ONWAY_USERNAME ONWAY_PASSWORD ONWAY_SYNC_ENABLED
+  # Resolver de captchas de OnWay. A diferencia de las credenciales, esto NO es
+  # un secreto: son la ruta del volumen del modelo y la del perfil de sesión.
+  # Van en la whitelist porque un restore debe dejar el solver como estaba —
+  # si estaba apagado tras un incidente, no puede volver encendido en silencio.
+  # El contenido del perfil (cookies de Auth0) NO se respalda: vive en su propio
+  # volumen, fuera de bodega-storage (ver ADR-001, enmienda 2026-11-25).
+  ONWAY_CAPTCHA_SOLVER ONWAY_CAPTCHA_PROFILE_DIR ONWAY_VISION_MODEL_PATH
   # Talana, Copec, VisionLink y Resend: estas variables son el respaldo del servidor.
   # Lo que se guarde desde la plataforma vive cifrado en system_settings (va en el
   # dump) y sólo se abre con DTE_SETTINGS_KEYRING, que también se respalda acá.
