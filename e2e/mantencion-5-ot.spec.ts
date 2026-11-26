@@ -298,7 +298,7 @@ test.describe("Orden de trabajo (OT)", () => {
     await hoja.getByRole("button", { name: "Interno", exact: true }).click()
     const sugerida = await hoja.getByText(/Última lectura del [^:]+: [\d.]+/).innerText().catch(() => "")
     lectura = Number(/: ([\d.]+)/.exec(sugerida)?.[1]?.replace(/\./g, "") ?? "40000") + 5
-    await hoja.getByLabel("Odómetro al ingresar").fill(String(lectura))
+    await hoja.getByLabel(/^(Odómetro|Horómetro) al ingresar$/).fill(String(lectura))
     await hoja.getByLabel("Entrega estimada").fill(chileDay(3))
     await hoja.getByRole("button", { name: "Registrar ingreso", exact: true }).click()
     await esperarEstado(folio, "en_ejecucion")
@@ -380,7 +380,7 @@ test.describe("Orden de trabajo (OT)", () => {
     const ultima = hoja.getByText(/Última lectura registrada: [\d.]+/)
     const anterior = await ultima.count() ? Number(/registrada: ([\d.]+)/.exec(await ultima.innerText())?.[1]?.replace(/\./g, "")) : 0
     lectura = Math.max(lectura, anterior) + 10
-    await hoja.getByLabel("Odómetro actual").fill(String(lectura))
+    await hoja.getByLabel(/^(Odómetro|Horómetro) actual/).fill(String(lectura))
     await hoja.getByRole("button", { name: "Continuar", exact: true }).click()
 
     await expect(hoja.getByText("Paso 2 de 4 · Trabajo")).toBeVisible()

@@ -135,6 +135,8 @@ async function crearOt(page: Page, equipo: { code: string }) {
   await hoja.getByRole("button", { name: "Crear orden", exact: true }).click()
   await expect(page).toHaveURL(/\/mantencion\/ot\/[^/]+$/, { timeout: 30_000 })
   const otId = new URL(page.url()).pathname.split("/").pop() ?? ""
+  // Recién cambiada la URL puede verse aún el esqueleto de carga, cuyo h1 («Orden de trabajo») no lleva folio.
+  await expect(page.getByRole("heading", { level: 1 }).first()).toHaveText(/OT-[A-Z]+-\d{4}/, { timeout: 30_000 })
   const titulo = await page.getByRole("heading", { level: 1 }).first().innerText()
   const folio = /OT-[A-Z]+-\d{4}/.exec(titulo)?.[0] ?? ""
   expect(folio, "el título de la OT lleva su folio").not.toBe("")
