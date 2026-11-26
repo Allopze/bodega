@@ -1,6 +1,6 @@
 # Mantención: arreglos de la auditoría y de encontrabilidad (2026-11-26)
 
-Implementación, en un solo día, de lo decidido tras la auditoría de Mantención (`mantencion-auditoria-2026-11-26.md`) y el análisis de encontrabilidad (`mantencion-encontrabilidad-2026-11-26.md`). Rama `fix/mantencion-encontrabilidad` sobre `main` `290ec0387`. **Sin desplegar ni fusionar a `main`.**
+Implementación, en un solo día, de lo decidido tras la auditoría de Mantención (`mantencion-auditoria-2026-11-26.md`) y el análisis de encontrabilidad (`mantencion-encontrabilidad-2026-11-26.md`). Rama `fix/mantencion-encontrabilidad` sobre `main` `290ec0387`, con `main` `e3d6c006f` ya integrado. **Sin desplegar ni fusionar a `main`.**
 
 ## Cómo se hizo
 
@@ -61,6 +61,11 @@ Implementación, en un solo día, de lo decidido tras la auditoría de Mantenci�
 
 El plan de texto del anexo A de encontrabilidad quedó aplicado salvo dos decisiones del dueño: «Marcas y talleres» y «Faena de imputación».
 
+**Pulido final (`/impeccable polish`, una ronda de capturas, una de arreglos y una de confirmación):**
+- **Anillo de foco:** la regla global `:focus-visible` de `app/globals.css` no tiene capa, y las utilidades de Tailwind (`@layer utilities`) no le ganan: `outline-none` y `focus-visible:outline-offset-[-2px]` no tenían efecto. Con la clase `.focus-ring-inset`, también sin capa, el anillo queda por dentro en la paleta de «Ir a…», en los rótulos de grupo del menú y en los segmentados con desplazamiento del Historial. Antes se recortaba contra el borde.
+- **Notas de pedido:** la etapa de una línea habla del repuesto, como la app del mecánico: «Rechazado» y «Reservado por…», junto a «Pedido» y «Reservado».
+- **Observados:** «con respuesta» (le toca a jefatura) va en señal; «espera al mecánico», sin señal.
+
 ## Hallazgos
 
 | Estado | Identificadores |
@@ -86,14 +91,18 @@ El plan de texto del anexo A de encontrabilidad quedó aplicado salvo dos decisi
 - **Notas de pedido** (aún no están en producción):
   - las líneas auto-rechazadas no reviven al reabrir la OT;
   - no hay backfill.
-- **Despliegue:** sin migraciones ni `db:sync-rbac`.
+- **Despliegue:** la rama no trae migraciones ni pide `db:sync-rbac`. Ya integra `main` `e3d6c006f` (merge `46c285efe`), que trae la migración 0404 de las pautas cíclicas: ésa es de `main`, no de estos arreglos.
 
 ## Verificación
 
-- **Puertas sobre la rama completa:** `typecheck` y `lint` en 0. En `test:fast`, 22.825 pruebas pasan y 2 fallan; ninguna de las dos es de esta rama:
-  - `scripts/backup-env-whitelist.test.ts` falla igual en `290ec0387`: las variables `ONWAY_CAPTCHA_*` no están en la lista blanca del respaldo.
-  - `inspection-run-detail.test.tsx` (Prevención) falló bajo carga y pasa sola, tanto en la base como en la rama.
-- **`test:pglite`:** 453 archivos, 5.952 pruebas, todas en verde.
+- **Puertas finales**, sobre la rama con `main` integrado (`46c285efe`):
+  - `typecheck` y `lint` en 0;
+  - `test:fast`: 22.835 pruebas, todas en verde;
+  - `test:pglite`: 454 archivos y 5.959 pruebas, todas en verde;
+  - `db:verify-migrations`: 405 entradas hasta la 0404.
+- **Fallas de corridas anteriores, ajenas a la rama (en la final pasan):**
+  - `scripts/backup-env-whitelist.test.ts` ya fallaba en `290ec0387` y lo arregló `main` `e3d6c006f`;
+  - `inspection-run-detail.test.tsx` (Prevención) falló una vez bajo carga y pasa sola.
 - **Pruebas nuevas que fallan sin el arreglo:**
   - corte y REG4-1 en el Historial: 3 de 11;
   - notas de pedido al cerrar o anular la OT: 5 de 35;
@@ -103,15 +112,28 @@ El plan de texto del anexo A de encontrabilidad quedó aplicado salvo dos decisi
   - 7 de esas fallas son exactamente las 7 que ya fallan en la base `b848c1423`: `1-app:166`, `3a-equipos:33`, `3b-pautas:65`, `4-permisos:72`, `5-ot`, `panel-looker-cobertura:63` y `panel-looker:83`. Vienen de la unidad km/h por equipo: el fixture E2E deja los camiones en horas y sin pauta.
   - Las otras 2 vinieron de la carga, no del producto. Con 1 worker `panel-looker-export` pasa 13 de 13 (su semilla chocaba con otra spec en paralelo), y `repuestos-catalogo` pasa 3 de 3 después de esperar el título real (el h1 del esqueleto de carga no lleva folio).
   - `mantencion-5-ot` ahora pide la lectura en la unidad del equipo y pasa 8 de 8. Corren por primera vez el registro desde el PC, la recepción, la conformidad, la OT cerrada con su historial y PDF, y el alcance.
+  - **Corrida final** (build nuevo con el pulido, 2 workers):
+    - 242 pasan y 10 fallan.
+    - 6 fallas son las de la base (km/h).
+    - 4 son de la carga:
+      - `5-ot` «a» y `notas-pedido` «1» leían el h1 del esqueleto de carga (ya esperan el folio);
+      - `mantencion-historial` «Exportar Excel» encontró la semilla de Looker reiniciada por otra spec en paralelo;
+      - `panel-looker-export`, por la misma semilla.
+    - Con 1 worker, esas cuatro specs pasan 32 de 32: `5-ot` 8, `notas-pedido` 7, `mantencion-historial` y `panel-looker-export`. Incluye la conformidad que libera la reserva y rechaza las líneas pendientes, contra Postgres.
 - **Navegador** (pulido sobre `bodega_e2e_auditmant`, puerto 3141; escritorio 1440×900 y teléfono 390×844):
-  - Menú: los 11 ítems de Mantención se ven sin desplazar, contra 2 de 7 antes. La ficha `/flota/<id>/mantencion` marca «Equipos».
+  - Menú: a 1440×900 se ven 8 de los 11 destinos de Mantención sin desplazar el menú, contra 2 de 7 antes. «Marcas y talleres», «App del mecánico» y «Catálogo de repuestos» quedan al borde del pie fijo. La ficha `/flota/<id>/mantencion` marca «Equipos».
   - Panel: las pestañas llevan el período; Planificación ya no tiene período.
   - OT: el PDF está a la vista, «Más acciones» tiene 5 opciones y «Registrar ingreso» pide la lectura en horas con la última lectura.
   - Búsqueda: «mcpac0004» encuentra MC-PAC-0004.
   - «Ir a…» ofrece la OT por su folio.
   - Alcance: un mecánico de otra faena recibe «No encontramos el folio».
   - Enlaces a Bodega: los ve el jefe y no el supervisor.
-  - En la app, «Nuevo registro» queda en la primera pantalla.
+  - En la app, «Nuevo registro» queda en la primera pantalla (entre 322 y 510 px de 844).
+  - Ronda de confirmación del pulido:
+    - el foco queda por dentro (`outline-offset: -2px`) en la paleta, en un rótulo del menú y en un segmentado a 390 px;
+    - «Editar orden» sobre una OT con descripción y 3 mantenciones avisa «Al guardar se borra la descripción.» y «Al guardar se borran 3 mantenciones solicitadas.»;
+    - la nota dice «Rechazado» y «Reservado por»;
+    - en Observados, «con respuesta» va en naranja y «espera al mecánico» en gris.
   - Sin desborde a 390 px y sin errores de consola ni de red.
 - **Lo que no cubrió la E2E:** los flujos que están detrás de las 7 fallas previas (app del mecánico, Equipos, pestañas del Panel, pautas, permisos del catálogo). Se revisaron en el navegador. Arreglar el fixture km/h es trabajo aparte.
 
@@ -121,3 +143,4 @@ El plan de texto del anexo A de encontrabilidad quedó aplicado salvo dos decisi
 - **`/mantencion/ir`:** probado con un doble de la base y en el navegador; sin prueba contra Postgres.
 - **Enlace a Bodega:** lleva al kárdex del producto, porque la vista Stock no filtra por id. Las cifras de existencia, reservado y libre dentro de la ficha quedan para otra vez.
 - A 1440×900, los hijos de «Configuración» quedan al borde del pie fijo del menú: «Pautas» se ve y los otros dos piden desplazar un poco.
+- **Anillo de foco en el resto de la plataforma:** la causa de fondo sigue: `:focus-visible` sin capa le gana a cualquier utilidad de Tailwind. Otros controles que intentan ajustar su anillo con utilidades, como la campana de avisos, siguen igual. El arreglo de fondo es mover esa regla a `@layer base`, revisando antes cada `outline-none` que no traiga su propio anillo; si no, alguno quedaría sin foco visible.

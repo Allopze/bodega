@@ -1,6 +1,6 @@
 # Mantención: arreglos de la auditoría y de encontrabilidad — 2026-11-26
 
-Rama `fix/mantencion-encontrabilidad` sobre `290ec0387`, **sin fusionar ni desplegar**. Detalle: [mantencion-arreglos-2026-11-26.md](mantencion-arreglos-2026-11-26.md).
+Rama `fix/mantencion-encontrabilidad` sobre `290ec0387`, con `main` `e3d6c006f` ya integrado, **sin fusionar ni desplegar**. Detalle: [mantencion-arreglos-2026-11-26.md](mantencion-arreglos-2026-11-26.md).
 
 - **FIXED:**
   - **Datos:** OT4-6, OTN-6, REG4-1 (Historial y Panel) y NP4-7 (D13 del ADR 0001).
@@ -10,13 +10,18 @@ Rama `fix/mantencion-encontrabilidad` sobre `290ec0387`, **sin fusionar ni despl
     - pestañas por unidad que conservan el período y la faena;
     - «En taller», «con respuesta», enlaces a Bodega y el PDF de la OT a la vista;
     - un nombre por concepto.
+  - **Pulido:**
+    - el anillo de foco va por dentro (la regla global sin capa anulaba las utilidades de Tailwind);
+    - estados de línea de las notas: «Rechazado», «Reservado por»;
+    - turno en Observados.
 - **PASS:**
-  - `typecheck` y `lint`;
-  - `test:pglite` completo;
-  - `test:fast` salvo 2 pruebas ajenas a la rama: una ya falla en la base y la otra es intermitente;
-  - E2E aislada: 257 pruebas y `5-ot` 8 de 8;
-  - navegador en escritorio y teléfono, sin errores ni desborde.
-- **COVERAGE GAP:** 7 specs E2E siguen rojos igual que en la base, por el fixture km/h, y 61 pruebas no corren detrás de ellos. Se cubrieron en el navegador.
+  - puertas sobre la rama con `main` integrado (`46c285efe`), todas en verde: `typecheck`, `lint`, `test:fast` (22.835), `test:pglite` (5.959) y `db:verify-migrations`;
+  - E2E aislada:
+    - 242 pruebas en la corrida final, con 2 workers;
+    - las 4 specs que fallaron por la carga pasan 32 de 32 con 1 worker;
+    - `5-ot` 8 de 8;
+  - navegador en escritorio y teléfono, con una ronda de confirmación del pulido: sin errores ni desborde.
+- **COVERAGE GAP:** 6 specs E2E siguen rojos igual que en la base, por el fixture km/h, y 75 pruebas no corren detrás de ellos. Se cubrieron en el navegador.
 - **Abierto:**
   - OT-1 y NP4-1;
   - «Mis pendientes» (faltan sus decisiones);
