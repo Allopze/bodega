@@ -6,7 +6,7 @@ import * as Collapsible from "@radix-ui/react-collapsible"
 import { CaretDown } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { NAV_ICONS } from "./nav-icons"
-import { isHrefActive, type AreaNode, type NavItem } from "./nav-items"
+import { isHrefActive, visibleHrefsOf, type AreaNode, type NavItem } from "./nav-items"
 
 function CountBadge({ count }: { count: number }) {
   return (
@@ -66,15 +66,17 @@ export function navRailClass(active: boolean) {
 function LeafRow({
   item,
   pathname,
+  visibleHrefs,
   count,
   onNavigate,
 }: {
-  item:        NavItem
-  pathname:    string
-  count:       number
-  onNavigate?: () => void
+  item:         NavItem
+  pathname:     string
+  visibleHrefs: ReadonlySet<string>
+  count:        number
+  onNavigate?:  () => void
 }) {
-  const active = isHrefActive(item.href, pathname)
+  const active = isHrefActive(item.href, pathname, visibleHrefs)
   const Icon = NAV_ICONS[item.iconName]
   return (
     <Link
@@ -95,24 +97,28 @@ function LeafRow({
 function BranchRow({
   item,
   pathname,
+  visibleHrefs,
   count,
   onNavigate,
 }: {
-  item:        NavItem
-  pathname:    string
-  count:       number
-  onNavigate?: () => void
+  item:         NavItem
+  pathname:     string
+  visibleHrefs: ReadonlySet<string>
+  count:        number
+  onNavigate?:  () => void
 }) {
   const Icon = NAV_ICONS[item.iconName]
-  const selfActive  = isHrefActive(item.href, pathname)
-  const childActive = (item.children ?? []).some((c) => isHrefActive(c.href, pathname))
+  const selfActive  = isHrefActive(item.href, pathname, visibleHrefs)
+  const childActive = (item.children ?? []).some((c) => isHrefActive(c.href, pathname, visibleHrefs))
   // `selfActive` por sí solo no basta: `NAV_PREFIX_OWNERS` (nav-items.ts)
   // solo conoce los hrefs del árbol de negocio, así que para ramas fuera de
   // ese árbol (p.ej. admin) `isHrefActive(item.href, ...)` da true incluso
   // viendo un hijo. `!childActive` evita marcar padre e hijo activos a la vez.
   const active = selfActive && !childActive
   const shouldOpen = selfActive || childActive
-  const [open, setOpen] = React.useState(shouldOpen)
+  // `defaultOpen` (manifiesto): los hijos se ven al cargar aunque la pantalla actual no sea del padre. Es sólo el
+  // estado inicial; la persona puede plegarlo y no se vuelve a abrir solo hasta que la pantalla pase a ser suya.
+  const [open, setOpen] = React.useState(shouldOpen || Boolean(item.defaultOpen))
   const [wasShouldOpen, setWasShouldOpen] = React.useState(shouldOpen)
   if (shouldOpen !== wasShouldOpen) {
     setWasShouldOpen(shouldOpen)
@@ -145,7 +151,7 @@ function BranchRow({
       <Collapsible.Content className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
         <ul className="my-1 ml-3 space-y-1 border-l border-(--color-border) pl-2.5 py-0.5">
           {(item.children ?? []).map((child) => {
-            const ca = isHrefActive(child.href, pathname)
+            const ca = isHrefActive(child.href, pathname, visibleHrefs)
             return (
               <li key={child.href}>
                 <Link
@@ -172,8 +178,8 @@ function BranchRow({
 }
 
 /** Un ítem (o un hijo suyo) es la pantalla actual. */
-function itemIsActive(item: NavItem, pathname: string): boolean {
-  return isHrefActive(item.href, pathname) || (item.children ?? []).some((child) => isHrefActive(child.href, pathname))
+function itemIsActive(item: NavItem, pathname: string, visibleHrefs: ReadonlySet<string>): boolean {
+  return isHrefActive(item.href, pathname, visibleHrefs) || (item.children ?? []).some((child) => isHrefActive(child.href, pathname, visibleHrefs))
 }
 
 /** Los ítems de un área partidos en tramos consecutivos del mismo grupo (los sin grupo, en su propio tramo). */
@@ -189,26 +195,38 @@ function groupSections(items: NavItem[]): Array<{ group: string | null; items: N
 }
 
 /**
- * Un grupo del cajón móvil que se pliega bajo su rótulo. En el móvil, Control operacional
- * mostraba sus 19 destinos de una vez (Seguimiento, Flota, Mantención, Combustible) y la pantalla
- * actual quedaba enterrada (crítica 2026-11-15, paso 7). El grupo de la pantalla actual abre; los
- * demás quedan plegados, y si traen pendientes su rótulo los suma para que nada urgente se esconda.
+ * Un grupo del menú que se pliega bajo su rótulo (cajón móvil y panel de escritorio). Control operacional
+ * mostraba sus 19 destinos de una vez (Seguimiento, Flota, Mantención, Combustible) y la pantalla actual
+ * quedaba enterrada: en el móvil (crítica 2026-11-15, paso 7) y en escritorio (auditoría de encontrabilidad
+ * 2026-11-26: a 1440×900 se veían 2 de los 7 ítems de Mantención sin desplazar el menú). El grupo de la
+ * pantalla actual abre; los demás quedan plegados, y si traen pendientes su rótulo los suma para que nada
+ * urgente se esconda.
+ *
+ * Mientras la persona no lo toque, el grupo sigue a la pantalla actual: abre cuando la contiene y se pliega
+ * cuando la pantalla pasa a otro grupo, así el menú fijo de escritorio no va acumulando grupos abiertos. Uno
+ * que la persona abrió o cerró a mano se queda como lo dejó, salvo que la pantalla pase a ser suya.
  */
 function GroupDisclosure({ label, defaultOpen, pending, children }: { label: string; defaultOpen: boolean; pending: number; children: React.ReactNode }) {
   const [open, setOpen] = React.useState(defaultOpen)
+  const [touched, setTouched] = React.useState(false)
   const [wasDefaultOpen, setWasDefaultOpen] = React.useState(defaultOpen)
-  // Al navegar a otro grupo, ése se abre sin cerrar el que la persona abrió a mano.
   if (defaultOpen !== wasDefaultOpen) {
     setWasDefaultOpen(defaultOpen)
-    if (defaultOpen) setOpen(true)
+    if (defaultOpen) {
+      setOpen(true)
+      setTouched(false)
+    } else if (!touched) {
+      setOpen(false)
+    }
   }
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen}>
+    <Collapsible.Root open={open} onOpenChange={(next) => { setOpen(next); setTouched(true) }}>
       <Collapsible.Trigger asChild>
+        {/* 44 px de alto en el teléfono (blanco de toque); 36 en escritorio, donde la altura del menú es lo escaso. */}
         <button
           type="button"
           aria-expanded={open}
-          className="mt-1 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left hover:bg-nav-hover-bg focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-(--color-primary)"
+          className="mt-1 flex min-h-11 w-full items-center gap-2 rounded-xl px-3 text-left hover:bg-nav-hover-bg focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-(--color-primary) lg:min-h-9"
         >
           <span className="text-eyebrow flex-1">{label}</span>
           {!open && pending > 0 && <CountBadge count={pending} />}
@@ -226,8 +244,9 @@ function GroupDisclosure({ label, defaultOpen, pending, children }: { label: str
  * Lista de ítems de un área (con acordeón para submenús). Reutilizada por el
  * panel desktop, el flyout del rail colapsado y el drawer móvil.
  *
- * `collapseInactiveGroups` (sólo el cajón móvil): los grupos se pliegan bajo su rótulo y abre el
- * de la pantalla actual. Sin pantalla actual en el área, todos quedan abiertos, como antes.
+ * `collapseInactiveGroups` (panel de escritorio, flyout del rail y cajón móvil): los grupos se pliegan
+ * bajo su rótulo y abre el de la pantalla actual. Sin pantalla actual en el área, todos quedan abiertos.
+ * Sin la prop, los grupos son rótulos fijos con todos sus destinos a la vista.
  */
 const AreaItemsInner = React.memo(function AreaItemsInner({
   area,
@@ -263,17 +282,19 @@ const AreaItemsInner = React.memo(function AreaItemsInner({
     }
   }, [pathname])
 
+  // Lo que esta área muestra: para que un alias con comodín sólo valga donde se ve a su dueño (`isHrefActive`).
+  const visibleHrefs = React.useMemo(() => visibleHrefsOf([area]), [area])
   const countOf = (item: NavItem) => (item.badge === "count" ? (badgeCounts?.[item.href] ?? 0) : 0)
   const row = (item: NavItem) => {
     const count = countOf(item)
     return item.children && item.children.length > 0
-      ? <BranchRow item={item} pathname={pathname} count={count} onNavigate={onNavigate} />
-      : <LeafRow   item={item} pathname={pathname} count={count} onNavigate={onNavigate} />
+      ? <BranchRow item={item} pathname={pathname} visibleHrefs={visibleHrefs} count={count} onNavigate={onNavigate} />
+      : <LeafRow   item={item} pathname={pathname} visibleHrefs={visibleHrefs} count={count} onNavigate={onNavigate} />
   }
 
   if (collapseInactiveGroups && area.items.some((item) => item.group)) {
     const sections = groupSections(area.items)
-    const activeGroup = sections.find((section) => section.items.some((item) => itemIsActive(item, pathname)))?.group
+    const activeGroup = sections.find((section) => section.items.some((item) => itemIsActive(item, pathname, visibleHrefs)))?.group
     return (
       <ul ref={listRef} className="space-y-0.5">
         {sections.map((section) => section.group === null

@@ -76,7 +76,7 @@ function AreaSection({
   if (area.items.length === 1) {
     return (
       <div className={cn(!first && "mt-4")}>
-        <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} />
+        <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} collapseInactiveGroups />
       </div>
     )
   }
@@ -107,7 +107,10 @@ function AreaSection({
       </Collapsible.Trigger>
       <Collapsible.Content className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
         <div className="pb-1 pl-1">
-          <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} />
+          {/* Los grupos del área (Control operacional: Seguimiento, Flota, Mantención, Combustible) se
+              pliegan bajo su rótulo y abre el de la pantalla actual: sin esto, a 1440×900 se veían 2 de
+              los 7 ítems de Mantención sin desplazar el menú (auditoría de encontrabilidad 2026-11-26). */}
+          <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} collapseInactiveGroups />
         </div>
       </Collapsible.Content>
     </Collapsible.Root>
@@ -154,7 +157,7 @@ export function RailFlyout({
           <p className="px-3 pb-1 text-eyebrow">
             {area.label}
           </p>
-          <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} onNavigate={() => setOpen(false)} />
+          <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} onNavigate={() => setOpen(false)} collapseInactiveGroups />
       </PopoverContent>
     </Popover>
   )

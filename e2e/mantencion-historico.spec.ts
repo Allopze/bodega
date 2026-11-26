@@ -47,7 +47,8 @@ test("importa y consulta historia, conserva pendientes y permite conciliarlos", 
   try {
     await login(page, "jefe.mant@e2e.chome.cl")
     await page.goto("/mantencion/registros")
-    await page.getByRole("link", { name: "Historial de mantenciones", exact: true }).click()
+    // El enlace de la cabecera (acción de la página): el menú lateral tiene un ítem con el mismo nombre desde 2026-11-26.
+    await page.getByRole("banner").getByRole("link", { name: "Historial de mantenciones", exact: true }).click()
     // Sin historial, la acción está en la cabecera y también en el estado vacío (A4): ambas llevan al mismo lugar.
     await page.getByRole("link", { name: "Importar respuestas de formularios", exact: true }).first().click()
     await expect(page.locator("#historical-import-file")).toBeEnabled()

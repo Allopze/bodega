@@ -11,6 +11,12 @@
  * y los datos puros (`attention-tiles.test.ts`); esto cubre lo que la persona
  * ve en el navegador.
  *
+ * Grupos plegados (auditoría de encontrabilidad 2026-11-26): en el panel del área sólo está
+ *   abierto el grupo de la pantalla actual; los demás se pliegan bajo su rótulo (un botón con
+ *   `aria-expanded`) y sus enlaces NO están en el DOM hasta abrirlos. Sin pantalla actual en el
+ *   área (Inicio) quedan todos abiertos. Quien necesita ver un ítem de otro grupo lo abre antes,
+ *   con `abrirGrupos`, como lo haría una persona. «Configuración» de Mantención viene desplegada.
+ *
  * Cómo se localiza, y por qué:
  *   - El menú se busca por **href**, no por rótulo: el rótulo de «Consumo y
  *     rendimiento» se acorta en el sidebar («Consumo») porque activo no cabe, y
@@ -57,28 +63,51 @@ const BARRAS = {
   pagos: "Pagos",
 } as const
 
-/** El panel del área en el sidebar: el `<ul>` que contiene al ítem «Panel operacional». */
+/** Vehículo del seed E2E con ficha única (`/flota/[id]`): el mismo de `ficha-vehiculo.spec.ts`. */
+const VEHICULO_DE_LA_FICHA = "fuel-veh-e2e"
+
+/**
+ * El panel del área en el sidebar: la lista de su acordeón o, si el área se pinta plana (un solo destino, como para quien
+ * sólo tiene inspecciones), la que contiene su ítem. Con los grupos plegados no hay un enlace que esté siempre: el
+ * acordeón se ubica por su botón, y su lista es la primera dentro de su contenedor.
+ */
 function menuDelArea(page: Page): Locator {
-  return page
-    .getByRole("navigation", { name: "Navegación", exact: true })
-    .locator("ul")
-    .filter({ has: page.locator('a[href="/control-operacional"]') })
+  const sidebar = page.getByRole("navigation", { name: "Navegación", exact: true })
+  const acordeon = sidebar.getByRole("button", { name: "Control operacional", exact: true }).locator("..").locator("ul").first()
+  const plana = sidebar.locator("ul").filter({ has: page.locator('a[href="/control-operacional"]') }).first()
+  return acordeon.or(plana)
 }
 
 /**
- * Un ítem del sidebar, por href. «Configuración» (Mantención y Combustible) es un
- * padre que lleva a su primer hijo: su enlace comparte href con ese hijo, así que
- * los hijos se buscan dentro de la lista anidada (`li li`) y los ítems de primer
- * nivel por su enlace propio.
+ * Despliega los grupos plegados del área, como lo haría una persona. Reintenta el clic: uno anterior a la hidratación
+ * mueve el foco pero no corre el manejador (mismo motivo que en `navegacion-por-rol.spec.ts`). Los grupos que el rol
+ * no ve se saltan.
+ */
+async function abrirGrupos(page: Page): Promise<void> {
+  const menu = menuDelArea(page)
+  for (const { grupo } of MENU_DEL_AREA) {
+    const cabecera = menu.getByRole("button", { name: empiezaCon(grupo) })
+    if ((await cabecera.count()) === 0) continue
+    await expect(async () => {
+      if ((await cabecera.getAttribute("aria-expanded")) === "false") await cabecera.click()
+      await expect(cabecera).toHaveAttribute("aria-expanded", "true", { timeout: 2_000 })
+    }).toPass({ timeout: 20_000 })
+  }
+}
+
+/**
+ * Un ítem del sidebar, por href. «Configuración» (Mantención y Combustible) es un padre que lleva a su primer hijo: su
+ * enlace comparte href con ese hijo y va antes en el DOM, así que un href de hijo se lee con `last()` y el resto con `first()`.
+ * El ítem tiene que estar a la vista: su grupo, abierto (el de la pantalla actual lo está).
  */
 function itemDelMenu(page: Page, href: string): Locator {
   const enlaces = menuDelArea(page).locator(`a[href="${href}"]`)
-  return HREFS_DE_HIJOS.has(href) ? menuDelArea(page).locator(`li li a[href="${href}"]`) : enlaces.first()
+  return HREFS_DE_HIJOS.has(href) ? enlaces.last() : enlaces.first()
 }
 
 /** La fila de primer nivel (`<li>`) cuyo enlace lleva a `href`: para leer a un padre con sus hijos. */
 function filaDePrimerNivel(page: Page, href: string): Locator {
-  return menuDelArea(page).locator(":scope > li").filter({ has: page.locator(`a[href="${href}"]`) })
+  return menuDelArea(page).locator(`a[href="${href}"]`).first().locator("xpath=ancestor::li[1]")
 }
 
 function barraDe(page: Page, etiqueta: string): Locator {
@@ -98,7 +127,7 @@ interface DestinoDelMenu {
   /** Para un padre es el href de su primer hijo visible (así lo resuelve `getVisibleAreas`). */
   href: string
   nombre: string | RegExp
-  /** Destinos anidados de un padre («Configuración»); sólo se pintan con el padre abierto. */
+  /** Destinos anidados de un padre («Configuración»); sólo se pintan con el padre abierto (el de Mantención viene abierto). */
   hijos?: readonly DestinoDelMenu[]
 }
 
@@ -127,7 +156,11 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
       // «Panel de mantención» y «Panel de combustible» ya no repiten rótulo; igual se distinguen por href y por grupo.
       { href: "/mantencion/panel", nombre: "Panel de mantención" },
       { href: "/mantencion/ot", nombre: "Órdenes de trabajo" },
+      // Bandeja de las notas de pedido de repuestos (2026-11-26): el administrador del seed tiene `mant:np:*`.
+      { href: "/mantencion/notas-pedido", nombre: "Notas de pedido" },
       { href: "/mantencion/registros", nombre: "Registros firmados" },
+      // Ítem propio desde 2026-11-26: antes el Historial marcaba «Registros firmados».
+      { href: "/mantencion/registros/historicos", nombre: "Historial de mantenciones" },
       { href: "/mantencion/equipos", nombre: "Equipos" },
       {
         href: "/mantencion/pautas",
@@ -135,7 +168,7 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
         hijos: [
           { href: "/mantencion/pautas", nombre: "Pautas" },
           { href: "/mantencion/catalogos", nombre: "Marcas y talleres" },
-          { href: "/mantencion/dispositivos", nombre: "Dispositivos" },
+          { href: "/mantencion/dispositivos", nombre: "App del mecánico" },
         ],
       },
       // El catálogo es del módulo `repuestos`, apagable por separado de Mantención de equipos: no puede colgar del padre de otro módulo.
@@ -184,16 +217,31 @@ test.describe("Control operacional — menú del área", () => {
     await expect(area).toHaveAttribute("aria-expanded", "true")
 
     const menu = menuDelArea(page)
-    // Con el área recién abierta los padres («Configuración») están plegados: sólo se
-    // pintan los ítems de primer nivel.
-    await expect(menu.getByRole("link")).toHaveCount(MENU_DEL_AREA.reduce((suma, grupo) => suma + grupo.destinos.length, 0))
+    // Cada grupo es un botón con `aria-expanded`; sólo está abierto el de la pantalla actual (Seguimiento: el Panel).
+    for (const { grupo } of MENU_DEL_AREA) {
+      await expect.soft(menu.getByRole("button", { name: empiezaCon(grupo) }), `grupo ${grupo}`)
+        .toHaveAttribute("aria-expanded", grupo === "Seguimiento" ? "true" : "false")
+    }
+    await expect(menu.getByRole("link")).toHaveCount(1)
 
-    // Estructura completa en un solo vistazo: cada encabezado de grupo
-    // (`<li aria-hidden>`) seguido de los hrefs de sus ítems, en el orden del menú.
+    // Con los cuatro grupos abiertos: los ítems de primer nivel y los destinos de «Configuración» de Mantención, que viene
+    // desplegada (`defaultOpen`). La de Combustible sigue plegada: sólo se pintan sus hijos con el padre abierto.
+    await abrirGrupos(page)
+    const hijosDeMantencion = MENU_DEL_AREA.find((grupo) => grupo.grupo === "Mantención")!.destinos.flatMap((destino) => destino.hijos ?? []).length
+    await expect(menu.getByRole("link")).toHaveCount(MENU_DEL_AREA.reduce((suma, grupo) => suma + grupo.destinos.length, 0) + hijosDeMantencion)
+
+    // Estructura completa en un solo vistazo: cada rótulo de grupo (el botón que lo pliega) seguido de los hrefs de sus
+    // ítems de primer nivel, en el orden del menú.
     const estructura = await menu.locator(":scope > li").evaluateAll((filas) =>
-      filas.map((fila) => (fila.getAttribute("aria-hidden") === "true"
-        ? (fila.textContent ?? "").trim()
-        : fila.querySelector("a")?.getAttribute("href") ?? "(fila sin enlace)")),
+      filas.flatMap((fila) => {
+        const cabecera = fila.querySelector(":scope > div > button")
+        if (!cabecera) return [fila.querySelector("a")?.getAttribute("href") ?? "(fila sin enlace)"]
+        const filasDelGrupo = Array.from(fila.querySelectorAll(":scope > div > div > ul > li"))
+        return [
+          (cabecera.querySelector("span")?.textContent ?? "").trim(),
+          ...filasDelGrupo.map((filaDelGrupo) => filaDelGrupo.querySelector("a")?.getAttribute("href") ?? "(fila sin enlace)"),
+        ]
+      }),
     )
     expect(estructura).toEqual(MENU_DEL_AREA.flatMap((grupo) => [grupo.grupo, ...grupo.destinos.map((destino) => destino.href)]))
 
@@ -201,6 +249,32 @@ test.describe("Control operacional — menú del área", () => {
     for (const { href, nombre } of MENU_DEL_AREA.flatMap((grupo) => grupo.destinos)) {
       await expect.soft(filaDePrimerNivel(page, href).locator("a").first(), `ítem ${href}`).toHaveText(nombre)
     }
+  })
+
+  test("en una pantalla de Mantención sólo ese grupo muestra sus destinos, con «Configuración» ya desplegada", async ({ page }) => {
+    await page.goto("/mantencion/panel")
+    const menu = menuDelArea(page)
+    for (const { grupo } of MENU_DEL_AREA) {
+      await expect.soft(menu.getByRole("button", { name: empiezaCon(grupo) }), `grupo ${grupo}`)
+        .toHaveAttribute("aria-expanded", grupo === "Mantención" ? "true" : "false")
+    }
+    const mantencion = MENU_DEL_AREA.find((grupo) => grupo.grupo === "Mantención")!
+    const hijos = mantencion.destinos.flatMap((destino) => destino.hijos ?? [])
+    // Sólo los destinos de Mantención están en el DOM: nadie tiene que desplazar el menú por encima de Flota y Seguimiento.
+    await expect(menu.getByRole("link")).toHaveCount(mantencion.destinos.length + hijos.length)
+    await expect(itemDelMenu(page, "/mantencion/panel")).toHaveAttribute("aria-current", "page")
+
+    // «Configuración» muestra sus tres destinos sin abrirla; la de Combustible, plegada, ya no está a la vista.
+    const configuracion = filaDePrimerNivel(page, "/mantencion/pautas")
+    await expect(configuracion.getByRole("button", { name: "Mostrar destinos de Configuración", exact: true })).toHaveAttribute("aria-expanded", "true")
+    await expect(configuracion.locator("li a")).toHaveText(hijos.map((hijo) => hijo.nombre as string))
+  })
+
+  test("«Configuración» de Combustible sigue plegada hasta entrar a uno de sus destinos", async ({ page }) => {
+    await page.goto("/combustibles")
+    const configuracion = filaDePrimerNivel(page, "/combustibles/fuentes")
+    await expect(configuracion.getByRole("button", { name: "Mostrar destinos de Configuración", exact: true })).toHaveAttribute("aria-expanded", "false")
+    await expect(configuracion.locator("li a")).toHaveCount(0)
   })
 
   test("«Configuración» pliega sus destinos bajo un solo padre y se abre sola al entrar a uno de ellos", async ({ page }) => {
@@ -223,6 +297,21 @@ test.describe("Control operacional — menú del área", () => {
         // El padre queda como camino (sin `aria-current`): el destino activo es el hijo.
         await expect.soft(fila.locator('[aria-current="page"]'), `${grupo.grupo}: un solo destino activo`).toHaveCount(1)
       }
+    }
+  })
+
+  test("la ficha de mantención de un equipo marca «Equipos» y las otras pestañas de la ficha siguen marcando «Vehículos»", async ({ page }) => {
+    // La ficha única del vehículo (`/flota/[id]`, vehículo del seed: `ficha-vehiculo.spec.ts`) tiene la pestaña Mantención,
+    // y su miga dice «Mantención › Equipos»: el menú no puede marcar «Vehículos» ahí (alias con comodín de «Equipos»).
+    await page.goto(`/flota/${VEHICULO_DE_LA_FICHA}/mantencion`)
+    await expect.soft(page, "la ficha de mantención no debe mandar a /forbidden").not.toHaveURL(/\/forbidden|\/login/)
+    await expect(menuDelArea(page).locator('[aria-current="page"]')).toHaveCount(1)
+    await expect(itemDelMenu(page, "/mantencion/equipos")).toHaveAttribute("aria-current", "page")
+
+    for (const pestana of ["", "/flota", "/combustible"]) {
+      await page.goto(`/flota/${VEHICULO_DE_LA_FICHA}${pestana}`)
+      await expect(menuDelArea(page).locator('[aria-current="page"]'), `pestaña «${pestana || "Resumen"}»`).toHaveCount(1)
+      await expect(itemDelMenu(page, "/flota"), `pestaña «${pestana || "Resumen"}»`).toHaveAttribute("aria-current", "page")
     }
   })
 
@@ -762,12 +851,10 @@ test.describe("Control operacional — roles acotados", () => {
 
     await page.goto("/combustibles/cargas")
     await expect(page).toHaveURL(/\/combustibles\/cargas$/)
-    // El área se ubica por su ítem de Cargas; el panel también es visible
-    // porque `combustibles:view` es uno de sus tres permisos de entrada.
-    const menu = page
-      .getByRole("navigation", { name: "Navegación", exact: true })
-      .locator("ul")
-      .filter({ has: page.locator('a[href="/combustibles/cargas"]') })
+    // El panel también es visible porque `combustibles:view` es uno de sus tres permisos de entrada. Está en el grupo
+    // Seguimiento, plegado mientras la pantalla actual es de Combustible: se abre antes de mirar.
+    const menu = menuDelArea(page)
+    await abrirGrupos(page)
     for (const href of ["/control-operacional", "/combustibles", "/combustibles/cargas", "/combustibles/revisar", "/combustibles/cuadratura", "/combustibles/consumo"]) {
       await expect(menu.locator(`a[href="${href}"]`)).toBeVisible()
     }

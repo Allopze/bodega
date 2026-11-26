@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 import type { Session } from "next-auth"
-import { AREA_TREE, flattenNavTargets, getVisibleAreas, isHrefActive } from "@/components/layout/nav-items"
+import { AREA_TREE, findActiveArea, flattenNavTargets, getVisibleAreas, isHrefActive, visibleHrefsOf } from "@/components/layout/nav-items"
 import { NAV_GROUP_ORDER } from "@/components/layout/areas"
+import { NAV_ICONS } from "@/components/layout/nav-icons"
 import { safeInternalPath } from "@/lib/navigation"
 
 describe("safeInternalPath", () => {
@@ -308,6 +309,8 @@ describe("sidebar navigation", () => {
       ["Mantención", "Órdenes de trabajo"],
       ["Mantención", "Notas de pedido"],
       ["Mantención", "Registros firmados"],
+      // El Historial vive bajo `/mantencion/registros/historicos`: con ítem propio no se confunde con Registros firmados.
+      ["Mantención", "Historial de mantenciones"],
       ["Mantención", "Equipos"],
       // Lo que se toca poco se pliega bajo un solo padre, sin permisos propios.
       ["Mantención", "Configuración"],
@@ -343,7 +346,8 @@ describe("sidebar navigation", () => {
       expect(mantencion?.children?.map((child) => [child.label, child.href, child.permissions])).toEqual([
         ["Pautas", "/mantencion/pautas", ["mant:schedules:manage"]],
         ["Marcas y talleres", "/mantencion/catalogos", ["mant:equipment:manage"]],
-        ["Dispositivos", "/mantencion/dispositivos", ["mant:devices:manage"]],
+        // Antes «Dispositivos»: la pantalla lista los teléfonos con la app del mecánico y tiene «Instalar app del mecánico».
+        ["App del mecánico", "/mantencion/dispositivos", ["mant:devices:manage"]],
       ])
       expect(combustible?.children?.map((child) => [child.label, child.href, child.permissions])).toEqual([
         ["Fuentes de datos", "/combustibles/fuentes", ["combustibles:import", "combustibles:tae_import", "combustibles:sync_integrations"]],
@@ -388,6 +392,118 @@ describe("sidebar navigation", () => {
       expect(isHrefActive("/mantencion/configuracion", "/mantencion/catalogos")).toBe(false)
       expect(isHrefActive("/combustibles/ajustes", "/combustibles/ajustes/medios")).toBe(true)
       expect(isHrefActive("/combustibles/configuracion", "/combustibles/ajustes/medios")).toBe(false)
+    })
+  })
+
+  describe("Mantención en el menú (auditoría de encontrabilidad 2026-11-26)", () => {
+    const withPermissions = (permissions: string[]) => ({
+      ...adminSession,
+      user: { ...adminSession.user, roles: [], permissions },
+    }) satisfies Session
+    const mantencionItems = () =>
+      AREA_TREE.find((area) => area.id === "control-operacional")!.items.filter((item) => item.group === "Mantención")
+    const labelsOf = (session: Session) =>
+      getVisibleAreas(session).flatMap((area) => area.items).filter((item) => item.group === "Mantención").map((item) => item.label)
+
+    it("el Historial de mantenciones va justo después de Registros firmados y pide los permisos de su página", () => {
+      const items = mantencionItems()
+      const labels = items.map((item) => item.label)
+      expect(labels.indexOf("Historial de mantenciones")).toBe(labels.indexOf("Registros firmados") + 1)
+      const historial = items.find((item) => item.label === "Historial de mantenciones")
+      expect(historial?.href).toBe("/mantencion/registros/historicos")
+      expect(historial?.permissions).toEqual(["mant:records:view_worksite", "mant:records:view_all"])
+      expect(NAV_ICONS[historial!.iconName]).toBeDefined()
+    })
+
+    it("lo ve quien puede abrir su página; quien sólo ve lo propio conserva Registros firmados y no el Historial", () => {
+      expect(labelsOf(withPermissions(["mant:records:view_worksite"]))).toContain("Historial de mantenciones")
+      expect(labelsOf(withPermissions(["mant:records:view_all"]))).toContain("Historial de mantenciones")
+      const soloLoPropio = labelsOf(withPermissions(["mant:records:view_own"]))
+      expect(soloLoPropio).toContain("Registros firmados")
+      expect(soloLoPropio).not.toContain("Historial de mantenciones")
+      expect(flattenNavTargets(withPermissions(["mant:records:view_own"])).map((target) => target.href)).not.toContain("/mantencion/registros/historicos")
+    })
+
+    it("sus rutas (importar y cada trabajo incluidos) marcan al Historial y no a Registros firmados; las de los registros, al revés", () => {
+      for (const ruta of ["/mantencion/registros/historicos", "/mantencion/registros/historicos/importar", "/mantencion/registros/historicos/h-1", "/mantencion/registros/historicos?equipo=v-1"]) {
+        expect(isHrefActive("/mantencion/registros/historicos", ruta), ruta).toBe(true)
+        expect(isHrefActive("/mantencion/registros", ruta), ruta).toBe(false)
+      }
+      for (const ruta of ["/mantencion/registros", "/mantencion/registros/r-1", "/mantencion/registros?revision=todos"]) {
+        expect(isHrefActive("/mantencion/registros", ruta), ruta).toBe(true)
+        expect(isHrefActive("/mantencion/registros/historicos", ruta), ruta).toBe(false)
+      }
+    })
+
+    it("en ⌘K el Historial aparece con su grupo, para distinguirlo de Registros firmados", () => {
+      const target = flattenNavTargets(withPermissions(["mant:records:view_worksite"])).find((candidate) => candidate.href === "/mantencion/registros/historicos")
+      expect(target).toMatchObject({ label: "Historial de mantenciones", areaLabel: "Control operacional", groupLabel: "Mantención" })
+    })
+
+    it("sólo «Configuración» de Mantención se pinta desplegada; los demás padres abren cuando la pantalla es suya", () => {
+      const conDefaultOpen = AREA_TREE.flatMap((area) => area.items.filter((item) => item.defaultOpen).map((item) => `${area.id} · ${item.group} · ${item.label}`))
+      expect(conDefaultOpen).toEqual(["control-operacional · Mantención · Configuración"])
+      // El filtro por permiso conserva la marca, con uno o con varios hijos visibles.
+      const configuracion = (session: Session) => getVisibleAreas(session).flatMap((area) => area.items).find((item) => item.group === "Mantención" && item.label === "Configuración")
+      expect(configuracion(withPermissions(["mant:devices:manage"]))?.defaultOpen).toBe(true)
+      expect(configuracion(withPermissions(["mant:schedules:manage", "mant:equipment:manage", "mant:devices:manage"]))?.defaultOpen).toBe(true)
+    })
+
+    it("«Equipos» ya no repite el ícono de «Vehículos» ni el de ningún otro ítem del área", () => {
+      const area = AREA_TREE.find((candidate) => candidate.id === "control-operacional")!
+      const equipos = area.items.find((item) => item.href === "/mantencion/equipos")!
+      const vehiculos = area.items.find((item) => item.href === "/flota")!
+      expect(equipos.iconName).not.toBe(vehiculos.iconName)
+      expect(NAV_ICONS[equipos.iconName]).toBeDefined()
+      expect(area.items.filter((item) => item !== equipos && item.iconName === equipos.iconName)).toEqual([])
+    })
+
+    describe("la ficha del equipo", () => {
+      const ficha = "/flota/veh-1/mantencion"
+
+      it("marca «Equipos» y no «Vehículos»; sus subrutas y parámetros siguen siendo de «Equipos»", () => {
+        for (const ruta of [ficha, `${ficha}/historial`, `${ficha}?periodo=todo`]) {
+          expect(isHrefActive("/mantencion/equipos", ruta), ruta).toBe(true)
+          expect(isHrefActive("/flota", ruta), ruta).toBe(false)
+        }
+      })
+
+      it("la ficha y sus otras pestañas siguen marcando «Vehículos»", () => {
+        for (const ruta of ["/flota", "/flota/veh-1", "/flota/veh-1/flota", "/flota/veh-1/combustible", "/flota/mantencion"]) {
+          expect(isHrefActive("/flota", ruta), ruta).toBe(true)
+          expect(isHrefActive("/mantencion/equipos", ruta), ruta).toBe(false)
+        }
+      })
+
+      it("el comodín vale por un solo segmento y no se escapa a otras rutas de Flota", () => {
+        // `/flota/mantencion` es la ficha de un vehículo con ese id, no la ficha de mantención de uno cualquiera.
+        expect(isHrefActive("/mantencion/equipos", "/flota/mantencion")).toBe(false)
+        expect(isHrefActive("/mantencion/equipos", "/flota/veh-1/mantencionX")).toBe(false)
+        expect(isHrefActive("/mantencion/equipos", "/flota//mantencion")).toBe(false)
+        // Y la lista de equipos de Mantención sigue siendo suya.
+        expect(isHrefActive("/mantencion/equipos", "/mantencion/equipos/e-1")).toBe(true)
+      })
+
+      it("quien no ve «Equipos» en su menú conserva «Vehículos» marcado, y el área activa sigue siendo Control operacional", () => {
+        const sinEquipos = getVisibleAreas(withPermissions(["flota:view"]))
+        const visibles = visibleHrefsOf(sinEquipos)
+        expect(visibles).toContain("/flota")
+        expect(visibles).not.toContain("/mantencion/equipos")
+        expect(isHrefActive("/flota", ficha, visibles)).toBe(true)
+        expect(isHrefActive("/mantencion/equipos", ficha, visibles)).toBe(false)
+        expect(findActiveArea(sinEquipos, ficha)).toBe("control-operacional")
+      })
+
+      it("quien ve los dos tiene marcado sólo «Equipos»", () => {
+        const conEquipos = getVisibleAreas(withPermissions(["flota:view", "mant:records:view_worksite"]))
+        const visibles = visibleHrefsOf(conEquipos)
+        expect(visibles).toContain("/mantencion/equipos")
+        expect(isHrefActive("/mantencion/equipos", ficha, visibles)).toBe(true)
+        expect(isHrefActive("/flota", ficha, visibles)).toBe(false)
+        // Un prefijo SIN comodín no depende de lo visible: la ruta de un ítem oculto sigue siendo suya.
+        expect(isHrefActive("/flota", "/flota/veh-1/combustible", new Set(["/flota"]))).toBe(true)
+        expect(isHrefActive("/mantencion/registros", "/mantencion/registros/historicos", new Set(["/mantencion/registros"]))).toBe(false)
+      })
     })
   })
 

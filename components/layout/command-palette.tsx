@@ -11,31 +11,88 @@ import { MagnifyingGlass, ArrowElbowDownLeft } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { NAV_ICONS } from "./nav-icons"
 import { flattenNavTargets, navTargetContext, type NavTarget } from "./nav-items"
-
-const OPEN_EVENT = "open-command-palette"
+import { OPEN_COMMAND_PALETTE_EVENT, consumePendingOpen } from "./command-palette-events"
 
 function normalize(s: string) {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
 }
 
+interface CodeShortcut {
+  pattern:    RegExp
+  href:       (q: string) => string
+  label:      (q: string) => string
+  areaLabel:  string
+  groupLabel?: string
+  iconName:   string
+  /**
+   * Href del destino del menú que la persona tiene que ver para que se le ofrezca el atajo: `targets` ya viene
+   * filtrado por permiso y por módulos y submódulos habilitados, así que el atajo no se ofrece a quien no ve la lista.
+   * Sin él, el atajo se ofrece a todos (Solicitudes y Compras, como antes).
+   */
+  requiresTarget?: string
+}
+
+const upperFolio = (q: string) => q.trim().toUpperCase()
+/** Los folios de Mantención los resuelve el servidor (`/mantencion/ir`): vuelve a aplicar permiso y alcance por faena. */
+const mantFolioHref = (q: string) => `/mantencion/ir?folio=${encodeURIComponent(upperFolio(q))}`
+
 // When the user types a record code prefix, inject a direct "jump to list filtered"
 // result so they can land on that record without knowing which page to go to.
-const CODE_SHORTCUTS: { pattern: RegExp; href: (q: string) => string; label: (q: string) => string; areaLabel: string; iconName: string }[] = [
+// Los folios de Mantención exigen el guion y algo después (`OT-…`): sin eso «ot» o «np» son pedazos de palabras
+// que la persona está escribiendo para buscar una pantalla.
+const CODE_SHORTCUTS: CodeShortcut[] = [
   {
     pattern:   /^sol/i,
-    href:      (q) => `/solicitudes?q=${encodeURIComponent(q.trim().toUpperCase())}`,
-    label:     (q) => `Buscar "${q.trim().toUpperCase()}" en Solicitudes`,
+    href:      (q) => `/solicitudes?q=${encodeURIComponent(upperFolio(q))}`,
+    label:     (q) => `Buscar "${upperFolio(q)}" en Solicitudes`,
     areaLabel: "Adquisiciones",
     iconName:  "ClipboardText",
   },
   {
     pattern:   /^oc/i,
-    href:      (q) => `/compras?q=${encodeURIComponent(q.trim().toUpperCase())}`,
-    label:     (q) => `Buscar "${q.trim().toUpperCase()}" en Compras`,
+    href:      (q) => `/compras?q=${encodeURIComponent(upperFolio(q))}`,
+    label:     (q) => `Buscar "${upperFolio(q)}" en Compras`,
     areaLabel: "Adquisiciones",
     iconName:  "ShoppingCart",
   },
+  {
+    pattern:        /^ot-\S/i,
+    href:           mantFolioHref,
+    label:          (q) => `Abrir la orden de trabajo ${upperFolio(q)}`,
+    areaLabel:      "Control operacional",
+    groupLabel:     "Mantención",
+    iconName:       "Wrench",
+    requiresTarget: "/mantencion/ot",
+  },
+  {
+    // `MP-` (preventiva) y `MC-` (correctiva) son registros firmados.
+    pattern:        /^m[pc]-\S/i,
+    href:           mantFolioHref,
+    label:          (q) => `Abrir el registro firmado ${upperFolio(q)}`,
+    areaLabel:      "Control operacional",
+    groupLabel:     "Mantención",
+    iconName:       "ClipboardText",
+    requiresTarget: "/mantencion/registros",
+  },
+  {
+    pattern:        /^np-\S/i,
+    href:           mantFolioHref,
+    label:          (q) => `Abrir la nota de pedido ${upperFolio(q)}`,
+    areaLabel:      "Control operacional",
+    groupLabel:     "Mantención",
+    iconName:       "Tray",
+    requiresTarget: "/mantencion/notas-pedido",
+  },
 ]
+
+/** Los atajos de folio que se le ofrecen a quien escribió `raw`, según los destinos del menú que ve. */
+export function codeShortcutsFor(raw: string, targets: readonly Pick<NavTarget, "href">[]): NavTarget[] {
+  const typed = raw.trim()
+  return CODE_SHORTCUTS
+    .filter((shortcut) => shortcut.pattern.test(typed))
+    .filter((shortcut) => !shortcut.requiresTarget || targets.some((target) => target.href === shortcut.requiresTarget))
+    .map((shortcut) => ({ href: shortcut.href(typed), label: shortcut.label(typed), areaLabel: shortcut.areaLabel, groupLabel: shortcut.groupLabel, iconName: shortcut.iconName }))
+}
 
 export function CommandPalette({ session, enabledModuleIds, disabledSubmoduleHrefs }: {
   session: Session
@@ -70,15 +127,11 @@ export function CommandPalette({ session, enabledModuleIds, disabledSubmoduleHre
 
     if (!raw) return navResults
 
-    // Prepend direct-jump shortcuts for record code prefixes (SOL-/OC-)
-    const shortcuts: NavTarget[] = CODE_SHORTCUTS
-      .filter((s) => s.pattern.test(raw))
-      .map((s) => ({ href: s.href(raw), label: s.label(raw), areaLabel: s.areaLabel, iconName: s.iconName }))
-
-    return [...shortcuts, ...navResults]
+    // Prepend direct-jump shortcuts for record code prefixes (SOL-, OC-, OT-, MP-, MC-, NP-)
+    return [...codeShortcutsFor(raw, targets), ...navResults]
   }, [targets, query])
 
-  // Global hotkey + imperative open
+  // Global hotkey + imperative open (el botón «Ir a…» de la barra superior dispara el evento)
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -86,12 +139,14 @@ export function CommandPalette({ session, enabledModuleIds, disabledSubmoduleHre
         setOpen((o) => !o)
       }
     }
-    function onOpen() { setOpen(true) }
+    function onOpen() { consumePendingOpen(); setOpen(true) }
     window.addEventListener("keydown", onKey)
-    window.addEventListener(OPEN_EVENT, onOpen)
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpen)
+    // Un toque en el botón antes de que este fragmento cargara quedó anotado: se atiende al montar.
+    if (consumePendingOpen()) setOpen(true)
     return () => {
       window.removeEventListener("keydown", onKey)
-      window.removeEventListener(OPEN_EVENT, onOpen)
+      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpen)
     }
   }, [])
 
@@ -135,7 +190,7 @@ export function CommandPalette({ session, enabledModuleIds, disabledSubmoduleHre
               // evita un frame en que la fila resaltada apunta a otro resultado.
               onChange={(e) => { setQuery(e.target.value); setActive(0) }}
               onKeyDown={onInputKey}
-              placeholder="Ir a... o escribe SOL-/OC- para buscar registros"
+              placeholder="Ir a... o escribe un folio (SOL-, OC-, OT-, MP-, MC-, NP-)"
               aria-label="Buscar páginas"
               className="h-12 flex-1 bg-transparent text-[15px] text-(--color-text) outline-none placeholder:text-(--color-text-subtle)"
             />

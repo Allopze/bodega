@@ -2,10 +2,11 @@
 
 import * as React from "react"
 import { usePathname } from "next/navigation"
-import { List, MagnifyingGlass, MapPin, X } from "@phosphor-icons/react"
+import { Compass, List, MagnifyingGlass, MapPin, X } from "@phosphor-icons/react"
 import type { Session as AuthSession } from "next-auth"
 import { cn } from "@/lib/utils"
 import { BrandMark } from "./brand-mark"
+import { requestOpenCommandPalette } from "./command-palette-events"
 import { useHasWorksiteFilter, useSafeShellHeader, useShellHeader } from "./header-context"
 
 const NotificationBell = React.lazy(() =>
@@ -79,6 +80,9 @@ const OWN_SEARCH_PATTERNS = [
   // Mantención: «Importar» es una carga de archivo y la ficha de un equipo no
   // tiene lista que la shell pueda filtrar. La lista `/mantencion/equipos` lo conserva.
   /^\/mantencion\/equipos\/[^/]+$/,
+  // Mantención: `/mantencion/ir?folio=` resuelve un folio y redirige; si no lo encuentra muestra un estado vacío,
+  // sin lista que la shell pueda filtrar.
+  /^\/mantencion\/ir$/,
   // Administración: el detalle de una faena agrupa sus contratos y equipos en
   // tarjetas, sin tabla que la shell pueda filtrar. La lista `/admin/faenas` lo conserva.
   /^\/admin\/faenas\/[^/]+$/,
@@ -271,6 +275,27 @@ const TopBarInner = React.memo(function TopBarInner({
       <div className="flex-1 lg:hidden" aria-hidden />
 
       <div className="flex items-center gap-1.5">
+        {/* «Ir a…» abre la paleta de comandos (Ctrl K / Cmd K): páginas del menú y folios (OT-, MP-, MC-, NP-, SOL-, OC-).
+            Con rótulo propio y otro ícono: no es el filtro de la página, que sólo recorta la lista ya cargada, y quien
+            busca un folio en un campo que filtra se quedaba con un «ningún resultado» (auditoría de encontrabilidad
+            2026-11-26). En el teléfono es un botón de 44 px sólo con ícono; el rótulo sigue en su nombre accesible. */}
+        <button
+          type="button"
+          onClick={requestOpenCommandPalette}
+          aria-keyshortcuts="Control+K Meta+K"
+          title="Ir a una página o a un folio (atajo: Ctrl K)"
+          className={cn(
+            "flex shrink-0 items-center justify-center gap-1.5 text-xs font-medium",
+            "min-h-[44px] min-w-[44px] rounded-(--radius-lg) text-(--color-text-muted)",
+            "hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
+            "sm:h-[34px] sm:min-h-0 sm:min-w-0 sm:rounded-[var(--radius-md)] sm:border sm:border-(--color-border-control) sm:bg-(--color-surface) sm:px-2.5",
+            "transition-[background-color,color] duration-(--duration-fast)",
+          )}
+        >
+          <Compass size={16} aria-hidden className="shrink-0" />
+          <span className="sr-only sm:not-sr-only">Ir a…</span>
+          <kbd aria-hidden className="hidden rounded border border-(--color-border) px-1 font-mono text-2xs text-(--color-text-subtle) xl:inline-block">Ctrl K</kbd>
+        </button>
         {!hideSearch && (
           <div className="relative hidden sm:flex items-center">
             <MagnifyingGlass size={14} className="absolute left-2.5 text-(--color-text-subtle) pointer-events-none shrink-0" />

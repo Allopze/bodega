@@ -38,6 +38,13 @@ describe("buscador de la shell", () => {
     for (const path of ["/flota/veh-1/flota", "/flota/veh-1/mantencion", "/flota/veh-1/combustible"]) expect(hidesShellSearch(path), path).toBe(true)
     for (const path of ["/flota/conductores", "/flota/monitoreo"]) expect(hidesShellSearch(path), path).toBe(false)
   })
+  it("Mantención: el resolvedor de folios no tiene lista que filtrar; las pantallas vecinas no cambian", () => {
+    expect(hidesShellSearch("/mantencion/ir")).toBe(true)
+    // Sólo esa ruta: no se esconde el filtro de otras pantallas que empiezan igual.
+    for (const path of ["/mantencion/indicadores", "/mantencion/ir/otra-cosa", "/mantencion/irregular"]) {
+      expect(hidesShellSearch(path), path).toBe(false)
+    }
+  })
   it("oculta la búsqueda de la shell en el detalle de una faena", () => {
     // El detalle agrupa contratos y equipos en tarjetas: no hay tabla que la shell pueda filtrar.
     expect(hidesShellSearch("/admin/faenas/ws-1")).toBe(true)
