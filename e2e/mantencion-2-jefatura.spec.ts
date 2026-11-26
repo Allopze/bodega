@@ -577,11 +577,12 @@ test("el supervisor de Biodiversa ve su faena, no la ajena, y no puede anular", 
   expect((await page.request.get(`/api/mantencion/registros/${rec.C.id}/pdf`)).status()).toBe(404)
   expect((await page.request.get(`/api/mantencion/registros/${rec.D.id}/pdf`)).status()).toBe(200)
 
-  // Puede observar (su faena), pero anular es sólo de jefatura.
+  // Puede observar (su faena), pero anular es sólo de jefatura. Marcar revisado SÍ es suyo desde el 2026-11-26
+  // (`mant:records:review` por defecto, para que su cola de «Mis pendientes» llegue a cero): el botón depende de que el
+  // registro siga pendiente, y eso lo cubren `pendientes-mantencion.spec.ts` y las pruebas del servicio.
   await page.goto(`/mantencion/registros/${rec.B.id}`)
   await expect(page.getByRole("button", { name: "Observar", exact: true })).toBeVisible()
   await expect(page.getByRole("button", { name: "Anular", exact: true })).toHaveCount(0)
-  await expect(page.getByRole("button", { name: "Marcar revisado", exact: true })).toHaveCount(0)
 
   // El panel de un supervisor es el de su faena: no ofrece otras faenas para elegir.
   await page.goto("/mantencion/panel")

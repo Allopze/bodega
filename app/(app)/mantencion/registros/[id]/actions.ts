@@ -8,6 +8,7 @@ import { exportRecords, type ExportOutcome } from "@/lib/services/mantencion/exp
 import { MAX_REVIEW_BATCH } from "@/lib/mantencion/record-review-batch"
 import { markRecordReviewed, markRecordsReviewed, observeRecord, voidRecord, type MarkRecordsReviewedResult } from "@/lib/services/mantencion/record-lifecycle"
 import type { MantActionResult } from "@/lib/services/mantencion/result"
+import { revalidateQueueOfRecords } from "@/lib/services/mantencion/queue-revalidation"
 import { parseRecordFilters } from "@/lib/services/mantencion/records-filters"
 import { reasonSchema } from "@/lib/validation/reason-thresholds"
 
@@ -26,11 +27,15 @@ const observationSchema = z.object({
 })
 const voidSchema = z.object({ recordId, reason: reasonSchema("por qué se anula el registro") })
 
-/** Después de un cambio, se refrescan el detalle, la lista y el panel (los KPI excluyen anulados). */
-function revalidateRecord(id: string) {
+/**
+ * Después de un cambio, se refrescan el detalle, la lista y el panel (los KPI excluyen anulados) y, porque observar,
+ * revisar y anular sacan al registro de «por revisar», «Mis pendientes» y el aviso de «Registros firmados».
+ */
+async function revalidateRecord(id: string) {
   revalidatePath(`/mantencion/registros/${id}`)
   revalidatePath("/mantencion/registros")
   revalidatePath("/mantencion/panel")
+  await revalidateQueueOfRecords([id])
 }
 
 export async function observeRecordAction(input: { recordId: string; text: string }): Promise<MantActionResult> {
@@ -39,7 +44,7 @@ export async function observeRecordAction(input: { recordId: string; text: strin
   const parsed = observationSchema.safeParse(input)
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Revisa la observación." }
   const result = await observeRecord({ recordId: parsed.data.recordId, text: parsed.data.text, viewer: viewerFromSession(guard.session) })
-  if (result.ok) revalidateRecord(parsed.data.recordId)
+  if (result.ok) await revalidateRecord(parsed.data.recordId)
   return result
 }
 
@@ -49,7 +54,7 @@ export async function markRecordReviewedAction(input: { recordId: string }): Pro
   const parsed = z.object({ recordId }).safeParse(input)
   if (!parsed.success) return { ok: false, message: "No se reconoce el registro." }
   const result = await markRecordReviewed({ recordId: parsed.data.recordId, viewer: viewerFromSession(guard.session) })
-  if (result.ok) revalidateRecord(parsed.data.recordId)
+  if (result.ok) await revalidateRecord(parsed.data.recordId)
   return result
 }
 
@@ -68,6 +73,7 @@ export async function markRecordsReviewedAction(input: { recordIds: string[] }):
     for (const id of result.data.markedIds) revalidatePath(`/mantencion/registros/${id}`)
     revalidatePath("/mantencion/registros")
     revalidatePath("/mantencion/panel")
+    if (result.data.markedIds.length > 0) await revalidateQueueOfRecords(result.data.markedIds)
   }
   return result
 }
@@ -78,7 +84,7 @@ export async function voidRecordAction(input: { recordId: string; reason: string
   const parsed = voidSchema.safeParse(input)
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Revisa el motivo.", field: "reason" }
   const result = await voidRecord({ recordId: parsed.data.recordId, reason: parsed.data.reason, viewer: viewerFromSession(guard.session) })
-  if (result.ok) revalidateRecord(parsed.data.recordId)
+  if (result.ok) await revalidateRecord(parsed.data.recordId)
   return result
 }
 

@@ -93,7 +93,8 @@ test("quien no tiene repuestos:catalog no ve el ítem del menú y el servidor le
   await login(page, "supervisor@e2e.chome.cl")
   // El supervisor de mantención ve el resto del grupo, pero no el catálogo.
   await page.goto("/mantencion/ot")
-  await expect(page.getByRole("link", { name: "Órdenes de trabajo", exact: true }).first()).toBeVisible()
+  // El ítem lleva el aviso de «Mis pendientes» de Mantención dentro del enlace («Órdenes de trabajo 2»): se lee por prefijo.
+  await expect(page.getByRole("link", { name: /^Órdenes de trabajo/ }).first()).toBeVisible()
   await expect(page.getByRole("link", { name: "Catálogo de repuestos", exact: true })).toHaveCount(0)
 
   // La autorización es del servidor: por URL tampoco entra, ni a la lista ni a una ficha.

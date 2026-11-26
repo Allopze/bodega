@@ -50,6 +50,14 @@ const RETIRED_PERMISSION_NAMES = [
  * reinstala. Sólo para cambios de default decididos; la clave no se reutiliza.
  */
 export const GRANT_ADDITIONS = [
+  // Mantención en «Mis pendientes» (decisión del usuario del 2026-11-26). La supervisión de faena cierra como
+  // «revisado» los registros de su faena (observar ya podía; la regla «no revisas lo que firmaste o ejecutaste»
+  // vale para todos, ver `markRecordReviewed`), y el mecánico y la supervisión abren «Mis pendientes»: ahí
+  // reciben sus OT y sus registros por revisar. Réplica de `modules/mantencion-equipos/manifest.ts` y
+  // `modules/operations/manifest.ts`.
+  { key: "2026-11-26-rol-sup-mantencion-p-mant-records-review", roleId: "rol-sup-mantencion", permissionId: "p-mant-records-review" },
+  { key: "2026-11-26-rol-sup-mantencion-p-ops-view-work", roleId: "rol-sup-mantencion", permissionId: "p-ops-view-work" },
+  { key: "2026-11-26-rol-mecanico-p-ops-view-work", roleId: "rol-mecanico", permissionId: "p-ops-view-work" },
   // El administrador de contrato ve y exporta el Panel de mantención, los
   // registros, el historial y los equipos de sus faenas (alcance por faena).
   // Decisión del usuario del 2026-11-21 (Trinorma).

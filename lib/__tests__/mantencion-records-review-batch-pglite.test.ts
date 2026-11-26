@@ -27,7 +27,7 @@ vi.mock("@/db", () => ({
 const { getUserRbacById } = await import("@/lib/auth/rbac")
 const { viewerFromSession } = await import("@/lib/services/mantencion/access")
 const { markRecordReviewed, markRecordsReviewed } = await import("@/lib/services/mantencion/record-lifecycle")
-const { MAX_REVIEW_BATCH } = await import("@/lib/mantencion/record-review-batch")
+const { MAX_REVIEW_BATCH, OWN_RECORD_REVIEW_MESSAGE } = await import("@/lib/mantencion/record-review-batch")
 
 async function viewerOf(userId: string) {
   const rbac = await getUserRbacById(userId, true)
@@ -127,11 +127,63 @@ describe("marcar como revisados en lote", () => {
   })
 
   it("sin el permiso de revisar no se marca nada", async () => {
-    for (const userId of [IDS.supBio, IDS.mecBio, IDS.plain]) {
+    // La supervisión de faena ya no está aquí: revisa desde el 2026-11-26 (ver «la supervisión revisa …»).
+    for (const userId of [IDS.mecBio, IDS.plain]) {
       const result = await markRecordsReviewed({ recordIds: [R.bio1], viewer: await viewerOf(userId) })
       expect(result).toEqual({ ok: false, message: "No tienes permiso para marcar registros como revisados." })
     }
     expect(await reviewOf(R.bio1)).toBe("pendiente")
+  })
+
+  it("la supervisión revisa los registros de SU faena y no los de otra", async () => {
+    // `supervisor_mantencion` recibe `mant:records:review` por defecto: observar ya podía, cerrar como revisado no.
+    const supervisor = await viewerOf(IDS.supBio)
+    expect(supervisor.permissions).toContain("mant:records:review")
+    const result = await markRecordsReviewed({ recordIds: [R.bio1, R.cho1], viewer: supervisor })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.markedIds).toEqual([R.bio1])
+    expect(result.data.skipped.map((item) => [item.recordId, item.reason])).toEqual([[R.cho1, "no_encontrado"]])
+    expect(await reviewOf(R.bio1)).toBe("revisado")
+    expect(await reviewOf(R.cho1)).toBe("pendiente")
+  })
+
+  it("nadie revisa lo que firmó o ejecutó: ni de a uno ni en lote, jefatura o supervisión", async () => {
+    // El supervisor firma un registro y otro lo ejecuta (la correctiva de un mecánico que él acompañó).
+    await insertRecord("rb-sup-firmado", "MC-BIO-9101", { id: IDS.wsBio, name: "Biodiversa" }, IDS.truckBio, { registeredBy: IDS.supBio, executorUserId: IDS.supBio })
+    await insertRecord("rb-sup-ejecutado", "MC-BIO-9102", { id: IDS.wsBio, name: "Biodiversa" }, IDS.truckBio, { registeredBy: IDS.mecBio, executorKind: "otro_mecanico", executorUserId: IDS.supBio })
+    await insertRecord("rb-jefe-firmado", "MC-BIO-9103", { id: IDS.wsBio, name: "Biodiversa" }, IDS.truckBio, { registeredBy: IDS.jefe, executorUserId: IDS.jefe })
+    const own = ["rb-sup-firmado", "rb-sup-ejecutado", "rb-jefe-firmado"]
+    try {
+      const supervisor = await viewerOf(IDS.supBio)
+      const jefe = await viewerOf(IDS.jefe)
+
+      // De a uno.
+      for (const id of ["rb-sup-firmado", "rb-sup-ejecutado"]) {
+        expect(await markRecordReviewed({ recordId: id, viewer: supervisor })).toEqual({ ok: false, message: OWN_RECORD_REVIEW_MESSAGE })
+      }
+      expect(await markRecordReviewed({ recordId: "rb-jefe-firmado", viewer: jefe })).toEqual({ ok: false, message: OWN_RECORD_REVIEW_MESSAGE })
+
+      // En lote: se salta con su motivo y no aborta el resto.
+      const batch = await markRecordsReviewed({ recordIds: ["rb-sup-firmado", "rb-sup-ejecutado", R.bio1], viewer: supervisor })
+      expect(batch.ok).toBe(true)
+      if (batch.ok) {
+        expect(batch.data.markedIds).toEqual([R.bio1])
+        expect(batch.data.skipped.map((item) => [item.recordId, item.reason]).sort()).toEqual([["rb-sup-ejecutado", "propio"], ["rb-sup-firmado", "propio"]])
+        expect(batch.message).toBe("1 registro marcado como revisado; 2 los firmaste o ejecutaste tú")
+      }
+      for (const id of own) expect(await reviewOf(id)).toBe("pendiente")
+      expect(await auditOf(own)).toHaveLength(0)
+
+      // Otra persona sí los revisa: el jefe los del supervisor y el supervisor el del jefe.
+      expect(await markRecordReviewed({ recordId: "rb-sup-firmado", viewer: jefe })).toMatchObject({ ok: true })
+      expect(await markRecordReviewed({ recordId: "rb-jefe-firmado", viewer: supervisor })).toMatchObject({ ok: true })
+      expect(await reviewOf("rb-sup-firmado")).toBe("revisado")
+      expect(await reviewOf("rb-jefe-firmado")).toBe("revisado")
+    } finally {
+      await testDb.delete(schema.auditLog).where(inArray(schema.auditLog.entityId, own))
+      await testDb.delete(schema.mantRecords).where(inArray(schema.mantRecords.id, own))
+    }
   })
 
   it("el tope es de 200 por lote: uno más se rechaza entero, sin marcar ninguno", async () => {

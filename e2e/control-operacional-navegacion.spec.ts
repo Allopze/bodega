@@ -155,10 +155,12 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
     destinos: [
       // «Panel de mantención» y «Panel de combustible» ya no repiten rótulo; igual se distinguen por href y por grupo.
       { href: "/mantencion/panel", nombre: "Panel de mantención" },
-      { href: "/mantencion/ot", nombre: "Órdenes de trabajo" },
+      // Estos tres llevan el aviso de «Mis pendientes» de Mantención (`badge: "count"`, 2026-11-26): el contador va dentro del
+      // enlace y depende de los datos de la base compartida, así que sólo se lee el rótulo por prefijo.
+      { href: "/mantencion/ot", nombre: empiezaCon("Órdenes de trabajo") },
       // Bandeja de las notas de pedido de repuestos (2026-11-26): el administrador del seed tiene `mant:np:*`.
-      { href: "/mantencion/notas-pedido", nombre: "Notas de pedido" },
-      { href: "/mantencion/registros", nombre: "Registros firmados" },
+      { href: "/mantencion/notas-pedido", nombre: empiezaCon("Notas de pedido") },
+      { href: "/mantencion/registros", nombre: empiezaCon("Registros firmados") },
       // Ítem propio desde 2026-11-26: antes el Historial marcaba «Registros firmados».
       { href: "/mantencion/registros/historicos", nombre: "Historial de mantenciones" },
       { href: "/mantencion/equipos", nombre: "Equipos" },

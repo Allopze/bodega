@@ -4,7 +4,7 @@ import { mantRecordObservations, mantRecords, mantRecordVoids, mantWorkOrders } 
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
-import { MAX_REVIEW_BATCH, reviewBatchMessage, type ReviewSkipReason } from "@/lib/mantencion/record-review-batch"
+import { isOwnRecord, MAX_REVIEW_BATCH, OWN_RECORD_REVIEW_MESSAGE, reviewBatchMessage, type ReviewSkipReason } from "@/lib/mantencion/record-review-batch"
 import { createMantencionFilePath, resolveMantencionFile } from "@/lib/storage/config"
 import { removeFile } from "@/lib/storage/helpers"
 import { REASON_MAX_LENGTH, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
@@ -203,7 +203,10 @@ export async function observeRecord(input: { recordId: string; text: string; vie
   })
 }
 
-/** Revisar (regla 14): jefatura marca el registro como «revisado». */
+/**
+ * Revisar (regla 14): quien tiene `mant:records:review` marca el registro como «revisado» (la jefatura y, desde el
+ * 2026-11-26, la supervisión de faena). Nadie revisa lo que firmó o ejecutó él mismo: lo revisa otra persona.
+ */
 export async function markRecordReviewed(input: { recordId: string; viewer: MantViewer }): Promise<MantActionResult> {
   const { viewer } = input
   if (!hasMantPermission(viewer, "mant:records:review")) return { ok: false, message: "No tienes permiso para marcar registros como revisados." }
@@ -213,6 +216,7 @@ export async function markRecordReviewed(input: { recordId: string; viewer: Mant
     if (!record || !canActOnRecord(recordVisibility(viewer), record)) return { ok: false, message: NOT_FOUND }
     if (record.status === "anulado") return { ok: false, message: `El registro ${label(record)} está anulado.` }
     if (record.review === "revisado") return { ok: true, message: `El registro ${label(record)} ya estaba revisado.` }
+    if (isOwnRecord(record, viewer.userId)) return { ok: false, message: OWN_RECORD_REVIEW_MESSAGE }
 
     await tx.update(mantRecords).set({ review: "revisado", updatedAt: sql`now()` }).where(eq(mantRecords.id, record.id))
     await recordAudit({
@@ -287,6 +291,7 @@ export async function markRecordsReviewed(input: { recordIds: readonly string[];
       if (!record || !canActOnRecord(visibility, record)) skipped.push({ recordId: id, folio: null, reason: "no_encontrado", message: NOT_FOUND })
       else if (record.status === "anulado") skipped.push({ recordId: id, folio: record.folio, reason: "anulado", message: `El registro ${folioOf(record)} está anulado.` })
       else if (record.review === "revisado") skipped.push({ recordId: id, folio: record.folio, reason: "ya_revisado", message: `El registro ${folioOf(record)} ya estaba revisado.` })
+      else if (isOwnRecord(record, viewer.userId)) skipped.push({ recordId: id, folio: record.folio, reason: "propio", message: `El registro ${folioOf(record)} lo firmaste o ejecutaste tú: lo revisa otra persona.` })
       else toMark.push(record)
     }
 

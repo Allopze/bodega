@@ -22,6 +22,9 @@ export const OPERATIONAL_MODULE_LABELS: Record<OperationalModule, string> = {
   // instrumento, no el flujo — la cola trae tanto la matriz esperando firma
   // como la ocurrencia del programa que debe trabajo.
   miper:         "MIPER",
+  // Órdenes de trabajo, notas de pedido y registros por revisar de Mantención:
+  // el rótulo nombra el módulo, igual que en el menú.
+  mantencion:    "Mantención",
 }
 
 export const STAGES = ["Solicitado", "Aprobación", "Compra", "Recepción", "Entrega"]

@@ -42,8 +42,23 @@ export function summarizeRecordSelection(
   return { ids, count: ids.length, tooMany: ids.length > MAX_REVIEW_BATCH }
 }
 
+/**
+ * ¿El registro lo firmó o lo ejecutó quien quiere revisarlo? Nadie revisa lo suyo (decisión 2026-11-26): vale para
+ * todos, jefatura y supervisión. Un solo predicado para `markRecordReviewed`, el lote y la cola de «Mis pendientes»
+ * (que tampoco ofrece los propios; su SQL lo repite en `reviewableRecordsWhere`).
+ */
+export function isOwnRecord(
+  record: { registeredBy: string; executorUserId: string | null },
+  reviewerUserId: string,
+): boolean {
+  return record.registeredBy === reviewerUserId || record.executorUserId === reviewerUserId
+}
+
+/** El texto de la negativa de revisar un registro propio, de a uno. */
+export const OWN_RECORD_REVIEW_MESSAGE = "No puedes marcar como revisado un registro que firmaste o ejecutaste tú: lo revisa otra persona."
+
 /** Por qué un registro se saltó. */
-export type ReviewSkipReason = "ya_revisado" | "anulado" | "no_encontrado"
+export type ReviewSkipReason = "ya_revisado" | "anulado" | "no_encontrado" | "propio"
 
 export interface ReviewBatchCounts {
   marked: number
@@ -61,12 +76,14 @@ export function reviewBatchMessage({ marked, skipped }: ReviewBatchCounts): stri
   const already = count("ya_revisado")
   const voided = count("anulado")
   const missing = count("no_encontrado")
+  const own = count("propio")
 
   const parts: string[] = []
   if (marked > 0) parts.push(`${registros(marked)} ${marked === 1 ? "marcado" : "marcados"} como ${marked === 1 ? "revisado" : "revisados"}`)
   if (already > 0) parts.push(`${already === 1 ? "1 ya estaba revisado" : `${already} ya estaban revisados`}`)
   if (voided > 0) parts.push(`${voided === 1 ? "1 está anulado" : `${voided} están anulados`}`)
   if (missing > 0) parts.push(`${missing === 1 ? "1 no se encontró" : `${missing} no se encontraron`}`)
+  if (own > 0) parts.push(`${own === 1 ? "1 lo firmaste o ejecutaste tú" : `${own} los firmaste o ejecutaste tú`}`)
   if (parts.length === 0) return "No había registros que marcar."
   const text = parts.join("; ")
   return marked > 0 ? text : `No se marcó ninguno: ${text}`

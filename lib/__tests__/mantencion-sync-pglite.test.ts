@@ -420,7 +420,7 @@ describe("ciclo de vida", () => {
     success(await createRecord(await corrective(IDS.mecBio, { ...common(IDS.truckBio, 11_000, daysAgo(1)) }), await contextOf(IDS.mecBio)))
   })
 
-  it("observar: el supervisor sólo en su faena; marca «observado»; revisar es sólo de jefatura", async () => {
+  it("observar: el supervisor sólo en su faena; marca «observado»; revisar es de la jefatura y, en su faena, de la supervisión", async () => {
     const bioId = await seedRecord()
     const choInput = await corrective(IDS.mecCho, { ...common(IDS.truckCho, 21_000, daysAgo(2)) })
     success(await createRecord(choInput, await contextOf(IDS.mecCho)))
@@ -433,9 +433,16 @@ describe("ciclo de vida", () => {
     expect((await observeRecord({ recordId: bioId, text: "Falta detallar la manguera", viewer: sup })).ok).toBe(true)
     expect((await testDb.select().from(schema.mantRecords).where(eq(schema.mantRecords.id, bioId)))[0]?.review).toBe("observado")
 
-    expect((await markRecordReviewed({ recordId: bioId, viewer: sup })).ok).toBe(false)
+    // Sin el permiso (el mecánico) o fuera de la faena de quien revisa, no se marca nada.
+    expect((await markRecordReviewed({ recordId: bioId, viewer: (await contextOf(IDS.mecBio)).viewer })).ok).toBe(false)
+    expect((await markRecordReviewed({ recordId: choInput.id, viewer: sup })).ok).toBe(false)
     expect((await markRecordReviewed({ recordId: bioId, viewer: jefe })).ok).toBe(true)
     expect((await testDb.select().from(schema.mantRecords).where(eq(schema.mantRecords.id, bioId)))[0]?.review).toBe("revisado")
+
+    // Desde el 2026-11-26 la supervisión también cierra como «revisado» (`mant:records:review` por defecto), en su faena.
+    const bioOtro = await seedRecord()
+    expect((await markRecordReviewed({ recordId: bioOtro, viewer: sup })).ok).toBe(true)
+    expect((await testDb.select().from(schema.mantRecords).where(eq(schema.mantRecords.id, bioOtro)))[0]?.review).toBe("revisado")
   })
 
   it("el mecánico responde una vez, sólo quien registró; la bitácora lo anota", async () => {

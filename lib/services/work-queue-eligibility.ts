@@ -31,6 +31,12 @@ export type WorkQueueSource =
   | "cphs"
   | "pago_compra"
   | "miper"
+  | "mant_ot_assign"
+  | "mant_ot_receive"
+  | "mant_ot_conform"
+  | "mant_ot_execute"
+  | "mant_np"
+  | "mant_review"
 
 /**
  * El permiso que exige de verdad el destino de la CTA de cada rama. Cada uno
@@ -105,6 +111,28 @@ export const WORK_QUEUE_ACTION_PERMISSIONS: Record<WorkQueueSource, readonly str
     "prevention:risk:review",
     "prevention:risk:approve_legal",
   ],
+  /*
+   * Mantención («Mis pendientes», brief `docs/mantencion/brief-mis-pendientes.md`
+   * §7.1). Seis ramas, cada una con el permiso de su ACCIÓN y no con el de vista
+   * (`mant:ot:view_*`, `mant:np:view_worksite`, `mant:records:view_*`):
+   *
+   * - «Asignar mecánico» es `mant:ot:manage` (`assignWorkOrder`);
+   * - «Registrar recepción» y «Dar conformidad» son `mant:ot:receive` y
+   *   `mant:ot:conform` (`receiveWorkOrder`, `conformWorkOrder`);
+   * - «Ingresar a taller» y «Registrar trabajo» son del mecánico asignado, con
+   *   `mant:ot:execute` (`startWorkOrder`, `finishWorkOrder`);
+   * - «Resolver nota» es `mant:np:manage` (`resolveNoteItemFromStock` y su familia);
+   * - «Revisar registros» es `mant:records:review` (`markRecordsReviewed`).
+   *
+   * Que el permiso exista no basta para recibir la fila: la cola además la reparte al
+   * nivel más cercano a la faena (`lib/mantencion/queue-owners.ts`).
+   */
+  mant_ot_assign: ["mant:ot:manage"],
+  mant_ot_receive: ["mant:ot:receive"],
+  mant_ot_conform: ["mant:ot:conform"],
+  mant_ot_execute: ["mant:ot:execute"],
+  mant_np: ["mant:np:manage"],
+  mant_review: ["mant:records:review"],
 }
 
 /**

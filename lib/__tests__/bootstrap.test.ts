@@ -255,6 +255,37 @@ describe("auth bootstrap service", () => {
     expect(SYSTEM_ROLE_PERMISSIONS).toContainEqual(expect.objectContaining({ roleId: "rol-sup-mantencion", permissionId: "p-req-own" }))
   })
 
+  /*
+   * «Mis pendientes» de Mantención (decisión del 2026-11-26): la supervisión revisa los registros de su faena, y el
+   * mecánico y la supervisión abren la bandeja. Los ids ya existen en producción, así que cambiar el manifiesto no
+   * basta: cada default va además como alta puntual, con clave propia y fecha.
+   */
+  it("la supervisión revisa registros y el mecánico y la supervisión abren «Mis pendientes» en una BD ya poblada", async () => {
+    const additions = [
+      { key: "2026-11-26-rol-sup-mantencion-p-mant-records-review", roleId: "rol-sup-mantencion", permissionId: "p-mant-records-review" },
+      { key: "2026-11-26-rol-sup-mantencion-p-ops-view-work", roleId: "rol-sup-mantencion", permissionId: "p-ops-view-work" },
+      { key: "2026-11-26-rol-mecanico-p-ops-view-work", roleId: "rol-mecanico", permissionId: "p-ops-view-work" },
+    ]
+    for (const addition of additions) {
+      expect(GRANT_ADDITIONS).toContainEqual(addition)
+      expect(SYSTEM_ROLE_PERMISSIONS).toContainEqual(expect.objectContaining({ roleId: addition.roleId, permissionId: addition.permissionId }))
+    }
+
+    // Estado de producción antes del deploy: los permisos existen, los roles no los tienen y las marcas no se aplicaron.
+    await ensureSystemRbac()
+    for (const addition of additions) {
+      await inMemoryDb.delete(schema.rolePermissions).where(and(eq(schema.rolePermissions.roleId, addition.roleId), eq(schema.rolePermissions.permissionId, addition.permissionId)))
+      await inMemoryDb.delete(schema.systemSettings).where(eq(schema.systemSettings.key, `rbac:grant-addition:${addition.key}`))
+    }
+    await ensureSystemRbac()
+    const grants = await inMemoryDb.select().from(schema.rolePermissions)
+    for (const addition of additions) {
+      expect(grants.some((grant) => grant.roleId === addition.roleId && grant.permissionId === addition.permissionId), addition.key).toBe(true)
+    }
+    // El mecánico NO revisa registros: es quien los firma.
+    expect(grants.some((grant) => grant.roleId === "rol-mecanico" && grant.permissionId === "p-mant-records-review")).toBe(false)
+  })
+
   it("las altas de repuestos para mantención no tocan la aprobación", () => {
     const repuestos = GRANT_ADDITIONS.filter((addition) => addition.key.startsWith("2026-11-07-") && addition.permissionId.startsWith("p-rep-"))
     // Tres roles: jefe (4 permisos), supervisor y administrador de contrato (3 c/u).

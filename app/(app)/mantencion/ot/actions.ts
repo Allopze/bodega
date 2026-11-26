@@ -9,6 +9,7 @@ import { civilDate } from "@/lib/validation/dates"
 import type { ExportActionResult } from "@/components/ui/export-button"
 import { createWorkOrderSchema } from "@/lib/mantencion/work-order-schemas"
 import { actorFromSession } from "@/lib/services/mantencion/work-orders/action-support"
+import { revalidateQueueOfWorkOrder } from "@/lib/services/mantencion/queue-revalidation"
 import { createWorkOrder } from "@/lib/services/mantencion/work-orders/create"
 import { exportWorkOrders } from "@/lib/services/mantencion/work-orders/export"
 import { WORK_ORDER_TABS, type WorkOrderListFilters } from "@/lib/services/mantencion/work-orders/query"
@@ -49,6 +50,8 @@ export async function createWorkOrderAction(_prev: ActionState, formData: FormDa
     }
     revalidatePath(PATH)
     revalidateVehicleFicha(parsed.data.vehicleId)
+    // Una OT nueva es trabajo de la cola de alguien: por asignar para la jefatura, por ingresar si ya nace asignada.
+    await revalidateQueueOfWorkOrder(result.value.id)
     return { ok: true, message: `Orden ${result.value.folio} creada.`, data: { id: result.value.id, folio: result.value.folio } }
   } catch (error) {
     return actionErrorResult(error, "No se pudo crear la orden de trabajo. Inténtalo de nuevo.")

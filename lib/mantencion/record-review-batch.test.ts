@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { MAX_REVIEW_BATCH, isReviewableRecord, reviewBatchMessage, summarizeRecordSelection } from "./record-review-batch"
+import { MAX_REVIEW_BATCH, isOwnRecord, isReviewableRecord, reviewBatchMessage, summarizeRecordSelection } from "./record-review-batch"
 
 const row = (id: string, status = "vigente", review = "pendiente") => ({ id, status, review })
 
@@ -34,6 +34,23 @@ describe("la selección de la página", () => {
     const selection = summarizeRecordSelection(many, new Set(many.map((item) => item.id)))
     expect(selection.tooMany).toBe(true)
     expect(summarizeRecordSelection(many.slice(0, MAX_REVIEW_BATCH), new Set(many.map((item) => item.id))).tooMany).toBe(false)
+  })
+})
+
+describe("nadie revisa lo suyo", () => {
+  it("es propio lo que firmó o lo que ejecutó quien revisa, y sólo eso", () => {
+    expect(isOwnRecord({ registeredBy: "u1", executorUserId: "u1" }, "u1")).toBe(true)
+    // Lo firmó otro pero lo ejecutó él.
+    expect(isOwnRecord({ registeredBy: "u2", executorUserId: "u1" }, "u1")).toBe(true)
+    // Lo firmó él y lo ejecutó un taller o un tercero (sin cuenta).
+    expect(isOwnRecord({ registeredBy: "u1", executorUserId: null }, "u1")).toBe(true)
+    expect(isOwnRecord({ registeredBy: "u2", executorUserId: "u3" }, "u1")).toBe(false)
+    expect(isOwnRecord({ registeredBy: "u2", executorUserId: null }, "u1")).toBe(false)
+  })
+
+  it("el aviso del lote dice cuántos se saltaron por ser propios", () => {
+    expect(reviewBatchMessage({ marked: 3, skipped: [{ reason: "propio" }] })).toBe("3 registros marcados como revisados; 1 lo firmaste o ejecutaste tú")
+    expect(reviewBatchMessage({ marked: 0, skipped: [{ reason: "propio" }, { reason: "propio" }] })).toBe("No se marcó ninguno: 2 los firmaste o ejecutaste tú")
   })
 })
 

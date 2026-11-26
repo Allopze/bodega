@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const guard = vi.hoisted(() => vi.fn())
 const revalidatePath = vi.hoisted(() => vi.fn())
+const revalidateTag = vi.hoisted(() => vi.fn())
 const viewer = vi.hoisted(() => ({ current: { userId: "u-jefe", email: "jefe@chome.cl", permissions: ["mant:np:manage"], worksiteIds: ["ws-1"], isGlobal: false } }))
 const services = vi.hoisted(() => ({
   resolveNoteItemFromStock: vi.fn(),
@@ -19,7 +20,7 @@ const services = vi.hoisted(() => ({
 }))
 
 vi.mock("@/db", () => ({ db: { transaction: services.transaction } }))
-vi.mock("next/cache", () => ({ revalidatePath }))
+vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }))
 vi.mock("@/lib/auth/can", () => ({ guardAnyPermission: guard }))
 vi.mock("@/lib/services/mantencion/access", () => ({ viewerFromSession: () => viewer.current }))
 vi.mock("@/lib/services/mantencion/parts-notes/resolve", () => ({
@@ -75,6 +76,13 @@ describe("resolveNoteItemFromStockAction", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/mantencion/notas-pedido/n1")
     expect(revalidatePath).toHaveBeenCalledWith("/mantencion/ot/[id]", "page")
     expect(revalidatePath).toHaveBeenCalledWith("/mantencion/panel")
+  })
+
+  it("resolver una línea refresca «Mis pendientes» y los avisos del menú (sin la faena, invalida a todos)", async () => {
+    // El `db` simulado no resuelve la faena de la nota: el refresco cae a invalidar los avisos sin acotar, que es lo seguro.
+    await actions.resolveNoteItemFromStockAction({ noteId: "n1", itemId: "i1", productId: "p1", quantity: 2 })
+    expect(revalidatePath).toHaveBeenCalledWith("/pendientes")
+    expect(revalidateTag).toHaveBeenCalledWith("badge-counts", { expire: 0 })
   })
 
   it("rechaza una cantidad que no es positiva antes de llegar al servicio", async () => {

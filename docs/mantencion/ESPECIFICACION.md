@@ -44,7 +44,7 @@ texto con cantidad), costos.
 | `mant:records:view_worksite` (sólo sus faenas) | | ✓ | ✓ |
 | `mant:records:view_all` | | | ✓ |
 | `mant:records:observe` | | ✓ (su faena) | ✓ |
-| `mant:records:review` (marcar revisado) | | | ✓ |
+| `mant:records:review` (marcar revisado) | | ✓ (su faena; 2026-11-26) | ✓ |
 | `mant:records:void` | | | ✓ |
 | `mant:equipment:manage` crear, editar, baja, importar, lecturas iniciales | | | ✓ |
 | `mant:schedules:manage` crear, editar, asignar | | | ✓ |
@@ -52,6 +52,8 @@ texto con cantidad), costos.
 | `mant:export` Excel y PDF dentro de lo que puede ver | | ✓ | ✓ |
 
 - Cada endpoint verifica permiso y alcance (faena) en el servidor. Ocultar un botón **no** es control de acceso.
+- Nadie marca como revisado un registro que firmó o ejecutó él mismo (decisión del 2026-11-26, junto con dar
+  `mant:records:review` a la supervisión de faena): vale para todos, jefatura incluida.
 - Un mecánico puede registrar en **cualquier equipo activo**; si es de otra faena, el registro queda con
   `out_of_worksite = true`, visible para jefatura.
 

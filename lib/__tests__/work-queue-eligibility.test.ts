@@ -32,6 +32,14 @@ const SOLO_LECTURA: Record<WorkQueueSource, string> = {
   // con ese caso contemplado—, así que la paridad se mantiene: con el permiso
   // de lectura a secas, la bandeja no promete nada que no se pueda completar.
   miper: "prevention:risk:view",
+  // Mantención («Mis pendientes»): ninguna de sus seis ramas se abre con un permiso de vista de OT, de notas o de registros.
+  // Ver la lista de OT no es poder asignar, recibir ni dar la conformidad; ver los registros no es poder revisarlos.
+  mant_ot_assign: "mant:ot:view_all",
+  mant_ot_receive: "mant:ot:view_worksite",
+  mant_ot_conform: "mant:ot:view_worksite",
+  mant_ot_execute: "mant:ot:view_worksite",
+  mant_np: "mant:np:view_worksite",
+  mant_review: "mant:records:view_worksite",
 }
 
 const FUENTES = Object.keys(WORK_QUEUE_ACTION_PERMISSIONS) as WorkQueueSource[]
@@ -79,6 +87,19 @@ describe("las ramas no se prestan permisos entre sí", () => {
   it("un permiso de otra rama no abre la propia", () => {
     expect(canActOnQueueSource(["sst:manage"], "ppa")).toBe(false)
     expect(canActOnQueueSource(["ppa:review"], "sst")).toBe(false)
+  })
+
+  it("las seis ramas de Mantención son independientes entre sí", () => {
+    // Recibir el equipo no es dar la conformidad (la OT no se aprueba a sí misma), ni ejecutar es gestionar.
+    const mantencion = ["mant_ot_assign", "mant_ot_receive", "mant_ot_conform", "mant_ot_execute", "mant_np", "mant_review"] as const
+    for (const source of mantencion) {
+      const [permission] = WORK_QUEUE_ACTION_PERMISSIONS[source]
+      expect(actionableQueueSources([permission!]), `sólo ${permission}`).toEqual([source])
+    }
+    // El jefe recibe pero no da la conformidad: la regla de la máquina de estados de la OT.
+    const jefe = ["mant:ot:manage", "mant:ot:receive", "mant:ot:execute", "mant:np:manage", "mant:records:review"]
+    expect(canActOnQueueSource(jefe, "mant_ot_conform")).toBe(false)
+    expect(canActOnQueueSource(jefe, "mant_ot_receive")).toBe(true)
   })
 })
 

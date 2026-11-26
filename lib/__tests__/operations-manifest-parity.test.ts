@@ -14,6 +14,7 @@
  */
 import { describe, expect, it } from "vitest"
 import { operationsModule } from "@/modules/operations/manifest"
+import { mantencionEquiposModule } from "@/modules/mantencion-equipos/manifest"
 import { preventionModule } from "@/modules/prevention/manifest"
 import { WORK_QUEUE_ACTION_PERMISSIONS } from "@/lib/services/work-queue-eligibility"
 
@@ -21,6 +22,7 @@ type Grant = { roleSlug: string; permission: string }
 
 const opsGrants = operationsModule.defaultGrants as readonly Grant[]
 const preventionGrants = preventionModule.defaultGrants as readonly Grant[]
+const mantencionGrants = mantencionEquiposModule.defaultGrants as readonly Grant[]
 
 const seeQueue = new Set(
   opsGrants.filter((grant) => grant.permission === "operations:view_work").map((grant) => grant.roleSlug),
@@ -46,6 +48,29 @@ describe("quien recibe trabajo en la cola puede abrirla", () => {
 
     const sinBandeja = [...new Set(conTrabajo)].filter((role) => !seeQueue.has(role)).sort()
     expect(sinBandeja, "estos roles reciben trabajo en la cola y no pueden abrirla").toEqual([])
+  })
+
+  it("ningún rol de Mantención recibe filas que no puede ir a buscar", () => {
+    // «Mis pendientes» de Mantención (2026-11-26): el mecánico recibe sus OT y la supervisión sus registros por
+    // revisar. Un rol con cualquiera de los seis permisos de acción de Mantención tiene que poder abrir /pendientes.
+    const mantencionActions = new Set(
+      Object.entries(WORK_QUEUE_ACTION_PERMISSIONS).filter(([source]) => source.startsWith("mant_")).flatMap(([, permissions]) => permissions),
+    )
+    const conTrabajo = mantencionGrants
+      .filter((grant) => mantencionActions.has(grant.permission))
+      .map((grant) => grant.roleSlug)
+    expect([...new Set(conTrabajo)].sort()).toEqual(["admin_contrato", "jefe_mantencion", "mecanico", "supervisor_mantencion"])
+
+    const sinBandeja = [...new Set(conTrabajo)].filter((role) => !seeQueue.has(role)).sort()
+    expect(sinBandeja, "estos roles reciben trabajo de Mantención y no pueden abrir /pendientes").toEqual([])
+  })
+
+  it("quien no tiene ningún permiso de acción de Mantención no recibe nada de Mantención", () => {
+    // La jefatura general sólo lee: no tiene trabajo ahí.
+    const conTrabajo = new Set(mantencionGrants
+      .filter((grant) => [...Object.entries(WORK_QUEUE_ACTION_PERMISSIONS)].some(([source, permissions]) => source.startsWith("mant_") && permissions.includes(grant.permission)))
+      .map((grant) => grant.roleSlug))
+    expect(conTrabajo.has("jefa_chome")).toBe(false)
   })
 
   it("el permiso de la bandeja sigue siendo el que la ruta exige", () => {

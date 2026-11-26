@@ -10,6 +10,8 @@ import { registry } from "@/modules/registry"
 const BADGE_KEYS_COMPUTED_BY_LAYOUT = [
   "/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/bodega/guias", "/pendientes",
   "/combustibles/revisar",
+  // Mantención (2026-11-26): salen del mismo cálculo que la cola de «Mis pendientes» (`getOperationalWorkCounts`).
+  "/mantencion/ot", "/mantencion/notas-pedido", "/mantencion/registros",
 ]
 
 describe("badges del sidebar", () => {
