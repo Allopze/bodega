@@ -33,7 +33,9 @@ export async function releaseWorkOrderAllocationsTx(tx: Tx, input: {
       productId: mantPartsAllocations.productId,
       worksiteId: mantPartsAllocations.worksiteId,
       quantity: mantPartsAllocations.quantity,
-      consumed: consumedSql,
+      // Envuelto: como campo directo de un select de una sola tabla, Drizzle quita los prefijos
+      // de tabla y la subconsulta compararía `allocation_id` con su propio `id` (consumido = 0).
+      consumed: sql<number>`(${consumedSql})`.mapWith(Number),
     })
     .from(mantPartsAllocations)
     .where(and(eq(mantPartsAllocations.workOrderId, input.workOrderId), eq(mantPartsAllocations.status, "activa")))

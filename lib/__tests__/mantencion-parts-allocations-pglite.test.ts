@@ -299,6 +299,11 @@ describe("liberar y revertir", () => {
     const before = await freeOf(P.bolt)
     const outcome = await testDb.transaction((tx) => parts.releaseWorkOrderAllocationsTx(tx as unknown as Tx, { workOrderId: OT.a, actorUserId: IDS.jefe, reason: "OT cerrada" }))
     expect(outcome.released.find((row) => row.productId === P.bolt)?.quantity).toBe(2)
+    // Manguera: reservadas 3, usadas 2 → se libera 1 (no la reserva entera).
+    expect(outcome.released.find((row) => row.productId === P.hose)?.quantity).toBe(1)
+    const [hose] = await testDb.select().from(schema.mantPartsAllocations)
+      .where(and(eq(schema.mantPartsAllocations.workOrderId, OT.a), eq(schema.mantPartsAllocations.productId, P.hose)))
+    expect(Number(hose!.releasedQuantity)).toBe(1)
     expect(await freeOf(P.bolt)).toBe(before + 2)
     const active = await testDb.select().from(schema.mantPartsAllocations)
       .where(and(eq(schema.mantPartsAllocations.workOrderId, OT.a), eq(schema.mantPartsAllocations.status, "activa")))
