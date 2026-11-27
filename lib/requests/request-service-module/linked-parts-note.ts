@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm"
 import type { Session } from "next-auth"
 import type { Tx } from "@/db"
-import { mantPartsNoteItems, mantPartsNotes } from "@/db/schema"
+import { fuelVehicles, mantPartsNoteItems, mantPartsNotes } from "@/db/schema"
 import { canAccessWorksite } from "@/lib/auth/scope"
 
 /**
@@ -39,7 +39,7 @@ export interface PartsNoteLineLink {
 
 /**
  * La línea de nota de pedido (NP) que un ítem de solicitud compra (`purchase_request_items.parts_note_item_id`, ADR
- * mantención 0001): existe, está en una faena que el actor puede ver y todavía se puede comprar. Se llama al guardar el
+ * mantención 0001): existe, es de una faena que el actor puede ver (la de la nota o la actual de su equipo) y todavía se puede comprar. Se llama al guardar el
  * borrador (`persist-draft.ts`) y de nuevo al enviar (`submit-request.ts`): jefatura puede rechazar la línea, poner la
  * nota en espera o anularla entre una cosa y la otra.
  *
@@ -76,12 +76,15 @@ export async function assertPartsNoteLineBuyable(
       noteStatus: mantPartsNotes.status,
       noteWorkOrderId: mantPartsNotes.workOrderId,
       noteWorksiteId: mantPartsNotes.worksiteId,
+      vehicleWorksiteId: fuelVehicles.worksiteId,
     })
     .from(mantPartsNoteItems)
     .innerJoin(mantPartsNotes, eq(mantPartsNotes.id, mantPartsNoteItems.noteId))
+    .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
     .where(eq(mantPartsNoteItems.id, link.partsNoteItemId))
-  // Una línea de otra faena se informa igual que una inexistente: no se delata su existencia.
-  if (!line || (opts.actor && !canAccessWorksite(opts.actor, line.noteWorksiteId))) {
+  // Mismo alcance que `assertCanManage` y `loadPartsNotePrefill`: la faena de la nota O la actual de su equipo (la OT sigue al
+  // equipo trasladado). Una línea sin relación con la faena de quien compra se informa igual que una inexistente: no se delata.
+  if (!line || (opts.actor && !canAccessWorksite(opts.actor, line.noteWorksiteId) && !(line.vehicleWorksiteId && canAccessWorksite(opts.actor, line.vehicleWorksiteId)))) {
     throw new Error("La línea de la nota de pedido ya no existe: quita ese ítem de la solicitud")
   }
   if (line.noteWorkOrderId) {

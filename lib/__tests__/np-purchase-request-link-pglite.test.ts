@@ -148,8 +148,9 @@ describe("solicitud de repuestos desde una nota de pedido", () => {
       status: "anulada", voidedAt: now, voidedByUserId: IDS.jefe, voidReason: "El mecánico la envió por error",
     }).where(eq(schema.mantPartsNotes.id, noteVoid.id))
 
-    // Una nota de otra faena (Cholguán), sobre la misma OT: fuera del alcance de la jefatura de Biodiversa.
-    await note("np-cho", "NP-2026-0005", otA, IDS.truckBio, [{ id: "npi-cho", description: "Termostato" }], IDS.wsCho)
+    // Una nota de otra faena (Cholguán) sobre un equipo que también está en Cholguán: sin relación con la faena de la jefatura de
+    // Biodiversa (con el equipo hoy en Biodiversa sí la tendría: ver `np-alcance-equipo-trasladado-pglite.test.ts`).
+    await note("np-cho", "NP-2026-0005", otA, IDS.truckCho, [{ id: "npi-cho", description: "Termostato" }], IDS.wsCho)
 
     await testDb.insert(schema.suppliers).values({
       id: "sup-np", name: "Repuestos del Sur", rut: "76.000.111-1", isActive: true, createdAt: now, updatedAt: now,

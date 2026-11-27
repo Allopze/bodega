@@ -751,6 +751,8 @@ export const pgliteTestFiles = [
   // alcance, permiso y fallos del envío) y las decisiones por línea en lote desde la bandeja (comprar, sacar de bodega, rechazar).
   "lib/__tests__/np-enviar-a-compra-pglite.test.ts",
   "lib/__tests__/np-enviar-a-compra-guardas-pglite.test.ts",
+  // El alcance de una nota (faena de la nota o actual de su equipo) es el mismo al gestionar, precargar y comprar a mano.
+  "lib/__tests__/np-alcance-equipo-trasladado-pglite.test.ts",
   "lib/__tests__/np-lote-lineas-pglite.test.ts",
 
   // NP · R9: notas de pedido y consumos de repuestos en la hoja de vida del equipo.
