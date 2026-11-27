@@ -1,3 +1,19 @@
+# Mantención: «Mis pendientes», reglas de notas de pedido, OT-1 y fixture E2E — 2026-11-26
+
+Segunda tanda sobre la misma rama `fix/mantencion-encontrabilidad`, fusionada a `main` local sin push. Detalle: [mantencion-arreglos-2026-11-26.md](mantencion-arreglos-2026-11-26.md), sección «Segunda tanda».
+
+- **FIXED:**
+  - Mantención en «Mis pendientes» por responsable, con avisos en el menú;
+  - NP4-1, NP4-2, NP4-3, NP4-4 y NP4-6;
+  - OT-1;
+  - fixture km/h;
+  - «Catálogos de mantención».
+- **PASS:**
+  - puertas en verde (salvo 1 prueba intermitente de Compras);
+  - `test:pglite` 6.030 de 6.030;
+  - E2E final: 300 pasan, 1 se salta y 0 rojos.
+- **Deploy:** `db:sync-rbac` (tres permisos nuevos por defecto); sin migraciones.
+
 # Mantención: arreglos de la auditoría y de encontrabilidad — 2026-11-26
 
 Rama `fix/mantencion-encontrabilidad` sobre `290ec0387`, con `main` `e3d6c006f` ya integrado, **sin fusionar ni desplegar**. Detalle: [mantencion-arreglos-2026-11-26.md](mantencion-arreglos-2026-11-26.md).

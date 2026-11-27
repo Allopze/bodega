@@ -144,3 +144,45 @@ El plan de texto del anexo A de encontrabilidad quedó aplicado salvo dos decisi
 - **Enlace a Bodega:** lleva al kárdex del producto, porque la vista Stock no filtra por id. Las cifras de existencia, reservado y libre dentro de la ficha quedan para otra vez.
 - A 1440×900, los hijos de «Configuración» quedan al borde del pie fijo del menú: «Pautas» se ve y los otros dos piden desplazar un poco.
 - **Anillo de foco en el resto de la plataforma:** la causa de fondo sigue: `:focus-visible` sin capa le gana a cualquier utilidad de Tailwind. Otros controles que intentan ajustar su anillo con utilidades, como la campana de avisos, siguen igual. El arreglo de fondo es mover esa regla a `@layer base`, revisando antes cada `outline-none` que no traiga su propio anillo; si no, alguno quedaría sin foco visible.
+
+## Segunda tanda (26-11, decisiones del usuario sobre lo pendiente)
+
+Tres líneas más (Sonnet), integradas en la misma rama.
+
+- **«Mis pendientes» por responsable**, según `docs/mantencion/brief-mis-pendientes.md`, con las opciones recomendadas.
+  - **Filas:** 7 tipos (OT por asignar, por recibir y por conformidad, mis OT por ingresar y en taller, notas por resolver y registros por revisar por faena), con el reparto «el más cercano a la faena» (`local_first` o `global_first`). El administrador sólo recibe lo huérfano.
+  - **Avisos** en Órdenes de trabajo, Registros firmados y Notas de pedido. Salen del mismo cálculo que la cola.
+  - **Permisos nuevos por defecto** (`GRANT_ADDITIONS`, se aplican en el deploy o con `db:sync-rbac`):
+    - `mant:records:review` al supervisor;
+    - `operations:view_work` al mecánico y al supervisor.
+  - **Nadie revisa lo que firmó o ejecutó:** el servidor lo rechaza y la ficha no ofrece el botón.
+- **Notas de pedido (D14 a D18 del ADR 0001):**
+  - NP4-1: una compra rechazada en aprobaciones devuelve la línea;
+  - NP4-2: «por resolver» es toda nota con alguna línea pendiente, y una nota con compras por llegar sigue en gestión;
+  - NP4-3: el saldo de una reserva parcial queda como línea nueva;
+  - NP4-4 y NP4-6: liberar devuelve las líneas y la nota se puede anular.
+- **OT-1:** anular una OT nacida de un hallazgo cancela su CAPA abierta y el hallazgo vuelve a quedar abierto.
+- **Fixture E2E:** la faena Biodiversa nace con su código real, así que sus camiones miden en km. El resto mide en horas con la pauta «Maquinaria pesada». Vuelven a correr los 6 specs rojos y las 75 pruebas que había detrás.
+- **Renombre:** «Marcas y talleres» pasa a «Catálogos de mantención».
+
+**Verificación:**
+- **Puertas:** `typecheck` y `lint` en 0, y `db:verify-migrations` OK.
+- **`test:pglite`:** 456 archivos, 6.030 pruebas en verde.
+- **`test:fast`:** 22.873 pasan y 1 falla, intermitente bajo carga: `oc-catalog-sheet.test.tsx`, de Compras, pasa sola y la rama no la toca.
+- **Regresiones nuevas que fallan sin el arreglo:**
+  - `np-reglas-pglite`: 15 de 16;
+  - la cola de Mantención: 42 pruebas, incluida la propiedad «toda fila es accionable».
+- **E2E final** (build nuevo, 1 worker, 34 specs): 300 pasan y 1 se salta, porque espera el corte del 01-12.
+  - La única falla fue la regla nueva funcionando: el spec intentaba que la jefatura revisara un registro propio. Lo ajusté y ahora pasa 13 de 13.
+  - Cero specs rojos.
+
+**Al desplegar:**
+- correr `db:sync-rbac`, que el deploy ya corre, para los tres permisos nuevos;
+- ninguna migración;
+- revisar el interruptor «Historial de mantenciones».
+
+**Riesgos:**
+- Cancelar una CAPA por OT-1 no avisa a Prevención.
+- Anular una recepción o guía, el cotejo o un ajuste no recalculan la nota (descrito en el ADR).
+- Un camión nuevo fuera de Biodiversa nace en horas y sin pauta.
+- No hay `EXPLAIN` de la cola en `bodega_dev`.
