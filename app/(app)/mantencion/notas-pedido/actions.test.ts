@@ -265,7 +265,7 @@ describe("acciones de cabecera de la nota", () => {
       data: { requestId: "rq1", requestCode: "SOL-1", approved: true },
     })
     expect(services.acceptPartsNote).toHaveBeenCalledWith(viewer.current, { noteId: "n1" })
-    expect(services.sendToPurchase).toHaveBeenCalledWith(SESSION, { noteId: "n1" })
+    expect(services.sendToPurchase).toHaveBeenCalledWith(SESSION, { noteId: "n1", origin: "aceptar" })
     expect(revalidatePath).toHaveBeenCalledWith("/mantencion/notas-pedido")
     expect(revalidatePath).toHaveBeenCalledWith("/mantencion/notas-pedido/n1")
     expect(revalidatePath).toHaveBeenCalledWith("/mantencion/panel")

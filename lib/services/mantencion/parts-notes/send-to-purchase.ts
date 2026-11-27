@@ -1,15 +1,17 @@
 import { eq } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
-import { purchaseRequests } from "@/db/schema"
+import { purchaseRequests, worksites } from "@/db/schema"
 import { safeActionMessage } from "@/lib/action-error"
 import { logger } from "@/lib/logger"
+import { permissionForRequestType } from "@/lib/request-types"
 import { deleteRequest } from "@/lib/services/requests-delete"
 import { approveRepuestoWithoutQuotation, persistRepuestoDraft, submitRepuestoRequest } from "@/lib/services/repuestos"
+import { getUserIdsWithPermission, notifyAfterCommit, notifyManyUser } from "@/lib/services/notifications"
 import { listSpareParts } from "@/lib/services/spare-parts-catalog"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { viewerFromSession } from "../access"
-import { NP_PERMISSIONS } from "./access"
+import { inWorksiteScope, NP_PERMISSIONS } from "./access"
 import { assertCanManage, loadNoteContext, NoteRefusal, NOT_FOUND_NOTE } from "./context"
 import { loadPartsNotePrefill } from "./prefill"
 import { whyNoteLinesAreLocked } from "./status"
@@ -79,6 +81,28 @@ async function requestCodeOf(requestId: string): Promise<string> {
   return row?.code ?? requestId
 }
 
+async function worksiteNameOf(worksiteId: string): Promise<string> {
+  const [row] = await db.select({ name: worksites.name }).from(worksites).where(eq(worksites.id, worksiteId))
+  return row?.name ?? "otra faena"
+}
+
+/**
+ * Si la aprobación automática no pudo, la solicitud quedó enviada: se avisa a quienes aprueban repuestos, como al enviar una
+ * solicitud a mano (`solicitudes/actions-module/submit.ts`). Después del commit y sin romper si el aviso falla.
+ */
+function notifyApprovers(input: { requestId: string; code: string; itemCount: number; actor: string }): void {
+  notifyAfterCommit(() => getUserIdsWithPermission(permissionForRequestType("repuestos", "approve")).then((approverIds) =>
+    notifyManyUser(approverIds, {
+      type: "request_submitted",
+      title: `Nueva solicitud: ${input.code}`,
+      body: `${input.actor} envió una solicitud con ${input.itemCount} ítem${input.itemCount !== 1 ? "s" : ""}`,
+      entityType: "purchase_request",
+      entityId: input.requestId,
+      entityHref: `/solicitudes/${input.requestId}`,
+    }),
+  ))
+}
+
 /** El borrador que no pudo enviarse no puede dejar sus líneas «en compra» apuntando a nada: se borra y vuelven a pendiente. */
 async function discardDraft(requestId: string, session: Session): Promise<void> {
   try {
@@ -88,9 +112,12 @@ async function discardDraft(requestId: string, session: Session): Promise<void> 
   }
 }
 
+/** De dónde viene el envío: «aceptar» la nota entera, o «líneas» (por línea o en lote). Sólo cambia el texto de la justificación. */
+export type SendToPurchaseOrigin = "aceptar" | "lineas"
+
 export async function sendPartsNoteLinesToPurchase(
   session: Session,
-  input: { noteId: string; lineIds?: string[] },
+  input: { noteId: string; lineIds?: string[]; origin?: SendToPurchaseOrigin },
 ): Promise<SendToPurchaseResult> {
   const viewer = viewerFromSession(session)
   if (!viewer.permissions.includes(NP_PERMISSIONS.manage)) throw new NoteRefusal("No tienes permiso para enviar notas de pedido a compra.")
@@ -114,11 +141,21 @@ export async function sendPartsNoteLinesToPurchase(
 
   const prices = await catalogPrices(lines.map((line) => line.productId))
   const actor = session.user.name ?? session.user.email ?? "jefatura"
-  const justification = `Nota de pedido ${note.code} aceptada por ${actor}`
+  const justification = input.origin === "aceptar"
+    ? `Nota de pedido ${note.code} aceptada por ${actor}`
+    : `Nota de pedido ${note.code} enviada a compra por ${actor}`
   // Con OT, la solicitud nace en la faena donde está el equipo hoy; sin OT, en la faena de la nota y cada línea lleva su cargo.
   const withOrder = !!prefill.workOrderId
+  const requestWorksiteId = withOrder ? prefill.worksiteId : note.worksiteId
+  // `assertCanManage` acepta la faena de la nota O la actual del equipo, pero la solicitud nace en UNA: quien envía tiene que tenerla
+  // en su alcance, o la solicitud quedaría en una faena que no puede ver ni aprobar.
+  if (!inWorksiteScope(viewer, requestWorksiteId)) {
+    throw new NoteRefusal(withOrder
+      ? `El equipo de esta nota está hoy en ${await worksiteNameOf(requestWorksiteId)}, que no es de tu alcance: pide a quien la gestiona allí que la envíe a compra.`
+      : "Esta nota de pedido es de una faena que no es de tu alcance.")
+  }
   const requestId = await persistRepuestoDraft(session, {
-    worksiteId: withOrder ? prefill.worksiteId : note.worksiteId,
+    worksiteId: requestWorksiteId,
     urgency: prefill.urgency,
     requiredDate: defaultRequiredDate(prefill.urgency),
     justification,
@@ -156,6 +193,7 @@ export async function sendPartsNoteLinesToPurchase(
     })
   } catch (error) {
     logger.error("[sendPartsNoteLinesToPurchase] la solicitud quedó enviada sin aprobar", error)
+    notifyApprovers({ requestId, code: requestCode, itemCount: lines.length, actor })
     const why = safeActionMessage(error, "no se pudo aprobar")
     return { ...done, approved: false, message: `La solicitud ${requestCode} quedó enviada a aprobación: ${why}.` }
   }

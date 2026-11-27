@@ -1,11 +1,11 @@
 import { asc, eq, inArray } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
-import { mantPartsNoteItems, mantPartsNotes } from "@/db/schema"
+import { fuelVehicles, mantPartsNoteItems, mantPartsNotes } from "@/db/schema"
 import { safeActionMessage } from "@/lib/action-error"
 import { formatQty } from "@/lib/utils"
 import { viewerFromSession, type MantViewer } from "../access"
-import { NP_PERMISSIONS } from "./access"
+import { canManageNote, NP_PERMISSIONS } from "./access"
 import { NoteRefusal, requireReason } from "./context"
 import { rejectNoteItem, resolveNoteItemFromStock } from "./resolve"
 import { sendPartsNoteLinesToPurchase } from "./send-to-purchase"
@@ -27,7 +27,7 @@ export interface BulkLinesResult {
   ok: number
   /** Una entrada por nota que no pudo, con el motivo. */
   failed: Array<{ noteCode: string; message: string }>
-  /** Una solicitud por nota enviada a compra; `approved: false` espera cotizaciones o su aprobación. */
+  /** Una solicitud por nota enviada a compra; `approved: false` quedó enviada y espera su aprobación en Aprobaciones. */
   requests: Array<{ code: string; id: string; approved: boolean }>
 }
 
@@ -41,7 +41,11 @@ interface LineRow {
   workOrderId: string | null
 }
 
-async function loadLines(lineIds: readonly string[]): Promise<LineRow[]> {
+/**
+ * Las líneas elegidas con su nota. Una línea de una nota que no es del alcance de quien actúa (ni por su faena ni por la actual de su
+ * equipo) se trata como una línea que no existe: no se delata ni su nota ni su código.
+ */
+async function loadLines(viewer: MantViewer, lineIds: readonly string[]): Promise<LineRow[]> {
   const rows = await db
     .select({
       id: mantPartsNoteItems.id,
@@ -52,12 +56,20 @@ async function loadLines(lineIds: readonly string[]): Promise<LineRow[]> {
       noteCode: mantPartsNotes.code,
       workOrderId: mantPartsNotes.workOrderId,
       sortOrder: mantPartsNoteItems.sortOrder,
+      worksiteId: mantPartsNotes.worksiteId,
+      vehicleWorksiteId: fuelVehicles.worksiteId,
     })
     .from(mantPartsNoteItems)
     .innerJoin(mantPartsNotes, eq(mantPartsNotes.id, mantPartsNoteItems.noteId))
+    .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
     .where(inArray(mantPartsNoteItems.id, [...lineIds]))
     .orderBy(asc(mantPartsNotes.code), asc(mantPartsNoteItems.sortOrder))
-  return rows.map((row) => ({ ...row, quantity: Number(row.quantity) }))
+  return rows
+    .filter((row) => canManageNote(viewer, { worksiteId: row.worksiteId, vehicleWorksiteId: row.vehicleWorksiteId ?? null }).ok)
+    .map((row): LineRow => ({
+      id: row.id, description: row.description, quantity: Number(row.quantity), productId: row.productId,
+      noteId: row.noteId, noteCode: row.noteCode, workOrderId: row.workOrderId,
+    }))
 }
 
 /** El mensaje que ve quien actúa: los rechazos de negocio tal cual; cualquier otro error, sin detalles del motor. */
@@ -82,7 +94,7 @@ export async function decidePartsNoteLinesInBulk(
   // El motivo se exige antes de tocar nada: ninguna nota se rechaza a medias por falta de él.
   const reason = input.decision === "rechazar" ? requireReason(input.reason ?? "", "del rechazo") : null
 
-  const rows = await loadLines(lineIds)
+  const rows = await loadLines(viewer, lineIds)
   const result: BulkLinesResult = { ok: 0, failed: [], requests: [] }
   if (rows.length < lineIds.length) result.failed.push({ noteCode: "—", message: "Alguna de las líneas elegidas ya no existe." })
 
@@ -93,9 +105,9 @@ export async function decidePartsNoteLinesInBulk(
     const noteCode = lines[0]!.noteCode
     try {
       if (input.decision === "comprar") {
-        const sent = await sendPartsNoteLinesToPurchase(session, { noteId, lineIds: lines.map((line) => line.id) })
+        const sent = await sendPartsNoteLinesToPurchase(session, { noteId, lineIds: lines.map((line) => line.id), origin: "lineas" })
         result.ok += sent.lineCount
-        // `approved: false` no es un fallo: la solicitud existe y espera cotizaciones o su aprobación (lo dice el aviso de la acción).
+        // `approved: false` no es un fallo: la solicitud existe y espera su aprobación en Aprobaciones (lo dice el aviso de la acción).
         result.requests.push({ code: sent.requestCode, id: sent.requestId, approved: sent.approved })
       } else if (input.decision === "bodega") {
         const blocked = whyNotFromStock(lines)

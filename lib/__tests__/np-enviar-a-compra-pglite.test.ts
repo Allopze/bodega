@@ -129,7 +129,7 @@ describe("aceptar y enviar a compra", () => {
     expect((await acceptPartsNote((await contextOf(IDS.jefe)).viewer, { noteId: note.noteId })).ok).toBe(true)
     expect(await expectInvariant(note.noteId)).toBe("aceptada")
 
-    const result = await sendPartsNoteLinesToPurchase(session, { noteId: note.noteId })
+    const result = await sendPartsNoteLinesToPurchase(session, { noteId: note.noteId, origin: "aceptar" })
     expect(result).toMatchObject({ approved: true, lineCount: 2 })
     expect(result.message).toBe(`2 líneas a Compras (${result.requestCode}).`)
 
@@ -143,7 +143,7 @@ describe("aceptar y enviar a compra", () => {
 
     const [decision] = await decisionsOf(result.requestId)
     expect(decision).toMatchObject({ type: "approve", decidedBy: IDS.jefe, roleContext: "mantencion_np" })
-    expect(decision!.reason).toContain(`Nota de pedido ${note.code} aceptada por Alexis Morales`)
+    expect(decision!.reason).toBe(`Aprobada al enviar a compra la nota de pedido ${note.code}`)
     expect((await decisionsOf(result.requestId)).length).toBe(2)
 
     expect((await inPurchaseQueue()).sort()).toEqual(items.map((item) => item.id).sort())

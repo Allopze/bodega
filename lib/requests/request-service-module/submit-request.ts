@@ -12,6 +12,7 @@ import {
   quotationRequirementMessage,
 } from "../quotation-requirement"
 import { assertLinkedWorkOrderOpen, fleetVehicleProblem } from "./linked-work-order"
+import { assertNoteLinesNotBoughtElsewhereTx } from "@/lib/services/mantencion/parts-notes/request-link"
 import { assertPartsNoteLineBuyable } from "./linked-parts-note"
 import type { RequestModuleConfig, SubmitRequestInput } from "../request-config"
 
@@ -112,6 +113,9 @@ export async function submitRequest(
         item.vehicleId = null
       }
     }
+    // Y ninguna de esas líneas puede estar comprándose ya en OTRA solicitud (doble compra): un borrador guardado antes no se envía
+    // si entretanto otra solicitud cubrió lo pedido. Comprar en partes sigue permitido mientras lo vivo no cubra la cantidad.
+    await assertNoteLinesNotBoughtElsewhereTx(tx, { requestId: request.id, noteItemIds: items.flatMap((item) => (item.partsNoteItemId ? [item.partsNoteItemId] : [])) })
 
     // Aceptar una nota de pedido es aprobar su compra (ADR mantención 0001, D30/D31): la nota nace sin precio y la
     // jefatura de mantención ya decidió, así que la regla de cotización no se evalúa. La opción la fija sólo un llamador
@@ -179,7 +183,7 @@ export async function submitRequest(
       entityId:   input.requestId,
       entityCode: request.code,
       oldState:   { status: request.status },
-      newState:   { status: "submitted", quotationCount: quotations.length },
+      newState:   { status: "submitted", quotationCount: quotations.length, ...(skipsQuotationRule ? { quotationRuleSkipped: true } : {}) },
     }, tx)
   })
 }

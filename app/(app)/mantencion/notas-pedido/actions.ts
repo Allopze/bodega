@@ -144,7 +144,7 @@ async function runHeaderAction(
  */
 async function sendAcceptedNoteToPurchase(session: Session, noteId: string, acceptedMessage: string | undefined): Promise<NoteActionState> {
   try {
-    const sent = await sendPartsNoteLinesToPurchase(session, { noteId })
+    const sent = await sendPartsNoteLinesToPurchase(session, { noteId, origin: "aceptar" })
     revalidateOperationalViews(["/compras", "/compras/nueva", "/solicitudes", `/solicitudes/${sent.requestId}`])
     return {
       ok: true,

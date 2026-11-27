@@ -118,11 +118,12 @@ describe("«Enviar a compra» en lote", () => {
     expect(await expectInvariant(onHold.noteId)).toBe("en_espera")
   })
 
-  it("una nota de otra faena falla con su motivo y no crea solicitud", async () => {
+  it("una nota de otra faena se trata como una línea que no existe y no crea solicitud", async () => {
     const note = await manualNote([{ description: "Filtro de aceite" }])
     const session = await sessionOf(undefined, { worksiteIds: [IDS.wsCho], isGlobal: false })
     const result = await decidePartsNoteLinesInBulk(session, { decision: "comprar", lineIds: [note.itemIds[0]!] })
-    expect(result).toEqual({ ok: 0, failed: [{ noteCode: note.code, message: "Esta nota de pedido es de una faena que no es de tu alcance." }], requests: [] })
+    // Una nota fuera del alcance no se delata: ni su código ni un mensaje distinto del de una línea que no existe.
+    expect(result).toEqual({ ok: 0, failed: [{ noteCode: "—", message: "Alguna de las líneas elegidas ya no existe." }], requests: [] })
     expect(await requestsOf()).toEqual([])
   })
 })

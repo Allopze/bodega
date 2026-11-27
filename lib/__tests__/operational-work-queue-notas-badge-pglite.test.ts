@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
@@ -20,6 +20,7 @@ const { getUserRbacById } = await import("@/lib/auth/rbac")
 const { getOperationalWorkCounts, getOperationalWorkQueue } = await import("@/lib/services/operational-work-queue")
 const { partsNotesBadgeTier } = await import("@/lib/services/mantencion/parts-notes/badge-count")
 const { listPartsNotes } = await import("@/lib/services/mantencion/parts-notes/inbox")
+const { pendingPurchaseWhere } = await import("@/lib/adquisiciones/pending-purchase")
 const { viewerFromSession } = await import("@/lib/services/mantencion/access")
 
 /**
@@ -39,6 +40,7 @@ const { viewerFromSession } = await import("@/lib/services/mantencion/access")
  *   N9 en_espera de otra persona (jefe)                                → no es de Javier
  *   N10 enviada de Javier                                              → no es «En espera»
  *   N11 enviada del jefe, una línea pendiente                          → sólo suma a «por revisar» (hace distinto el conteo de manage y el de compras)
+ *   N12 en_compra, su solicitud espera aprobación (ítem «requested»)   → está en la pestaña «En compra», pero /compras aún no la ve: no cuenta para el aviso
  */
 
 const NOTE_AT = "2026-11-20T10:00:00.000Z"
@@ -98,6 +100,9 @@ beforeAll(async () => {
   await insertNote({ id: "n9", status: "en_espera", requestedBy: IDS.jefe, lines: [{ resolution: "pendiente" }] })
   await insertNote({ id: "n10", status: "enviada", requestedBy: IDS.mecBio, lines: [{ resolution: "pendiente" }] })
   await insertNote({ id: "n11", status: "enviada", requestedBy: IDS.jefe, lines: [{ resolution: "pendiente" }] })
+
+  await insertNote({ id: "n12", status: "en_compra", lines: [{ resolution: "en_compra" }] })
+  await requestFor("n12-l0", "requested")
 })
 
 afterAll(async () => {
@@ -158,10 +163,10 @@ describe("manage: las notas por revisar de sus faenas (como hoy)", () => {
   })
 })
 
-describe("purchase (sin manage): las «En compra» de sus faenas con una línea comprada sin OC activa", () => {
+describe("purchase (sin manage): las «En compra» de sus faenas con algo que ordenar en Compras (lo que lista /compras)", () => {
   const PURCHASE = ["mant:np:purchase", "mant:np:view_worksite"]
 
-  it("cuenta n1, n3 y n6 en su faena; no n2 (todo en OC), n5 (compra muerta), n7 (no está «En compra») ni n4 (otra faena)", async () => {
+  it("cuenta n1, n3 y n6 en su faena; no n2 (todo en OC), n5 (compra muerta), n7 (no está «En compra»), n12 (espera aprobación) ni n4 (otra faena)", async () => {
     expect(await notas(sessionWith(PURCHASE, [IDS.wsBio]))).toBe(3)
   })
 
@@ -192,11 +197,24 @@ describe("purchase (sin manage): las «En compra» de sus faenas con una línea 
     expect(await notas(session)).toBe(3)
   })
 
-  it("paridad con la bandeja: el número del menú es el de la pestaña «En compra» que abre quien compra", async () => {
+  it("paridad con /compras: el número del menú es el de las notas con ítems de la cola «Pendientes de orden de compra»", async () => {
+    const queue = await testDb
+      .selectDistinct({ noteId: schema.mantPartsNotes.id })
+      .from(schema.purchaseRequestItems)
+      .innerJoin(schema.purchaseRequests, eq(schema.purchaseRequests.id, schema.purchaseRequestItems.requestId))
+      .innerJoin(schema.mantPartsNoteItems, eq(schema.mantPartsNoteItems.id, schema.purchaseRequestItems.partsNoteItemId))
+      .innerJoin(schema.mantPartsNotes, eq(schema.mantPartsNotes.id, schema.mantPartsNoteItems.noteId))
+      .where(and(pendingPurchaseWhere(), eq(schema.mantPartsNotes.status, "en_compra")))
+    expect(queue.map((row) => row.noteId).sort()).toEqual(["n1", "n3", "n4", "n6"])
+    expect(await notas(sessionWith(PURCHASE, [], { isGlobal: true }))).toBe(queue.length)
+  })
+
+  it("es un subconjunto de la pestaña «En compra» de la bandeja: la pestaña también incluye lo que espera aprobación (n12)", async () => {
     for (const [worksiteIds, isGlobal] of [[[IDS.wsBio], false], [[IDS.wsCho], false], [[IDS.wsBio, IDS.wsCho], false], [[], true]] as const) {
       const session = sessionWith(PURCHASE, [...worksiteIds], { isGlobal })
       const inbox = await listPartsNotes(viewerFromSession(session), { tab: "en_compra" })
-      expect(await notas(session), `alcance ${worksiteIds.join(",") || "global"}`).toBe(inbox.counts.en_compra)
+      const awaitingApproval = isGlobal || (worksiteIds as readonly string[]).includes(IDS.wsBio) ? 1 : 0
+      expect(await notas(session) + awaitingApproval, `alcance ${worksiteIds.join(",") || "global"}`).toBe(inbox.counts.en_compra)
       expect(inbox.total).toBe(inbox.counts.en_compra)
     }
   })

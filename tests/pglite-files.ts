@@ -750,6 +750,7 @@ export const pgliteTestFiles = [
   // NP · Fase 2 (D30 a D33): aceptar la nota = aprobar su compra (solicitud aprobada o en borrador por la regla de cotización,
   // alcance, permiso y fallos del envío) y las decisiones por línea en lote desde la bandeja (comprar, sacar de bodega, rechazar).
   "lib/__tests__/np-enviar-a-compra-pglite.test.ts",
+  "lib/__tests__/np-enviar-a-compra-guardas-pglite.test.ts",
   "lib/__tests__/np-lote-lineas-pglite.test.ts",
 
   // NP · R9: notas de pedido y consumos de repuestos en la hoja de vida del equipo.

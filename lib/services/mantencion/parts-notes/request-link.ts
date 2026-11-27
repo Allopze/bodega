@@ -1,11 +1,12 @@
 import { and, asc, eq, inArray } from "drizzle-orm"
 import type { Tx } from "@/db"
-import { mantPartsNoteItems, mantPartsNotes, mantWorkOrders } from "@/db/schema"
+import { mantPartsNoteItems, mantPartsNotes, mantWorkOrders, purchaseRequestItems, purchaseRequests } from "@/db/schema"
+import { toCents } from "@/lib/services/stock-reservations"
 import { PartsValidationError } from "../parts/types"
 import { lockWorkOrdersShare } from "./context"
 import { autoRejectionReason, autoRejectionTrail, rejectLineTx, workOrderEndOf } from "./line-rejection"
 import { loadPurchases } from "./lines"
-import { allPurchasesDead, recalcNoteStatusTx } from "./status"
+import { allPurchasesDead, isDeadPurchase, recalcNoteStatusTx } from "./status"
 import { writeTrail } from "./trail"
 
 /**
@@ -30,6 +31,7 @@ async function lockLines(tx: Tx, itemIds: readonly string[]) {
     .select({
       itemId: mantPartsNoteItems.id,
       description: mantPartsNoteItems.description,
+      quantity: mantPartsNoteItems.quantity,
       resolution: mantPartsNoteItems.resolution,
       noteId: mantPartsNotes.id,
       code: mantPartsNotes.code,
@@ -45,6 +47,46 @@ async function lockLines(tx: Tx, itemIds: readonly string[]) {
     .where(inArray(mantPartsNoteItems.id, [...itemIds]))
     .orderBy(asc(mantPartsNoteItems.id))
     .for("no key update", { of: mantPartsNoteItems })
+}
+
+/**
+ * Doble compra: una línea no se compra dos veces. Rechaza que `requestId` compre una línea cuando OTRA solicitud ya la compra
+ * con compras VIVAS (ítem no rechazado, solicitud no cancelada ni rechazada: `isDeadPurchase`; un borrador cuenta) que suman al
+ * menos lo pedido. Comprar en partes sigue permitido mientras lo vivo no cubra la cantidad. Las compras de la propia solicitud no
+ * cuentan (el borrador se reescribe en cada autoguardado). Se llama con las líneas ya bloqueadas (al guardar, `linkNoteItemsToRequestTx`)
+ * y al ENVIAR (`submit-request.ts`): un borrador guardado antes no puede enviarse si entretanto otra solicitud cubrió la línea.
+ */
+export async function assertNoteLinesNotBoughtElsewhereTx(tx: Tx, input: { requestId: string; noteItemIds: readonly string[] }): Promise<void> {
+  const ids = [...new Set(input.noteItemIds)]
+  if (ids.length === 0) return
+  const purchases = await tx
+    .select({
+      noteItemId: purchaseRequestItems.partsNoteItemId,
+      quantity: purchaseRequestItems.quantity,
+      status: purchaseRequestItems.status,
+      requestId: purchaseRequests.id,
+      requestCode: purchaseRequests.code,
+      requestStatus: purchaseRequests.status,
+    })
+    .from(purchaseRequestItems)
+    .innerJoin(purchaseRequests, eq(purchaseRequests.id, purchaseRequestItems.requestId))
+    .where(inArray(purchaseRequestItems.partsNoteItemId, ids))
+  const others = purchases.filter((purchase) => purchase.requestId !== input.requestId && !isDeadPurchase({ itemStatus: purchase.status, requestStatus: purchase.requestStatus }))
+  if (others.length === 0) return
+
+  const lines = await tx
+    .select({ id: mantPartsNoteItems.id, description: mantPartsNoteItems.description, quantity: mantPartsNoteItems.quantity, code: mantPartsNotes.code })
+    .from(mantPartsNoteItems)
+    .innerJoin(mantPartsNotes, eq(mantPartsNotes.id, mantPartsNoteItems.noteId))
+    .where(inArray(mantPartsNoteItems.id, [...new Set(others.map((purchase) => purchase.noteItemId!))]))
+    .orderBy(asc(mantPartsNoteItems.id))
+  for (const line of lines) {
+    const covering = others.filter((purchase) => purchase.noteItemId === line.id)
+    const covered = covering.reduce((sum, purchase) => sum + toCents(Number(purchase.quantity)), 0)
+    if (covered >= toCents(Number(line.quantity))) {
+      throw new PartsValidationError(`La línea «${line.description}» de ${line.code} ya se está comprando en ${covering[0]!.requestCode}: quita ese ítem de la solicitud.`)
+    }
+  }
 }
 
 /**
@@ -65,6 +107,19 @@ export async function linkNoteItemsToRequestTx(tx: Tx, input: { links: Array<{ n
 
   const rows = await lockLines(tx, [...requestOf.keys()])
   if (rows.length !== requestOf.size) throw new PartsValidationError("Una línea de la nota de pedido ya no existe: vuelve a abrirla desde la bandeja.")
+
+  // Con las líneas bloqueadas: ninguna se compra dos veces (el ítem nuevo ya está insertado, así que se excluye su propia solicitud).
+  const ownItems = await tx
+    .select({ id: purchaseRequestItems.id, requestId: purchaseRequestItems.requestId })
+    .from(purchaseRequestItems)
+    .where(inArray(purchaseRequestItems.id, [...new Set(requestOf.values())]))
+  const requestIdOfItem = new Map(ownItems.map((item) => [item.id, item.requestId]))
+  const noteItemIdsByRequest = new Map<string, string[]>()
+  for (const [noteItemId, requestItemId] of requestOf) {
+    const requestId = requestIdOfItem.get(requestItemId)
+    if (requestId) noteItemIdsByRequest.set(requestId, [...(noteItemIdsByRequest.get(requestId) ?? []), noteItemId])
+  }
+  for (const [requestId, noteItemIds] of noteItemIdsByRequest) await assertNoteLinesNotBoughtElsewhereTx(tx, { requestId, noteItemIds })
 
   const touched = new Set<string>()
   for (const row of rows) {

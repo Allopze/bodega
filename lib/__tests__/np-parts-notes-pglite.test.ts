@@ -201,7 +201,7 @@ async function consume(workOrderId: string, recordId: string, productId: string,
 
 let requestSeq = 0
 /** Una compra que apunta a la línea de NP: solicitud + ítem (+ OC vigente si se pide). */
-async function insertPurchase(input: { noteItemId: string; workOrderId: string; itemStatus: string; requestStatus?: string; withOrder?: boolean }) {
+async function insertPurchase(input: { noteItemId: string; workOrderId: string; itemStatus: string; requestStatus?: string; withOrder?: boolean; quantity?: number }) {
   requestSeq += 1
   const requestId = `req-l3-${requestSeq}`
   await testDb.insert(schema.purchaseRequests).values({
@@ -209,7 +209,7 @@ async function insertPurchase(input: { noteItemId: string; workOrderId: string; 
   })
   const itemId = `rqi-l3-${requestSeq}`
   await testDb.insert(schema.purchaseRequestItems).values({
-    id: itemId, requestId, productNameFree: "Filtro de aceite", quantity: 2, status: input.itemStatus,
+    id: itemId, requestId, productNameFree: "Filtro de aceite", quantity: input.quantity ?? 2, status: input.itemStatus,
     vehicleId: IDS.truckBio, workOrderId: input.workOrderId, partsNoteItemId: input.noteItemId,
   })
   let orderCode: string | null = null
@@ -705,7 +705,8 @@ describe("enlazar y desenlazar con la solicitud de repuestos", () => {
   it("enlazar es idempotente: una línea que ya está en compra no falla ni repite el evento", async () => {
     const note = await createNote(IDS.mecBio, OT.a)
     const [first] = note.itemIds as [string, string]
-    const p1 = await insertPurchase({ noteItemId: first, workOrderId: OT.a, itemStatus: "draft", requestStatus: "draft" })
+    // Se compra en partes (1 + 1 de las 2 unidades): lo vivo de otra solicitud no cubre lo pedido hasta la segunda, y una línea no se compra dos veces.
+    const p1 = await insertPurchase({ noteItemId: first, workOrderId: OT.a, itemStatus: "draft", requestStatus: "draft", quantity: 1 })
     const link = (requestItemId: string) => testDb.transaction((tx) => resolver.linkNoteItemsToRequestTx(tx as unknown as Tx, {
       links: [{ noteItemId: first, requestItemId }], actorUserId: IDS.jefe,
     }))
@@ -713,7 +714,7 @@ describe("enlazar y desenlazar con la solicitud de repuestos", () => {
     const resolvedAt = (await itemRow(first)).resolvedAt
     // Autoguardado del borrador y una segunda solicitud que compra el saldo: la línea sigue igual.
     await link(p1.itemId)
-    const p2 = await insertPurchase({ noteItemId: first, workOrderId: OT.a, itemStatus: "draft", requestStatus: "draft" })
+    const p2 = await insertPurchase({ noteItemId: first, workOrderId: OT.a, itemStatus: "draft", requestStatus: "draft", quantity: 1 })
     await link(p2.itemId)
     expect(await eventsOf(OT.a, "parts_note_resolved")).toHaveLength(1)
     expect(await itemRow(first)).toMatchObject({ resolution: "en_compra", resolvedByUserId: IDS.jefe, resolvedAt })
@@ -723,8 +724,9 @@ describe("enlazar y desenlazar con la solicitud de repuestos", () => {
     const note = await createNote(IDS.mecBio, OT.a)
     const [first, second] = note.itemIds as [string, string]
     const jefe = await viewerOf(IDS.jefe)
-    const p1 = await insertPurchase({ noteItemId: first, workOrderId: OT.a, itemStatus: "draft", requestStatus: "draft" })
-    const p2 = await insertPurchase({ noteItemId: first, workOrderId: OT.a, itemStatus: "draft", requestStatus: "draft" })
+    // Dos compradores en partes (1 + 1 de las 2 unidades): una línea no se compra dos veces, pero sí en partes.
+    const p1 = await insertPurchase({ noteItemId: first, workOrderId: OT.a, itemStatus: "draft", requestStatus: "draft", quantity: 1 })
+    const p2 = await insertPurchase({ noteItemId: first, workOrderId: OT.a, itemStatus: "draft", requestStatus: "draft", quantity: 1 })
     const p3 = await insertPurchase({ noteItemId: second, workOrderId: OT.a, itemStatus: "draft", requestStatus: "draft" })
     const link = (links: Array<{ noteItemId: string; requestItemId: string }>) => testDb.transaction((tx) => resolver.linkNoteItemsToRequestTx(tx as unknown as Tx, { links, actorUserId: IDS.jefe }))
     const unlink = (noteItemIds: string[]) => testDb.transaction((tx) => resolver.unlinkNoteItemsFromRequestTx(tx as unknown as Tx, { noteItemIds, actorUserId: IDS.mecBio }))
