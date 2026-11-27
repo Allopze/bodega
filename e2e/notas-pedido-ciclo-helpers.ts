@@ -31,6 +31,9 @@ export const LIBRE_PARTE = `QA-CI-NEW-${CICLO}`
 /** Cantidades pedidas: el catálogo 3 y el libre 2 (la recepción parcial llega con 1 del catálogo). */
 export const CANTIDAD = { catalogo: 3, libre: 2 } as const
 
+/** El botón de cabecera que acepta la nota: aceptar es aprobar su compra (ADR 0001, D30), y el rótulo lo dice. */
+export const ACEPTAR_Y_ENVIAR = "Aceptar y enviar a compra"
+
 export const escapar = (texto: string) => texto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 // ── Sesiones ────────────────────────────────────────────────────────────────────────────────────
@@ -135,11 +138,12 @@ export async function eventosDeNota(id: string): Promise<EventoDeNota[]> {
   })
 }
 
-/** Los ítems de solicitud que compran las líneas de la nota (`purchase_request_items.parts_note_item_id`). */
+/** Los ítems de solicitud que compran las líneas de la nota (`purchase_request_items.parts_note_item_id`), con lo que dice su solicitud. */
 export async function comprasDeNota(noteId: string) {
   return withSql(async (sql) => {
     const rows = await sql`
-      select i.id, i.request_id, i.parts_note_item_id, i.product_id, i.vehicle_id, i.work_order_id, i.status, r.code as request_code, r.worksite_id
+      select i.id, i.request_id, i.parts_note_item_id, i.product_id, i.vehicle_id, i.work_order_id, i.status,
+        r.code as request_code, r.worksite_id, r.status as request_status, r.request_type, r.urgency
       from purchase_request_items i
       join purchase_requests r on r.id = i.request_id
       join mant_parts_note_items n on n.id = i.parts_note_item_id
@@ -149,7 +153,21 @@ export async function comprasDeNota(noteId: string) {
       id: row.id as string, requestId: row.request_id as string, noteItemId: row.parts_note_item_id as string, productId: row.product_id as string | null,
       vehicleId: row.vehicle_id as string | null, workOrderId: row.work_order_id as string | null, status: row.status as string,
       requestCode: row.request_code as string, worksiteId: row.worksite_id as string,
+      requestStatus: row.request_status as string, requestType: row.request_type as string, urgency: row.urgency as string,
     }))
+  })
+}
+
+/** Las decisiones de aprobación de una solicitud, de la más vieja a la más nueva: quién decidió, con qué contexto de rol y por qué. */
+export async function decisionesDeSolicitud(requestId: string) {
+  return withSql(async (sql) => {
+    const rows = await sql`
+      select d.type, d.role_context, d.reason, u.email as decided_by
+      from approval_decisions d
+      join users u on u.id = d.decided_by
+      where d.request_id = ${requestId}
+      order by d.decided_at, d.id`
+    return rows.map((row) => ({ type: row.type as string, roleContext: row.role_context as string | null, reason: row.reason as string | null, decidedBy: row.decided_by as string }))
   })
 }
 

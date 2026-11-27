@@ -2,8 +2,8 @@ import { expect, test, type Page } from "@playwright/test"
 import { listRecord, textoVisible } from "./helpers"
 import { ADMIN_CONTRATO, JEFE, MECANICO, entrarPlataforma, vigilarConsola } from "./notas-pedido-helpers"
 import {
-  ADMIN, ADMIN_CONTRATO_CHO, CICLO, MECANICO_CHO, SUPERVISOR, cambiarDeSesion, capturarAccion, crearNotaPorUi, esperarEstadoDeNota, estadoDeNota,
-  eventosDeNota, notaPorId, repetirAccion, sesionComo, textoDelExcel, type AccionCapturada, type NotaEnBase,
+  ACEPTAR_Y_ENVIAR, ADMIN, ADMIN_CONTRATO_CHO, CICLO, MECANICO_CHO, SUPERVISOR, cambiarDeSesion, capturarAccion, crearNotaPorUi, esperarEstadoDeNota, estadoDeNota,
+  comprasDeNota, eventosDeNota, notaPorId, repetirAccion, sesionComo, textoDelExcel, type AccionCapturada, type NotaEnBase,
 } from "./notas-pedido-ciclo-helpers"
 
 /**
@@ -11,7 +11,7 @@ import {
  * Las acciones de la interfaz se capturan (`next-action`) y se repiten por HTTP con la sesión de otra persona o con otros
  * argumentos; la acción vieja se usa también desde una pantalla desactualizada.
  *
- *   1  transición inválida: aceptar con la pantalla vieja una nota que otra persona ya anuló;
+ *   1  transición inválida: «Aceptar y enviar a compra» con la pantalla vieja sobre una nota que otra persona ya anuló (y no sale solicitud);
  *   2  motivo faltante al poner en espera y al rechazar (pantalla y servidor);
  *   3  rechazar la nota entera y reabrirla;
  *   4  sin permiso: el mecánico no ve acciones y el servidor le responde error; el supervisor no puede reabrir;
@@ -51,7 +51,7 @@ test.describe("Nota de pedido · casos negativos", () => {
     const errores = vigilarConsola(page)
     await entrarPlataforma(page, JEFE)
     await page.goto(detalle(anulable.id))
-    const aceptar = page.getByRole("button", { name: "Aceptar", exact: true })
+    const aceptar = page.getByRole("button", { name: ACEPTAR_Y_ENVIAR, exact: true })
     await expect(aceptar).toBeVisible()
 
     // Otra persona (administración) la anula con su motivo mientras esta pantalla sigue abierta.
@@ -66,15 +66,16 @@ test.describe("Nota de pedido · casos negativos", () => {
     await expect(otra.page.getByText("Motivo: QA_NEG Pedido duplicado por error").first()).toBeVisible()
     await otra.context.close()
 
-    // La pantalla vieja todavía ofrece «Aceptar»: el servidor lo rechaza y la nota no cambia.
+    // La pantalla vieja todavía ofrece «Aceptar y enviar a compra»: el servidor lo rechaza, no sale ninguna solicitud y la nota no cambia.
     acciones.aceptar = await capturarAccion(page, () => aceptar.click())
     await expect(textoVisible(page, `La nota ${anulable.code} ya está anulada.`).first()).toBeVisible({ timeout: 30_000 })
     expect(await estadoDeNota(anulable.id)).toBe("anulada")
     expect(await resumen(anulable.id)).toEqual(["·>enviada", "enviada>anulada"])
+    expect(await comprasDeNota(anulable.id), "aceptar una nota anulada no manda nada a Compras").toEqual([])
     // Recargada, la nota ya no ofrece acciones.
     await page.reload()
     await expect(page.getByText("Esta nota está anulada")).toBeVisible()
-    await expect(page.getByRole("button", { name: "Aceptar", exact: true })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: ACEPTAR_Y_ENVIAR, exact: true })).toHaveCount(0)
     // Y por HTTP, con la sesión de jefatura: aceptar y anular una nota anulada se rechazan igual.
     expect(await repetirAccion(page, acciones.aceptar, { noteId: anulable.id })).toMatchObject({ ok: false, message: `La nota ${anulable.code} ya está anulada.` })
     expect(await repetirAccion(page, acciones.anular, { noteId: anulable.id, reason: "QA_NEG Otra vez" })).toMatchObject({ ok: false, message: `La nota ${anulable.code} ya está anulada.` })
@@ -133,7 +134,7 @@ test.describe("Nota de pedido · casos negativos", () => {
     expect((await notaPorId(rechazable.id))!.lines.map((linea) => linea.resolution)).toEqual(["rechazada"])
     await expect(page.getByText("Motivo: QA_NEG No corresponde a esta faena").first()).toBeVisible({ timeout: 30_000 })
     // Rechazada: ya no se acepta ni se pone en espera; sólo se puede reabrir.
-    await expect(page.getByRole("button", { name: "Aceptar", exact: true })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: ACEPTAR_Y_ENVIAR, exact: true })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Poner en espera", exact: true })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Reabrir", exact: true })).toBeVisible()
 
@@ -181,6 +182,7 @@ test.describe("Nota de pedido · casos negativos", () => {
 
     expect(await estadoDeNota(rechazable.id)).toBe(estadoAntes)
     expect(await resumen(rechazable.id)).toEqual(antes)
+    expect(await comprasDeNota(rechazable.id), "sin permiso, «Aceptar y enviar a compra» no manda nada a Compras").toEqual([])
   })
 
   test("5 · otra faena: el detalle es 404, la nota no aparece en la bandeja y el servidor rechaza la acción", async ({ page, browser }) => {
@@ -213,6 +215,7 @@ test.describe("Nota de pedido · casos negativos", () => {
     await cholguan.context.close()
 
     expect(await resumen(rechazable.id)).toEqual(antes)
+    expect(await comprasDeNota(rechazable.id), "de otra faena, «Aceptar y enviar a compra» no manda nada a Compras").toEqual([])
   })
 
   test("6 · exportación: sin sesión 401, sin permiso 403 con su mensaje y con permiso un .xlsx con las notas", async ({ page, playwright }) => {
@@ -275,7 +278,7 @@ test.describe("Nota de pedido · casos negativos", () => {
     await dialogo.getByRole("button", { name: "Anular nota", exact: true }).click()
     await esperarEstadoDeNota(rechazable.id, "anulada")
     await expect(page.getByText("Esta nota está anulada")).toBeVisible({ timeout: 30_000 })
-    for (const nombre of ["Aceptar", "Poner en espera", "Rechazar nota", "Anular nota", "Reabrir"]) {
+    for (const nombre of [ACEPTAR_Y_ENVIAR, "Poner en espera", "Rechazar nota", "Anular nota", "Reabrir"]) {
       await expect(page.getByRole("button", { name: nombre, exact: true })).toHaveCount(0)
     }
     // Una nota anulada sale de «Por revisar» y queda en «Cerradas» (como las notas finales).

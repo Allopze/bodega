@@ -96,7 +96,12 @@ async function titulosDeLaCola(page: Page): Promise<string[]> {
 }
 
 const ES_OT = /^(Asignar mecánico a |Recibir .+ del taller$|Dar conformidad por |Ingresar .+ a taller$|Trabajar en )/
-const ES_NOTA = /^Resolver repuestos de /
+/**
+ * Una nota con OT dice «Resolver repuestos de KA-135»; una sin OT (pedido de taller, reposición), «Resolver repuestos · Biodiversa»
+ * (`work-queue-sources.ts`). El aviso del menú cuenta las dos: contar sólo las primeras lo hace divergir de la lista apenas otra
+ * prueba deja una nota sin OT por resolver en la misma base.
+ */
+const ES_NOTA = /^Resolver repuestos (de|·) /
 const REGISTROS = /^Revisar (\d+) registros? de mantención$/
 
 /** Lo que dicen las filas de la cola: filas de OT, notas y REGISTROS (cada fila de registros trae el conteo de su faena). */
@@ -337,7 +342,7 @@ test.describe("Mantención en «Mis pendientes»", () => {
     await expect(conformidad.first()).toBeVisible()
     // Sólo lo suyo: ni por asignar ni las notas (esas las resuelve la jefatura primero).
     await expect(page.getByRole("link", { name: /^Asignar mecánico a / })).toHaveCount(0)
-    await expect(page.getByRole("link", { name: /^Resolver repuestos de / })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: ES_NOTA })).toHaveCount(0)
 
     await conformidad.first().click()
     await expect(page).toHaveURL(/\/mantencion\/ot\/[^/]+$/)
@@ -384,7 +389,7 @@ test.describe("Mantención en «Mis pendientes»", () => {
     // La del otro mecánico es de otro equipo: no aparece.
     await expect(page.getByRole("link", { name: `Ingresar ${datos.equipoB} a taller` })).toHaveCount(0)
     // Y nada que no sea suyo: ni por asignar ni conformidad ni notas por resolver.
-    await expect(page.getByRole("link", { name: /^(Asignar mecánico a |Dar conformidad por |Resolver repuestos de )/ })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: /^(Asignar mecánico a |Dar conformidad por |Resolver repuestos (de|·) )/ })).toHaveCount(0)
     expect(errores).toEqual([])
   })
 

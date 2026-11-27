@@ -1,9 +1,9 @@
 import { expect, test, type Page } from "@playwright/test"
-import { listRecord, pickCurrentMonthDate, receiptSubmitName, selectRadixById, textoVisible, issueOrderFromDetail } from "./helpers"
+import { listRecord, receiptSubmitName, selectRadixById, textoVisible, issueOrderFromDetail } from "./helpers"
 import { JEFE, MECANICO, entrarPlataforma, vigilarConsola } from "./notas-pedido-helpers"
 import {
-  ADMIN, CANTIDAD, LIBRE_CICLO, LIBRE_PARTE, REPUESTO_CICLO, cambiarDeSesion, comprasDeNota, contarNotasConLinea,
-  equipoDeCargo, escapar, esperarEstadoDeNota, eventosDeNota, movimientosDe, notaPorDescripcion, productoPorNumeroDeParte,
+  ACEPTAR_Y_ENVIAR, ADMIN, CANTIDAD, LIBRE_CICLO, LIBRE_PARTE, REPUESTO_CICLO, cambiarDeSesion, comprasDeNota, contarNotasConLinea,
+  decisionesDeSolicitud, equipoDeCargo, escapar, esperarEstadoDeNota, eventosDeNota, movimientosDe, notaPorDescripcion, notaPorId, productoPorNumeroDeParte,
   sembrarRepuestoCiclo, stockEnFaena, type EquipoDeCargo, type NotaEnBase,
 } from "./notas-pedido-ciclo-helpers"
 
@@ -13,9 +13,11 @@ import {
  *   1  el mecánico crea la nota en `/mantencion/notas-pedido/nueva` (faena de su alcance; una línea del catálogo con cargo a un
  *      equipo y otra en texto libre) y un fallo de red que pierde la respuesta —el servidor ya la creó— no duplica: el reenvío
  *      con el mismo borrador devuelve la misma nota;
- *   2  jefatura la acepta; la pone en espera con motivo y la vuelve a aceptar;
- *   3  «Comprar» abre la solicitud de repuestos con la nota precargada (sin OT, en su faena), se guarda, se envía, se aprueba
- *      y Compras arma y emite la OC: la nota pasa a «En compra»;
+ *   2  jefatura la pone en espera con motivo y «Aceptar y enviar a compra» (aceptar es aprobar su compra, ADR 0001 D30/D31) la
+ *      saca de la espera: nace UNA solicitud de repuestos ya aprobada, sin OT y en la faena de la nota, con sus dos líneas, y esas
+ *      líneas aparecen en la cola de /compras; la nota queda «En compra»;
+ *   3  Compras toma la solicitud aprobada desde su cola, arma y emite la OC (catalogando la línea libre): la nota sigue «En compra»
+ *      con la OC a la vista en cada línea. «Comprar» a mano (`?np=`) lo cubre `notas-pedido.spec.ts`;
  *   4  la recepción en faena de una parte → «Recibida parcial» y el stock de la faena sube; recibir más de lo comprado se rechaza;
  *   5  la recepción del resto cierra la nota sola, y el historial cuenta todas las transiciones.
  *
@@ -124,16 +126,16 @@ test.describe("Nota de pedido sin OT · ciclo completo", () => {
     await expect(page.getByText("Sin OT", { exact: true }).first()).toBeVisible()
     await expect(lineaDe(page, REPUESTO_CICLO.name)).toContainText(`Cargo: ${equipo.code}`)
     await expect(lineaDe(page, LIBRE_CICLO)).toContainText("× 2")
-    for (const nombre of ["Aceptar", "Poner en espera", "Rechazar nota", "Anular nota", "Comprar", "Reservar de bodega"]) {
+    for (const nombre of [ACEPTAR_Y_ENVIAR, "Poner en espera", "Rechazar nota", "Anular nota", "Comprar", "Enviar a compra", "Reservar de bodega"]) {
       await expect(page.getByRole("button", { name: nombre, exact: true }), `«${nombre}» no se ofrece a quien sólo pide`).toHaveCount(0)
       await expect(page.getByRole("link", { name: nombre, exact: true })).toHaveCount(0)
     }
     expect(errores).toEqual([])
   })
 
-  // ── 2 · Jefatura acepta, pone en espera con motivo y vuelve a aceptar ───────────────────────────
+  // ── 2 · Jefatura: en espera con motivo y «Aceptar y enviar a compra» ───────────────────────────
 
-  test("2 · jefatura acepta la nota; en espera exige un motivo y «Aceptar» la devuelve a su curso", async ({ page }) => {
+  test("2 · jefatura la pone en espera con motivo y «Aceptar y enviar a compra» manda sus líneas a Compras con la solicitud ya aprobada", async ({ page }) => {
     expect(nota?.id, "depende del paso 1").toBeTruthy()
     const errores = vigilarConsola(page)
     await entrarPlataforma(page, JEFE)
@@ -144,18 +146,16 @@ test.describe("Nota de pedido sin OT · ciclo completo", () => {
     await expect(fila).toContainText("Urgente")
     await fila.getByRole("link", { name: nota.code, exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`${detalle(nota.id)}$`))
-    // Sin OT no se aparta stock: la línea del catálogo ofrece comprar o rechazar, no reservar.
+    // Sin OT no se aparta stock: la línea del catálogo ofrece enviar a compra, comprar o rechazar, no reservar.
     await expect(lineaDe(page, REPUESTO_CICLO.name).getByRole("link", { name: "Comprar", exact: true })).toBeVisible()
+    await expect(lineaDe(page, REPUESTO_CICLO.name).getByRole("button", { name: "Enviar a compra", exact: true })).toBeVisible()
     await expect(lineaDe(page, REPUESTO_CICLO.name).getByRole("button", { name: "Reservar de bodega", exact: true })).toHaveCount(0)
+    // Aceptar es aprobar la compra: el botón lo dice (no hay un «Aceptar» a secas).
+    await expect(page.getByRole("button", { name: ACEPTAR_Y_ENVIAR, exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Aceptar", exact: true })).toHaveCount(0)
+    expect(await comprasDeNota(nota.id), "antes de aceptar no hay solicitud").toEqual([])
 
-    // Aceptar: sin motivo ni confirmación.
-    await page.getByRole("button", { name: "Aceptar", exact: true }).click()
-    await expect(textoVisible(page, `La nota ${nota.code} quedó aceptada.`).first()).toBeVisible({ timeout: 30_000 })
-    await esperarEstadoDeNota(nota.id, "aceptada")
-    await expect(historial(page).filter({ hasText: "Aceptada" })).toHaveCount(1, { timeout: 30_000 })
-    await expect(historial(page).filter({ hasText: "Jefatura Mantención E2E" })).toHaveCount(1)
-
-    // En espera: el motivo es obligatorio (al menos 5 letras) y se muestra en la nota.
+    // En espera (desde «enviada»): el motivo es obligatorio (al menos 5 letras) y se muestra en la nota.
     await page.getByRole("button", { name: "Poner en espera", exact: true }).click()
     const dialogo = page.getByRole("dialog", { name: `Poner ${nota.code} en espera` })
     const confirmar = dialogo.getByRole("button", { name: "Poner en espera", exact: true })
@@ -169,82 +169,81 @@ test.describe("Nota de pedido sin OT · ciclo completo", () => {
     await esperarEstadoDeNota(nota.id, "en_espera")
     await expect(page.getByText("Esta nota está en espera")).toBeVisible()
     await expect(page.getByText("Motivo: Esperando el visto bueno del jefe de taller").first()).toBeVisible()
-    // En espera las líneas no se resuelven: no hay «Comprar» ni «Rechazar» por línea.
+    // En espera las líneas no se resuelven ni se envían a compra: sólo queda aceptar la nota (o rechazarla o anularla).
     await expect(page.getByRole("link", { name: "Comprar", exact: true })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Enviar a compra", exact: true })).toHaveCount(0)
     await expect(lineaDe(page, LIBRE_CICLO).getByRole("button", { name: "Rechazar", exact: true })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Poner en espera", exact: true })).toHaveCount(0)
+    expect(await comprasDeNota(nota.id), "en espera no sale ninguna solicitud").toEqual([])
 
-    // Aceptar desde la espera vuelve al estado de las líneas (todas pendientes: aceptada).
-    await page.getByRole("button", { name: "Aceptar", exact: true }).click()
-    await esperarEstadoDeNota(nota.id, "aceptada")
-    await expect(page.getByText("Esta nota está en espera")).toHaveCount(0, { timeout: 30_000 })
-    await expect(lineaDe(page, REPUESTO_CICLO.name).getByRole("link", { name: "Comprar", exact: true })).toBeVisible()
+    // «Aceptar y enviar a compra» desde la espera: sin motivo ni confirmación. Aprueba la compra en el acto.
+    await page.getByRole("button", { name: ACEPTAR_Y_ENVIAR, exact: true }).click()
+    // El aviso dice cuántas líneas salieron y con qué solicitud (el código lo asigna el servidor: REP-aaaa-nnnn).
+    await expect(textoVisible(page, /^Aceptada\. 2 líneas a Compras \([A-Z]+-[\w-]+\)\.$/).first()).toBeVisible({ timeout: 30_000 })
+    await esperarEstadoDeNota(nota.id, "en_compra")
+
+    // Una sola solicitud de repuestos, ya APROBADA, con las dos líneas, sin OT, en la faena de la nota y con el cargo de la primera.
+    const compras = await comprasDeNota(nota.id)
+    expect(compras).toHaveLength(2)
+    requestId = compras[0]!.requestId
+    expect(new Set(compras.map((compra) => compra.requestId)).size).toBe(1)
+    expect(compras.map((compra) => compra.noteItemId)).toEqual(nota.lines.map((linea) => linea.id))
+    expect(compras.map((compra) => compra.status)).toEqual(["approved", "approved"])
+    expect(compras[0]).toMatchObject({ requestStatus: "approved", requestType: "repuestos", urgency: "critical", worksiteId: equipo.worksiteId })
+    expect(compras.every((compra) => compra.workOrderId === null)).toBe(true)
+    expect(compras[0]).toMatchObject({ productId: REPUESTO_CICLO.id, vehicleId: equipo.id })
+    // La decisión de jefatura reemplaza a Aprobaciones: queda a nombre de quien aceptó, con el contexto de la nota de pedido.
+    expect(await decisionesDeSolicitud(requestId)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "approve", roleContext: "mantencion_np", decidedBy: JEFE }),
+    ]))
+    // Las líneas pasaron a «en compra» y la nota ya espera lo que llegue.
+    expect((await notaPorId(nota.id))!.lines.map((linea) => linea.resolution)).toEqual(["en_compra", "en_compra"])
+    // El encabezado deja a la vista el enlace a la solicitud que salió; la nota ya no ofrece aceptar ni comprar.
+    await expect(page.getByRole("link", { name: compras[0]!.requestCode, exact: true }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText("Quedó en Compras con la solicitud")).toBeVisible()
+    await page.reload()
+    await expect(page.getByText("En compra", { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole("button", { name: ACEPTAR_Y_ENVIAR, exact: true })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Enviar a compra", exact: true })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "Comprar", exact: true })).toHaveCount(0)
+    await expect(lineaDe(page, LIBRE_CICLO).getByRole("list", { name: `Compras de ${LIBRE_CICLO}` }).getByRole("link", { name: compras[0]!.requestCode })).toBeVisible()
+
+    // Las dos líneas caen solas en la cola «Pendientes de orden de compra» de /compras, a nombre de la solicitud aprobada.
+    await cambiarDeSesion(page, ADMIN)
+    await page.goto("/compras")
+    await expect(page.getByRole("heading", { level: 2, name: "Pendientes de orden de compra" })).toBeVisible({ timeout: 30_000 })
+    const enCola = page.getByRole("row").filter({ has: page.getByRole("link", { name: `Ver solicitud ${compras[0]!.requestCode}`, exact: true }) })
+    await expect(enCola).toBeVisible({ timeout: 30_000 })
+    await expect(enCola).toContainText(equipo.worksiteName)
+    await expect(enCola).toContainText("Aprobada")
+    await enCola.getByRole("button", { name: `Ver ítems de ${compras[0]!.requestCode}`, exact: true }).click()
+    const desglose = page.locator(`#items-${requestId}`)
+    await expect(desglose).toContainText(REPUESTO_CICLO.name)
+    await expect(desglose).toContainText(LIBRE_CICLO)
+    await expect(desglose.getByText("Aprobado · sin OC")).toHaveCount(2)
+    await expect(enCola.getByRole("link", { name: "Generar OC", exact: true })).toHaveAttribute("href", `/compras/nueva?faena=${equipo.worksiteId}&solicitud=${requestId}`)
 
     expect((await eventosDeNota(nota.id)).map((evento) => `${evento.from ?? "·"}>${evento.to}`)).toEqual([
-      "·>enviada", "enviada>aceptada", "aceptada>en_espera", "en_espera>aceptada",
+      "·>enviada", "enviada>en_espera", "en_espera>aceptada", "aceptada>en_compra",
     ])
     expect(errores).toEqual([])
   })
 
-  // ── 3 · Comprar: solicitud precargada → aprobación → OC emitida ─────────────────────────────────
+  // ── 3 · Compras: «Generar OC» desde su cola → OC emitida ────────────────────────────────────────
 
-  test("3 · «Comprar» abre la solicitud con la nota, se envía, se aprueba y Compras emite la OC: la nota queda «En compra»", async ({ page }) => {
-    expect(nota?.id, "depende del paso 1").toBeTruthy()
+  test("3 · Compras genera la OC desde su cola con la solicitud ya aprobada: no hay que aprobar nada y la nota sigue «En compra»", async ({ page }) => {
+    expect(requestId, "depende del paso 2").toBeTruthy()
     const errores = vigilarConsola(page)
-    await entrarPlataforma(page, JEFE)
-    await page.goto(detalle(nota.id))
-    await lineaDe(page, REPUESTO_CICLO.name).getByRole("link", { name: "Comprar", exact: true }).click()
-    await expect(page).toHaveURL(new RegExp(`/solicitudes/nueva\\?tipo=repuestos&np=${nota.id}$`))
+    await entrarPlataforma(page, ADMIN)
+    await page.goto("/compras")
+    const compras = await comprasDeNota(nota.id)
+    const enCola = page.getByRole("row").filter({ has: page.getByRole("link", { name: `Ver solicitud ${compras[0]!.requestCode}`, exact: true }) })
+    await expect(enCola).toBeVisible({ timeout: 30_000 })
+    await enCola.getByRole("link", { name: "Generar OC", exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/compras/nueva\\?faena=${equipo.worksiteId}&solicitud=${requestId}$`))
     await page.waitForLoadState("networkidle").catch(() => undefined)
 
-    // Precargada: en la faena de la nota, sin OT, una línea por cada línea pendiente y el equipo de cargo en la primera.
-    await expect(textoVisible(page, `Solicitud desde la nota de pedido ${nota.code} (sin orden de trabajo). Revisa las cantidades antes de enviar.`)).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByRole("combobox", { name: "Faena" })).toContainText(equipo.worksiteName)
-    await expect(page.getByRole("combobox", { name: "Equipo de flota" }).first()).toHaveValue(new RegExp(escapar(equipo.plate)))
-    // La línea del catálogo viene como repuesto elegido; la libre, como texto en el campo de descripción.
-    await expect(page.getByRole("group", { name: "Repuesto elegido" })).toContainText(REPUESTO_CICLO.name)
-    await expect(page.getByPlaceholder("Describe el ítem requerido...")).toHaveValue(LIBRE_CICLO)
-    // La nota era urgente: la urgencia sale crítica.
-    await expect(page.locator("#urgency")).toContainText("Crítica")
-
-    // Bajo el umbral basta el precio estimado (sin cotización).
-    const precios = page.getByLabel("Precio unitario estimado (CLP)")
-    await precios.nth(0).fill("20000")
-    await precios.nth(1).fill("15000")
-    await pickCurrentMonthDate(page, "Seleccionar fecha")
-    await page.getByRole("button", { name: /Guardar borrador/ }).click()
-    await expect(textoVisible(page, /^Borrador guardado/).first()).toBeVisible({ timeout: 30_000 })
-
-    // Cada línea de la nota quedó atada a su ítem de solicitud: sin OT, en la faena de la nota y con el equipo de cargo.
-    let compras = await comprasDeNota(nota.id)
-    await expect.poll(async () => (compras = await comprasDeNota(nota.id)).length, { timeout: 30_000, message: "las dos líneas de la nota se compran en la solicitud" }).toBe(2)
-    requestId = compras[0]!.requestId
-    expect(compras.map((compra) => compra.noteItemId)).toEqual(nota.lines.map((linea) => linea.id))
-    expect(new Set(compras.map((compra) => compra.requestId)).size).toBe(1)
-    expect(compras.every((compra) => compra.workOrderId === null && compra.worksiteId === equipo.worksiteId)).toBe(true)
-    expect(compras[0]).toMatchObject({ productId: REPUESTO_CICLO.id, vehicleId: equipo.id })
-
-    // Se envía a aprobación desde su ficha.
-    await page.goto(`/solicitudes/${requestId}`)
-    const enviar = page.getByRole("button", { name: /Enviar a aprobación/ })
-    await expect(enviar).toBeVisible({ timeout: 30_000 })
-    await enviar.click()
-    await expect(enviar).toHaveCount(0, { timeout: 30_000 })
-
-    // Compras: aprueba sin cotización (bajo el umbral), arma la OC —cataloga la línea libre— y la emite.
-    await cambiarDeSesion(page, ADMIN)
-    await page.goto(`/solicitudes/${requestId}`)
-    await expect(page.getByRole("heading", { name: "Cotizaciones" })).toBeVisible({ timeout: 15_000 })
-    const aprobar = page.getByRole("button", { name: "Aprobar sin cotización", exact: true })
-    const dialogoAprobar = page.getByRole("dialog", { name: "Aprobar sin cotización" })
-    await expect(async () => {
-      await aprobar.click()
-      await expect(dialogoAprobar).toBeVisible({ timeout: 2_000 })
-    }).toPass({ timeout: 30_000 })
-    await dialogoAprobar.getByRole("button", { name: "Confirmar aprobación" }).click()
-    await expect(textoVisible(page, "Aprobada").first()).toBeVisible({ timeout: 15_000 })
-
-    await page.goto(`/compras/nueva?faena=${equipo.worksiteId}&solicitud=${requestId}`)
-    await page.waitForLoadState("networkidle").catch(() => undefined)
+    // Compras arma la OC —cataloga la línea libre— y la emite.
     await selectRadixById(page, "supplierId", "Proveedor E2E")
     const catalogar = page.getByRole("button", { name: "Catalogar", exact: true })
     await expect(catalogar).toHaveCount(1)
@@ -268,12 +267,18 @@ test.describe("Nota de pedido sin OT · ciclo completo", () => {
     await issueOrderFromDetail(page)
     await expect(page.getByText(/Pendiente de recepción/).first()).toBeVisible({ timeout: 30_000 })
 
-    // La nota ya espera la compra: «En compra», con la solicitud y la OC a la vista en cada línea.
+    // La línea ya está en una OC: sale de la cola de Compras.
+    await page.goto("/compras")
+    await expect(page.getByRole("heading", { level: 2, name: "Pendientes de orden de compra" })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole("link", { name: `Ver solicitud ${compras[0]!.requestCode}`, exact: true })).toHaveCount(0)
+
+    // La nota sigue «En compra» (lo que se espera es la llegada), con la solicitud y la OC a la vista en cada línea.
     await esperarEstadoDeNota(nota.id, "en_compra")
+    await cambiarDeSesion(page, JEFE)
     await page.goto(detalle(nota.id))
     await expect(page.getByText("En compra", { exact: true }).first()).toBeVisible()
     await expect(lineaDe(page, REPUESTO_CICLO.name).getByRole("list", { name: `Compras de ${REPUESTO_CICLO.name}` }).getByRole("link", { name: /^OC-/ })).toBeVisible()
-    await expect(lineaDe(page, LIBRE_CICLO).getByRole("list", { name: `Compras de ${LIBRE_CICLO}` }).getByRole("link", { name: /^SOL-|^REP-/ })).toBeVisible()
+    await expect(lineaDe(page, LIBRE_CICLO).getByRole("list", { name: `Compras de ${LIBRE_CICLO}` }).getByRole("link", { name: /^(SOL|REP)-/ })).toBeVisible()
     expect(errores).toEqual([])
   })
 
@@ -347,19 +352,19 @@ test.describe("Nota de pedido sin OT · ciclo completo", () => {
     // Todas las transiciones, la última automática (sin persona).
     const eventos = await eventosDeNota(nota.id)
     expect(eventos.map((evento) => `${evento.from ?? "·"}>${evento.to}`)).toEqual([
-      "·>enviada", "enviada>aceptada", "aceptada>en_espera", "en_espera>aceptada", "aceptada>en_compra", "en_compra>recibida_parcial", "recibida_parcial>cerrada",
+      "·>enviada", "enviada>en_espera", "en_espera>aceptada", "aceptada>en_compra", "en_compra>recibida_parcial", "recibida_parcial>cerrada",
     ])
     expect(eventos.slice(-3).map((evento) => evento.actor !== null)).toEqual([true, true, true])
     await cambiarDeSesion(page, JEFE)
     await page.goto(detalle(nota.id))
-    await expect(historial(page)).toHaveCount(7, { timeout: 30_000 })
+    await expect(historial(page)).toHaveCount(6, { timeout: 30_000 })
     await expect(historial(page).first()).toContainText("Nota creada")
     await expect(historial(page).last()).toContainText("Recibida parcial")
     await expect(historial(page).last()).toContainText("Cerrada")
     await expect(historial(page).filter({ hasText: "Motivo: Esperando el visto bueno del jefe de taller" })).toHaveCount(1)
     await expect(page.getByText("Cerrada", { exact: true }).first()).toBeVisible()
     // Cerrada: ya no ofrece acciones de cabecera ni de línea.
-    for (const nombre of ["Aceptar", "Poner en espera", "Rechazar nota", "Anular nota"]) {
+    for (const nombre of [ACEPTAR_Y_ENVIAR, "Poner en espera", "Rechazar nota", "Anular nota"]) {
       await expect(page.getByRole("button", { name: nombre, exact: true })).toHaveCount(0)
     }
     await expect(page.getByRole("link", { name: "Comprar", exact: true })).toHaveCount(0)
