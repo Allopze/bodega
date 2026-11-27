@@ -229,7 +229,8 @@ test.describe("Notas de pedido de repuestos", () => {
     await expect(page).toHaveURL(new RegExp(`/mantencion/notas-pedido/${nota.id}$`))
     await expect(page.getByRole("heading", { level: 1, name: new RegExp(`^${nota.code} · ${esc(equipo.code)}`) })).toBeVisible()
     const lineas = page.getByRole("list", { name: "Líneas de la nota", exact: true })
-    await expect(lineas.getByRole("listitem")).toHaveCount(2)
+    // Sólo las líneas: cada una trae dentro su lista «Avance de la línea» (y las compras), también de `listitem`.
+    await expect(lineas.locator(":scope > li")).toHaveCount(2)
     const lineaCatalogo = lineas.getByRole("listitem").filter({ hasText: REPUESTO.name })
     const lineaLibre = lineas.getByRole("listitem").filter({ hasText: REPUESTO_LIBRE })
 
@@ -254,7 +255,8 @@ test.describe("Notas de pedido de repuestos", () => {
     await expect(dialogo).toHaveCount(0)
     await expect(textoVisible(page, /Se reservó 1 de/).first()).toBeVisible({ timeout: 30_000 })
     await expect(lineaCatalogo).toContainText("Reservado")
-    await expect(lineaCatalogo).toContainText("Llegó 1 · Usado 0")
+    // El avance de la línea (Pedido → En compra → Llegó n/m → Usado): lo reservado ya llegó y todavía no se usa.
+    await expect(lineaCatalogo.getByRole("list", { name: "Avance de la línea" })).toContainText("Llegó 1/1")
     await expect(lineaCatalogo.getByRole("button", { name: "Reservar de bodega", exact: true })).toHaveCount(0)
     const reserva = await reservaDeLaOt(otId)
     expect(reserva, "la OT tiene una reserva activa").toMatchObject({ status: "activa", quantity: 1 })
