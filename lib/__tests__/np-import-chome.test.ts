@@ -120,22 +120,23 @@ describe("calces", () => {
     expect(resolvers.charge("  ", "w-bio")).toEqual({ kind: "none" })
   })
 
-  it("un cargo sólo calza con un equipo activo de la faena de la nota: si no, queda pendiente con el motivo", () => {
-    // El mismo código en la faena que corresponde calza; en otra faena, no (se compraría con un equipo ajeno).
+  it("el cargo histórico calza con el equipo aunque hoy esté en otra faena o dado de baja (se prefiere el de la faena de la nota)", () => {
+    // El equipo se pudo trasladar o dar de baja después de la nota: el cargo es un hecho histórico. Al comprar una nota abierta,
+    // `fleetVehicleProblem` quita del ítem un equipo que ya no sirve y el cargo queda en la nota.
     expect(resolvers.charge("KA 200", "w-cho")).toMatchObject({ kind: "vehicle", vehicleId: "v-ka200" })
-    expect(resolvers.charge("KA 200", "w-bio")).toMatchObject({ kind: "pending", chargeText: "KA 200", reason: expect.stringMatching(/otra faena \(Cholguán\).*Biodiversa/) })
-    expect(resolvers.charge("KA 999", "w-bio")).toMatchObject({ kind: "pending", reason: expect.stringMatching(/inactivo/) })
+    expect(resolvers.charge("KA 200", "w-bio")).toMatchObject({ kind: "vehicle", vehicleId: "v-ka200" })
+    expect(resolvers.charge("KA 999", "w-bio")).toMatchObject({ kind: "vehicle", vehicleId: "v-ka999" })
     // La misma regla por la tabla de equivalencias.
     const viaTable = buildResolvers(catalogs, parseCargoTable({ alias: { "GRUA DOS": { equipo: "KA-200" } } }))
-    expect(viaTable.charge("grua dos", "w-bio")).toMatchObject({ kind: "pending", reason: expect.stringMatching(/otra faena/) })
+    expect(viaTable.charge("grua dos", "w-bio")).toMatchObject({ kind: "vehicle", vehicleId: "v-ka200" })
     expect(viaTable.charge("grua dos", "w-cho")).toMatchObject({ kind: "vehicle", vehicleId: "v-ka200" })
   })
 
-  it("el cargo pendiente por equipo ajeno llega a la línea planificada como texto y al informe de cargos", () => {
+  it("el cargo a un equipo de otra faena llega a la línea planificada como equipo, sin pendiente", () => {
     const planned = plan([erpNote({ id: 77, items: [{ articulo: "Manguera", codigo: null, cargo: "KA 200", cantidad: 1, proveedor: null }] })])
     const note = planned.toImport.find((candidate) => candidate.externalRef === "CHOME-77")!
-    expect(note.lines[0]).toMatchObject({ chargeVehicleId: null, chargeCostCenterId: null, chargeText: "KA 200" })
-    expect(planned.pendingCharges.find((charge) => charge.externalRef === "CHOME-77")).toMatchObject({ cargo: "KA 200", reason: expect.stringMatching(/otra faena/) })
+    expect(note.lines[0]).toMatchObject({ chargeVehicleId: "v-ka200", chargeCostCenterId: null, chargeText: null })
+    expect(planned.pendingCharges.find((charge) => charge.externalRef === "CHOME-77")).toBeUndefined()
   })
 
   it("artículo: por código y por nombre, sólo repuestos activos y nunca uno ambiguo", () => {

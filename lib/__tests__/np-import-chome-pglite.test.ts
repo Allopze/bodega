@@ -189,7 +189,7 @@ describe.sequential("importación de notas de CHOME ERP", () => {
     expect(await count(schema.mantPartsNotes)).toBe(1)
   })
 
-  it("normaliza los cargos: KA 135, KA135 y ka-135 son el mismo equipo; el alias de centro sólo vale en su faena; un equipo de otra faena o dado de baja no se imputa", async () => {
+  it("normaliza los cargos: KA 135, KA135 y ka-135 son el mismo equipo; el alias de centro sólo vale en su faena; un equipo de otra faena o dado de baja se imputa igual (es histórico)", async () => {
     const result = await run([
       erpNote(200, { items: [line("A", { cargo: "KA 135" }), line("B", { cargo: "KA135" }), line("C", { cargo: "ka-135" }), line("D", { cargo: "rbyd 98" }), line("E", { cargo: "GRUA UNO" }), line("F", { cargo: "taller" }), line("J", { cargo: "KA 999" })] }),
       erpNote(201, { faena: "Cholguán", items: [line("G", { cargo: "TALLER" }), line("H", { cargo: "KA 135" }), line("I", { cargo: "CR43-51-52" })] }),
@@ -197,17 +197,15 @@ describe.sequential("importación de notas de CHOME ERP", () => {
     const [bio, cho] = [await byRef("CHOME-200"), await byRef("CHOME-201")]
     expect((await linesOf(bio.id)).map((item) => [item.chargeVehicleId, item.chargeCostCenterId, item.chargeText])).toEqual([
       [IDS.truckBio, null, null], [IDS.truckBio, null, null], [IDS.truckBio, null, null], [IDS.truckBio, null, null], [IDS.truckBio, null, null], [null, "cc-tr-bio", null],
-      // KA-999 está dado de baja: no se imputa (la compra no podría usarlo); la línea conserva el texto.
-      [null, null, "KA 999"],
+      // KA-999 está dado de baja, pero el cargo es histórico: se imputa igual.
+      [IDS.retired, null, null],
     ])
-    // En Cholguán «TALLER» apunta a «Taller Biodiversa», que no es de esa faena: queda como texto. Y KA 135 es de Biodiversa, no de Cholguán:
-    // la línea no se podría comprar con un equipo de otra faena, así que el cargo queda pendiente con su texto.
+    // En Cholguán «TALLER» apunta a «Taller Biodiversa», que no es de esa faena: queda como texto. KA 135 es hoy de Biodiversa,
+    // pero el cargo es histórico: se imputa al equipo.
     expect((await linesOf(cho.id)).map((item) => [item.chargeVehicleId, item.chargeCostCenterId, item.chargeText])).toEqual([
-      [null, null, "TALLER"], [null, null, "KA 135"], [null, null, "CR43-51-52"],
+      [null, null, "TALLER"], [IDS.truckBio, null, null], [null, null, "CR43-51-52"],
     ])
-    expect(result.plan.pendingCharges.map((item) => [item.externalRef, item.cargo])).toEqual([["CHOME-200", "KA 999"], ["CHOME-201", "TALLER"], ["CHOME-201", "KA 135"], ["CHOME-201", "CR43-51-52"]])
-    expect(result.plan.pendingCharges.find((item) => item.cargo === "KA 999")!.reason).toMatch(/inactivo/)
-    expect(result.plan.pendingCharges.find((item) => item.externalRef === "CHOME-201" && item.cargo === "KA 135")!.reason).toMatch(/otra faena \(Biodiversa\).*Cholguán/)
+    expect(result.plan.pendingCharges.map((item) => [item.externalRef, item.cargo])).toEqual([["CHOME-201", "TALLER"], ["CHOME-201", "CR43-51-52"]])
   })
 
   it("excluye las notas de prueba (admin con «test») y las informa; no toca las reales de admin ni las con «test» de otros", async () => {

@@ -82,23 +82,21 @@ export function buildResolvers(catalogs: Catalogs, cargos: CargoTable): Resolver
   }
 
   const vehicleLabel = (vehicle: { code: string | null; plate: string }) => vehicle.code || vehicle.plate
-  // Un cargo a un equipo sólo vale si se puede comprar con él: activo y en la faena de la nota (la misma regla de
-  // `assertItemFleetLink` al guardar la solicitud). Si el código coincide con un equipo que no cumple, la línea queda con
-  // el cargo pendiente y el motivo dice por qué; nunca se imputa a un equipo de otra faena ni dado de baja.
+  // El cargo de una nota importada es un hecho histórico: el equipo al que se pidió el repuesto, aunque hoy esté en otra
+  // faena (se trasladó, o su faena cerró) o se haya dado de baja. Se prefiere el equipo activo de la faena de la nota; si
+  // no hay, vale el único equipo de la flota con ese código o patente. Una nota abierta que se compre después no arrastra
+  // un equipo que ya no sirve: al guardar y al enviar la solicitud, `fleetVehicleProblem` lo quita del ítem y el cargo
+  // queda en la nota. Lo ambiguo (más de un equipo) sigue pendiente.
   const vehicleByKey = (key: string, worksiteId: string) => {
     const matches = vehiclesByKey.get(key) ?? []
-    const eligible = matches.filter((vehicle) => vehicle.isActive && vehicle.worksiteId === worksiteId)
-    if (eligible.length === 1) return { match: eligible[0]!, problem: null }
-    if (eligible.length > 1) return { match: null, problem: "Coincide con más de un equipo (código o patente)" }
+    const here = matches.filter((vehicle) => vehicle.isActive && vehicle.worksiteId === worksiteId)
+    if (here.length === 1) return { match: here[0]!, problem: null }
+    if (here.length > 1) return { match: null, problem: "Coincide con más de un equipo (código o patente)" }
+    if (matches.length === 1) return { match: matches[0]!, problem: null }
     if (matches.length === 0) return { match: null, problem: null }
-    if (matches.length > 1) return { match: null, problem: "Coincide con equipos que están inactivos o en otra faena (código o patente)" }
-    const [only] = matches
-    return {
-      match: null,
-      problem: only!.isActive
-        ? `El equipo «${vehicleLabel(only!)}» está en otra faena (${siteNames.get(only!.worksiteId) ?? only!.worksiteId}), no en la de la nota (${siteNames.get(worksiteId) ?? worksiteId})`
-        : `El equipo «${vehicleLabel(only!)}» está inactivo (dado de baja)`,
-    }
+    const active = matches.filter((vehicle) => vehicle.isActive)
+    if (active.length === 1) return { match: active[0]!, problem: null }
+    return { match: null, problem: "Coincide con más de un equipo de la flota (código o patente)" }
   }
 
   return {
