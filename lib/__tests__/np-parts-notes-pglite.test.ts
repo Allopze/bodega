@@ -1000,8 +1000,8 @@ describe("catálogo del teléfono con NP y reservas por OT", () => {
     return (await response.json()) as MantCatalog
   }
 
-  it("el formato del catálogo sube a 6", () => {
-    expect(CATALOG_FORMAT).toBe(6)
+  it("el formato del catálogo sube a 7 (mis notas, centros de costo y permiso de pedir sin OT)", () => {
+    expect(CATALOG_FORMAT).toBe(7)
   })
 
   it("cada OT trae sus NP no anuladas y lo disponible; sólo las del mecánico", async () => {

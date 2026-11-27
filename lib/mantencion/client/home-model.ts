@@ -105,7 +105,9 @@ export function rejectedNotes(queue: readonly QueueItem[], userId: string): Reje
     } else if (item.type === "reply") {
       notes.push({ id: item.id, type: "reply", title: `${item.summary.equipmentCode} · Respuesta a la observación${item.summary.folio ? ` de ${item.summary.folio}` : ""}`, message })
     } else if (item.type === "parts_note") {
-      notes.push({ id: item.id, type: "parts_note", title: `${item.summary.equipmentCode} · ${item.summary.folio} · Pedido de repuestos`, message })
+      // Con OT: su equipo y su folio; sin OT: la faena a la que se pidió.
+      const where = item.summary.workOrderId ? `${item.summary.equipmentCode} · ${item.summary.folio}` : item.summary.worksiteName ?? "Sin OT"
+      notes.push({ id: item.id, type: "parts_note", title: `${where} · Pedido de repuestos`, message })
     } else {
       notes.push({ id: item.id, type: "ot", title: `${item.summary.equipmentCode} · ${item.summary.folio} · ${OT_ACTION_LABEL[item.payload.action]}`, message })
     }

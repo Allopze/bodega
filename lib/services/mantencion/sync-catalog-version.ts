@@ -3,10 +3,11 @@ import { sql, type SQL } from "drizzle-orm"
 import type { AnyPgColumn, AnyPgTable } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
+  costCenters,
   fuelEquipmentTypes, fuelVehicles, mantBrands, mantDrivers, mantEquipmentProfiles, mantOils, mantRecordObservations,
   mantPartsAllocations, mantPartsAllocationSources, mantPartsNoteItems, mantPartsNotes,
   mantRecords, mantSchedules, mantScheduleVersions, mantWorkOrderEvents, mantWorkOrderItems, mantWorkOrders, mantWorkshops,
-  mantWorkshopUpdates, mantWorkTypes, rolePermissions, userPermissions, userRoles, users, worksites, worksiteUsers,
+  mantWorkshopUpdates, mantWorkTypes, receipts, rolePermissions, userPermissions, userRoles, users, worksites, worksiteUsers,
 } from "@/db/schema"
 import { OT_PERMISSIONS } from "@/lib/mantencion/work-order-states"
 import { isRouteOperational } from "@/lib/services/module-toggles"
@@ -32,7 +33,9 @@ import type { MantViewer } from "./access"
 //    declarada anterior a la plataforma, Trinorma).
 // 6 (2026-11-26): `workOrders[].partsNotes` y `partsAvailable` (notas de pedido y repuestos reservados por OT, ADR
 //    mantención 0001).
-export const CATALOG_FORMAT = 6
+// 7 (2026-11-27): `ownPartsNotes` (mis notas de pedido, con y sin OT), `costCenters` y `user.canRequestParts` (notas de
+//    pedido sin OT desde el teléfono, ADR 0001).
+export const CATALOG_FORMAT = 7
 
 type Source = readonly [AnyPgTable, readonly AnyPgColumn[]]
 
@@ -49,6 +52,11 @@ const SOURCES: readonly Source[] = [
   [mantPartsNoteItems, [mantPartsNoteItems.createdAt, mantPartsNoteItems.resolvedAt]],
   [mantPartsAllocations, [mantPartsAllocations.updatedAt]],
   [mantPartsAllocationSources, [mantPartsAllocationSources.createdAt]],
+  // «Llegó 2 de 5» de una línea SIN OT sale de lo que la faena recibió de la OC (`quantity_received`): una recepción (o su
+  // anulación) lo mueve sin tocar la nota si su estado no cambia, y esas tablas no tienen marca de tiempo propia.
+  [receipts, [receipts.receivedAt, receipts.voidedAt]],
+  // Centros de costo del cargo de una línea sin OT.
+  [costCenters, [costCenters.updatedAt]],
   [mantEquipmentProfiles, [mantEquipmentProfiles.updatedAt]],
   [fuelVehicles, [fuelVehicles.updatedAt]],
   [fuelEquipmentTypes, [fuelEquipmentTypes.updatedAt]],

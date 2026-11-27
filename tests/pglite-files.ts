@@ -723,6 +723,9 @@ export const pgliteTestFiles = [
   "lib/__tests__/operational-work-queue-mantencion-pglite.test.ts",
 
   // NP · L5 app del mecánico (si alguna suite del cliente usa PGlite).
+  // «Mis notas» del catálogo del teléfono: sólo las propias (con y sin OT), ventana de 30 días, motivos, avance de lo
+  // recibido sin OT, centros de costo, permiso de pedir, huella del catálogo y el pedido sin OT que arma la app.
+  "lib/__tests__/np-catalogo-propias-pglite.test.ts",
 
   // NP · L6 jefatura web.
 

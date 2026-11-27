@@ -1,8 +1,8 @@
-import { desc, eq, isNull, or } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm"
 import { db } from "@/db"
-import { mantRecordObservations, mantRecords, mantSchedules, users, worksites } from "@/db/schema"
+import { costCenters, mantRecordObservations, mantRecords, mantSchedules, users, worksites } from "@/db/schema"
 import type {
-  CatalogEquipment, CatalogObservation, CatalogOtherEquipment, CatalogOwnRecord, MantCatalog, MantCatalogOthers,
+  CatalogCostCenter, CatalogEquipment, CatalogObservation, CatalogOtherEquipment, CatalogOwnRecord, MantCatalog, MantCatalogOthers,
 } from "@/lib/mantencion/contracts"
 import type { MantRecordKind, MantReview, MantRecordStatus, MantUnit } from "@/lib/mantencion/types"
 import type { MantViewer } from "./access"
@@ -15,6 +15,8 @@ import { catalogVersion } from "./sync-catalog-version"
 import { OT_PERMISSIONS } from "@/lib/mantencion/work-order-states"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { loadCatalogWorkOrders } from "./work-orders/catalog-items"
+import { NP_PERMISSIONS } from "./parts-notes/access"
+import { loadOwnPartsNotes } from "./parts-notes/overview"
 
 /**
  * Catálogo que descarga la app del mecánico (`GET …/sync/catalogo`): todo lo que
@@ -156,6 +158,17 @@ async function loadObservations(userId: string): Promise<CatalogObservation[]> {
   }))
 }
 
+/** Centros de costo activos de las faenas de quien pide: el «Taller» al que se carga una línea de una nota sin OT. */
+async function loadCostCenters(scope: MantWorksiteScope): Promise<CatalogCostCenter[]> {
+  if (scope !== "all" && scope.length === 0) return []
+  const rows = await db
+    .select({ id: costCenters.id, name: costCenters.name, worksiteId: costCenters.worksiteId })
+    .from(costCenters)
+    .where(and(eq(costCenters.isActive, true), scope === "all" ? undefined : inArray(costCenters.worksiteId, scope)))
+    .orderBy(asc(costCenters.name), asc(costCenters.id))
+  return rows.flatMap((row) => (row.worksiteId ? [{ id: row.id, name: row.name, worksiteId: row.worksiteId }] : []))
+}
+
 /** `alcance=mias`. */
 export async function buildCatalog(
   context: Pick<SyncContext, "viewer" | "userName">,
@@ -166,7 +179,10 @@ export async function buildCatalog(
   const places = await resolveWorksites(viewer)
   // Las OT sólo viajan al mecánico que las ejecuta y mientras el submódulo está activo.
   const withWorkOrders = viewer.permissions.includes(OT_PERMISSIONS.execute) && await isRouteOperational("/mantencion/ot")
-  const [fleet, catalogs, scheduleRows, mechanics, myRecords, observations, workOrderLists] = await Promise.all([
+  // Pedir repuestos sin OT y ver sus notas (con y sin OT): `mant:np:create`; `mant:np:view_own` sólo ve las propias.
+  const canRequestParts = viewer.permissions.includes(NP_PERMISSIONS.create)
+  const withOwnNotes = canRequestParts || viewer.permissions.includes(NP_PERMISSIONS.viewOwn)
+  const [fleet, catalogs, scheduleRows, mechanics, myRecords, observations, workOrderLists, ownPartsNotes, partsCostCenters] = await Promise.all([
     loadFleet({ scope: places.scope, includeRetired: false }),
     listMantCatalogs(),
     db.select({ id: mantSchedules.id }).from(mantSchedules).where(isNull(mantSchedules.deletedAt)),
@@ -174,6 +190,8 @@ export async function buildCatalog(
     loadOwnRecords(viewer.userId),
     loadObservations(viewer.userId),
     withWorkOrders ? loadCatalogWorkOrders(viewer) : Promise.resolve(null),
+    withOwnNotes ? loadOwnPartsNotes(viewer.userId) : Promise.resolve(null),
+    canRequestParts ? loadCostCenters(places.scope) : Promise.resolve(null),
   ])
   // Todas las pautas vivas, no sólo las asignadas: «Elegir otra pauta» y los equipos de otras faenas las necesitan.
   const schedules = await getCurrentScheduleSnapshots(scheduleRows.map((row) => row.id))
@@ -182,7 +200,7 @@ export async function buildCatalog(
   return {
     version,
     generatedAt: new Date().toISOString(),
-    user: { id: viewer.userId, name: context.userName, worksiteIds: places.mine.map((row) => row.id) },
+    user: { id: viewer.userId, name: context.userName, worksiteIds: places.mine.map((row) => row.id), canRequestParts },
     worksites: places.mine,
     equipment: fleet.map(toCatalogEquipment),
     schedules,
@@ -195,6 +213,8 @@ export async function buildCatalog(
     myRecords,
     observations,
     ...(workOrderLists ?? {}),
+    ...(ownPartsNotes ? { ownPartsNotes } : {}),
+    ...(partsCostCenters ? { costCenters: partsCostCenters } : {}),
   }
 }
 

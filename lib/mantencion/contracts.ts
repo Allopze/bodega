@@ -369,6 +369,30 @@ export interface CatalogPartsNote {
   equipmentStopped: boolean
   createdAt: string
   lines: CatalogPartsNoteLine[]
+  // Lo que sigue lo trae el catálogo de las notas propias (`ownPartsNotes`, ADR 0001 2026-11-27); en las de una OT no viene.
+  // Todo opcional: un catálogo guardado antes no lo trae y la app lo lee como «sin dato».
+  /** Id con el que el teléfono la envió (`SyncPartsNote.id`): permite no listar dos veces la que ya está en el servidor. */
+  clientOpId?: string | null
+  urgent?: boolean
+  /** Observación de quien la pidió. */
+  notes?: string | null
+  /** Motivo de «En espera» o de «Anulada». Una nota rechazada lleva el motivo en sus líneas. */
+  statusReason?: string | null
+  worksiteId?: string
+  worksiteName?: string | null
+  /** Con OT: la OT y su equipo. Sin OT, `null`. */
+  workOrderId?: string | null
+  workOrderFolio?: string | null
+  equipmentCode?: string | null
+  equipmentPlate?: string | null
+  updatedAt?: string
+}
+
+/** Centro de costo de una faena del mecánico, para el cargo de una línea sin OT («Taller»…). */
+export interface CatalogCostCenter {
+  id: string
+  name: string
+  worksiteId: string
 }
 
 /** Repuesto reservado para la OT y todavía sin usar: el chip «Disponibles para esta OT». */
@@ -493,7 +517,8 @@ export interface MantCatalog {
   /** Igual al ETag de la respuesta. */
   version: string
   generatedAt: string
-  user: { id: string; name: string; worksiteIds: string[] }
+  /** `canRequestParts`: puede pedir repuestos sin OT (`mant:np:create`); un catálogo antiguo no lo trae y la app lo da por falso. */
+  user: { id: string; name: string; worksiteIds: string[]; canRequestParts?: boolean }
   worksites: Array<{ id: string; name: string }>
   /** `alcance=mias` (por defecto): equipos activos de sus faenas, completos. */
   equipment: CatalogEquipment[]
@@ -512,6 +537,13 @@ export interface MantCatalog {
    * un catálogo guardado antes de 2026-11 no lo trae y la app lo toma como `[]`.
    */
   workOrders?: CatalogWorkOrder[]
+  /**
+   * Mis notas de pedido, con y sin OT: las abiertas y las cerradas, rechazadas o anuladas de los últimos 30 días, SÓLO las que
+   * pidió quien descarga (`requested_by_user_id`). Opcional: catálogos de formato < 7 no lo traen.
+   */
+  ownPartsNotes?: CatalogPartsNote[]
+  /** Centros de costo activos de sus faenas. Opcional, como `ownPartsNotes`. */
+  costCenters?: CatalogCostCenter[]
 }
 
 /** `alcance=todos`: el resto de los equipos activos, en versión liviana (sin historial). */

@@ -123,13 +123,22 @@ export interface QueueWorkOrderItem extends QueueBase {
 }
 
 /**
- * Una nota de pedido de repuestos para una OT (ADR mantención 0001). El id de la cola es el de la NP
+ * Una nota de pedido de repuestos, con OT o sin ella (ADR mantención 0001). El id de la cola es el de la NP
  * (`payload.id`, lo genera el teléfono): es la clave de idempotencia con la que llega al servidor.
+ *
+ * `summary` es lo que se dice de ella mientras no hay catálogo que la traiga: con OT, la OT y su equipo; sin OT, la faena
+ * (`worksiteName`) y esos cuatro en `null`. Las notas guardadas antes de pedir sin OT traen sólo los cuatro con valor.
  */
 export interface QueuePartsNoteItem extends QueueBase {
   type: "parts_note"
   payload: SyncPartsNote
-  summary: { workOrderId: string; folio: string; equipmentCode: string; equipmentPlate: string }
+  summary: {
+    workOrderId: string | null
+    folio: string | null
+    equipmentCode: string | null
+    equipmentPlate: string | null
+    worksiteName?: string | null
+  }
 }
 
 export type QueueItem = QueueRecordItem | QueueWorkshopItem | QueueReplyItem | QueueWorkOrderItem | QueuePartsNoteItem

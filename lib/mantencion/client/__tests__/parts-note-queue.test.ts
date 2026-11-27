@@ -6,7 +6,7 @@ import { waitsForDependency } from "../queue-order"
 import { runSync } from "../sync-engine"
 import { putPhoto } from "../photo-store"
 import type { QueueItem, QueuePartsNoteItem } from "../types"
-import { UUID, account, correctivePayload, freshDb, json, partsNoteItem, photo } from "./fixtures"
+import { UUID, account, correctivePayload, freePartsNoteItem, freshDb, json, partsNoteItem, photo } from "./fixtures"
 
 const ACCEPTED = (id: string, duplicate = false) => ({ ok: true, id, noteId: "np-db-1", code: "NP-2026-0001", receivedAt: "2026-10-28T15:01:00.000Z", duplicate })
 
@@ -166,5 +166,56 @@ describe("orden: la nota de pedido antes que el registro de su OT", () => {
     expect(waits([sent])).toBe(false)
     // Un registro sin OT nunca espera notas.
     expect(waitsForDependency(linkedRecord(4, "2026-10-28T15:04:00.000Z", null), [partsNoteItem(1)])).toBe(false)
+  })
+})
+
+describe("pedido de repuestos SIN OT en la cola", () => {
+  beforeEach(freshDb)
+
+  const FREE = () => freePartsNoteItem(1, { urgent: true, lines: [{ description: "Rodamiento 6205", quantity: 4, unitOfMeasure: "unidad", partNumber: null, productId: null, chargeCostCenterId: "cc-bio" }] })
+
+  it("sin señal queda guardado y se envía al volver con el MISMO id y su faena, urgencia y cargo", async () => {
+    await seed(FREE())
+    const now = Date.now()
+    const down = server({ offline: true })
+    expect(await sync(down, now)).toMatchObject({ sent: 0, retried: 1 })
+    expect(await getQueueItem(FREE().id)).toMatchObject({ type: "parts_note", status: "pending", attempts: 1 })
+
+    const up = server()
+    expect((await sync(up, now + BACKOFF_CAP_MS + 1_000)).sent).toBe(1)
+    const [url, init] = up.fetchImpl.mock.calls[0]!
+    expect(String(url)).toBe("/api/mantencion/sync/notas-pedido")
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    expect(body).toMatchObject({ id: FREE().payload.id, worksiteId: "ws-bio", urgent: true, lines: [{ description: "Rodamiento 6205", quantity: 4, chargeCostCenterId: "cc-bio" }] })
+    expect(body).not.toHaveProperty("workOrderId")
+    expect(await getQueueItem(FREE().id)).toMatchObject({ status: "sent" })
+  })
+
+  it("un reintento tras perder la respuesta reenvía el mismo id y el duplicado la saca de la cola", async () => {
+    await seed(FREE())
+    const now = Date.now()
+    const ids: string[] = []
+    const first = server({ note: (body) => { ids.push(body.id); return json(503, { message: "caído" }) } })
+    await sync(first, now)
+    const second = server({ note: (body) => { ids.push(body.id); return json(200, ACCEPTED(body.id, true)) } })
+    expect((await sync(second, now + BACKOFF_CAP_MS + 1_000)).sent).toBe(1)
+    expect(ids).toEqual([FREE().payload.id, FREE().payload.id])
+    expect((await getQueueItem(FREE().id))?.status).toBe("sent")
+  })
+
+  it("un 403 de la faena queda rechazado a la vista con el motivo del servidor", async () => {
+    await seed(FREE())
+    const s = server({ note: () => json(403, { ok: false, code: "rejected", message: "Esa faena no es de tu alcance." }) })
+    expect((await sync(s)).rejected).toBe(1)
+    expect(await getQueueItem(FREE().id)).toMatchObject({ status: "rejected", lastError: "Esa faena no es de tu alcance." })
+  })
+
+  it("no frena ni espera a ningún registro: no tiene OT de la que depender", async () => {
+    const free = FREE()
+    const record = linkedRecord(3, "2026-10-28T15:03:00.000Z")
+    await seed(free, record)
+    const queue = await listQueue()
+    expect(waitsForDependency(queue.find((item) => item.id === record.id)!, queue)).toBe(false)
+    expect(waitsForDependency(queue.find((item) => item.id === free.id)!, queue)).toBe(false)
   })
 })
