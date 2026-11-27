@@ -724,6 +724,9 @@ export const pgliteTestFiles = [
 
   // NP · L6 jefatura web.
 
+  // NP · R9: notas de pedido y consumos de repuestos en la hoja de vida del equipo.
+  "lib/__tests__/equipment-parts-pglite.test.ts",
+
   // NP · L7 bodega: vistas, trazabilidad y exportaciones.
   "lib/__tests__/bodega-repuestos-vistas-pglite.test.ts",
 ]

@@ -1,5 +1,6 @@
 import type { EquipmentHistoryEntry } from "@/lib/services/mantencion/equipment-history"
 import type { EquipmentInsurance } from "@/lib/services/mantencion/equipment-life"
+import type { EquipmentParts } from "@/lib/services/mantencion/equipment-parts"
 import type { VehiclePurchaseRecord } from "@/lib/services/vehicle-purchase-history"
 import type { MantGpsReadingSource } from "@/lib/mantencion/gps-estimate"
 import type { MantEquipmentState, MantEquipmentStatus, MantPreventiveSummary, MantUnit } from "@/lib/mantencion/types"
@@ -58,6 +59,19 @@ export interface EquipmentDetailData {
    * de catálogo (`repuestos:catalog`) y pedir repuestos (`null` = no puede).
    */
   purchaseLinks: { canOpenRequests: boolean; canOpenOrders: boolean; canOpenSpareParts: boolean; newRequestHref: string | null }
+  /** Notas de pedido y repuestos usados en sus mantenciones. Ausente o `null`: la tarjeta no se dibuja. */
+  parts?: EquipmentPartsData | null
+}
+
+/**
+ * Notas de pedido y repuestos usados del equipo (`loadEquipmentParts`), con lo que quien mira puede abrir. Cada lista en
+ * `null` = sin permiso para verla: su sección no se dibuja.
+ */
+export interface EquipmentPartsData extends EquipmentParts {
+  /** Abrir el detalle de la nota (`mant:np:view_worksite` o `mant:np:manage`: lo que exige esa pantalla). */
+  canOpenNotes: boolean
+  /** Abrir la orden de trabajo de la nota. */
+  canOpenWorkOrders: boolean
 }
 
 /** La preventiva declarada, con quién la declaró (nombre del usuario) y por qué vía. */

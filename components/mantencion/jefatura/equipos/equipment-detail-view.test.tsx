@@ -235,3 +235,52 @@ describe("ficha del equipo: exportar", () => {
     expect(screen.queryByRole("button", { name: /Exportar/ })).toBeNull()
   })
 })
+
+describe("ficha del equipo: «Notas de pedido y repuestos usados»", () => {
+  const parts: EquipmentDetailData["parts"] = {
+    notes: {
+      rows: [{
+        id: "np-1", code: "NP-2026-0001", status: "en_compra", createdAt: "2026-11-10T13:00:00.000Z", urgent: false, workOrderId: null, workOrderFolio: null, otherChargeLines: 0,
+        lines: [{ id: "l-1", description: "Filtro hidráulico", quantity: 2, unitOfMeasure: "unidad", resolution: "en_compra" }],
+      }],
+      total: 1,
+    },
+    consumptions: {
+      rows: [{
+        id: "rp-1", recordId: "r-1", recordFolio: "MC-BIO-0202", recordKind: "C", workDate: "2026-11-24", description: "Bomba de agua", sku: null,
+        quantity: 1, unitOfMeasure: null, source: "stock", stockStatus: "descontado", stockNote: null,
+      }],
+      total: 1,
+    },
+    canOpenNotes: true,
+    canOpenWorkOrders: false,
+  }
+
+  it("sin datos (`parts` ausente o nulo) la tarjeta no se dibuja", () => {
+    render(view())
+    expect(screen.queryByRole("heading", { name: "Notas de pedido y repuestos usados" })).toBeNull()
+    cleanup()
+    render(view({ parts: null }))
+    expect(screen.queryByRole("heading", { name: "Notas de pedido y repuestos usados" })).toBeNull()
+  })
+
+  it("con datos la ficha lista la nota y el consumo, con enlaces al detalle de cada uno", () => {
+    render(view({ parts }))
+    expect(screen.getByRole("heading", { name: "Notas de pedido y repuestos usados" })).toBeDefined()
+    expect(screen.getByRole("link", { name: "NP-2026-0001" }).getAttribute("href")).toBe("/mantencion/notas-pedido/np-1")
+    expect(screen.getByRole("link", { name: "MC-BIO-0202" }).getAttribute("href")).toBe("/mantencion/registros/r-1")
+    expect(screen.getByText("En compra")).toBeDefined()
+    expect(screen.getByText("Descontado")).toBeDefined()
+  })
+
+  it("al editar el plan la tarjeta deja su lugar al formulario, como el resto de lo que sólo se lee", () => {
+    const edit = {
+      schedules: [{ id: "s1", name: "Camiones y tractos", unit: "km" as const, intervalCount: 3 }],
+      initial: { scheduleId: "s1", initialReading: "", initialReadingDate: "", retired: false, retiredReason: "" },
+    }
+    render(<EquipmentDetailView data={data({ parts })} edit={edit} canSeeSchedules={false} canExport={false} justCreated={false} header={HEADER} />)
+    expect(screen.getByRole("heading", { name: "Notas de pedido y repuestos usados" })).toBeDefined()
+    fireEvent.click(screen.getByRole("button", { name: "Editar plan de mantención" }))
+    expect(screen.queryByRole("heading", { name: "Notas de pedido y repuestos usados" })).toBeNull()
+  })
+})

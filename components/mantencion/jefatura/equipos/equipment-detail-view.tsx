@@ -17,6 +17,7 @@ import { EMPTY_PRIOR_PREVENTIVE, EquipmentPriorPreventiveFields } from "./equipm
 import { EquipmentHistoryList } from "./equipment-history-list"
 import { EquipmentInsuranceCard, insuranceNeedsAttention } from "./equipment-insurance-card"
 import { EquipmentLifeSection } from "./equipment-life-section"
+import { EquipmentPartsCard } from "./equipment-parts-card"
 import { EquipmentPlanCard, EquipmentStatusCard } from "./equipment-read-sections"
 import type { EquipmentDetailData, EquipmentEditData } from "./equipment-detail-types"
 
@@ -25,7 +26,7 @@ import type { EquipmentDetailData, EquipmentEditData } from "./equipment-detail-
  * 2026-11-15). La cabecera y las pestañas son las de la ficha (`header`, `tabs`, y «Editar
  * vehículo» en `fichaActions`); las demás acciones son las de Mantención. Se abre en modo LECTURA
  * —estado de mantención (con el taller y las lecturas), plan de mantención, historial de cambios,
- * compras vinculadas, seguro, historial de mantenciones y órdenes de trabajo— y «Editar plan de mantención» cambia la columna principal por
+ * compras vinculadas, notas de pedido y repuestos usados, seguro, historial de mantenciones y órdenes de trabajo— y «Editar plan de mantención» cambia la columna principal por
  * el formulario de la pauta, la lectura inicial y la baja. La identidad del equipo se edita sólo en
  * «Editar vehículo» (paso 4b). Las acciones viven en `PageHeader` (regla de layout 5); por eso
  * este componente de cliente es quien lo rinde.
@@ -134,6 +135,7 @@ export function EquipmentDetailView({
             <>
               <EquipmentStatusCard data={data} />
               <EquipmentPlanCard data={data} canSeeSchedules={canSeeSchedules} showIdentity={showIdentity} />
+              <EquipmentPartsCard parts={data.parts} />
             </>
           )}
         </div>
