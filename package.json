@@ -47,6 +47,7 @@
     "seed:dev:apply": "env -u DATABASE_URL tsx --env-file-if-exists=.env.dev.local scripts/dev-seed/index.ts --apply --write-report",
     "db:seed:mantencion": "tsx --env-file-if-exists=.env.local scripts/seed-mantencion.ts",
     "db:seed:pautas-preventivas": "tsx --env-file-if-exists=.env.local scripts/seed-pautas-preventivas.ts",
+    "db:reasignar-pautas-preventivas": "tsx --env-file-if-exists=.env.local scripts/apply-reasignacion-pautas-preventivas.ts",
     "db:seed-pdtp-inspection-templates": "tsx --env-file=.env.local scripts/seed-pdtp-inspection-templates-2026.ts",
     "db:apply-sst-taxonomy": "tsx --env-file-if-exists=.env.local scripts/apply-sst-document-taxonomy.ts",
     "db:seed-document-root-folders": "tsx --env-file=.env.local scripts/seed-document-root-folders.ts",
