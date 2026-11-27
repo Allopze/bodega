@@ -712,6 +712,9 @@ export const pgliteTestFiles = [
 
   // NP · L4 consumo: registro, anulación, cierre de OT y conciliación.
   "lib/__tests__/np-consumption-pglite.test.ts",
+  // ADR 0001 (2026-11-27): transiciones de cabecera, historial append-only, backfill 0405 y notas sin OT.
+  "lib/__tests__/np-transiciones-pglite.test.ts",
+  "lib/__tests__/np-sin-ot-pglite.test.ts",
   // «Mis pendientes» de Mantención: siete tipos de fila repartidos entre quienes pueden resolverlos, avisos del menú
   // que salen de la misma cola, escalamiento por faena, equipo trasladado y resiliencia. Aislada: ninguna otra suite de
   // la cola siembra `mant_*`.

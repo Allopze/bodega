@@ -11,6 +11,7 @@ import { formatDateTime, formatQty } from "@/lib/utils"
 import { SectionCard } from "../shared/section-card"
 import { NoteLineActions } from "./note-line-actions"
 import { isNotePending, STAGE_META } from "./parts-notes-format"
+import { isPartsNoteOpen } from "@/lib/mantencion/contracts"
 
 const TEXT_LINK = "font-mono text-sm font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
 const PLAIN_LINK = "text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
@@ -103,7 +104,7 @@ export function PartsNoteDetailView({ note, buyHref, canOpenWorkOrder, canOpenRe
   /** `warehouse:view_stock`: el permiso que exige `/bodega`. Sin él, la línea no ofrece el enlace. */
   canOpenBodega: boolean
 }) {
-  const open = note.status === "enviada" || note.status === "en_gestion"
+  const open = isPartsNoteOpen(note.status)
   const pending = isNotePending({ status: note.status, pendingLines: note.lines.filter((line) => line.resolution === "pendiente").length })
   const canAct = note.canManage && open
   return (

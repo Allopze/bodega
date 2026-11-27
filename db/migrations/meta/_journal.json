@@ -2836,6 +2836,13 @@
       "when": 1795724825943,
       "tag": "0404_mant_schedule_cyclic",
       "breakpoints": true
+    },
+    {
+      "idx": 405,
+      "version": "7",
+      "when": 1795784648047,
+      "tag": "0405_friendly_vampiro",
+      "breakpoints": true
     }
   ]
 }

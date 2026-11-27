@@ -1,33 +1,47 @@
 import { eq, inArray } from "drizzle-orm"
 import type { Tx } from "@/db"
-import {
-  mantPartsAllocationSources, mantPartsNoteItems, mantPartsNotes, mantWorkOrders, purchaseRequestItems, purchaseRequests,
-} from "@/db/schema"
+import { mantPartsNoteItems, mantPartsNotes, mantWorkOrders, purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { OT_OPEN_STATUSES } from "@/lib/mantencion/work-order-states"
 import { roundQty, toCents } from "@/lib/services/stock-reservations"
 import type { NoteItemResolution, PartsNoteLineStage, PartsNoteStatus } from "../parts/types"
+import { loadArrivedByLine } from "./arrivals"
+import { setNoteStatusTx } from "./set-status"
 
 /**
- * Reglas puras de la nota de pedido (NP): estado de la cabecera derivado de sus
- * líneas, compras «vivas», etapa legible de una línea y reparto de lo usado.
- * Sin base de datos: las comparten el alta, la resolución y las lecturas
- * (`recalcNoteStatusTx`, al final, es lo único que escribe).
- */
-
-/**
- * Estado de la NP según sus líneas (NP4-2, decisión 2026-11-26):
- *  - `enviada`: ninguna línea resuelta (todas pendientes);
- *  - `en_gestion`: queda una línea pendiente, o una línea «en compra» cuyo repuesto aún no llegó a la faena;
- *  - `cerrada`: toda línea está rechazada, sacada de stock o en compra ya recibida.
- * `anulada` no se deriva: la fija quien anula, y `recalcNoteStatusTx` no la toca.
+ * Reglas de la nota de pedido (NP): estado de la cabecera derivado de sus líneas, compras «vivas», etapa legible de una
+ * línea y reparto de lo usado. La única escritura es `recalcNoteStatusTx`, que delega en `setNoteStatusTx`.
  *
- * `awaitingArrival`: cuántas líneas «en compra» siguen esperando su repuesto (ver `lineAwaitsArrival`).
- * Sólo pesa cuando no queda ninguna pendiente: con una pendiente la nota ya está abierta.
+ * Estados derivados (ADR 0001, NP4-2 y 2026-11-27):
+ *  - `enviada`: todas pendientes y nadie la aceptó; `aceptada`: todas pendientes y alguien la aceptó;
+ *  - `en_gestion`: hay pendientes y líneas resueltas;
+ *  - `en_compra`: ninguna pendiente, alguna línea espera su compra y todavía no llegó nada;
+ *  - `recibida_parcial`: ninguna pendiente, alguna espera su compra y algo ya llegó a la faena;
+ *  - `rechazada`: todas las líneas rechazadas; `cerrada`: lo demás, todo lo no rechazado llegó.
+ * `en_espera` y `anulada` no se derivan: los fija quien actúa. Mientras la NP está en espera el derivado queda congelado
+ * (`recalcNoteStatusTx` no la toca salvo con `force`).
  */
-export function deriveNoteStatus(resolutions: readonly string[], awaitingArrival = 0): Exclude<PartsNoteStatus, "anulada"> {
+
+/** Estados que puede dar el derivado (sin los que fija una persona). */
+export type DerivedNoteStatus = Exclude<PartsNoteStatus, "anulada" | "en_espera">
+
+/** Estados en que la NP sigue abierta: ni cerrada, ni rechazada, ni anulada. */
+export const OPEN_NOTE_STATUSES: readonly PartsNoteStatus[] = ["enviada", "aceptada", "en_espera", "en_gestion", "en_compra", "recibida_parcial"]
+
+/**
+ * Estado derivado de las líneas. `awaitingArrival`: cuántas líneas «en compra» siguen esperando su repuesto
+ * (`lineAwaitsArrival`); sólo pesa cuando ninguna línea está pendiente. `accepted`: jefatura la aceptó y todas siguen
+ * pendientes (se conserva como `aceptada`). `arrivedAny`: algo ya llegó a la faena (o se apartó del stock).
+ */
+export function deriveNoteStatus(
+  resolutions: readonly string[],
+  awaitingArrival = 0,
+  options: { accepted?: boolean; arrivedAny?: boolean } = {},
+): DerivedNoteStatus {
   const pending = resolutions.filter((resolution) => resolution === "pendiente").length
-  if (pending === resolutions.length) return "enviada"
-  return pending > 0 || awaitingArrival > 0 ? "en_gestion" : "cerrada"
+  if (pending === resolutions.length) return options.accepted ? "aceptada" : "enviada"
+  if (pending > 0) return "en_gestion"
+  if (awaitingArrival > 0) return options.arrivedAny ? "recibida_parcial" : "en_compra"
+  return resolutions.every((resolution) => resolution === "rechazada") ? "rechazada" : "cerrada"
 }
 
 // ── Compras de una línea ────────────────────────────────────────────────────
@@ -58,16 +72,17 @@ export function isResolvableLine(resolution: string, purchases: readonly Purchas
 }
 
 /**
- * Una línea «en compra» todavía espera su repuesto: su OT sigue abierta, tiene al menos una compra viva y ni lo llegado
- * cubre lo pedido ni Compras da todas sus compras vivas por recibidas. Con la OT terminada nadie espera: lo que llegue
- * ya no se reserva para ella (`addToAllocationTx`). Una línea sin compra viva no espera nada; vuelve sola a pendiente al
- * morir su compra (`unlinkNoteItemsFromRequestTx`).
+ * Una línea «en compra» todavía espera su repuesto: su OT sigue abierta (o no tiene OT), tiene al menos una compra viva y
+ * ni lo llegado cubre lo pedido ni Compras da todas sus compras vivas por recibidas. Con la OT terminada nadie espera: lo
+ * que llegue ya no se reserva para ella (`addToAllocationTx`). Una línea sin compra viva no espera nada; vuelve sola a
+ * pendiente al morir su compra (`unlinkNoteItemsFromRequestTx`).
  */
 export function lineAwaitsArrival(input: {
   resolution: string
   quantity: number
   arrived: number
   purchases: readonly PurchaseLiveness[]
+  /** Sin OT la línea no tiene OT que cerrar: quien llama la pasa como abierta. */
   workOrderOpen: boolean
 }): boolean {
   if (input.resolution !== "en_compra" || !input.workOrderOpen) return false
@@ -119,84 +134,114 @@ export function allocateUsed(lines: readonly UsedShareLine[], consumed: Readonly
   return used
 }
 
-// ── Escritura ───────────────────────────────────────────────────────────────
+// ── Derivación (lectura dentro de la transacción) ───────────────────────────
 
-const OPEN: readonly string[] = OT_OPEN_STATUSES
+interface LineFacts {
+  id: string
+  resolution: string
+  quantity: number
+}
 
-/**
- * Cuántas de las líneas «en compra» esperan todavía su repuesto (`lineAwaitsArrival`). Lecturas sin bloqueo: se llama con
- * la NP ya tomada o dentro de la transacción de la línea. Dos consultas, no una por línea.
- */
-async function countLinesAwaitingArrivalTx(tx: Tx, workOrderId: string, lines: ReadonlyArray<{ id: string; quantity: number }>): Promise<number> {
-  if (lines.length === 0) return 0
+async function isWorkOrderOpenTx(tx: Tx, workOrderId: string): Promise<boolean> {
   const [ot] = await tx.select({ status: mantWorkOrders.status }).from(mantWorkOrders).where(eq(mantWorkOrders.id, workOrderId)).limit(1)
-  const workOrderOpen = !!ot && OPEN.includes(ot.status)
-  if (!workOrderOpen) return 0
+  return !!ot && (OT_OPEN_STATUSES as readonly string[]).includes(ot.status)
+}
 
-  const ids = lines.map((line) => line.id)
-  const purchaseRows = await tx
+/** Compras vivas (ítem + solicitud) de cada línea, en una sola consulta. */
+async function purchasesOfTx(tx: Tx, itemIds: readonly string[]): Promise<Map<string, PurchaseLiveness[]>> {
+  const result = new Map<string, PurchaseLiveness[]>()
+  if (itemIds.length === 0) return result
+  const rows = await tx
     .select({ noteItemId: purchaseRequestItems.partsNoteItemId, itemStatus: purchaseRequestItems.status, requestStatus: purchaseRequests.status })
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequests.id, purchaseRequestItems.requestId))
-    .where(inArray(purchaseRequestItems.partsNoteItemId, ids))
-  const arrivalRows = await tx
-    .select({ noteItemId: mantPartsAllocationSources.noteItemId, quantity: mantPartsAllocationSources.quantity })
-    .from(mantPartsAllocationSources)
-    .where(inArray(mantPartsAllocationSources.noteItemId, ids))
-
-  const purchasesOf = new Map<string, PurchaseLiveness[]>()
-  for (const row of purchaseRows) {
+    .where(inArray(purchaseRequestItems.partsNoteItemId, [...itemIds]))
+  for (const row of rows) {
     if (!row.noteItemId) continue
-    purchasesOf.set(row.noteItemId, [...(purchasesOf.get(row.noteItemId) ?? []), { itemStatus: row.itemStatus, requestStatus: row.requestStatus }])
+    result.set(row.noteItemId, [...(result.get(row.noteItemId) ?? []), { itemStatus: row.itemStatus, requestStatus: row.requestStatus }])
   }
-  const arrivedOf = new Map<string, number>()
-  for (const row of arrivalRows) {
-    if (!row.noteItemId) continue
-    arrivedOf.set(row.noteItemId, roundQty((arrivedOf.get(row.noteItemId) ?? 0) + Number(row.quantity)))
-  }
-  return lines.filter((line) => lineAwaitsArrival({
-    resolution: "en_compra", quantity: line.quantity, arrived: arrivedOf.get(line.id) ?? 0, purchases: purchasesOf.get(line.id) ?? [], workOrderOpen,
-  })).length
+  return result
 }
 
 /**
- * Recalcula y guarda el estado de la NP (y su `updated_at`, que mueve el ETag del catálogo). Llamar dentro de la misma
- * transacción que cambió la línea y con la OT tomada (`FOR SHARE` o `FOR UPDATE`).
- *
- * Toma la fila de la NP (`FOR NO KEY UPDATE`) ANTES de leer sus líneas: dos transacciones que resuelven líneas distintas
- * de una misma NP se serializan aquí y la segunda lee lo que la primera ya confirmó. Sin eso cada una veía la otra línea
- * todavía pendiente y la última en escribir dejaba la NP «en gestión» con todo resuelto. Es el mismo orden de siempre
- * (la línea primero, la NP después); sólo se adelanta el bloqueo que el `UPDATE` de abajo iba a tomar de todos modos.
- *
- * `onlyIfChanged`: no escribe si el estado ya es el que corresponde. Es para los barridos que no tocan ninguna línea
- * (el fin de la OT, la llegada de un repuesto): repetirlos no deja ni un `updated_at` distinto.
+ * Estado que corresponde a las líneas de una NP ahora mismo, sin escribir nada. `accepted`: jefatura la aceptó (sólo importa
+ * si todas siguen pendientes). Llamar con la OT tomada, si la hay, y con la fila de la NP ya bloqueada.
  */
-export async function recalcNoteStatusTx(tx: Tx, noteId: string, options: { onlyIfChanged?: boolean } = {}): Promise<PartsNoteStatus> {
+export async function deriveNoteStatusTx(tx: Tx, noteId: string, options: { accepted: boolean }): Promise<DerivedNoteStatus> {
+  const [note] = await tx.select({ workOrderId: mantPartsNotes.workOrderId }).from(mantPartsNotes).where(eq(mantPartsNotes.id, noteId)).limit(1)
+  if (!note) throw new Error("La nota de pedido no existe")
+  const lines: LineFacts[] = (await tx
+    .select({ id: mantPartsNoteItems.id, resolution: mantPartsNoteItems.resolution, quantity: mantPartsNoteItems.quantity })
+    .from(mantPartsNoteItems)
+    .where(eq(mantPartsNoteItems.noteId, noteId))).map((line) => ({ id: line.id, resolution: line.resolution, quantity: Number(line.quantity) }))
+  const resolutions = lines.map((line) => line.resolution)
+  const inCompra = lines.filter((line) => line.resolution === "en_compra")
+  // Con una pendiente la nota ya está abierta, y sin compras en curso no hay nada que esperar: no hace falta mirar más.
+  if (resolutions.includes("pendiente") || inCompra.length === 0) return deriveNoteStatus(resolutions, 0, { accepted: options.accepted })
+
+  const workOrderOpen = note.workOrderId ? await isWorkOrderOpenTx(tx, note.workOrderId) : true
+  const purchases = await purchasesOfTx(tx, inCompra.map((line) => line.id))
+  const arrived = await loadArrivedByLine(tx, lines.map((line) => ({ id: line.id, workOrderId: note.workOrderId })))
+  const awaiting = inCompra.filter((line) => lineAwaitsArrival({
+    resolution: "en_compra",
+    quantity: line.quantity,
+    arrived: arrived.get(line.id)?.quantity ?? 0,
+    purchases: purchases.get(line.id) ?? [],
+    workOrderOpen,
+  })).length
+  const arrivedAny = lines.some((line) => line.resolution === "desde_stock" || toCents(arrived.get(line.id)?.quantity ?? 0) > 0)
+  return deriveNoteStatus(resolutions, awaiting, { accepted: options.accepted, arrivedAny })
+}
+
+// ── Escritura ───────────────────────────────────────────────────────────────
+
+export interface RecalcOptions {
+  /** No escribe si el estado ya es el que corresponde (los barridos que no tocan ninguna línea). */
+  onlyIfChanged?: boolean
+  /** Quién causó el recálculo. `null` / omitido = automático del sistema. */
+  actorUserId?: string | null
+  reason?: string | null
+  itemId?: string | null
+  /** Ignora la espera: sólo lo usan el rechazo de la nota, la anulación y la aceptación al salir de la espera. */
+  force?: boolean
+}
+
+/**
+ * Recalcula el estado de la NP a partir de sus líneas y lo guarda con `setNoteStatusTx` (que escribe el evento sólo si
+ * cambia). Toma la fila de la NP primero (`FOR NO KEY UPDATE`): dos transacciones que resuelven líneas distintas de una
+ * misma NP se serializan aquí. Llamar dentro de la transacción que cambió la línea, con la OT tomada si la hay (`FOR
+ * SHARE` o `FOR UPDATE`).
+ *
+ * Sin `onlyIfChanged` también sella `updated_at` aunque el estado no cambie: el ETag del catálogo del teléfono sale de ahí
+ * y una línea cambió. Con `onlyIfChanged` (barridos) no escribe nada si no hay cambio.
+ */
+export async function recalcNoteStatusTx(tx: Tx, noteId: string, options: RecalcOptions = {}): Promise<PartsNoteStatus> {
   const [note] = await tx
-    .select({ status: mantPartsNotes.status, workOrderId: mantPartsNotes.workOrderId })
+    .select({ status: mantPartsNotes.status })
     .from(mantPartsNotes)
     .where(eq(mantPartsNotes.id, noteId))
     .limit(1)
     .for("no key update")
   if (!note) throw new Error("La nota de pedido no existe")
-  if (note.status === "anulada") return "anulada"
-  const items = await tx
-    .select({ id: mantPartsNoteItems.id, resolution: mantPartsNoteItems.resolution, quantity: mantPartsNoteItems.quantity })
-    .from(mantPartsNoteItems)
-    .where(eq(mantPartsNoteItems.noteId, noteId))
-  const resolutions = items.map((item) => item.resolution)
-  // Con una línea pendiente la nota ya está abierta: no hace falta mirar las compras.
-  const awaiting = resolutions.includes("pendiente")
-    ? 0
-    : await countLinesAwaitingArrivalTx(tx, note.workOrderId, items.filter((item) => item.resolution === "en_compra").map((item) => ({ id: item.id, quantity: Number(item.quantity) })))
-  const next = deriveNoteStatus(resolutions, awaiting)
-  if (options.onlyIfChanged && next === note.status) return next
-  await tx.update(mantPartsNotes).set({ status: next, updatedAt: new Date().toISOString() }).where(eq(mantPartsNotes.id, noteId))
+  const current = note.status as PartsNoteStatus
+  if (current === "anulada") return current
+  if (current === "en_espera" && !options.force) return current
+
+  const next = await deriveNoteStatusTx(tx, noteId, { accepted: current === "aceptada" })
+  if (next === current) {
+    if (!options.onlyIfChanged) await tx.update(mantPartsNotes).set({ updatedAt: new Date().toISOString() }).where(eq(mantPartsNotes.id, noteId))
+    return next
+  }
+  await setNoteStatusTx(tx, noteId, next, {
+    actorUserId: options.actorUserId ?? null,
+    reason: options.reason ?? null,
+    itemId: options.itemId ?? null,
+  })
   return next
 }
 
 /** Lo mismo desde una línea: para quien sólo conoce el id de la línea (la llegada de un repuesto a la reserva). */
-export async function recalcNoteStatusOfLineTx(tx: Tx, noteItemId: string, options: { onlyIfChanged?: boolean } = {}): Promise<void> {
+export async function recalcNoteStatusOfLineTx(tx: Tx, noteItemId: string, options: RecalcOptions = {}): Promise<void> {
   const [line] = await tx.select({ noteId: mantPartsNoteItems.noteId }).from(mantPartsNoteItems).where(eq(mantPartsNoteItems.id, noteItemId)).limit(1)
   if (line) await recalcNoteStatusTx(tx, line.noteId, options)
 }

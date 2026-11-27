@@ -101,10 +101,10 @@ export async function submitRequest(
     }
     // Y la línea de la nota tiene que seguir siendo comprable: jefatura pudo rechazarla o
     // anular la nota después de que se guardó el borrador.
+    // Una línea sin OT (nota de pedido sin OT, ADR 0001 2026-11-27) se compra sin OT, en la faena de su nota.
     for (const item of items) {
       if (!item.partsNoteItemId) continue
-      if (!item.workOrderId) throw new Error("La línea de la nota de pedido exige una OT")
-      await assertPartsNoteLineBuyable(tx, { partsNoteItemId: item.partsNoteItemId, workOrderId: item.workOrderId })
+      await assertPartsNoteLineBuyable(tx, { partsNoteItemId: item.partsNoteItemId, workOrderId: item.workOrderId ?? null, worksiteId: request.worksiteId })
     }
 
     // Vía rápida: una OT vinculada, o un equipo que no está operativo. Por ítem:

@@ -7,7 +7,7 @@ export function noteRow(overrides: Partial<PartsNoteListRow> = {}): PartsNoteLis
   return {
     id: "n1", code: "NP-2026-0001", status: "enviada", workOrderId: "ot-1", workOrderFolio: "OT-BIO-0001", equipmentCode: "KA-135", equipmentPlate: "RBYD-98",
     worksiteId: "ws-1", worksiteName: "Biodiversa", requestedByName: "Javier Roa", equipmentStopped: false, pendingLines: 2, totalLines: 3,
-    createdAt: "2026-11-20T15:00:00.000Z", ...overrides,
+    createdAt: "2026-11-20T15:00:00.000Z", urgent: false, ...overrides,
   }
 }
 
@@ -15,6 +15,7 @@ export function noteLine(overrides: Partial<PartsNoteDetailLine> = {}): PartsNot
   return {
     id: "i1", description: "Filtro de aceite", quantity: 2, unit: "unidad", partNumber: "1R-0750", productId: "p1", productName: "Filtro de aceite motor",
     resolution: "pendiente", resolutionReason: null, resolvedByName: null, resolvedAt: null, stage: "pedido", arrived: 0, used: 0, purchases: [], freeInWorksite: 5,
+    charge: null, suggestedSupplierId: null, supplierHint: null,
     ...overrides,
   }
 }

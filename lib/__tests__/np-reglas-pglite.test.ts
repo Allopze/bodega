@@ -10,6 +10,7 @@ import type { SyncPartsNote } from "@/lib/mantencion/contracts"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { configureZodLocale } from "@/lib/validation/zod-locale"
 import { IDS, seedMantFixtures } from "./mantencion-sync-fixtures"
+import { clearNoteHistory } from "./np-history-reset"
 
 /**
  * Regresiones de las reglas de las notas de pedido (NP) de Mantención (auditoría 2026-11-26), contra Postgres real:
@@ -204,6 +205,7 @@ async function snapshotOf(workOrderId: string, noteIds: string[]) {
 }
 
 async function resetState() {
+  await clearNoteHistory(testDb)
   for (const table of [
     schema.notifications, schema.auditLog, schema.rateLimits, schema.mantRecordParts, schema.mantRecords, schema.approvalDecisions, schema.statusHistory,
     schema.purchaseOrderItems, schema.purchaseOrders, schema.purchaseRequestItems, schema.purchaseRequests,
@@ -279,7 +281,7 @@ describe("NP4-1 · rechazar el ítem de la solicitud que compraba una línea", (
     expect(await itemRow(line)).toMatchObject({
       resolution: "rechazada", resolutionReason: "La orden de trabajo se anuló: Se pidió para el equipo equivocado", resolvedByUserId: IDS.jefe,
     })
-    expect((await noteRow(note.noteId)).status).toBe("cerrada")
+    expect((await noteRow(note.noteId)).status).toBe("rechazada")
     const auto = (await eventsOf(OT.void, "parts_note_resolved")).find((event) => (event.changeSet as { cause?: string } | null)?.cause === "ot_anulada")
     expect(auto?.changeSet).toMatchObject({ automatic: true, previousResolution: "en_compra", itemId: line })
   })
@@ -322,12 +324,12 @@ describe("NP4-2 · «por resolver» es toda nota abierta con una línea pendient
     const purchase = await insertPurchase({ noteItemId: bought, workOrderId: OT.arrive, itemStatus: "in_purchase_order", requestStatus: "in_purchasing" })
     await markInPurchase(bought)
     // No cuenta como «por resolver» ni como cerrada: espera su compra.
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("en_compra")
     expect(await query.listPartsNotes(jefe, { tab: "en_gestion", page: 1, pageSize: 25 })).toMatchObject({ counts: { pendientes: 0, en_gestion: 1, cerradas: 0 }, rows: [expect.objectContaining({ id: note.noteId, pendingLines: 0 })] })
 
     // Llega parte: sigue esperando. Llega el resto (el ítem ya está recibido): la nota se cierra en la misma transacción de la llegada.
     await arrive(OT.arrive, filter, 1, bought)
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("recibida_parcial")
     await testDb.update(schema.purchaseRequestItems).set({ status: "delivered" }).where(eq(schema.purchaseRequestItems.id, purchase.itemId))
     await arrive(OT.arrive, filter, 1, bought)
     expect((await noteRow(note.noteId)).status).toBe("cerrada")
@@ -345,7 +347,7 @@ describe("NP4-2 · «por resolver» es toda nota abierta con una línea pendient
     const note = await createNote(OT.arrive, [{ description: "Filtro de aceite", quantity: 4 }])
     const purchase = await insertPurchase({ noteItemId: note.itemIds[0]!, workOrderId: OT.arrive, itemStatus: "purchased", requestStatus: "in_purchasing" })
     await markInPurchase(note.itemIds[0]!)
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("en_compra")
     await testDb.update(schema.purchaseRequestItems).set({ status: "received" }).where(eq(schema.purchaseRequestItems.id, purchase.itemId))
     await testDb.transaction((tx) => recalcNoteStatusTx(tx as unknown as Tx, note.noteId))
     expect((await noteRow(note.noteId)).status).toBe("cerrada")
@@ -355,7 +357,7 @@ describe("NP4-2 · «por resolver» es toda nota abierta con una línea pendient
     const note = await createNote(OT.end, [{ description: "Manguera hidráulica", quantity: 2 }])
     await insertPurchase({ noteItemId: note.itemIds[0]!, workOrderId: OT.end, itemStatus: "approved", requestStatus: "approved" })
     await markInPurchase(note.itemIds[0]!)
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("en_compra")
 
     expect(await transitions.voidWorkOrder(await actorOf(IDS.jefe), { workOrderId: OT.end, reason: "Se dio de baja el equipo" })).toMatchObject({ ok: true })
 
@@ -618,7 +620,7 @@ describe("NP4-4 y NP4-6 · liberar la reserva de una línea «desde stock»", ()
 
     expect(outcome.returnedLines).toEqual([expect.objectContaining({ itemId: note.itemIds[0], outcome: "rechazada" })])
     expect(await itemRow(note.itemIds[0]!)).toMatchObject({ resolution: "rechazada", resolutionReason: "La orden de trabajo se anuló: Se dio de baja el equipo" })
-    expect((await noteRow(note.noteId)).status).toBe("cerrada")
+    expect((await noteRow(note.noteId)).status).toBe("rechazada")
     const auto = (await eventsOf(OT.gone, "parts_note_resolved")).find((event) => (event.changeSet as { cause?: string } | null)?.cause === "ot_anulada")
     expect(auto?.changeSet).toMatchObject({ automatic: true, previousResolution: "desde_stock", releasedQuantity: 2 })
   })

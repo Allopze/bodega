@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { can, canAny, requireAnyPermission } from "@/lib/auth/can"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
 import { getPartsNote } from "@/lib/services/mantencion/parts-notes/query"
+import { isPartsNoteOpen } from "@/lib/mantencion/contracts"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Nota de pedido" }
@@ -31,7 +32,7 @@ export default async function PartsNoteDetailPage({ params }: { params: Promise<
   const canOpenWorkOrder = canAny(session, "mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute")
   // «Ver en bodega» sólo se ofrece con el permiso que exige /bodega (`warehouse:view_stock`); Bodega lo valida igual.
   const canOpenBodega = can(session, "warehouse:view_stock")
-  const open = note.status === "enviada" || note.status === "en_gestion"
+  const open = isPartsNoteOpen(note.status)
 
   return (
     <PageContainer width="workbench">

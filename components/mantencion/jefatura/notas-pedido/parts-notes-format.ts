@@ -2,6 +2,7 @@ import type { StageTab } from "@/components/ui/stage-tabs"
 import type {
   PartsNoteLineStage, PartsNoteStatus, PartsNoteTab, RecordPartStockStatus,
 } from "@/lib/services/mantencion/parts/types"
+import { isPartsNoteOpen } from "@/lib/mantencion/contracts"
 import { formatDateRelative, formatQty } from "@/lib/utils"
 
 // Ojo: sólo `import type` de los servicios. Este módulo lo importan componentes de cliente y los
@@ -79,9 +80,27 @@ export function buildPartsNotesTabs(counts: Record<PartsNoteTab, number>, concil
 
 export const NOTE_STATUS_TEXT: Record<PartsNoteStatus, string> = {
   enviada: "Enviada",
+  aceptada: "Aceptada",
+  en_espera: "En espera",
   en_gestion: "En gestión",
+  en_compra: "En compra",
+  recibida_parcial: "Recibida parcial",
   cerrada: "Cerrada",
+  rechazada: "Rechazada",
   anulada: "Anulada",
+}
+
+/** Tono de la insignia de cada estado: lo que espera una decisión de jefatura va en naranja; lo que espera compras, en azul. */
+export const NOTE_STATUS_TONE: Record<PartsNoteStatus, "signal" | "info" | "success" | "danger" | "neutral"> = {
+  enviada: "signal",
+  aceptada: "info",
+  en_espera: "neutral",
+  en_gestion: "info",
+  en_compra: "info",
+  recibida_parcial: "success",
+  cerrada: "success",
+  rechazada: "danger",
+  anulada: "neutral",
 }
 
 /** «2 de 3»: las líneas que faltan resolver sobre el total de la nota. */
@@ -91,7 +110,7 @@ export function pendingLinesText(pending: number, total: number): string {
 
 /** Una nota sigue pendiente mientras esté abierta y le falten líneas por resolver. */
 export function isNotePending(row: { status: PartsNoteStatus; pendingLines: number }): boolean {
-  return (row.status === "enviada" || row.status === "en_gestion") && row.pendingLines > 0
+  return isPartsNoteOpen(row.status) && row.pendingLines > 0
 }
 
 /** «Hoy», «Ayer», «Hace 5 días»: desde cuándo espera la nota. */

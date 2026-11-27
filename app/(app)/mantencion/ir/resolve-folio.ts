@@ -129,9 +129,11 @@ async function findNoteId(viewer: MantViewer, folio: string): Promise<string | n
       id: mantPartsNotes.id,
       worksiteId: mantPartsNotes.worksiteId,
       vehicleWorksiteId: fuelVehicles.worksiteId,
+      requestedByUserId: mantPartsNotes.requestedByUserId,
     })
     .from(mantPartsNotes)
-    .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
+    // Una nota sin OT puede no tener equipo (ADR 0001, 2026-11-27): el alcance sale de su faena.
+    .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
     .where(eq(mantPartsNotes.code, folio))
     .limit(1)
   return row && canSeeNote(noteVisibility(viewer), row) ? row.id : null

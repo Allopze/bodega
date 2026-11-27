@@ -12,6 +12,7 @@ import { codeYear } from "@/lib/utils"
 import { configureZodLocale } from "@/lib/validation/zod-locale"
 import { IDS, seedMantFixtures } from "./mantencion-sync-fixtures"
 import { getRequest, jsonRequest, readJson } from "./mantencion-sync-http-helpers"
+import { clearNoteHistory } from "./np-history-reset"
 
 /**
  * Notas de pedido (NP) de repuestos del mecánico (ADR mantención 0001) contra Postgres de
@@ -237,6 +238,7 @@ const eventsOf = (workOrderId: string, type: string) => testDb.select().from(sch
 const notificationsOf = (type: string) => testDb.select().from(schema.notifications).where(eq(schema.notifications.type, type))
 
 async function resetNoteState() {
+  await clearNoteHistory(testDb)
   for (const table of [
     schema.notifications, schema.auditLog, schema.rateLimits, schema.mantRecordParts, schema.mantRecords,
     schema.purchaseOrderItems, schema.purchaseOrders, schema.purchaseRequestItems, schema.purchaseRequests,
@@ -271,15 +273,19 @@ beforeEach(resetNoteState)
 // ── Reglas puras ─────────────────────────────────────────────────────────────
 
 describe("estado de la NP y reparto de lo usado", () => {
-  it("el estado sale de las líneas: enviada → en gestión → cerrada", () => {
+  it("el estado sale de las líneas: enviada → en gestión → en compra → cerrada", () => {
     expect(deriveNoteStatus(["pendiente", "pendiente"])).toBe("enviada")
     expect(deriveNoteStatus(["desde_stock", "pendiente"])).toBe("en_gestion")
     expect(deriveNoteStatus(["rechazada", "pendiente", "en_compra"])).toBe("en_gestion")
     expect(deriveNoteStatus(["desde_stock", "en_compra", "rechazada"])).toBe("cerrada")
-    // Una compra que aún no llegó mantiene la nota en gestión (NP4-2); lo pendiente manda sobre todo lo demás.
-    expect(deriveNoteStatus(["desde_stock", "en_compra", "rechazada"], 1)).toBe("en_gestion")
-    expect(deriveNoteStatus(["en_compra", "en_compra"], 2)).toBe("en_gestion")
+    // Ninguna pendiente y una compra aún sin llegar: en compra; si algo ya llegó a la faena, recibida parcial (ADR 0001, 2026-11-27).
+    expect(deriveNoteStatus(["en_compra", "rechazada"], 1)).toBe("en_compra")
+    expect(deriveNoteStatus(["desde_stock", "en_compra", "rechazada"], 1, { arrivedAny: true })).toBe("recibida_parcial")
+    expect(deriveNoteStatus(["en_compra", "en_compra"], 2)).toBe("en_compra")
+    expect(deriveNoteStatus(["rechazada", "rechazada"])).toBe("rechazada")
+    // Lo pendiente manda sobre todo lo demás; sólo con todo pendiente, aceptada conserva su nombre.
     expect(deriveNoteStatus(["pendiente", "pendiente"], 0)).toBe("enviada")
+    expect(deriveNoteStatus(["pendiente", "pendiente"], 0, { accepted: true })).toBe("aceptada")
     expect(deriveNoteStatus(["pendiente", "en_compra"], 1)).toBe("en_gestion")
   })
 
@@ -605,7 +611,7 @@ describe("rechazar y anular", () => {
     // Una línea ya resuelta no se rechaza otra vez.
     expect(await resolver.rejectNoteItem(jefe, { itemId: note.itemIds[0]!, reason: "Otra vez, por favor" })).toMatchObject({ ok: false })
     expect((await resolver.rejectNoteItem(jefe, { itemId: note.itemIds[1]!, reason: "Tampoco se necesita" })).ok).toBe(true)
-    expect((await noteRow(note.noteId)).status).toBe("cerrada")
+    expect((await noteRow(note.noteId)).status).toBe("rechazada")
     expect(await resolver.rejectNoteItem(await viewerOf(IDS.mecBio), { itemId: note.itemIds[0]!, reason: "Intento de un mecánico" })).toMatchObject({ ok: false })
   })
 
@@ -679,7 +685,7 @@ describe("rechazar y anular", () => {
     }))
     expect((await itemRow(second!)).resolution).toBe("en_compra")
     // Todas en compra y nada llegó: la NP sigue en gestión hasta que lo comprado llegue a la faena (NP4-2).
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("en_compra")
     expect(await eventsOf(OT.a, "parts_note_resolved")).toHaveLength(2)
 
     // Una línea ya rechazada no se puede comprar: la solicitud entera se revierte.
@@ -722,7 +728,7 @@ describe("enlazar y desenlazar con la solicitud de repuestos", () => {
     const unlink = (noteItemIds: string[]) => testDb.transaction((tx) => resolver.unlinkNoteItemsFromRequestTx(tx as unknown as Tx, { noteItemIds, actorUserId: IDS.mecBio }))
     await link([{ noteItemId: first, requestItemId: p1.itemId }, { noteItemId: second, requestItemId: p3.itemId }])
     await link([{ noteItemId: first, requestItemId: p2.itemId }])
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("en_compra")
     expect(await eventsOf(OT.a, "parts_note_resolved")).toHaveLength(2)
 
     // Quitan el ítem del primer comprador: el segundo aún compra la línea.
@@ -730,7 +736,7 @@ describe("enlazar y desenlazar con la solicitud de repuestos", () => {
     await unlink([first])
     expect((await itemRow(first)).resolution).toBe("en_compra")
     expect(await eventsOf(OT.a, "parts_note_resolved")).toHaveLength(2)
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("en_compra")
 
     // Quitan también el segundo: la primera línea vuelve a pendiente; la segunda conserva su comprador.
     await testDb.delete(schema.purchaseRequestItems).where(eq(schema.purchaseRequestItems.id, p2.itemId))
@@ -826,9 +832,15 @@ describe("bandeja de notas de pedido", () => {
     expect((await query.getPartsNote(supervisor, machine.noteId))?.id).toBe(machine.noteId)
     expect((await query.getPartsNote(supervisor, bio.noteId))?.canManage).toBe(true)
 
+    // El mecánico ve lo que pidió él mismo (`mant:np:view_own`, por defecto) y nada de lo de otro.
     const mechanic = await viewerOf(IDS.mecBio)
-    expect((await query.listPartsNotes(mechanic, { tab: "pendientes", page: 1, pageSize: 25 })).counts).toEqual({ pendientes: 0, en_gestion: 0, cerradas: 0 })
-    expect(await query.getPartsNote(mechanic, bio.noteId)).toBeNull()
+    expect((await query.listPartsNotes(mechanic, { tab: "pendientes", page: 1, pageSize: 25 })).counts).toEqual({ pendientes: 1, en_gestion: 0, cerradas: 1 })
+    expect((await query.getPartsNote(mechanic, bio.noteId))?.id).toBe(bio.noteId)
+    expect(await query.getPartsNote(mechanic, cho.noteId)).toBeNull()
+    // Sin ningún permiso de notas, no ve nada, ni lo propio.
+    const bare = await contextOf(IDS.mecBio, (permissions) => permissions.filter((permission) => !permission.startsWith("mant:np:")))
+    expect((await query.listPartsNotes(bare.viewer, { tab: "pendientes", page: 1, pageSize: 25 })).counts).toEqual({ pendientes: 0, en_gestion: 0, cerradas: 0 })
+    expect(await query.getPartsNote(bare.viewer, bio.noteId)).toBeNull()
     expect(await query.getPartsNote(await viewerOf(IDS.jefe), "no-existe")).toBeNull()
     // Quien sólo ve (jefatura general) no administra.
     const viewOnly = { ...(await viewerOf(IDS.jefe)), permissions: ["mant:np:view_worksite"] }
@@ -900,9 +912,10 @@ describe("detalle de la NP: etapa, llegado, usado, compras y libre en la faena",
       requestItemId: live.itemId, requestId: live.requestId, requestCode: live.requestCode, status: "in_purchase_order", orderId: expect.any(String), orderCode: live.orderCode,
     }])
     expect(detail.lines[3]).toMatchObject({ productId: bolt, productName: "Perno", freeInWorksite: 3 })
-    // Todas sus líneas están en compra y la primera aún no llega: la NP sigue en gestión (no en «Cerradas») y ninguna cuenta como pendiente.
+    // Ninguna línea está pendiente y una ya llegó a la faena mientras la primera espera su compra: la NP está recibida parcial
+    // (pestaña «En gestión», no «Cerradas») y ninguna cuenta como pendiente.
     const row = (await query.listPartsNotes(jefe, { tab: "en_gestion", page: 1, pageSize: 25 })).rows.find((item) => item.id === note.noteId)
-    expect(row).toMatchObject({ status: "en_gestion", pendingLines: 0, totalLines: 4 })
+    expect(row).toMatchObject({ status: "recibida_parcial", pendingLines: 0, totalLines: 4 })
     expect((await query.listPartsNotes(jefe, { tab: "pendientes", page: 1, pageSize: 25 })).rows.map((item) => item.id)).not.toContain(note.noteId)
     expect((await query.listPartsNotes(jefe, { tab: "cerradas", page: 1, pageSize: 25 })).rows.map((item) => item.id)).not.toContain(note.noteId)
   })
@@ -932,8 +945,8 @@ describe("prellenado de la solicitud de repuestos", () => {
       workOrderId: OT.a, workOrderFolio: "OT-L3-a", urgency: "critical",
     })
     expect(prefill?.items).toEqual([
-      { partsNoteItemId: pending, productId: null, description: "Filtro de aceite", quantity: 2, unitOfMeasure: "unidad", partNumber: "FA-1" },
-      { partsNoteItemId: deadBuy, productId: null, description: "Perno", quantity: 8, unitOfMeasure: "unidad", partNumber: null },
+      { partsNoteItemId: pending, productId: null, description: "Filtro de aceite", quantity: 2, unitOfMeasure: "unidad", partNumber: "FA-1", chargeVehicleId: null, chargeVehicleLabel: null },
+      { partsNoteItemId: deadBuy, productId: null, description: "Perno", quantity: 8, unitOfMeasure: "unidad", partNumber: null, chargeVehicleId: null, chargeVehicleLabel: null },
     ])
 
     const calm = await createNote(IDS.mecBio, OT.asig, { equipmentStopped: false })
@@ -1069,7 +1082,7 @@ describe("cerrar o anular la OT rechaza las líneas de nota que nadie resolvió"
     return (await response.json()) as MantCatalog
   }
 
-  it("anular una OT con una nota «enviada»: la nota queda cerrada y sus líneas rechazadas con el motivo, con rastro y sin aviso al mecánico", async () => {
+  it("anular una OT con una nota «enviada»: la nota queda rechazada (todas sus líneas) con el motivo, con rastro y sin aviso al mecánico", async () => {
     const note = await createNote(IDS.mecBio, OT.endVoid1)
     expect((await noteRow(note.noteId)).status).toBe("enviada")
     const motive = "Se pidió el equipo equivocado"
@@ -1077,7 +1090,7 @@ describe("cerrar o anular la OT rechaza las líneas de nota que nadie resolvió"
     expect(await void_(OT.endVoid1, motive)).toMatchObject({ ok: true, value: { status: "anulada" } })
 
     const reason = `La orden de trabajo se anuló: ${motive}`
-    expect((await noteRow(note.noteId)).status).toBe("cerrada")
+    expect((await noteRow(note.noteId)).status).toBe("rechazada")
     for (const itemId of note.itemIds) {
       const line = await itemRow(itemId)
       expect(line).toMatchObject({ resolution: "rechazada", resolutionReason: reason, resolvedByUserId: IDS.jefe })
@@ -1182,7 +1195,7 @@ describe("cerrar o anular la OT rechaza las líneas de nota que nadie resolvió"
     const voidedNote = await createNote(IDS.mecBio, OT.endVoid3)
     expect((await resolver.voidPartsNote(jefe, { noteId: voidedNote.noteId, reason: "Se pidió por error" })).ok).toBe(true)
     const openNote = await createNote(IDS.mecBio, OT.endVoid3, { lines: [{ description: "Bomba de agua", quantity: 1, unitOfMeasure: "unidad", partNumber: null, productId: null }] })
-    expect([(await noteRow(closedNote.noteId)).status, (await noteRow(voidedNote.noteId)).status, (await noteRow(openNote.noteId)).status]).toEqual(["cerrada", "anulada", "enviada"])
+    expect([(await noteRow(closedNote.noteId)).status, (await noteRow(voidedNote.noteId)).status, (await noteRow(openNote.noteId)).status]).toEqual(["rechazada", "anulada", "enviada"])
     const frozen = { closed: await snapshotOf(closedNote), voided: await snapshotOf(voidedNote) }
     const eventsBefore = (await eventsOf(OT.endVoid3, "parts_note_resolved")).length
 
@@ -1194,7 +1207,7 @@ describe("cerrar o anular la OT rechaza las líneas de nota que nadie resolvió"
     expect(frozen.voided.note.status).toBe("anulada")
     expect(frozen.voided.lines.map((line) => line.resolution)).toEqual(["pendiente", "pendiente"])
     expect(await itemRow(openNote.itemIds[0]!)).toMatchObject({ resolution: "rechazada", resolutionReason: "La orden de trabajo se anuló: El equipo se dio de baja" })
-    expect((await noteRow(openNote.noteId)).status).toBe("cerrada")
+    expect((await noteRow(openNote.noteId)).status).toBe("rechazada")
     expect(await eventsOf(OT.endVoid3, "parts_note_resolved")).toHaveLength(eventsBefore + 1)
   })
 
@@ -1218,7 +1231,7 @@ describe("cerrar o anular la OT rechaza las líneas de nota que nadie resolvió"
     expect(await itemRow(bought)).toMatchObject({
       resolution: "rechazada", resolutionReason: "La orden de trabajo se anuló: El equipo se dio de baja", resolvedByUserId: IDS.supBio,
     })
-    expect((await noteRow(note.noteId)).status).toBe("cerrada")
+    expect((await noteRow(note.noteId)).status).toBe("rechazada")
     expect((await query.listPartsNotes(jefe, { tab: "pendientes", page: 1, pageSize: 25 })).rows).toHaveLength(0)
     const events = await eventsOf(OT.endVoid4, "parts_note_resolved")
     expect(events.find((event) => (event.changeSet as { itemId?: string } | null)?.itemId === bought && (event.changeSet as { cause?: string }).cause)).toMatchObject({

@@ -107,6 +107,8 @@ export async function loadWorkOrderPartsRows(workOrderIds: readonly string[]): P
   }
 
   for (const line of noteLines) {
+    // El reporte es por OT: una nota sin OT no tiene fila aquí (su historia vive en la bandeja de notas).
+    if (!line.workOrderId) continue
     const row = line.productId
       ? rowFor(line.workOrderId, line.productId, line.productName ?? line.description, line.productPartNumber ?? line.partNumber)
       : rowFor(line.workOrderId, `nota:${line.itemId}`, line.description, line.partNumber)

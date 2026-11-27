@@ -222,7 +222,8 @@ export async function addToAllocationTx(tx: Tx, input: {
   // Lo que llega para una línea de nota puede completarla: la NP deja de esperar su compra (NP4-2). Sin escribir si el
   // estado no cambia. La OT ya está tomada `FOR SHARE` por `lockForStockTx`, así que esto sigue el orden global
   // (OT → faena → stock → reservas → fila de la NP).
-  if (input.noteItemId) await recalcNoteStatusOfLineTx(tx, input.noteItemId, { onlyIfChanged: true })
+  // El evento de la nota lleva a quien recibió o resolvió la llegada (y lo que la causó), no al sistema.
+  if (input.noteItemId) await recalcNoteStatusOfLineTx(tx, input.noteItemId, { onlyIfChanged: true, actorUserId: input.actorUserId, reason: input.reason ?? null })
   return { allocationId }
 }
 

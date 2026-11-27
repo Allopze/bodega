@@ -71,6 +71,8 @@ export async function loadPartsNotesForWorkOrders(workOrderIds: readonly string[
       createdAt: iso(note.createdAt),
       lines,
     }
+    // Sólo las NP con OT entran en el mapa por OT: la consulta ya filtra por ellas; el guard es para el tipo.
+    if (!note.workOrderId) continue
     byWorkOrder.set(note.workOrderId, [...(byWorkOrder.get(note.workOrderId) ?? []), entry])
   }
   return byWorkOrder

@@ -1,13 +1,13 @@
 import { and, asc, desc, eq, gt, ilike, inArray, or, sql, type SQL } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
-import { fuelVehicles, mantPartsNoteItems, mantPartsNotes, mantWorkOrders, products, users, worksiteStock, worksites } from "@/db/schema"
+import { costCenters, fuelVehicles, mantPartsNoteItems, mantPartsNotes, mantWorkOrders, products, users, worksiteStock, worksites } from "@/db/schema"
 import { roundQty } from "@/lib/services/stock-reservations"
 import { escapeLikePattern } from "@/lib/utils"
 import type { MantViewer } from "../access"
 import { stockReservationSummary } from "../parts/reads"
 import type {
-  NoteItemResolution, PartsNoteDetail, PartsNoteDetailLine, PartsNoteListFilters, PartsNoteListRow, PartsNoteStatus, PartsNoteStockOption, PartsNoteTab,
+  NoteItemResolution, PartsNoteDetail, PartsNoteDetailLine, PartsNoteLineCharge, PartsNoteListFilters, PartsNoteListRow, PartsNoteStatus, PartsNoteStockOption, PartsNoteTab,
 } from "../parts/types"
 import { canSeeNote, NP_PERMISSIONS, noteVisibility, noteVisibilitySql } from "./access"
 import { loadLineStates } from "./lines"
@@ -18,7 +18,8 @@ export { loadPartsNotePrefill } from "./prefill"
 /**
  * Lecturas de notas de pedido (NP): bandeja, detalle y prellenado de la solicitud.
  * El alcance lo pone SIEMPRE el servidor (`access.ts`): un filtro de la URL nunca
- * amplía lo que se ve.
+ * amplía lo que se ve. Una NP puede no tener OT, equipo ni solicitante (importada):
+ * todas las uniones con esas tablas son `leftJoin`.
  */
 
 const EMPTY_COUNTS: Record<PartsNoteTab, number> = { pendientes: 0, en_gestion: 0, cerradas: 0 }
@@ -31,18 +32,18 @@ const totalLinesSql = sql<number>`(select count(*)::int from ${mantPartsNoteItem
 
 /** La NP tiene al menos una línea pendiente: lo que jefatura todavía tiene que resolver. */
 export const noteHasPendingLineSql = sql`exists (select 1 from ${mantPartsNoteItems} where ${mantPartsNoteItems.noteId} = ${mantPartsNotes.id} and ${mantPartsNoteItems.resolution} = 'pendiente')`
-/** NP abierta: ni cerrada ni anulada. */
-const noteOpenSql = sql`${mantPartsNotes.status} in ('enviada', 'en_gestion')`
+/** NP abierta: ni cerrada, ni rechazada, ni anulada (ADR 0001, 2026-11-27). */
+const noteOpenSql = sql`${mantPartsNotes.status} not in ('cerrada', 'rechazada', 'anulada')`
 
 /**
  * Qué agrupa cada pestaña de la bandeja (NP4-2, decisión 2026-11-26). «Pendientes» (las notas por resolver, y la cifra del
  * Panel) es toda nota abierta con al menos una línea pendiente, aunque tenga otras ya resueltas. «En gestión» es lo que
- * no tiene nada pendiente pero espera una compra que aún no llega a la faena. «Cerradas», lo cerrado y lo anulado.
+ * no tiene nada pendiente pero espera una compra que aún no llega a la faena. «Cerradas», lo cerrado, lo rechazado y lo anulado.
  */
 export const TAB_CONDITIONS: Record<PartsNoteTab, SQL> = {
   pendientes: sql`(${noteOpenSql} and ${noteHasPendingLineSql})`,
   en_gestion: sql`(${noteOpenSql} and not ${noteHasPendingLineSql})`,
-  cerradas: sql`${mantPartsNotes.status} in ('cerrada', 'anulada')`,
+  cerradas: sql`${mantPartsNotes.status} in ('cerrada', 'rechazada', 'anulada')`,
 }
 
 /** Filtros comunes a la bandeja y a los conteos (todo menos la pestaña). */
@@ -77,8 +78,8 @@ export async function listPartsNotes(viewer: MantViewer, filters: PartsNoteListF
       cerradas: sql<number>`(count(*) filter (where ${TAB_CONDITIONS.cerradas}))::int`,
     })
     .from(mantPartsNotes)
-    .innerJoin(mantWorkOrders, eq(mantWorkOrders.id, mantPartsNotes.workOrderId))
-    .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
+    .leftJoin(mantWorkOrders, eq(mantWorkOrders.id, mantPartsNotes.workOrderId))
+    .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
     .where(and(...base))
   const counts: Record<PartsNoteTab, number> = {
     pendientes: Number(counted?.pendientes ?? 0),
@@ -98,22 +99,23 @@ export async function listPartsNotes(viewer: MantViewer, filters: PartsNoteListF
       equipmentPlate: fuelVehicles.plate,
       worksiteId: mantPartsNotes.worksiteId,
       worksiteName: worksites.name,
-      requestedByName: requestedBy.name,
+      requestedByName: sql<string>`coalesce(${requestedBy.name}, ${mantPartsNotes.requestedByName}, '')`,
       equipmentStopped: mantPartsNotes.equipmentStopped,
+      urgent: mantPartsNotes.urgent,
       pendingLines: pendingLinesSql,
       totalLines: totalLinesSql,
       createdAt: mantPartsNotes.createdAt,
     })
     .from(mantPartsNotes)
-    .innerJoin(mantWorkOrders, eq(mantWorkOrders.id, mantPartsNotes.workOrderId))
-    .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
+    .leftJoin(mantWorkOrders, eq(mantWorkOrders.id, mantPartsNotes.workOrderId))
+    .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
     .innerJoin(worksites, eq(worksites.id, mantPartsNotes.worksiteId))
-    .innerJoin(requestedBy, eq(requestedBy.id, mantPartsNotes.requestedByUserId))
+    .leftJoin(requestedBy, eq(requestedBy.id, mantPartsNotes.requestedByUserId))
     .where(and(...base, TAB_CONDITIONS[filters.tab]))
-    // Lo que espera respuesta: primero el equipo detenido y lo más antiguo; el resto, lo más reciente primero.
+    // Lo que espera respuesta: primero lo urgente y lo más antiguo; el resto, lo más reciente primero.
     .orderBy(
       ...(filters.tab === "pendientes"
-        ? [desc(mantPartsNotes.equipmentStopped), asc(mantPartsNotes.createdAt)]
+        ? [desc(mantPartsNotes.urgent), asc(mantPartsNotes.createdAt)]
         : [desc(mantPartsNotes.createdAt)]),
       asc(mantPartsNotes.id),
     )
@@ -124,6 +126,7 @@ export async function listPartsNotes(viewer: MantViewer, filters: PartsNoteListF
     rows: rows.map((row): PartsNoteListRow => ({
       ...row,
       equipmentCode: row.equipmentCode ?? "",
+      equipmentPlate: row.equipmentPlate ?? "",
       status: row.status as PartsNoteStatus,
       requestedByName: row.requestedByName ?? "",
       pendingLines: Number(row.pendingLines),
@@ -166,6 +169,26 @@ async function stockOptionsIn(worksiteId: string): Promise<PartsNoteStockOption[
     .filter((row) => row.free > 0)
 }
 
+/** Lo que el cargo de una línea muestra: el equipo (código · patente), el centro de costo, o el texto original sin calce. */
+function chargeOf(input: {
+  vehicleId: string | null
+  vehicleCode: string | null
+  vehiclePlate: string | null
+  costCenterId: string | null
+  costCenterName: string | null
+  chargeText: string | null
+}): PartsNoteLineCharge | null {
+  if (!input.vehicleId && !input.costCenterId && !input.chargeText) return null
+  const vehicleLabel = input.vehicleId
+    ? [input.vehicleCode, input.vehiclePlate && input.vehiclePlate !== input.vehicleCode ? input.vehiclePlate : null].filter(Boolean).join(" · ")
+    : null
+  return {
+    vehicleId: input.vehicleId,
+    costCenterId: input.costCenterId,
+    label: vehicleLabel || input.costCenterName || input.chargeText || null,
+  }
+}
+
 export async function getPartsNote(viewer: MantViewer, noteId: string): Promise<PartsNoteDetail | null> {
   const visibility = noteVisibility(viewer)
   if (visibility.kind === "none") return null
@@ -182,22 +205,25 @@ export async function getPartsNote(viewer: MantViewer, noteId: string): Promise<
       vehicleWorksiteId: fuelVehicles.worksiteId,
       worksiteId: mantPartsNotes.worksiteId,
       worksiteName: worksites.name,
-      requestedByName: requestedBy.name,
+      requestedByUserId: mantPartsNotes.requestedByUserId,
+      requestedByName: sql<string>`coalesce(${requestedBy.name}, ${mantPartsNotes.requestedByName}, '')`,
       equipmentStopped: mantPartsNotes.equipmentStopped,
+      urgent: mantPartsNotes.urgent,
       notes: mantPartsNotes.notes,
       voidReason: mantPartsNotes.voidReason,
       createdAt: mantPartsNotes.createdAt,
     })
     .from(mantPartsNotes)
-    .innerJoin(mantWorkOrders, eq(mantWorkOrders.id, mantPartsNotes.workOrderId))
-    .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
+    .leftJoin(mantWorkOrders, eq(mantWorkOrders.id, mantPartsNotes.workOrderId))
+    .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
     .innerJoin(worksites, eq(worksites.id, mantPartsNotes.worksiteId))
-    .innerJoin(requestedBy, eq(requestedBy.id, mantPartsNotes.requestedByUserId))
+    .leftJoin(requestedBy, eq(requestedBy.id, mantPartsNotes.requestedByUserId))
     .where(eq(mantPartsNotes.id, noteId))
     .limit(1)
   if (!note || !canSeeNote(visibility, note)) return null
 
   const resolver = alias(users, "np_resolved_by")
+  const chargeVehicle = alias(fuelVehicles, "np_charge_vehicle")
   const items = await db
     .select({
       id: mantPartsNoteItems.id,
@@ -211,21 +237,39 @@ export async function getPartsNote(viewer: MantViewer, noteId: string): Promise<
       resolutionReason: mantPartsNoteItems.resolutionReason,
       resolvedByName: resolver.name,
       resolvedAt: mantPartsNoteItems.resolvedAt,
+      chargeVehicleId: mantPartsNoteItems.chargeVehicleId,
+      chargeVehicleCode: chargeVehicle.code,
+      chargeVehiclePlate: chargeVehicle.plate,
+      chargeCostCenterId: mantPartsNoteItems.chargeCostCenterId,
+      chargeCostCenterName: costCenters.name,
+      chargeText: mantPartsNoteItems.chargeText,
+      suggestedSupplierId: mantPartsNoteItems.suggestedSupplierId,
+      supplierHint: mantPartsNoteItems.supplierHint,
       sortOrder: mantPartsNoteItems.sortOrder,
     })
     .from(mantPartsNoteItems)
     .leftJoin(products, eq(products.id, mantPartsNoteItems.productId))
     .leftJoin(resolver, eq(resolver.id, mantPartsNoteItems.resolvedByUserId))
+    .leftJoin(chargeVehicle, eq(chargeVehicle.id, mantPartsNoteItems.chargeVehicleId))
+    .leftJoin(costCenters, eq(costCenters.id, mantPartsNoteItems.chargeCostCenterId))
     .where(eq(mantPartsNoteItems.noteId, noteId))
     .orderBy(asc(mantPartsNoteItems.sortOrder))
 
   const states = await loadLineStates(items.map((item) => ({
-    id: item.id, noteId, workOrderId: note.workOrderId, productId: item.productId, resolution: item.resolution, sortOrder: item.sortOrder, noteCreatedAt: note.createdAt,
+    id: item.id,
+    noteId,
+    workOrderId: note.workOrderId,
+    productId: item.productId,
+    resolution: item.resolution,
+    sortOrder: item.sortOrder,
+    noteCreatedAt: note.createdAt,
   })))
+  // Lo que se puede sacar de bodega es lo de la faena que abastece la NP: la del equipo de la OT hoy, o la de la NP si no hay equipo.
+  const stockWorksiteId = note.vehicleWorksiteId ?? note.worksiteId
   // Repuesto efectivo de cada línea: el elegido o, si llegó por una compra sin elegirlo, el de la reserva que la atendió.
   const productIds = [...new Set([...states.values()].map((state) => state.productId).filter((id): id is string => !!id))]
   const [free, names] = await Promise.all([
-    freeByProduct(note.vehicleWorksiteId, productIds),
+    freeByProduct(stockWorksiteId, productIds),
     productIds.length
       ? db.select({ id: products.id, name: products.name }).from(products).where(inArray(products.id, productIds))
       : Promise.resolve([] as Array<{ id: string; name: string }>),
@@ -252,6 +296,16 @@ export async function getPartsNote(viewer: MantViewer, noteId: string): Promise<
       used: state.used,
       purchases: state.purchases,
       freeInWorksite: state.productId ? free.get(state.productId) ?? 0 : null,
+      charge: chargeOf({
+        vehicleId: item.chargeVehicleId,
+        vehicleCode: item.chargeVehicleCode,
+        vehiclePlate: item.chargeVehiclePlate,
+        costCenterId: item.chargeCostCenterId,
+        costCenterName: item.chargeCostCenterName,
+        chargeText: item.chargeText,
+      }),
+      suggestedSupplierId: item.suggestedSupplierId,
+      supplierHint: item.supplierHint,
     }
   })
 
@@ -262,16 +316,17 @@ export async function getPartsNote(viewer: MantViewer, noteId: string): Promise<
     workOrderId: note.workOrderId,
     workOrderFolio: note.workOrderFolio,
     equipmentCode: note.equipmentCode ?? "",
-    equipmentPlate: note.equipmentPlate,
+    equipmentPlate: note.equipmentPlate ?? "",
     worksiteId: note.worksiteId,
     worksiteName: note.worksiteName,
     requestedByName: note.requestedByName ?? "",
     equipmentStopped: note.equipmentStopped,
+    urgent: note.urgent,
     createdAt: iso(note.createdAt),
     notes: note.notes,
     voidReason: note.voidReason,
     lines,
     canManage,
-    stockOptions: canManage && note.vehicleWorksiteId ? await stockOptionsIn(note.vehicleWorksiteId) : [],
+    stockOptions: canManage ? await stockOptionsIn(stockWorksiteId) : [],
   }
 }

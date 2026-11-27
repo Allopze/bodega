@@ -86,17 +86,29 @@ export type PartsNoteListRow = {
   id: string
   code: string
   status: PartsNoteStatus
-  workOrderId: string
-  workOrderFolio: string
+  /** Null: nota sin OT. */
+  workOrderId: string | null
+  workOrderFolio: string | null
+  /** Vacío si la NP no tiene equipo (sin OT). */
   equipmentCode: string
   equipmentPlate: string
   worksiteId: string
   worksiteName: string
   requestedByName: string
   equipmentStopped: boolean
+  /** Urgencia que fijó quien creó la NP (`urgent`). */
+  urgent: boolean
   pendingLines: number
   totalLines: number
   createdAt: string
+}
+
+/** Cargo de una línea: a qué se imputa (equipo o centro de costo), con su texto para mostrarlo. */
+export type PartsNoteLineCharge = {
+  vehicleId: string | null
+  costCenterId: string | null
+  /** «KA-135 · RBYD-98», «Taller»… o el cargo original (`charge_text`) si no calzó. Null si no hay cargo. */
+  label: string | null
 }
 
 export type PartsNoteDetailLine = {
@@ -118,6 +130,10 @@ export type PartsNoteDetailLine = {
   purchases: Array<{ requestItemId: string; requestId: string; requestCode: string; status: string; orderId: string | null; orderCode: string | null }>
   /** Stock libre del producto en la faena de la OT (para «Reservar de bodega»); null sin producto. */
   freeInWorksite: number | null
+  /** Cargo de la línea (equipo o centro de costo) y proveedor sugerido, si los trae. */
+  charge: PartsNoteLineCharge | null
+  suggestedSupplierId: string | null
+  supplierHint: string | null
 }
 
 /** Repuesto con stock libre en la faena actual del equipo: lo que jefatura puede «Reservar de bodega». */
@@ -146,12 +162,24 @@ export type PartsNotePrefill = {
   noteId: string
   noteCode: string
   worksiteId: string
-  vehicleId: string
-  vehicleLabel: string
-  workOrderId: string
-  workOrderFolio: string
+  /** Equipo de la OT, o el cargo del equipo de las líneas si la NP no tiene OT (null si no hay). */
+  vehicleId: string | null
+  vehicleLabel: string | null
+  /** Null: nota sin OT. La solicitud se arma sin OT. */
+  workOrderId: string | null
+  workOrderFolio: string | null
   urgency: "high" | "critical"
-  items: Array<{ partsNoteItemId: string; productId: string | null; description: string; quantity: number; unitOfMeasure: string; partNumber: string | null }>
+  items: Array<{
+    partsNoteItemId: string
+    productId: string | null
+    description: string
+    quantity: number
+    unitOfMeasure: string
+    partNumber: string | null
+    /** Equipo al que se imputa la línea (sin OT): la solicitud lo copia en el ítem, con su etiqueta para mostrarlo. */
+    chargeVehicleId: string | null
+    chargeVehicleLabel: string | null
+  }>
 }
 
 /** La sección «Repuestos» de la OT (web) y su espejo en la app. */

@@ -162,8 +162,7 @@ export const purchaseRequestItems = pgTable("purchase_request_items", {
   // Nombre explícito: el autogenerado pasa de 63 bytes.
   foreignKey({ columns: [table.partsNoteItemId], foreignColumns: [mantPartsNoteItems.id], name: "purchase_request_items_parts_note_item_fk" }).onDelete("set null"),
   index("purchase_request_items_parts_note_item_idx").on(table.partsNoteItemId),
-  // La NP es de una OT: el ítem que compra una línea de NP tiene que nombrar la OT.
-  check("purchase_request_items_parts_note_needs_work_order", sql`${table.partsNoteItemId} IS NULL OR ${table.workOrderId} IS NOT NULL`),
+  // Una línea de NP puede no tener OT (ADR 0001, 2026-11-27): el ítem que la compra se pide sin OT y copia el equipo de cargo.
   check("purchase_request_items_one_asset_subject", sql`NOT (${table.vehicleId} IS NOT NULL AND (${table.equipmentId} IS NOT NULL OR ${table.emergencyResourceId} IS NOT NULL))`),
 ])
 

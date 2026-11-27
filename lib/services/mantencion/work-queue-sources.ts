@@ -292,8 +292,9 @@ function notesBranch(resolution: OwnedResolution): SQL {
   const notice = noticeOf("notes", resolution)
   return sql`${projection({
     sourceType: "mant_parts_note", sourceId: sql`${mantPartsNotes.id}`, actionKey: "resolve", code: sql`${mantPartsNotes.code}`,
-    title: sql`CONCAT('Resolver repuestos de ', ${equipmentCodeSql})`,
-    subtitle: sql`CONCAT_WS(' · ', CONCAT('OT ', ${mantWorkOrders.folio}), CONCAT(note_lines.pending_count, ' por resolver'),
+    // Sin OT no hay equipo de OT: la nota se nombra por su faena (ADR 0001, 2026-11-27).
+    title: sql`CASE WHEN ${mantPartsNotes.workOrderId} IS NULL THEN CONCAT('Resolver repuestos · ', ${worksites.name}) ELSE CONCAT('Resolver repuestos de ', ${equipmentCodeSql}) END`,
+    subtitle: sql`CONCAT_WS(' · ', CASE WHEN ${mantWorkOrders.folio} IS NULL THEN 'sin OT' ELSE CONCAT('OT ', ${mantWorkOrders.folio}) END, CONCAT(note_lines.pending_count, ' por resolver'),
       CASE WHEN ${mantPartsNotes.equipmentStopped} THEN 'equipo detenido' END${notice ? sql`, ${notice}::text` : sql``})`,
     worksiteId: sql`${mantPartsNotes.worksiteId}`, worksiteName: sql`${worksites.name}`,
     status: sql`${mantPartsNotes.status}`,
@@ -304,13 +305,13 @@ function notesBranch(resolution: OwnedResolution): SQL {
     href: sql`CONCAT('/mantencion/notas-pedido/', ${mantPartsNotes.id})`, ctaLabel: "Resolver nota",
   })}
     FROM ${mantPartsNotes}
-    INNER JOIN ${mantWorkOrders} ON ${mantWorkOrders.id} = ${mantPartsNotes.workOrderId}
+    LEFT JOIN ${mantWorkOrders} ON ${mantWorkOrders.id} = ${mantPartsNotes.workOrderId}
     INNER JOIN ${worksites} ON ${worksites.id} = ${mantPartsNotes.worksiteId}
     CROSS JOIN LATERAL (
       SELECT COUNT(*)::int AS pending_count FROM ${mantPartsNoteItems}
       WHERE ${mantPartsNoteItems.noteId} = ${mantPartsNotes.id} AND ${mantPartsNoteItems.resolution} = 'pendiente'
     ) AS note_lines
-    WHERE ${mantPartsNotes.status} <> 'anulada' AND note_lines.pending_count > 0 AND ${owned}`
+    WHERE ${mantPartsNotes.status} NOT IN ('cerrada', 'rechazada', 'anulada') AND note_lines.pending_count > 0 AND ${owned}`
 }
 
 /**

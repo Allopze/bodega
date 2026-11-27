@@ -126,7 +126,7 @@ export async function planReleaseToLinesTx(tx: Tx, input: {
       noteId: mantPartsNoteItems.noteId,
       code: mantPartsNotes.code,
       noteWorksiteId: mantPartsNotes.worksiteId,
-      workOrderId: mantPartsNotes.workOrderId,
+      workOrderId: sql<string>`${mantPartsNotes.workOrderId}`,
       description: mantPartsNoteItems.description,
       quantity: mantPartsNoteItems.quantity,
       productId: mantPartsNoteItems.productId,
@@ -146,7 +146,7 @@ export async function planReleaseToLinesTx(tx: Tx, input: {
   // Lo usado se reparte entre TODAS las líneas de la OT que piden ese repuesto, en su orden: se lee igual que la nota.
   const refs = await tx
     .select({
-      id: mantPartsNoteItems.id, noteId: mantPartsNoteItems.noteId, workOrderId: mantPartsNotes.workOrderId, productId: mantPartsNoteItems.productId,
+      id: mantPartsNoteItems.id, noteId: mantPartsNoteItems.noteId, workOrderId: sql<string>`${mantPartsNotes.workOrderId}`, productId: mantPartsNoteItems.productId,
       resolution: mantPartsNoteItems.resolution, sortOrder: mantPartsNoteItems.sortOrder, noteCreatedAt: mantPartsNotes.createdAt,
     })
     .from(mantPartsNoteItems)
@@ -251,6 +251,7 @@ export async function returnReleasedLinesTx(tx: Tx, input: {
         await rejectLineTx(tx, { ...base, resolution: "desde_stock" }, {
           reason: autoRejectionReason(end), actor: input.actor,
           extra: { ...autoRejectionTrail(end), previousResolution: "desde_stock", releasedQuantity: share, allocationId: input.allocationId },
+          automatic: true,
         })
       } else {
         await tx.update(mantPartsNoteItems).set({
@@ -279,6 +280,7 @@ export async function returnReleasedLinesTx(tx: Tx, input: {
       await rejectLineTx(tx, { ...base, itemId: split.remainderItemId, resolution: "pendiente" }, {
         reason: autoRejectionReason(end), actor: input.actor,
         extra: { ...autoRejectionTrail(end), previousResolution: "pendiente", splitFromItemId: line.itemId, allocationId: input.allocationId },
+        automatic: true,
       })
     }
     await writeTrail(tx, {
@@ -296,7 +298,7 @@ export async function returnReleasedLinesTx(tx: Tx, input: {
       outcome: end ? "rechazada" : "pendiente", remainderItemId: split.remainderItemId,
     })
   }
-  for (const noteId of [...touched].sort()) await recalcNoteStatusTx(tx, noteId)
+  for (const noteId of [...touched].sort()) await recalcNoteStatusTx(tx, noteId, { actorUserId: input.actor.userId, reason: trailReason })
   return returned
 }
 

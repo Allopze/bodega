@@ -13,7 +13,7 @@ import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { linkNoteItemsToRequestTx, unlinkNoteItemsFromRequestTx } from "@/lib/services/mantencion/parts-notes/resolve"
 import { assertLinkedWorkOrderOpen } from "./linked-work-order"
-import { assertPartsNoteLineBuyable } from "./linked-parts-note"
+import { assertPartsNoteLineBuyable, partsNoteLineHasWorkOrder } from "./linked-parts-note"
 import type { RequestModuleConfig, RequestServiceInput } from "../request-config"
 import type { Session } from "next-auth"
 
@@ -177,14 +177,21 @@ export async function persistDraft(
     for (const [i, item] of data.items.entries()) {
       const itemId = item.id ?? nanoid()
       await assertItemFleetLink(tx, data.worksiteId, item)
-      const vehicleId = item.vehicleId?.trim() || null
-      const workOrderId = vehicleId ? (item.workOrderId?.trim() || null) : null
-      // Sólo una solicitud de repuestos compra líneas de nota de pedido, y la línea es de una OT:
-      // sin OT no hay nota a la que apuntar (la base lo exige también, con un CHECK).
-      const partsNoteItemId = config.requestType === "repuestos" && workOrderId ? (item.partsNoteItemId?.trim() || null) : null
-      if (partsNoteItemId && workOrderId) {
+      // Sólo una solicitud de repuestos compra líneas de nota de pedido. La línea dice si su NP tiene OT: con OT, el ítem
+      // nombra esa OT y su equipo; sin OT (ADR 0001, 2026-11-27), el ítem se pide sin OT y con el equipo de cargo de la línea.
+      let vehicleId = item.vehicleId?.trim() || null
+      let workOrderId = vehicleId ? (item.workOrderId?.trim() || null) : null
+      let partsNoteItemId = config.requestType === "repuestos" ? (item.partsNoteItemId?.trim() || null) : null
+      // Una línea de una nota CON OT sólo se compra con esa OT: sin OT en el ítem no se vincula (la línea queda pendiente).
+      if (partsNoteItemId && !workOrderId && await partsNoteLineHasWorkOrder(tx, partsNoteItemId)) partsNoteItemId = null
+      if (partsNoteItemId) {
         const alreadySaved = savedNoteItemIds.has(partsNoteItemId)
-        await assertPartsNoteLineBuyable(tx, { partsNoteItemId, workOrderId }, { alreadySaved, actor: session })
+        const linked = await assertPartsNoteLineBuyable(tx, { partsNoteItemId, workOrderId, worksiteId: data.worksiteId }, { alreadySaved, actor: session })
+        if (linked.workOrderId === null) {
+          workOrderId = null
+          vehicleId = linked.chargeVehicleId
+          if (vehicleId) await assertItemFleetLink(tx, data.worksiteId, { vehicleId })
+        }
         if (!alreadySaved) noteLinks.push({ noteItemId: partsNoteItemId, requestItemId: itemId })
         keptNoteItemIds.add(partsNoteItemId)
       }

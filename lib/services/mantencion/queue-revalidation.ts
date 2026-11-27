@@ -66,16 +66,16 @@ export async function revalidateQueueOfWorkOrder(workOrderId: string, paths: Pat
   })
 }
 
-/** Una nota cambió: la faena de la nota (la de su OT) y la actual de su equipo. */
+/** Una nota cambió: la faena de la nota (la de su OT) y la actual de su equipo, si tiene equipo (una nota sin OT puede no tenerlo). */
 export async function revalidateQueueOfNote(noteId: string, paths: Paths = []): Promise<void> {
   await refresh(paths, async () => {
     const [row] = await db
       .select({ imputed: mantPartsNotes.worksiteId, current: fuelVehicles.worksiteId })
       .from(mantPartsNotes)
-      .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
+      .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
       .where(eq(mantPartsNotes.id, noteId))
       .limit(1)
-    return row ? [row.imputed, row.current] : []
+    return row ? [row.imputed, row.current].filter((id): id is string => !!id) : []
   })
 }
 
