@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   acceptPartsNoteAction, holdPartsNoteAction, rejectPartsNoteAction, reopenPartsNoteAction, voidPartsNoteAction,
@@ -12,6 +13,18 @@ import { NoteReasonDialog } from "./note-reason-dialog"
 import { NOTE_ACTION_LABELS } from "./parts-notes-format"
 
 type ReasonAction = Exclude<NoteActionKey, "aceptar">
+
+/** Aceptar la nota es aprobar su compra (ADR 0001, D30): el botón lo dice, y el enlace a la solicitud que salió se queda a la vista. */
+const ACCEPT_LABEL = "Aceptar y enviar a compra"
+const REQUEST_LINK = "font-mono font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
+
+interface SentRequest { requestId: string; requestCode: string; needsQuotation: boolean }
+
+/** La solicitud que devolvió «Aceptar», si salió alguna (el servidor la manda en `data`). */
+function sentRequestOf(data: Record<string, unknown> | undefined): SentRequest | null {
+  if (typeof data?.requestId !== "string" || typeof data.requestCode !== "string") return null
+  return { requestId: data.requestId, requestCode: data.requestCode, needsQuotation: data.needsQuotation === true }
+}
 
 /** Lo que pide el diálogo de cada acción con motivo, y la acción de servidor que llama con el motivo ya recortado. */
 const REASON_ACTIONS: Record<ReasonAction, {
@@ -58,27 +71,35 @@ const REASON_ACTIONS: Record<ReasonAction, {
 
 /**
  * Acciones de cabecera de la nota en el encabezado de la página (acciones de toda la nota: regla 5 de `app/AGENTS.md`).
- * Muestra sólo las que el servidor dijo que valen para quien mira (`actions`, de `allowedNoteActions`). «Aceptar» no pide
- * confirmación ni motivo; las demás piden un motivo escrito en un diálogo. El servidor vuelve a validar estado, permiso y
- * alcance en cada una: esto es presentación, no autorización.
+ * Muestra sólo las que el servidor dijo que valen para quien mira (`actions`, de `allowedNoteActions`). «Aceptar y enviar a
+ * compra» no pide confirmación ni motivo y deja a la vista el enlace a la solicitud que salió; las demás piden un motivo
+ * escrito en un diálogo. El servidor vuelve a validar estado, permiso y alcance en cada una: esto es presentación, no
+ * autorización.
  */
 export function NoteHeaderActions({ noteId, code, actions }: { noteId: string; code: string; actions: readonly NoteActionKey[] }) {
   const router = useRouter()
   const op = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
   const [dialog, setDialog] = React.useState<ReasonAction | null>(null)
-  if (actions.length === 0) return null
+  const [sent, setSent] = React.useState<SentRequest | null>(null)
+  if (actions.length === 0 && !sent) return null
   const spec = dialog ? REASON_ACTIONS[dialog] : null
 
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
         {actions.map((key) => key === "aceptar" ? (
-          <Button key={key} size="sm" loading={op.pending} onClick={() => op.run(() => acceptPartsNoteAction({ noteId }))}>
-            {NOTE_ACTION_LABELS[key]}
+          <Button key={key} size="sm" loading={op.pending} onClick={() => op.run(() => acceptPartsNoteAction({ noteId }), (result) => setSent(sentRequestOf(result.data)))}>
+            {ACCEPT_LABEL}
           </Button>
         ) : (
           <Button key={key} variant="secondary" size="sm" disabled={op.pending} onClick={() => setDialog(key)}>{NOTE_ACTION_LABELS[key]}</Button>
         ))}
+        {sent && (
+          <p className="text-sm text-[var(--color-text-muted)]">
+            {sent.needsQuotation ? "Falta adjuntar cotizaciones en la solicitud " : "Quedó en Compras con la solicitud "}
+            <Link href={`/solicitudes/${sent.requestId}`} className={REQUEST_LINK}>{sent.requestCode}</Link>.
+          </p>
+        )}
       </div>
       {dialog && spec && (
         <NoteReasonDialog

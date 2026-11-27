@@ -18,6 +18,7 @@ const services = vi.hoisted(() => ({
   rejectPartsNote: vi.fn(),
   reopenPartsNote: vi.fn(),
   conciliatePart: vi.fn(),
+  sendToPurchase: vi.fn(),
   loadWorkOrderPartsOverview: vi.fn(),
   releaseAllocationTx: vi.fn(),
   transaction: vi.fn(async (run: (tx: unknown) => unknown) => run("tx")),
@@ -33,6 +34,10 @@ vi.mock("@/lib/services/mantencion/parts-notes/resolve", () => ({
 vi.mock("@/lib/services/mantencion/parts-notes/transitions", () => ({
   acceptPartsNote: services.acceptPartsNote, holdPartsNote: services.holdPartsNote, rejectPartsNote: services.rejectPartsNote,
   reopenPartsNote: services.reopenPartsNote, voidPartsNote: services.voidPartsNote,
+}))
+vi.mock("@/lib/services/mantencion/parts-notes/send-to-purchase", () => ({
+  sendPartsNoteLinesToPurchase: services.sendToPurchase,
+  NoLinesToSendError: class NoLinesToSendError extends Error {},
 }))
 vi.mock("@/lib/services/mantencion/parts-notes/query", () => ({ loadWorkOrderPartsOverview: services.loadWorkOrderPartsOverview }))
 vi.mock("@/lib/services/mantencion/parts/conciliation", () => ({ conciliatePart: services.conciliatePart }))
@@ -52,6 +57,7 @@ beforeEach(() => {
   services.voidPartsNote.mockResolvedValue({ ok: true })
   for (const service of [services.acceptPartsNote, services.holdPartsNote, services.rejectPartsNote, services.reopenPartsNote]) service.mockResolvedValue({ ok: true, message: "Listo." })
   services.conciliatePart.mockResolvedValue({ ok: true, message: "Descontado." })
+  services.sendToPurchase.mockResolvedValue({ requestId: "rq1", requestCode: "SOL-1", approved: true, lineCount: 2, needsQuotation: false, message: "2 líneas a Compras (SOL-1)." })
   services.loadWorkOrderPartsOverview.mockResolvedValue({ notes: [], available: [ALLOCATION], consumptions: [] })
   services.releaseAllocationTx.mockResolvedValue({ released: 2 })
 })
@@ -252,18 +258,64 @@ describe("acciones de cabecera de la nota", () => {
     expect(service).toHaveBeenCalledWith(viewer.current, { noteId: "n1", reason: "Falta confirmar el equipo" })
   })
 
-  it("aceptar no pide motivo: llama al servicio con la nota y refresca la bandeja, la ficha, la cola y el Panel", async () => {
-    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({ ok: true, message: "Listo." })
+  it("aceptar no pide motivo: acepta, envía sus líneas pendientes a compra y refresca la bandeja, la ficha, la cola, el Panel y Compras", async () => {
+    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({
+      ok: true,
+      message: "Aceptada. 2 líneas a Compras (SOL-1).",
+      data: { requestId: "rq1", requestCode: "SOL-1", approved: true, needsQuotation: false },
+    })
     expect(services.acceptPartsNote).toHaveBeenCalledWith(viewer.current, { noteId: "n1" })
+    expect(services.sendToPurchase).toHaveBeenCalledWith(SESSION, { noteId: "n1" })
     expect(revalidatePath).toHaveBeenCalledWith("/mantencion/notas-pedido")
     expect(revalidatePath).toHaveBeenCalledWith("/mantencion/notas-pedido/n1")
     expect(revalidatePath).toHaveBeenCalledWith("/mantencion/panel")
     expect(revalidatePath).toHaveBeenCalledWith("/pendientes")
+    expect(revalidatePath).toHaveBeenCalledWith("/compras")
+    expect(revalidatePath).toHaveBeenCalledWith("/solicitudes/rq1")
+  })
+
+  it("si la regla de cotización exige cotizaciones, la nota queda aceptada y el aviso trae el enlace a la solicitud en borrador", async () => {
+    services.sendToPurchase.mockResolvedValue({
+      requestId: "rq2", requestCode: "SOL-2", approved: false, lineCount: 1, needsQuotation: true,
+      message: "Supera el umbral de cotización: adjunta las cotizaciones en la solicitud SOL-2.",
+    })
+    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({
+      ok: true,
+      message: "Aceptada. Supera el umbral de cotización: adjunta las cotizaciones en la solicitud SOL-2.",
+      data: { requestId: "rq2", requestCode: "SOL-2", approved: false, needsQuotation: true },
+    })
+  })
+
+  it("una nota sin líneas pendientes queda aceptada y no hay nada que enviar: el mensaje es el de la aceptación", async () => {
+    const { NoLinesToSendError } = await import("@/lib/services/mantencion/parts-notes/send-to-purchase")
+    services.sendToPurchase.mockRejectedValue(new NoLinesToSendError("NP-1"))
+    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({ ok: true, message: "Listo." })
+    expect(revalidatePath).toHaveBeenCalledWith("/mantencion/notas-pedido/n1")
+  })
+
+  it("si el envío a compra falla, la aceptación queda (se refresca la pantalla) y el mensaje lo dice, sin filtrar el error del motor", async () => {
+    services.sendToPurchase.mockRejectedValue(new Error("El repuesto «Filtro» está inactivo"))
+    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({
+      ok: false, message: "La nota quedó aceptada, pero no se pudo enviar a compra: El repuesto «Filtro» está inactivo",
+    })
+    expect(revalidatePath).toHaveBeenCalledWith("/mantencion/notas-pedido/n1")
+    services.sendToPurchase.mockRejectedValue(Object.assign(new Error("Failed query: insert ..."), { query: "insert ...", params: [] }))
+    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({
+      ok: false, message: "La nota quedó aceptada, pero no se pudo enviar a compra: error inesperado",
+    })
+  })
+
+  it("si la aceptación se rechaza (estado, alcance), no se envía nada a compra ni se refresca", async () => {
+    services.acceptPartsNote.mockResolvedValue({ ok: false, message: "La nota NP-1 está cerrada: no se puede aceptar." })
+    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({ ok: false, message: "La nota NP-1 está cerrada: no se puede aceptar." })
+    expect(services.sendToPurchase).not.toHaveBeenCalled()
+    expect(revalidatePath).not.toHaveBeenCalled()
   })
 
   it("un identificador con caracteres raros no llega al servicio ni a revalidatePath", async () => {
     expect(await actions.acceptPartsNoteAction({ noteId: "../../admin" })).toMatchObject({ ok: false })
     expect(services.acceptPartsNote).not.toHaveBeenCalled()
+    expect(services.sendToPurchase).not.toHaveBeenCalled()
     expect(revalidatePath).not.toHaveBeenCalled()
   })
 

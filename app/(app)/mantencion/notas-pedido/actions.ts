@@ -1,8 +1,10 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import type { Session } from "next-auth"
 import { z } from "zod"
 import { db } from "@/db"
+import { safeActionMessage } from "@/lib/action-error"
 import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { parseZ } from "@/lib/actions/parse-z"
 import { guardAnyPermission } from "@/lib/auth/can"
@@ -12,9 +14,11 @@ import { releaseAllocationTx } from "@/lib/services/mantencion/parts"
 import { loadWorkOrderPartsOverview } from "@/lib/services/mantencion/parts-notes/query"
 import { revalidateQueueOfNote } from "@/lib/services/mantencion/queue-revalidation"
 import { rejectNoteItem, resolveNoteItemFromStock } from "@/lib/services/mantencion/parts-notes/resolve"
+import { NoLinesToSendError, sendPartsNoteLinesToPurchase } from "@/lib/services/mantencion/parts-notes/send-to-purchase"
 import { acceptPartsNote, holdPartsNote, rejectPartsNote, reopenPartsNote, voidPartsNote } from "@/lib/services/mantencion/parts-notes/transitions"
 import type { ReturnedNoteLine } from "@/lib/services/mantencion/parts-notes/line-release"
 import type { PartsActionResult } from "@/lib/services/mantencion/parts/types"
+import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { formatQty } from "@/lib/utils"
 import type { Permission } from "@/modules/permissions"
 
@@ -40,6 +44,8 @@ export interface NoteActionState {
   ok: boolean
   message?: string
   fieldErrors?: Record<string, string[]>
+  /** Aceptar envía la nota a compra: la solicitud que salió, para que la pantalla enlace a ella. */
+  data?: { requestId: string; requestCode: string; approved: boolean; needsQuotation: boolean }
 }
 
 function toState(result: PartsActionResult): NoteActionState {
@@ -131,9 +137,42 @@ async function runHeaderAction(
   }
 }
 
-/** «Aceptar»: la nota queda aceptada (o vuelve al estado de sus líneas si estaba en espera). Sin motivo ni confirmación. */
+/**
+ * Tras aceptar, sus líneas pendientes se envían a compra (D30): una solicitud por nota que cae en la cola de Compras, o queda
+ * en borrador si la regla de cotización lo pide (D31). La aceptación ya está escrita: si el envío falla, queda aceptada y el
+ * mensaje lo dice (`ok: false` para que se vea como aviso, no como éxito). Sin líneas pendientes no hay nada que enviar.
+ */
+async function sendAcceptedNoteToPurchase(session: Session, noteId: string, acceptedMessage: string | undefined): Promise<NoteActionState> {
+  try {
+    const sent = await sendPartsNoteLinesToPurchase(session, { noteId })
+    revalidateOperationalViews(["/compras", "/compras/nueva", "/solicitudes", `/solicitudes/${sent.requestId}`])
+    return {
+      ok: true,
+      message: `Aceptada. ${sent.message}`,
+      data: { requestId: sent.requestId, requestCode: sent.requestCode, approved: sent.approved, needsQuotation: sent.needsQuotation },
+    }
+  } catch (error) {
+    if (error instanceof NoLinesToSendError) return { ok: true, ...(acceptedMessage ? { message: acceptedMessage } : {}) }
+    return { ok: false, message: `La nota quedó aceptada, pero no se pudo enviar a compra: ${safeActionMessage(error, "error inesperado")}` }
+  }
+}
+
+/** «Aceptar y enviar a compra»: la nota queda aceptada (o vuelve al estado de sus líneas si estaba en espera) y sus líneas pendientes van a Compras. Sin motivo ni confirmación. */
 export async function acceptPartsNoteAction(input: unknown): Promise<NoteActionState> {
-  return runHeaderAction(MANAGE, acceptSchema, input, acceptPartsNote, "No se pudo aceptar la nota.")
+  const guard = await guardAnyPermission(MANAGE, PATH)
+  if (guard.error) return guard.error
+  const parsed = parseZ(acceptSchema, input)
+  if (!parsed.ok) return parsed
+  const { noteId } = parsed.data
+  try {
+    const accepted = await acceptPartsNote(viewerFromSession(guard.session), { noteId })
+    if (!accepted.ok) return toState(accepted)
+    const state = await sendAcceptedNoteToPurchase(guard.session, noteId, accepted.message)
+    await refreshNoteQueue(noteId)
+    return state
+  } catch (error) {
+    return actionErrorResult(error, "No se pudo aceptar la nota.")
+  }
 }
 
 /** «Poner en espera»: congela la nota hasta que se acepte; el motivo queda en el historial y se muestra. */
