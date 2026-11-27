@@ -95,6 +95,7 @@ describe("«Enviar a compra» en lote", () => {
     const motor = await pricedProduct("Motor de arranque", 150_000)
     const withOrder = await otNote([{ description: "Filtro de aceite", productId: filter }, { description: "Sello de bomba", productId: seal }])
     const noOrder = await manualNote([{ description: "Filtro de aceite", productId: filter, chargeVehicleId: IDS.truckBio }])
+    // Sobre el umbral de cotización: igual sale aprobada.
     const overThreshold = await manualNote([{ description: "Motor de arranque", productId: motor }])
     const onHold = await manualNote([{ description: "Abrazadera" }])
     expect((await holdPartsNote(await jefeViewer(), { noteId: onHold.noteId, reason: "Falta confirmar el equipo" })).ok).toBe(true)
@@ -106,17 +107,15 @@ describe("«Enviar a compra» en lote", () => {
 
     expect(result.ok).toBe(4)
     expect(result.failed).toEqual([{ noteCode: onHold.code, message: "La nota está en espera: acéptala primero." }])
+    // Una solicitud por nota, todas aprobadas: ni el umbral ni la falta de precio frenan una nota aceptada (D31).
     expect(result.requests).toHaveLength(3)
-    expect(result.requests.filter((request) => request.approved)).toHaveLength(2)
-    // Sobre el umbral no es un fallo: la solicitud existe, en borrador, esperando cotizaciones.
-    const waiting = result.requests.find((request) => !request.approved)!
-    expect((await requestsOf()).find((request) => request.id === waiting.id)).toMatchObject({ code: waiting.code, status: "draft" })
+    expect(result.requests.every((request) => request.approved)).toBe(true)
+    expect((await requestsOf()).filter((request) => request.status === "approved")).toHaveLength(3)
 
     expect((await Promise.all(withOrder.itemIds.map(resolutionOf)))).toEqual(["en_compra", "en_compra"])
     expect(await resolutionOf(onHold.itemIds[0]!)).toBe("pendiente")
     expect(await expectInvariant(withOrder.noteId)).toBe("en_compra")
     expect(await expectInvariant(onHold.noteId)).toBe("en_espera")
-    expect((await requestsOf()).filter((request) => request.status === "approved")).toHaveLength(2)
   })
 
   it("una nota de otra faena falla con su motivo y no crea solicitud", async () => {

@@ -39,5 +39,6 @@ describe("request people panel helpers", () => {
     expect(roleContextLabel(null)).toBe("Rol no registrado")
     expect(roleContextLabel("supervisor_faena")).toBe("Supervisor de faena")
     expect(roleContextLabel("rol_nuevo_x")).toBe("Rol nuevo x")
+    expect(roleContextLabel("mantencion_np")).toBe("Nota de pedido aceptada")
   })
 })

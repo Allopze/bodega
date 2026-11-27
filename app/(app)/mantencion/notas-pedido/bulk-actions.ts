@@ -49,7 +49,7 @@ const DONE: Record<BulkLineDecision, readonly [string, string]> = {
   rechazar: ["rechazada", "rechazadas"],
 }
 
-/** Lo que pasó, en una frase: cuántas salieron, qué solicitudes esperan algo, y por qué fallaron las otras notas. */
+/** Lo que pasó, en una frase: cuántas salieron, qué solicitudes quedaron esperando su aprobación, y por qué fallaron las otras notas. */
 function summarize(decision: BulkLineDecision, result: BulkLinesResult): string {
   const parts: string[] = []
   if (result.ok > 0) {
@@ -57,7 +57,7 @@ function summarize(decision: BulkLineDecision, result: BulkLinesResult): string 
     parts.push(`${lineWord(result.ok)} ${DONE[decision][result.ok === 1 ? 0 : 1]}${codes ? ` (${codes})` : ""}.`)
   }
   const waiting = result.requests.filter((request) => !request.approved).map((request) => request.code)
-  if (waiting.length > 0) parts.push(`${waiting.join(", ")} ${waiting.length === 1 ? "espera" : "esperan"} cotizaciones o su aprobación.`)
+  if (waiting.length > 0) parts.push(`${waiting.join(", ")} ${waiting.length === 1 ? "espera" : "esperan"} su aprobación en Aprobaciones.`)
   if (result.failed.length > 0) {
     const shown = result.failed.slice(0, SHOWN_FAILURES).map((failure) => `${failure.noteCode}: ${failure.message}`).join(" · ")
     const rest = result.failed.length - SHOWN_FAILURES

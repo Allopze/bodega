@@ -336,10 +336,10 @@ describe("NoteHeaderActions", () => {
     expect(toastSuccess).toHaveBeenCalledWith("La nota NP-2026-0001 quedó aceptada.")
   })
 
-  it("«Aceptar y enviar a compra» deja a la vista el enlace a la solicitud que salió, o avisa que faltan cotizaciones", async () => {
+  it("«Aceptar y enviar a compra» deja a la vista el enlace a la solicitud que salió, o avisa que quedó esperando aprobación", async () => {
     actions.acceptPartsNoteAction.mockResolvedValue({
       ok: true, message: "Aceptada. 2 líneas a Compras (SOL-2026-0007).",
-      data: { requestId: "rq-7", requestCode: "SOL-2026-0007", approved: true, needsQuotation: false },
+      data: { requestId: "rq-7", requestCode: "SOL-2026-0007", approved: true },
     })
     mount(["aceptar"])
     fireEvent.click(screen.getByRole("button", { name: "Aceptar y enviar a compra" }))
@@ -349,13 +349,13 @@ describe("NoteHeaderActions", () => {
     cleanup()
 
     actions.acceptPartsNoteAction.mockResolvedValue({
-      ok: true, message: "Aceptada. Supera el umbral de cotización: adjunta las cotizaciones en la solicitud SOL-2026-0008.",
-      data: { requestId: "rq-8", requestCode: "SOL-2026-0008", approved: false, needsQuotation: true },
+      ok: true, message: "Aceptada. La solicitud SOL-2026-0008 quedó enviada a aprobación: No tienes acceso a esta faena.",
+      data: { requestId: "rq-8", requestCode: "SOL-2026-0008", approved: false },
     })
     mount(["aceptar"])
     fireEvent.click(screen.getByRole("button", { name: "Aceptar y enviar a compra" }))
     expect((await screen.findByRole("link", { name: "SOL-2026-0008" })).getAttribute("href")).toBe("/solicitudes/rq-8")
-    expect(screen.getByText(/Falta adjuntar cotizaciones en la solicitud/)).toBeTruthy()
+    expect(screen.getByText(/Quedó esperando aprobación en la solicitud/)).toBeTruthy()
   })
 
   it("si «Aceptar» se rechaza en el servidor, la página no se refresca ni se cierra nada", async () => {

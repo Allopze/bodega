@@ -170,7 +170,7 @@ function OutcomeBlock({ outcome, onDismiss }: { outcome: Outcome; onDismiss: () 
               <React.Fragment key={request.id}>
                 {index > 0 && ", "}
                 <Link href={`/solicitudes/${request.id}`} className="font-mono font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline">{request.code}</Link>
-                {request.approved ? " (aprobada)" : " (espera cotizaciones o su aprobación)"}
+                {request.approved ? " (aprobada)" : " (espera su aprobación)"}
               </React.Fragment>
             ))}
           </p>

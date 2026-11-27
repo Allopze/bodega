@@ -45,6 +45,7 @@ vi.mock("@/lib/services/repuestos", async (importOriginal) => {
   }
 })
 
+const realServices = await vi.importActual<typeof import("@/lib/services/repuestos")>("@/lib/services/repuestos")
 const { sendPartsNoteLinesToPurchase, NoLinesToSendError } = await import("@/lib/services/mantencion/parts-notes/send-to-purchase")
 const { acceptPartsNote, holdPartsNote } = await import("@/lib/services/mantencion/parts-notes/transitions")
 const { pendingPurchaseWhere } = await import("@/lib/adquisiciones/pending-purchase")
@@ -52,8 +53,8 @@ const { pendingPurchaseWhere } = await import("@/lib/adquisiciones/pending-purch
 /**
  * «Aceptar la nota = aprobar su compra» (ADR 0001, D30 a D32) de punta a punta contra Postgres: la solicitud de repuestos
  * que sale de las líneas pendientes de UNA nota (borrador → envío → aprobación sin cotización, `roleContext`
- * `mantencion_np`), la regla de cotización que se mantiene (umbral de $200.000: sobre él la solicitud queda en borrador, no
- * es un error), el alcance y el permiso, y lo que pasa cuando el envío o la aprobación fallan por otra causa.
+ * `mantencion_np`), aprobada SIEMPRE (D31: una nota nace sin precio y Compras le pregunta al proveedor; ni el umbral de
+ * $200.000 ni la falta de precio la frenan), el alcance y el permiso, y lo que pasa cuando el envío o la aprobación fallan.
  */
 
 const jefe = async (permissions?: (current: string[]) => string[], scope?: { worksiteIds: string[]; isGlobal: boolean }): Promise<Session> => {
@@ -129,7 +130,7 @@ describe("aceptar y enviar a compra", () => {
     expect(await expectInvariant(note.noteId)).toBe("aceptada")
 
     const result = await sendPartsNoteLinesToPurchase(session, { noteId: note.noteId })
-    expect(result).toMatchObject({ approved: true, needsQuotation: false, lineCount: 2 })
+    expect(result).toMatchObject({ approved: true, lineCount: 2 })
     expect(result.message).toBe(`2 líneas a Compras (${result.requestCode}).`)
 
     const [request] = await requestsOf()
@@ -155,44 +156,46 @@ describe("aceptar y enviar a compra", () => {
     const note = await manualNote([{ description: "Filtro de aceite", quantity: 3, productId: filter, chargeVehicleId: OT_VEHICLE }])
 
     const result = await sendPartsNoteLinesToPurchase(await jefe(), { noteId: note.noteId })
-    expect(result).toMatchObject({ approved: true, needsQuotation: false, lineCount: 1 })
+    expect(result).toMatchObject({ approved: true, lineCount: 1 })
     const [item] = await itemsOfRequest(result.requestId)
     expect(item).toMatchObject({ status: "approved", workOrderId: null, vehicleId: OT_VEHICLE, partsNoteItemId: note.itemIds[0], estimatedUnitPrice: 10_000 })
     expect(await inPurchaseQueue()).toEqual([item!.id])
     expect(await expectInvariant(note.noteId)).toBe("en_compra")
   })
 
-  it("una nota sin OT sobre el umbral: la solicitud queda en BORRADOR con las líneas «en compra» y el aviso del umbral (no es un error)", async () => {
+  it("una nota sin OT sobre el umbral de cotización: la regla no se evalúa, sale aprobada y cae en la cola de Compras", async () => {
     const motor = await pricedProduct("Motor de arranque", 150_000)
     const note = await manualNote([{ description: "Motor de arranque", quantity: 2, productId: motor }])
 
     const result = await sendPartsNoteLinesToPurchase(await jefe(), { noteId: note.noteId })
-    expect(result).toMatchObject({ approved: false, needsQuotation: true, lineCount: 1 })
-    expect(result.message).toBe(`Supera el umbral de cotización: adjunta las cotizaciones en la solicitud ${result.requestCode}.`)
-
-    const [request] = await requestsOf()
-    expect(request).toMatchObject({ id: result.requestId, status: "draft" })
-    expect((await itemsOfRequest(result.requestId)).map((item) => item.status)).toEqual(["draft"])
-    expect(await decisionsOf(result.requestId)).toEqual([])
-    expect(await inPurchaseQueue()).toEqual([])
-    expect((await itemRow(note.itemIds[0]!)).resolution).toBe("en_compra")
+    expect(result).toMatchObject({ approved: true, lineCount: 1 })
+    expect(result).not.toHaveProperty("needsQuotation")
+    const [item] = await itemsOfRequest(result.requestId)
+    expect(item).toMatchObject({ status: "approved", estimatedUnitPrice: 150_000 })
+    expect((await requestsOf())[0]).toMatchObject({ id: result.requestId, status: "approved" })
+    expect(await inPurchaseQueue()).toEqual([item!.id])
     expect(await expectInvariant(note.noteId)).toBe("en_compra")
   })
 
-  it("sin ningún precio conocido (línea de texto libre) tampoco hay cómo evaluar el umbral: borrador con el aviso del monto", async () => {
+  it("sin ningún precio (línea de texto libre) y sin OT sale aprobada igual: Compras pregunta al proveedor y compra", async () => {
     const note = await manualNote([{ description: "Abrazadera de 2 pulgadas" }])
     const result = await sendPartsNoteLinesToPurchase(await jefe(), { noteId: note.noteId })
-    expect(result).toMatchObject({ approved: false, needsQuotation: true })
-    expect(result.message).toBe(`No se conoce el monto de lo pedido: adjunta las cotizaciones o indica el precio estimado en la solicitud ${result.requestCode}.`)
-    expect((await requestsOf())[0]!.status).toBe("draft")
+    expect(result).toMatchObject({ approved: true, lineCount: 1 })
+    expect(result.message).toBe(`1 línea a Compras (${result.requestCode}).`)
+    const [item] = await itemsOfRequest(result.requestId)
+    expect(item).toMatchObject({ status: "approved", estimatedUnitPrice: null, workOrderId: null, vehicleId: null })
+    expect(await inPurchaseQueue()).toEqual([item!.id])
+    expect(await decisionsOf(result.requestId)).toMatchObject([{ type: "approve", roleContext: "mantencion_np" }])
   })
 
-  it("con OT y el equipo detenido (urgencia crítica) la vía rápida existente también aprueba sobre el umbral", async () => {
-    const motor = await pricedProduct("Motor de arranque", 150_000)
-    const note = await otNote([{ description: "Motor de arranque", productId: motor }], { equipmentStopped: true })
+  it("con OT y sin ningún precio también sale aprobada, con la OT y el equipo de la nota", async () => {
+    const note = await otNote([{ description: "Abrazadera de 2 pulgadas" }])
     const result = await sendPartsNoteLinesToPurchase(await jefe(), { noteId: note.noteId })
-    expect(result).toMatchObject({ approved: true, needsQuotation: false })
-    expect((await requestsOf())[0]).toMatchObject({ urgency: "critical", status: "approved" })
+    expect(result).toMatchObject({ approved: true, lineCount: 1 })
+    const [item] = await itemsOfRequest(result.requestId)
+    expect(item).toMatchObject({ status: "approved", vehicleId: OT_VEHICLE, estimatedUnitPrice: null })
+    expect(item!.workOrderId).not.toBeNull()
+    expect(await inPurchaseQueue()).toEqual([item!.id])
   })
 
   it("lineIds envía sólo esas líneas; las demás siguen pendientes y se envían después (una solicitud por envío)", async () => {
@@ -278,12 +281,40 @@ describe("cuando el envío o la aprobación fallan", () => {
     const note = await manualNote([{ description: "Filtro de aceite", productId: filter }])
     hooks.failApprove = new Error("No tienes acceso a esta faena")
     const result = await sendPartsNoteLinesToPurchase(await jefe(), { noteId: note.noteId })
-    expect(result).toMatchObject({ approved: false, needsQuotation: false, lineCount: 1 })
+    expect(result).toMatchObject({ approved: false, lineCount: 1 })
     expect(result.message).toBe(`La solicitud ${result.requestCode} quedó enviada a aprobación: No tienes acceso a esta faena.`)
     const [request] = await requestsOf()
     expect(request).toMatchObject({ id: result.requestId, status: "submitted" })
     expect(await inPurchaseQueue()).toEqual([])
     expect((await itemRow(note.itemIds[0]!)).resolution).toBe("en_compra")
     expect(await decisionsOf(result.requestId)).toEqual([])
+  })
+})
+
+describe("la regla de cotización sigue rigiendo fuera de la aceptación de una nota", () => {
+  const { submitRepuestoRequest, persistRepuestoDraft } = realServices
+
+  it("una solicitud manual normal, sin líneas de nota, sigue exigiendo la cotización sobre el umbral", async () => {
+    const requestId = await persistRepuestoDraft(await jefe(), {
+      worksiteId: IDS.wsBio, urgency: "high", requiredDate: "2099-12-01", justification: null,
+      items: [{ description: "Motor de arranque", quantity: 2, unitOfMeasure: "unidad", estimatedUnitPrice: 150_000 }],
+    })
+    expect(await message(() => submitRepuestoRequest({ requestId, userId: IDS.jefe }))).toBe("Sobre $200.000 se necesita al menos una cotización adjunta.")
+    // Ni siquiera la opción interna la salta: no compra ninguna línea de nota.
+    expect(await message(() => submitRepuestoRequest({ requestId, userId: IDS.jefe, partsNoteAcceptance: true }))).toBe("Sobre $200.000 se necesita al menos una cotización adjunta.")
+    expect((await requestsOf())[0]).toMatchObject({ id: requestId, status: "draft" })
+  })
+
+  it("la opción sólo vale si TODOS los ítems compran una línea de nota: un ítem suelto mantiene la regla", async () => {
+    const note = await manualNote([{ description: "Filtro de aceite" }])
+    const requestId = await persistRepuestoDraft(await jefe(), {
+      worksiteId: IDS.wsBio, urgency: "high", requiredDate: "2099-12-01", justification: null,
+      items: [
+        { description: "Filtro de aceite", quantity: 2, unitOfMeasure: "unidad", partsNoteItemId: note.itemIds[0]!, estimatedUnitPrice: 1_000 },
+        { description: "Motor de arranque", quantity: 2, unitOfMeasure: "unidad", estimatedUnitPrice: 150_000 },
+      ],
+    })
+    expect(await message(() => submitRepuestoRequest({ requestId, userId: IDS.jefe, partsNoteAcceptance: true }))).toBe("Sobre $200.000 se necesita al menos una cotización adjunta.")
+    expect((await requestsOf())[0]!.status).toBe("draft")
   })
 })

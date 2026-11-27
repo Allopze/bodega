@@ -57,7 +57,7 @@ beforeEach(() => {
   services.voidPartsNote.mockResolvedValue({ ok: true })
   for (const service of [services.acceptPartsNote, services.holdPartsNote, services.rejectPartsNote, services.reopenPartsNote]) service.mockResolvedValue({ ok: true, message: "Listo." })
   services.conciliatePart.mockResolvedValue({ ok: true, message: "Descontado." })
-  services.sendToPurchase.mockResolvedValue({ requestId: "rq1", requestCode: "SOL-1", approved: true, lineCount: 2, needsQuotation: false, message: "2 líneas a Compras (SOL-1)." })
+  services.sendToPurchase.mockResolvedValue({ requestId: "rq1", requestCode: "SOL-1", approved: true, lineCount: 2, message: "2 líneas a Compras (SOL-1)." })
   services.loadWorkOrderPartsOverview.mockResolvedValue({ notes: [], available: [ALLOCATION], consumptions: [] })
   services.releaseAllocationTx.mockResolvedValue({ released: 2 })
 })
@@ -262,7 +262,7 @@ describe("acciones de cabecera de la nota", () => {
     expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({
       ok: true,
       message: "Aceptada. 2 líneas a Compras (SOL-1).",
-      data: { requestId: "rq1", requestCode: "SOL-1", approved: true, needsQuotation: false },
+      data: { requestId: "rq1", requestCode: "SOL-1", approved: true },
     })
     expect(services.acceptPartsNote).toHaveBeenCalledWith(viewer.current, { noteId: "n1" })
     expect(services.sendToPurchase).toHaveBeenCalledWith(SESSION, { noteId: "n1" })
@@ -274,15 +274,15 @@ describe("acciones de cabecera de la nota", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/solicitudes/rq1")
   })
 
-  it("si la regla de cotización exige cotizaciones, la nota queda aceptada y el aviso trae el enlace a la solicitud en borrador", async () => {
+  it("si la aprobación automática falla, la nota queda aceptada y el aviso dice que la solicitud espera en Aprobaciones, con su enlace", async () => {
     services.sendToPurchase.mockResolvedValue({
-      requestId: "rq2", requestCode: "SOL-2", approved: false, lineCount: 1, needsQuotation: true,
-      message: "Supera el umbral de cotización: adjunta las cotizaciones en la solicitud SOL-2.",
+      requestId: "rq2", requestCode: "SOL-2", approved: false, lineCount: 1,
+      message: "La solicitud SOL-2 quedó enviada a aprobación: No tienes acceso a esta faena.",
     })
     expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({
       ok: true,
-      message: "Aceptada. Supera el umbral de cotización: adjunta las cotizaciones en la solicitud SOL-2.",
-      data: { requestId: "rq2", requestCode: "SOL-2", approved: false, needsQuotation: true },
+      message: "Aceptada. La solicitud SOL-2 quedó enviada a aprobación: No tienes acceso a esta faena.",
+      data: { requestId: "rq2", requestCode: "SOL-2", approved: false },
     })
   })
 

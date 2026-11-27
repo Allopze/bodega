@@ -113,33 +113,43 @@ export async function submitRequest(
       }
     }
 
-    // Vía rápida: una OT vinculada, o un equipo que no está operativo. Por ítem:
-    // una línea de vía rápida no exime a las demás (`fastPathCoversRequest`).
-    // Sólo se consulta la flota cuando la respuesta puede cambiar algo.
-    const nonOperationalVehicles = new Set<string>()
-    const vehicleIds = [...new Set(items.flatMap((item) => (item.vehicleId && !item.workOrderId ? [item.vehicleId] : [])))]
-    if (thresholdClp !== null && vehicleIds.length > 0) {
-      const vehicles = await tx
-        .select({ id: fuelVehicles.id, operationalStatus: fuelVehicles.operationalStatus })
-        .from(fuelVehicles)
-        .where(inArray(fuelVehicles.id, vehicleIds))
-      for (const vehicle of vehicles) if (vehicle.operationalStatus !== "operativo") nonOperationalVehicles.add(vehicle.id)
-    }
-    const fastPathEligible = fastPathCoversRequest(items.map((item) => ({
-      quantity: item.quantity,
-      estimatedUnitPrice: item.estimatedUnitPrice,
-      fastPath: !!item.workOrderId || (!!item.vehicleId && nonOperationalVehicles.has(item.vehicleId)),
-    })), thresholdClp)
+    // Aceptar una nota de pedido es aprobar su compra (ADR mantención 0001, D30/D31): la nota nace sin precio y la
+    // jefatura de mantención ya decidió, así que la regla de cotización no se evalúa. La opción la fija sólo un llamador
+    // de servidor (`sendPartsNoteLinesToPurchase`) y vale únicamente si TODOS los ítems a enviar compran una línea de
+    // nota: una solicitud normal, o con algún ítem suelto, sigue sujeta a la regla.
+    const skipsQuotationRule = input.partsNoteAcceptance === true
+      && config.requestType === "repuestos"
+      && items.length > 0
+      && items.every((item) => !!item.partsNoteItemId)
+    if (!skipsQuotationRule) {
+      // Vía rápida: una OT vinculada, o un equipo que no está operativo. Por ítem:
+      // una línea de vía rápida no exime a las demás (`fastPathCoversRequest`).
+      // Sólo se consulta la flota cuando la respuesta puede cambiar algo.
+      const nonOperationalVehicles = new Set<string>()
+      const vehicleIds = [...new Set(items.flatMap((item) => (item.vehicleId && !item.workOrderId ? [item.vehicleId] : [])))]
+      if (thresholdClp !== null && vehicleIds.length > 0) {
+        const vehicles = await tx
+          .select({ id: fuelVehicles.id, operationalStatus: fuelVehicles.operationalStatus })
+          .from(fuelVehicles)
+          .where(inArray(fuelVehicles.id, vehicleIds))
+        for (const vehicle of vehicles) if (vehicle.operationalStatus !== "operativo") nonOperationalVehicles.add(vehicle.id)
+      }
+      const fastPathEligible = fastPathCoversRequest(items.map((item) => ({
+        quantity: item.quantity,
+        estimatedUnitPrice: item.estimatedUnitPrice,
+        fastPath: !!item.workOrderId || (!!item.vehicleId && nonOperationalVehicles.has(item.vehicleId)),
+      })), thresholdClp)
 
-    const verdict = evaluateQuotationRequirement({
-      quotationTotals: quotations.map((quotation) => Number(quotation.totalAmount)),
-      estimatedTotal: estimatedRequestTotal(items),
-      thresholdClp,
-      urgency: request.urgency,
-      fastPathEligible,
-      hasJustification: !!request.notes?.trim(),
-    })
-    if (!verdict.ok) throw new Error(quotationRequirementMessage(verdict.reason, thresholdClp))
+      const verdict = evaluateQuotationRequirement({
+        quotationTotals: quotations.map((quotation) => Number(quotation.totalAmount)),
+        estimatedTotal: estimatedRequestTotal(items),
+        thresholdClp,
+        urgency: request.urgency,
+        fastPathEligible,
+        hasJustification: !!request.notes?.trim(),
+      })
+      if (!verdict.ok) throw new Error(quotationRequirementMessage(verdict.reason, thresholdClp))
+    }
 
     for (const item of items) {
       await submitItemTx(tx, item.id, input.userId, { userEmail: input.userEmail })

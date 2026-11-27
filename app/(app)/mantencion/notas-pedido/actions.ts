@@ -45,7 +45,7 @@ export interface NoteActionState {
   message?: string
   fieldErrors?: Record<string, string[]>
   /** Aceptar envía la nota a compra: la solicitud que salió, para que la pantalla enlace a ella. */
-  data?: { requestId: string; requestCode: string; approved: boolean; needsQuotation: boolean }
+  data?: { requestId: string; requestCode: string; approved: boolean }
 }
 
 function toState(result: PartsActionResult): NoteActionState {
@@ -138,9 +138,9 @@ async function runHeaderAction(
 }
 
 /**
- * Tras aceptar, sus líneas pendientes se envían a compra (D30): una solicitud por nota que cae en la cola de Compras, o queda
- * en borrador si la regla de cotización lo pide (D31). La aceptación ya está escrita: si el envío falla, queda aceptada y el
- * mensaje lo dice (`ok: false` para que se vea como aviso, no como éxito). Sin líneas pendientes no hay nada que enviar.
+ * Tras aceptar, sus líneas pendientes se envían a compra (D30): una solicitud por nota, aprobada en el acto (D31, sin regla de
+ * cotización), que cae en la cola de Compras. La aceptación ya está escrita: si el envío falla, queda aceptada y el mensaje lo
+ * dice (`ok: false` para que se vea como aviso, no como éxito). Sin líneas pendientes no hay nada que enviar.
  */
 async function sendAcceptedNoteToPurchase(session: Session, noteId: string, acceptedMessage: string | undefined): Promise<NoteActionState> {
   try {
@@ -149,7 +149,7 @@ async function sendAcceptedNoteToPurchase(session: Session, noteId: string, acce
     return {
       ok: true,
       message: `Aceptada. ${sent.message}`,
-      data: { requestId: sent.requestId, requestCode: sent.requestCode, approved: sent.approved, needsQuotation: sent.needsQuotation },
+      data: { requestId: sent.requestId, requestCode: sent.requestCode, approved: sent.approved },
     }
   } catch (error) {
     if (error instanceof NoLinesToSendError) return { ok: true, ...(acceptedMessage ? { message: acceptedMessage } : {}) }

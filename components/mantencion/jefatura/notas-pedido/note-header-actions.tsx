@@ -18,12 +18,12 @@ type ReasonAction = Exclude<NoteActionKey, "aceptar">
 const ACCEPT_LABEL = "Aceptar y enviar a compra"
 const REQUEST_LINK = "font-mono font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
 
-interface SentRequest { requestId: string; requestCode: string; needsQuotation: boolean }
+interface SentRequest { requestId: string; requestCode: string; approved: boolean }
 
 /** La solicitud que devolvió «Aceptar», si salió alguna (el servidor la manda en `data`). */
 function sentRequestOf(data: Record<string, unknown> | undefined): SentRequest | null {
   if (typeof data?.requestId !== "string" || typeof data.requestCode !== "string") return null
-  return { requestId: data.requestId, requestCode: data.requestCode, needsQuotation: data.needsQuotation === true }
+  return { requestId: data.requestId, requestCode: data.requestCode, approved: data.approved === true }
 }
 
 /** Lo que pide el diálogo de cada acción con motivo, y la acción de servidor que llama con el motivo ya recortado. */
@@ -96,7 +96,7 @@ export function NoteHeaderActions({ noteId, code, actions }: { noteId: string; c
         ))}
         {sent && (
           <p className="text-sm text-[var(--color-text-muted)]">
-            {sent.needsQuotation ? "Falta adjuntar cotizaciones en la solicitud " : "Quedó en Compras con la solicitud "}
+            {sent.approved ? "Quedó en Compras con la solicitud " : "Quedó esperando aprobación en la solicitud "}
             <Link href={`/solicitudes/${sent.requestId}`} className={REQUEST_LINK}>{sent.requestCode}</Link>.
           </p>
         )}

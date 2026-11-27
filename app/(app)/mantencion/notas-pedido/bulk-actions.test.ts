@@ -71,13 +71,13 @@ describe("resultado", () => {
     expect(revalidateTag).toHaveBeenCalledWith("badge-counts", { expire: 0 })
   })
 
-  it("enviar a compra dice las solicitudes y cuáles esperan cotizaciones o su aprobación", async () => {
+  it("enviar a compra dice las solicitudes y cuáles esperan su aprobación (la aprobación automática falló)", async () => {
     decide.mockResolvedValue({
       ok: 3, failed: [],
       requests: [{ code: "REP-1", id: "r1", approved: true }, { code: "REP-2", id: "r2", approved: false }],
     })
     expect(await decideLinesInBulkAction({ lineIds: ["l1"], decision: "comprar" })).toMatchObject({
-      ok: true, message: "3 líneas enviadas a compra (REP-1, REP-2). REP-2 espera cotizaciones o su aprobación.",
+      ok: true, message: "3 líneas enviadas a compra (REP-1, REP-2). REP-2 espera su aprobación en Aprobaciones.",
     })
     decide.mockResolvedValue({ ok: 1, failed: [], requests: [{ code: "REP-3", id: "r3", approved: true }] })
     expect((await decideLinesInBulkAction({ lineIds: ["l1"], decision: "comprar" })).message).toBe("1 línea enviada a compra (REP-3).")

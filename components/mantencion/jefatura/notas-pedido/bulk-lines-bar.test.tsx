@@ -65,13 +65,13 @@ describe("BulkLinesBar", () => {
     expect(region().textContent).toContain("(aprobada)")
   })
 
-  it("una solicitud que espera cotizaciones lo dice junto a su enlace", async () => {
+  it("una solicitud que quedó esperando su aprobación lo dice junto a su enlace", async () => {
     mocks.decide.mockResolvedValue(done({ result: { ok: 1, failed: [], requests: [{ code: "SOL-0008", id: "req-8", approved: false }] } }))
     mount({ lineIds: ["l1"], noteCount: 1 })
     fireEvent.click(screen.getByRole("button", { name: "Enviar a compra" }))
     await waitFor(() => expect(within(region()).getByRole("link", { name: "SOL-0008" })).toBeTruthy())
     expect(region().textContent).toContain("1 línea enviada a compra.")
-    expect(region().textContent).toContain("espera cotizaciones o su aprobación")
+    expect(region().textContent).toContain("espera su aprobación")
   })
 
   it("«Sacar de bodega» manda la decisión «bodega» sin confirmar", async () => {

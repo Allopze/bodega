@@ -4,11 +4,9 @@ import { db } from "@/db"
 import { purchaseRequests } from "@/db/schema"
 import { safeActionMessage } from "@/lib/action-error"
 import { logger } from "@/lib/logger"
-import { quotationRequirementMessage, type QuotationRequirementReason } from "@/lib/requests/quotation-requirement"
 import { deleteRequest } from "@/lib/services/requests-delete"
 import { approveRepuestoWithoutQuotation, persistRepuestoDraft, submitRepuestoRequest } from "@/lib/services/repuestos"
 import { listSpareParts } from "@/lib/services/spare-parts-catalog"
-import { getOperationalSettings } from "@/lib/services/system-settings"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { viewerFromSession } from "../access"
 import { NP_PERMISSIONS } from "./access"
@@ -18,29 +16,30 @@ import { whyNoteLinesAreLocked } from "./status"
 
 /**
  * «Aceptar la nota = aprobar su compra» (ADR 0001, D30 a D32): envía a compra las líneas pendientes de UNA nota. Arma
- * una sola solicitud de repuestos con esas líneas (`partsNoteItemId`), la envía y, si la regla de cotización lo permite,
- * la aprueba en el acto a nombre de quien decide (decisión `approve` con `roleContext: 'mantencion_np'`). Así cae sola en
- * la cola «Pendientes de orden de compra» de /compras (`pendingPurchaseWhere`) y Compras genera la OC desde ahí.
+ * una sola solicitud de repuestos con esas líneas (`partsNoteItemId`), la envía y la aprueba en el acto a nombre de quien
+ * decide (decisión `approve` con `roleContext: 'mantencion_np'`). Así cae sola en la cola «Pendientes de orden de compra»
+ * de /compras (`pendingPurchaseWhere`) y Compras genera la OC desde ahí.
+ *
+ * Aprueba SIEMPRE, con o sin precio y con o sin OT (D31): una nota nace sin precio y quien compra le pregunta al
+ * proveedor si lo tiene antes de comprar, así que la regla de cotización/umbral no se evalúa. Se logra con
+ * `partsNoteAcceptance` en `submitRepuestoRequest`, que sólo vale si todos los ítems compran una línea de nota.
  *
  * Reutiliza el camino de siempre —`loadPartsNotePrefill` (qué líneas se pueden comprar y con qué equipo/OT),
  * `persistRepuestoDraft`, `submitRepuestoRequest`, `approveRepuestoWithoutQuotation`—: ninguna regla se repite aquí.
  *
  * Quién: `mant:np:manage` y la faena de la nota en el alcance (D32). `mant:np:purchase` sigue con «Comprar» a mano (`?np=`).
  *
- * La regla de cotización (umbral) NO se salta: si la solicitud la exige, no es un error. La solicitud queda en BORRADOR con
- * las líneas «en compra» y el resultado trae `needsQuotation` y el aviso (D31). Cualquier otro rechazo del envío borra el
- * borrador (las líneas vuelven a pendiente) y se propaga con su mensaje. Si lo que falla es la aprobación, la solicitud ya
- * está enviada: queda esperando en Aprobaciones y el resultado lo dice, sin deshacer nada.
+ * Un rechazo del envío (la OT ya no está abierta, una línea ya no se puede comprar) borra el borrador —las líneas vuelven a
+ * pendiente— y se propaga con su mensaje. Si lo que falla es la aprobación, la solicitud ya está enviada: queda esperando en
+ * Aprobaciones y el resultado lo dice (`approved: false`), sin deshacer nada.
  */
 
 export interface SendToPurchaseResult {
   requestId: string
   requestCode: string
-  /** La solicitud quedó aprobada: ya espera su OC en Compras. */
+  /** La solicitud quedó aprobada: ya espera su OC en Compras. `false`: quedó enviada y espera en Aprobaciones. */
   approved: boolean
   lineCount: number
-  /** Quedó en borrador porque la regla de cotización pide cotizaciones o un precio estimado. */
-  needsQuotation: boolean
   message: string
 }
 
@@ -55,30 +54,9 @@ export class NoLinesToSendError extends NoteRefusal {
 /** Quien decide deja este contexto en la decisión de aprobación (columna de texto libre, sin CHECK). */
 export const NOTE_APPROVAL_ROLE_CONTEXT = "mantencion_np"
 
-const QUOTATION_REASONS = Object.keys({
-  no_quotation_or_estimate: true,
-  needs_quotation: true,
-  needs_three: true,
-  needs_justification: true,
-} satisfies Record<QuotationRequirementReason, true>) as QuotationRequirementReason[]
-
-/** El rechazo de `submitRepuestoRequest` por la regla de cotización (un `Error` con su texto), o `null` si fue otra cosa. */
-async function quotationReasonOf(error: unknown): Promise<QuotationRequirementReason | null> {
-  if (!(error instanceof Error)) return null
-  const { repuestosQuotationThresholdClp } = await getOperationalSettings()
-  return QUOTATION_REASONS.find((reason) => quotationRequirementMessage(reason, repuestosQuotationThresholdClp) === error.message) ?? null
-}
-
 const lineWord = (count: number) => (count === 1 ? "1 línea" : `${count} líneas`)
 
-/** Aviso de D31. Sin ningún precio conocido no hay umbral que mirar: el aviso lo dice en vez de hablar de un monto que no existe. */
-function needsQuotationMessage(reason: QuotationRequirementReason, code: string): string {
-  return reason === "no_quotation_or_estimate"
-    ? `No se conoce el monto de lo pedido: adjunta las cotizaciones o indica el precio estimado en la solicitud ${code}.`
-    : `Supera el umbral de cotización: adjunta las cotizaciones en la solicitud ${code}.`
-}
-
-/** Precio estimado de cada repuesto de catálogo, el mismo que precarga el formulario de solicitudes: el último de compra, o el de referencia. */
+/** Precio estimado de cada repuesto de catálogo (sólo orienta a Compras, no decide nada): el que precarga el formulario de solicitudes, el último de compra o el de referencia. */
 async function catalogPrices(productIds: ReadonlyArray<string | null>): Promise<Map<string, number>> {
   const ids = [...new Set(productIds.filter((id): id is string => !!id))]
   const prices = new Map<string, number>()
@@ -158,20 +136,15 @@ export async function sendPartsNoteLinesToPurchase(
     })),
   })
 
-  const done = { requestId, lineCount: lines.length }
   try {
-    await submitRepuestoRequest({ requestId, userId: session.user.id, userEmail: session.user.email ?? undefined })
+    await submitRepuestoRequest({ requestId, userId: session.user.id, userEmail: session.user.email ?? undefined, partsNoteAcceptance: true })
   } catch (error) {
-    const reason = await quotationReasonOf(error)
-    if (!reason) {
-      await discardDraft(requestId, session)
-      throw error
-    }
-    const requestCode = await requestCodeOf(requestId)
-    return { ...done, requestCode, approved: false, needsQuotation: true, message: needsQuotationMessage(reason, requestCode) }
+    await discardDraft(requestId, session)
+    throw error
   }
 
   const requestCode = await requestCodeOf(requestId)
+  const done = { requestId, requestCode, lineCount: lines.length }
   try {
     await approveRepuestoWithoutQuotation({
       requestId,
@@ -184,7 +157,7 @@ export async function sendPartsNoteLinesToPurchase(
   } catch (error) {
     logger.error("[sendPartsNoteLinesToPurchase] la solicitud quedó enviada sin aprobar", error)
     const why = safeActionMessage(error, "no se pudo aprobar")
-    return { ...done, requestCode, approved: false, needsQuotation: false, message: `La solicitud ${requestCode} quedó enviada a aprobación: ${why}.` }
+    return { ...done, approved: false, message: `La solicitud ${requestCode} quedó enviada a aprobación: ${why}.` }
   }
-  return { ...done, requestCode, approved: true, needsQuotation: false, message: `${lineWord(lines.length)} a Compras (${requestCode}).` }
+  return { ...done, approved: true, message: `${lineWord(lines.length)} a Compras (${requestCode}).` }
 }

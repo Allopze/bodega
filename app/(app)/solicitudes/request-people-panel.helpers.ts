@@ -44,6 +44,8 @@ export function roleContextLabel(roleContext: string | null) {
     subgerente_operaciones: "Subgerencia de operaciones",
     tecnico_ti: "Técnico TI",
     cphs: "Comité Paritario",
+    // Aceptar una nota de pedido aprueba su compra (ADR mantención 0001, D30): la decisión no es de un rol sino de la nota.
+    mantencion_np: "Nota de pedido aceptada",
   }
   if (!roleContext) return "Rol no registrado"
   // Un rol desconocido nunca se muestra crudo: se legibiliza (snake_case → texto).

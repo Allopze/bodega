@@ -100,6 +100,14 @@ export interface SubmitRequestInput {
   requestId: string
   userId:    string
   userEmail?: string
+  /**
+   * Sólo lo fija un llamador de SERVIDOR: `sendPartsNoteLinesToPurchase` (ADR mantención 0001, D30/D31), cuando quien
+   * acepta una nota de pedido aprueba su compra. Una nota nace sin precio y la jefatura de mantención ya decidió, así que
+   * la regla de cotización/umbral no se evalúa, pero SÓLO si todos los ítems a enviar compran una línea de nota
+   * (`partsNoteItemId`): una solicitud normal, o una con algún ítem suelto, la sigue exigiendo. Ninguna Server Action
+   * debe copiar datos del cliente a este campo: se arma el objeto de forma explícita, sin spread.
+   */
+  partsNoteAcceptance?: true
 }
 
 export interface SelectQuotationInput {
