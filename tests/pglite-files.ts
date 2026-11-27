@@ -715,6 +715,8 @@ export const pgliteTestFiles = [
   // ADR 0001 (2026-11-27): transiciones de cabecera, historial append-only, backfill 0405 y notas sin OT.
   "lib/__tests__/np-transiciones-pglite.test.ts",
   "lib/__tests__/np-sin-ot-pglite.test.ts",
+  // Importación de las notas de CHOME ERP: simulación sin escritura, evento «migrada» único, idempotencia por external_ref.
+  "lib/__tests__/np-import-chome-pglite.test.ts",
   // «Mis pendientes» de Mantención: siete tipos de fila repartidos entre quienes pueden resolverlos, avisos del menú
   // que salen de la misma cola, escalamiento por faena, equipo trasladado y resiliencia. Aislada: ninguna otra suite de
   // la cola siembra `mant_*`.
