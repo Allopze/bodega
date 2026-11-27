@@ -149,7 +149,7 @@ vi.mock("@/lib/combustibles/tae-receipts", async (importOriginal) => ({
   importTaeReceipts: (...args: unknown[]) => mockImportTaeReceipts(...args),
 }))
 
-const { buildCopecSyncPeriods, copecDecisionWindow, copecProjectionHash, copecSourceRowKey, copecSweepPeriods, getCopecSyncPlan, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod, syncCopecReports } = await import("../copec-sync")
+const { buildCopecSyncPeriods, copecDecisionWindow, copecProjectionHash, copecSourceRowKey, copecSweepPeriods, copecSweepStop, getCopecSyncPlan, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod, syncCopecReports } = await import("../copec-sync")
 const { AUTOMATED_SOURCES } = await import("../fuel-sources")
 const { collectStrings } = await import("./drizzle-filter")
 
@@ -254,6 +254,34 @@ describe("copecSweepPeriods", () => {
     expect(copecSweepPeriods([{ from: "2026-10-01", to: "2026-10-31" }], "2026-10-29")).toEqual([
       { from: "2026-10-01", to: "2026-10-31" },
     ])
+  })
+
+  it("lleva el mes en curso al principio aunque el plan ya lo traiga al final (prod 2026-11)", () => {
+    // Con agosto atascado y tope de 6 períodos, el plan era ago–nov: el mes en curso
+    // quedaba último y el barrido moría en agosto sin llegar a él (03-11 a 26-11).
+    const plan = buildCopecSyncPeriods("2026-08-01", "2026-11-30")
+    expect(plan.map((period) => period.from)).toEqual(["2026-08-01", "2026-09-01", "2026-10-01", "2026-11-01"])
+    expect(copecSweepPeriods(plan, "2026-11-27").map((period) => period.from)).toEqual(["2026-11-01", "2026-08-01", "2026-09-01", "2026-10-01"])
+  })
+})
+
+describe("copecSweepStop", () => {
+  const closed = { from: "2026-08-01", to: "2026-08-31" }
+  const allTerminal = (["TCT", "TAE"] as const).flatMap((channel) => (["diesel", "bluemax"] as const).map((product) => ({ channel, product, periodMonth: "2026-08-01", status: "complete" })))
+
+  it("corta si Copec no entregó ningún informe de un mes cerrado sin cobertura (servicio o credenciales)", () => {
+    expect(copecSweepStop(closed, { reports: [] }, [], "2026-11-27")).toBe("no_reports")
+  })
+
+  it("sigue con los meses siguientes si el mes trajo informes y sólo quedó con pendientes humanos", () => {
+    const incomplete = allTerminal.map((row) => row.channel === "TAE" && row.product === "diesel" ? { ...row, status: "incomplete" } : row)
+    expect(copecSweepStop(closed, { reports: ["diesel"] }, incomplete, "2026-11-27")).toBe("incomplete")
+  })
+
+  it("no dice nada de un mes cerrado con cobertura terminal ni del mes en curso", () => {
+    expect(copecSweepStop(closed, { reports: ["diesel"] }, allTerminal, "2026-11-27")).toBeNull()
+    expect(copecSweepStop(closed, { reports: [] }, allTerminal, "2026-11-27")).toBeNull()
+    expect(copecSweepStop({ from: "2026-11-01", to: "2026-11-30" }, { reports: [] }, [], "2026-11-27")).toBeNull()
   })
 })
 

@@ -1443,9 +1443,37 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
  */
 export function copecSweepPeriods(planPeriods: CopecSyncPeriod[], todayIso = today()): CopecSyncPeriod[] {
   const openPeriod = buildCopecSyncPeriods(firstDayOfMonth(todayIso), lastDayOfMonth(todayIso))[0]
-  return openPeriod && !planPeriods.some((period) => period.from === openPeriod.from)
-    ? [openPeriod, ...planPeriods]
-    : planPeriods
+  if (!openPeriod) return planPeriods
+  // SIEMPRE primero, también cuando el plan ya lo trae: al final quedaba detrás de un
+  // mes histórico atascado y el barrido moría antes de llegar a él (prod, 03 al 26-11-2026).
+  return [openPeriod, ...planPeriods.filter((period) => period.from !== openPeriod.from)]
+}
+
+/**
+ * Qué hace el barrido después de un mes:
+ * - `no_reports`: mes cerrado sin cobertura terminal y sin ningún informe TCT. Copec no
+ *   entregó nada (servicio o credenciales): se corta y se falla ruidosamente, para no
+ *   recorrer el histórico importando cero.
+ * - `incomplete`: mes cerrado que SÍ trajo informes pero quedó sin cobertura terminal por
+ *   trabajo humano (tarjeta TAE sin estanque, patente sin asignación). Se anota y se sigue
+ *   con los meses siguientes: el mes no se salta —sigue siendo el primero sin cubrir y se
+ *   revisa en cada corrida—, pero ya no congela los posteriores (agosto 2026 trabó
+ *   septiembre a noviembre durante tres semanas).
+ * - `null`: nada que decir (mes cerrado completo, o el mes en curso).
+ */
+export function copecSweepStop(
+  period: CopecSyncPeriod,
+  result: { reports: readonly string[] },
+  coverage: ReadonlyArray<{ channel: string; product: string; periodMonth: string; status: string }>,
+  todayIso = today(),
+): "no_reports" | "incomplete" | null {
+  if (isOpenPeriod(period.to, todayIso)) return null
+  const month = monthKey(period.from)
+  const allDimensionsTerminal = (["TCT", "TAE"] as const).every((channel) => (["diesel", "bluemax"] as const).every((product) =>
+    coverage.some((row) => row.channel === channel && row.product === product && row.periodMonth === month && isTerminalCopecCoverage(row.status as CopecCoverageStatus)),
+  ))
+  if (allDimensionsTerminal) return null
+  return result.reports.length === 0 ? "no_reports" : "incomplete"
 }
 
 /** Lo que va a recorrer la próxima corrida, para mostrarlo antes de que termine. */
@@ -1554,15 +1582,9 @@ export async function syncCopecReports(options: { importerId?: string } = {}): P
       // 503 parcial) que la corrida siguiente retoma, no un barrido roto.
       if (Date.now() >= budgetDeadline) { budgetExhausted = true; break }
       if (!isOpenPeriod(period.to)) {
-        const coverage = await listCopecPeriodCoverage(period.from, period.to)
-        const month = monthKey(period.from)
-        const allDimensionsTerminal = (["TCT", "TAE"] as const).every((channel) => (["diesel", "bluemax"] as const).every((product) =>
-          coverage.some((row) => row.channel === channel && row.product === product && row.periodMonth === month && isTerminalCopecCoverage(row.status)),
-        ))
-        if (!allDimensionsTerminal) {
-          if (result.reports.length === 0) throw new Error(`Copec no entregó ningún archivo para el período ${period.from} a ${period.to}. Revisa las credenciales de Copec, o registra evidencia operativa de que el período está vacío. Se importaron ${imported} registros antes de detenerse.`)
-          throw new Error(`El período ${period.from} a ${period.to} no alcanzó cobertura terminal para cada canal y producto; se detuvo el barrido antes de saltarlo.`)
-        }
+        const stop = copecSweepStop(period, result, await listCopecPeriodCoverage(period.from, period.to))
+        if (stop === "no_reports") throw new Error(`Copec no entregó ningún archivo para el período ${period.from} a ${period.to}. Revisa las credenciales de Copec, o registra evidencia operativa de que el período está vacío. Se importaron ${imported} registros antes de detenerse.`)
+        if (stop === "incomplete") notes.push(`${period.from} a ${period.to} (quedó incompleto por cargas pendientes de resolver; se vuelve a revisar en la próxima corrida y el barrido siguió con los meses siguientes)`)
       }
     }
     // C10: el resumen dice lo que se recorrió, no lo que el plan pretendía.
