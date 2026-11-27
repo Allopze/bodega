@@ -1,5 +1,5 @@
 import { cn, formatPercent, formatQty } from "@/lib/utils"
-import type { CrossFilterAction } from "@/lib/services/mantencion/looker/filters"
+import type { CrossFilterAction } from "@/lib/services/mantencion/looker/filter-hrefs"
 import { FilterToggle } from "./filter-toggle"
 
 export interface CrossFilterBarItem {
@@ -41,6 +41,7 @@ export function CrossFilterBars({
   mode = "rank",
   max,
   limit,
+  format,
   selectedKey,
   actionFor,
   emptyMessage = "Sin datos en el período.",
@@ -54,6 +55,8 @@ export function CrossFilterBars({
   /** Denominador de las barras. En `percent` es 100; en `delta`, el mayor valor absoluto. */
   max?: number
   limit?: number
+  /** Texto de la cifra de cada fila, en vez del número con su unidad («14.394 km tarde», «A tiempo»). */
+  format?: (item: CrossFilterBarItem) => string
   selectedKey?: string | null
   actionFor: (item: CrossFilterBarItem) => CrossFilterAction
   emptyMessage?: string
@@ -63,6 +66,7 @@ export function CrossFilterBars({
     return <p className="px-1 py-3 text-sm text-[var(--color-text-muted)]">{emptyMessage}</p>
   }
   const shown = limit ? items.slice(0, limit) : items
+  const textOf = (item: CrossFilterBarItem) => format?.(item) ?? valueText(item.value, mode, unit, digits)
   const maxAbs = mode === "delta"
     ? Math.max(1, ...shown.map((item) => Math.abs(item.value)))
     : Math.max(1, max ?? (mode === "percent" ? 100 : Math.max(...shown.map((item) => Math.abs(item.value)))))
@@ -73,15 +77,17 @@ export function CrossFilterBars({
         const active = selectedKey === item.key
         const ratio = Math.min(1, Math.abs(item.value) / maxAbs)
         const negative = mode === "delta" && item.value < 0
+        // Un atraso dentro del margen («A tiempo») es verde aunque el valor sea negativo.
+        const late = negative && item.tone !== "ok"
         const fullLabel = item.sublabel ? `${item.label} · ${item.sublabel}` : item.label
         const color = mode === "delta"
-          ? negative ? "var(--mant-orange)" : "var(--mant-green)"
+          ? late ? "var(--mant-orange)" : "var(--mant-green)"
           : mode === "percent" ? "var(--mant-green)" : item.color ?? "var(--mant-green)"
         return (
           <FilterToggle
             key={item.key}
             action={actionFor(item)}
-            aria-label={`${fullLabel}: ${valueText(item.value, mode, unit, digits)}`}
+            aria-label={`${fullLabel}: ${textOf(item)}`}
             className={cn(
               "w-full gap-2 px-1 py-1",
               // Con segunda línea la etiqueta ocupa toda la fila en móvil y la barra baja debajo.
@@ -109,7 +115,7 @@ export function CrossFilterBars({
                       left: negative ? `${50 - ratio * 50}%` : "50%",
                       width: `${ratio * 50}%`,
                       background: color,
-                      border: negative ? "1px solid var(--color-signal-ink)" : undefined,
+                      border: late ? "1px solid var(--color-signal-ink)" : undefined,
                     }}
                   />
                 </>
@@ -118,10 +124,11 @@ export function CrossFilterBars({
               )}
             </span>
             <span className={cn(
-              "w-20 shrink-0 text-right font-mono text-2xs tabular-nums",
+              "shrink-0 text-right font-mono text-2xs tabular-nums",
+              format ? "w-28" : "w-20",
               item.tone ? TONE_TEXT[item.tone] : "text-[var(--color-text)]",
             )}>
-              {valueText(item.value, mode, unit, digits)}
+              {textOf(item)}
             </span>
           </FilterToggle>
         )

@@ -1,8 +1,10 @@
+import Link from "next/link"
+import { Funnel } from "@phosphor-icons/react/dist/ssr"
 import { plural } from "@/lib/mantencion/format"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PanelBlock } from "@/components/ui/dashboard-panel"
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow, TableRoot } from "@/components/ui/table"
-import { checkAction } from "@/lib/services/mantencion/looker/filters"
+import { checkAction } from "@/lib/services/mantencion/looker/filter-hrefs"
 import { matrixCellShort, matrixCellText } from "@/lib/services/mantencion/looker/preventive-summary"
 import type { ChecklistMatrix, MatrixCheck } from "@/lib/services/mantencion/looker/types"
 import { cn, formatDate } from "@/lib/utils"
@@ -18,8 +20,9 @@ const STATE_CLASS: Record<NonNullable<MatrixCheck["items"][string]> | "none", st
 
 /**
  * Matriz ítem × mantención. Una columna por pauta (patente, fecha y nivel) y una fila por ítem.
- * La columna es el control de filtro: al pulsarla, la tabla de cumplimiento y las barras se
- * recalculan, pero la matriz se queda con todas sus columnas y resalta la elegida.
+ * La patente de la columna abre la ficha del equipo directamente en esa pauta (`hrefForCheck`); el embudo de
+ * al lado filtra el panel por la pauta (`x_check`): la tabla de cumplimiento y las barras se recalculan, pero la
+ * matriz se queda con todas sus columnas y resalta la elegida. Son dos controles distintos a propósito.
  *
  * R = realizado (verde), NR = no realizado (rojo), NA = no aplica (gris). El estado siempre se
  * escribe en el texto (`title`/`aria-label`), no se confía sólo al color.
@@ -27,16 +30,16 @@ const STATE_CLASS: Record<NonNullable<MatrixCheck["items"][string]> | "none", st
 export function ChecklistMatrixView({
   matrix,
   selectedCheckId,
+  hrefForCheck,
 }: {
   matrix: ChecklistMatrix
   selectedCheckId: string | null
+  /** Enlace a la ficha del equipo de la pauta; `null` si la pauta no tiene equipo vinculado. */
+  hrefForCheck: (check: MatrixCheck) => string | null
 }) {
   if (matrix.checks.length === 0) {
     return (
-      <PanelBlock padding="none">
-        <div className="p-5">
-          <h3 className="text-eyebrow text-[var(--color-text)]">Matriz de checklist</h3>
-        </div>
+      <PanelBlock span="full" padding="none">
         <EmptyState
           compact
           title="No hay pautas con detalle por ítem en este período"
@@ -49,15 +52,12 @@ export function ChecklistMatrixView({
   }
 
   return (
-    <PanelBlock padding="none">
+    <PanelBlock span="full" padding="none">
       <div className="border-b border-[var(--color-border)] px-4 py-3 md:px-5">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <h3 className="text-eyebrow text-[var(--color-text)]">Matriz de checklist</h3>
+          <p className="text-xs text-[var(--color-text-muted)]">R = realizado · NR = no realizado · NA = no aplica · — = el ítem no está en esa pauta.</p>
           <p className="font-mono text-2xs tabular-nums text-[var(--color-text-muted)]">{plural(matrix.items.length, "ítem", "ítems")} · {plural(matrix.checks.length, "pauta", "pautas")}</p>
         </div>
-        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-          R = realizado · NR = no realizado · NA = no aplica. Cada columna es una mantención; cada fila, un ítem de la pauta.
-        </p>
         {matrix.withoutDetail > 0 && (
           <p className="mt-1 text-xs text-[var(--color-warning-ink)]">
             {matrix.withoutDetail} de las últimas pautas no traen detalle por ítem y no se muestran como columna.
@@ -72,17 +72,35 @@ export function ChecklistMatrixView({
               <TableHead className="sticky left-0 z-20 min-w-44 bg-(--color-surface-2)">Ítem</TableHead>
               {matrix.checks.map((check) => {
                 const active = selectedCheckId === check.id
+                const href = hrefForCheck(check)
+                // La patente, como en las tablas del panel; el código si el equipo no la tiene.
+                const name = check.plate || check.code || "Equipo"
                 return (
                   <TableHead key={check.id} className={cn("min-w-40 align-top", active && "bg-[var(--color-primary-tint)]")}>
-                    <FilterToggle
-                      action={checkAction(check.id, active)}
-                      className="flex-col items-start gap-0.5 px-0 py-0 text-left"
-                    >
-                      <span className="font-mono text-xs font-semibold">{check.code || check.plate || "Equipo"}</span>
-                      <span className="text-2xs font-normal text-[var(--color-text-muted)]">{formatDate(check.date)} · {check.level}</span>
-                      <span className="text-2xs font-normal text-[var(--color-text-subtle)]">{check.mechanic ?? "Sin mecánico"}</span>
-                    </FilterToggle>
-                    <MatrixPhotos photos={check.photoIds} links={check.photoUrls} equipment={check.code || check.plate} />
+                    <span className="flex items-start gap-1">
+                      <span className="min-w-0">
+                        {href ? (
+                          <Link
+                            href={href}
+                            scroll={false}
+                            title={`Ver la pauta del ${formatDate(check.date)} de ${name}`}
+                            className="inline-flex min-h-8 items-center rounded-[var(--radius-xs)] font-mono text-xs font-semibold text-[var(--color-primary-ink)] underline decoration-[var(--color-primary-line)] underline-offset-2 hover:decoration-[var(--color-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+                          >
+                            {name}
+                          </Link>
+                        ) : <span className="inline-flex min-h-8 items-center font-mono text-xs font-semibold">{name}</span>}
+                        <span className="block text-2xs font-normal text-[var(--color-text-muted)]">{formatDate(check.date)} · {check.level}</span>
+                        <span className="block text-2xs font-normal text-[var(--color-text-subtle)]">{check.mechanic ?? "Sin mecánico"}</span>
+                      </span>
+                      <FilterToggle
+                        action={checkAction(check.id, active)}
+                        aria-label={`Filtrar el panel por la pauta del ${formatDate(check.date)} de ${name}`}
+                        className="min-h-11 min-w-11 shrink-0 justify-center text-[var(--color-text-muted)] sm:min-h-8 sm:min-w-8"
+                      >
+                        <Funnel size={14} weight="bold" aria-hidden />
+                      </FilterToggle>
+                    </span>
+                    <MatrixPhotos photos={check.photoIds} links={check.photoUrls} equipment={check.plate || check.code} />
                   </TableHead>
                 )
               })}
@@ -120,12 +138,12 @@ export function ChecklistMatrixView({
         </Table>
       </TableRoot>
       <div className="border-t border-[var(--color-border)] px-4 py-3 md:px-5">
-        <h4 className="text-eyebrow text-[var(--color-text)]">Observaciones</h4>
+        <h3 className="text-eyebrow text-[var(--color-text)]">Observaciones</h3>
         {matrix.checks.some((check) => check.observations) ? (
           <ul className="mt-1.5 space-y-1">
             {matrix.checks.filter((check) => check.observations).map((check) => (
               <li key={check.id} className="text-xs text-[var(--color-text)]">
-                <span className="font-mono text-2xs text-[var(--color-text-muted)]">{check.code || check.plate} · {formatDate(check.date)}</span>{" "}
+                <span className="font-mono text-2xs text-[var(--color-text-muted)]">{check.plate || check.code} · {formatDate(check.date)}</span>{" "}
                 {check.observations}
               </li>
             ))}

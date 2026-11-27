@@ -1,10 +1,9 @@
-import { tabUnit } from "./filters"
 import type { LookerFilters, LookerOptions } from "./types"
 
 /**
- * Lo que cada pestaña puede mostrar. Camiones (km) y Máquinas (h) son de una sola unidad: ofrecer
- * ahí los equipos o las frecuencias de la otra deja la pestaña vacía en cuanto alguien los elige.
- * Planificación muestra las dos unidades y «Hoy» no usa estas listas, así que quedan tal cual.
+ * Lo que cada pestaña puede mostrar. Planificación, Correctivo y Preventivo son de una sola unidad (`unidad`):
+ * ofrecer ahí los equipos o las frecuencias de la otra deja la pestaña vacía en cuanto alguien los elige.
+ * «Hoy» no usa estas listas, así que quedan tal cual.
  *
  * Módulo PURO. Acota las listas del filtro y descarta de la URL los valores CONOCIDOS que la
  * pestaña no ofrece (un equipo o una frecuencia de la otra unidad): se ignoran en silencio, sin
@@ -16,8 +15,8 @@ export function scopeLookerToTab(
   filters: LookerFilters,
   options: LookerOptions,
 ): { filters: LookerFilters; options: LookerOptions } {
-  const unit = tabUnit(filters.tab)
-  if (!unit) return { filters, options }
+  if (filters.tab === "hoy") return { filters, options }
+  const unit = filters.unit
 
   const equipment = options.equipment.filter((item) => item.unit === unit)
   const frequencies = options.frequencies.filter((item) => item.unit === unit)

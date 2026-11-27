@@ -1,28 +1,32 @@
-import { bucketLabel, resolveIndicatorPeriod, type IndicatorPeriod } from "@/lib/indicators/period"
+import { bucketLabel, isPlainDate, resolveIndicatorPeriod, type IndicatorPeriod } from "@/lib/indicators/period"
 import { MONTH_NAMES, formatQty, todayInChile } from "@/lib/utils"
 import type { MantUnit } from "@/lib/mantencion/types"
 import {
+  isLegacyLookerTab,
   isLookerTab,
+  LEGACY_LOOKER_TABS,
+  PLANNING_STATES,
   type CrossDimension,
-  type FilterChip,
   type LookerEquipmentOption,
   type LookerFilters,
   type LookerFrequencyOption,
   type LookerOptions,
   type LookerTab,
+  type PlanningState,
   type QueryFilters,
   type RawCrossFilters,
   type ResolvedCrossFilters,
 } from "./types"
 
 /**
- * Parseo y construcción de los filtros del tablero Looker. Módulo PURO: lo usan el servidor
- * (para consultar) y el cliente (para armar la URL del siguiente clic). No toca la base.
+ * Parseo de los filtros del tablero Looker. Módulo PURO: lo usan el servidor (para consultar) y el
+ * cliente (para armar la URL del siguiente clic). No toca la base. Los enlaces viven en
+ * `filter-hrefs.ts` y los chips en `filter-chips.ts`.
  */
 
-type Raw = Record<string, string | string[] | undefined>
+export type Raw = Record<string, string | string[] | undefined>
 
-function first(raw: Raw, key: string): string | undefined {
+export function first(raw: Raw, key: string): string | undefined {
   const value = raw[key]
   const text = Array.isArray(value) ? value[0] : value
   return text?.trim() ? text.trim() : undefined
@@ -45,17 +49,64 @@ export function multiValue(raw: Raw, key: string): string[] {
   return result
 }
 
+/** `pestana`. Los valores anteriores al reajuste (`camiones`, `maquinas`) se leen como Correctivo. */
 export function parseLookerTab(raw: Raw): LookerTab {
   const value = first(raw, "pestana")
+  if (isLegacyLookerTab(value)) return "correctivo"
   return isLookerTab(value) ? value : "hoy"
+}
+
+/**
+ * `unidad` (`km` por defecto). Un enlace viejo con `pestana=maquinas` lleva la unidad en la pestaña: manda
+ * sobre `unidad`, porque es lo único que ese enlace decía.
+ */
+export function parseLookerUnit(raw: Raw): MantUnit {
+  const legacy = first(raw, "pestana")
+  if (isLegacyLookerTab(legacy)) return LEGACY_LOOKER_TABS[legacy]
+  return first(raw, "unidad") === "h" ? "h" : "km"
+}
+
+/**
+ * La URL canónica de un enlace guardado con `pestana=camiones|maquinas`: `pestana=correctivo` y su unidad,
+ * con el resto de los parámetros tal cual. `null` si la URL ya es canónica. La página redirige con esto, así
+ * las pestañas, los chips y el botón de exportar ven siempre el valor nuevo.
+ */
+export function legacyTabRedirect(pathname: string, raw: Raw): string | null {
+  const legacy = first(raw, "pestana")
+  if (!isLegacyLookerTab(legacy)) return null
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === "pestana" || key === "unidad") continue
+    for (const item of Array.isArray(value) ? value : value === undefined ? [] : [value]) params.append(key, item)
+  }
+  params.set("pestana", "correctivo")
+  if (LEGACY_LOOKER_TABS[legacy] === "h") params.set("unidad", "h")
+  return `${pathname}?${params.toString()}`
+}
+
+function parsePlanningState(raw: Raw): PlanningState | null {
+  const value = first(raw, "estado")
+  return value && (PLANNING_STATES as readonly string[]).includes(value) ? value as PlanningState : null
+}
+
+/** Un extremo del rango de Planificación: `undefined` si no vino, `null` si vino inválido. */
+function parseDateBound(raw: Raw, key: string): string | null | undefined {
+  const value = first(raw, key)
+  if (value === undefined) return undefined
+  return isPlainDate(value) ? value : null
 }
 
 export function parseLookerFilters(raw: Raw, today: string = todayInChile()): LookerFilters {
   const period: IndicatorPeriod = resolveIndicatorPeriod({ desde: raw.desde, hasta: raw.hasta }, today)
   const pageText = first(raw, "page")
   const page = pageText ? Number.parseInt(pageText, 10) : 1
+  const rawFrom = parseDateBound(raw, "fecha_desde")
+  const rawTo = parseDateBound(raw, "fecha_hasta")
+  // Un rango al revés tampoco es válido: se ignoran los dos extremos y se avisa, como con el período.
+  const reversed = typeof rawFrom === "string" && typeof rawTo === "string" && rawFrom > rawTo
   return {
     tab: parseLookerTab(raw),
+    unit: parseLookerUnit(raw),
     from: period.from,
     to: period.to,
     requestedFrom: period.requested.from,
@@ -68,6 +119,14 @@ export function parseLookerFilters(raw: Raw, today: string = todayInChile()): Lo
       .filter((value) => Number.isFinite(value) && value > 0),
     page: Number.isFinite(page) && page > 0 ? page : 1,
     cross: parseCrossFilters(raw),
+    planningState: parsePlanningState(raw),
+    dateField: first(raw, "fecha") === "ultima" ? "ultima" : "proxima",
+    dateFrom: reversed ? null : rawFrom ?? null,
+    dateTo: reversed ? null : rawTo ?? null,
+    invalidDateRange: rawFrom === null || rawTo === null || reversed,
+    sheetVehicleId: first(raw, "ficha") ?? null,
+    // Una pauta sin ficha no abre nada.
+    sheetCheckId: first(raw, "ficha") ? first(raw, "pauta") ?? null : null,
   }
 }
 
@@ -85,11 +144,13 @@ function parseCrossFilters(raw: Raw): RawCrossFilters {
 }
 
 /**
- * Parámetros de la URL que cambian lo que muestra una pestaña: el período, los filtros manuales y los
- * cruzados. No son `pestana` (la fija quien la elige) ni `page` (la exportación no pagina).
+ * Parámetros de la URL que cambian lo que muestra una pestaña: la unidad, el período, los filtros manuales,
+ * los de Planificación y los cruzados. No son `pestana` (la fija quien la elige), `page` (la exportación no
+ * pagina) ni `ficha`/`pauta` (abren una ficha, no filtran).
  */
 export const LOOKER_FILTER_PARAMS = [
-  "desde", "hasta", "faena", "equipo", "frecuencia",
+  "unidad", "desde", "hasta", "faena", "equipo", "frecuencia",
+  "estado", "fecha", "fecha_desde", "fecha_hasta",
   "x_equipo", "x_ot", "x_check", "x_conductor", "x_mes", "x_faena", "x_mecanico",
 ] as const
 
@@ -131,16 +192,10 @@ export function hasManualFilters(filters: LookerFilters): boolean {
   return filters.worksiteIds.length > 0 || filters.equipmentIds.length > 0 || filters.frequencies.length > 0
 }
 
-/** La pestaña fija la unidad; Planificación la deriva de cada fila. */
-export function tabUnit(tab: LookerTab): MantUnit | null {
-  if (tab === "camiones") return "km"
-  if (tab === "maquinas") return "h"
-  return null
-}
-
 /**
  * Filtros efectivos de una consulta. Un filtro cruzado reemplaza al manual de su misma
- * dimensión; el bloque que emitió la dimensión pasa `ignore` y no la aplica.
+ * dimensión; el bloque que emitió la dimensión pasa `ignore` y no la aplica. La unidad es la de la
+ * pestaña (`unidad`): las opciones ya vienen acotadas a ella, así que un equipo de la otra no se resuelve.
  */
 export function queryFilters(
   filters: LookerFilters,
@@ -152,7 +207,7 @@ export function queryFilters(
   let equipmentIds = [...filters.equipmentIds]
   let frequencies = [...filters.frequencies]
   let month: string | null = null
-  let unit = tabUnit(filters.tab)
+  const unit: MantUnit | null = filters.tab === "hoy" ? null : filters.unit
 
   if (cross.work && !ignored.has("work")) {
     if (cross.work.equipmentId) equipmentIds = [cross.work.equipmentId]
@@ -171,7 +226,6 @@ export function queryFilters(
       equipmentIds = [cross.equipment.id]
       worksiteIds = [cross.equipment.worksiteId]
       frequencies = []
-      unit = cross.equipment.unit
     }
   }
 
@@ -192,108 +246,6 @@ export function queryFilters(
   }
 }
 
-export interface CrossFilterAction {
-  /** Parámetros que se fijan al activar el filtro. */
-  values: Record<string, string>
-  /** `true` = el clic quita el filtro. */
-  active: boolean
-  /** Parámetros que se quitan siempre (las alternativas de nivel equipo). */
-  clear?: string[]
-}
-
-export function crossFilterActive(params: URLSearchParams, values: Record<string, string>): boolean {
-  return Object.entries(values).every(([key, value]) => params.get(key) === value)
-}
-
-export function buildCrossFilterHref(pathname: string, current: URLSearchParams, action: CrossFilterAction): string {
-  const params = new URLSearchParams(Array.from(current.entries()))
-  const toggle = { ...action.values }
-  if (action.active) {
-    for (const key of Object.keys(toggle)) params.delete(key)
-  } else {
-    for (const [key, value] of Object.entries(toggle)) params.set(key, value)
-  }
-  for (const key of action.clear ?? []) params.delete(key)
-  params.delete("page")
-  const query = params.toString()
-  return query ? `${pathname}?${query}` : pathname
-}
-
-export function equipmentAction(equipmentId: string, active: boolean): CrossFilterAction {
-  return { values: { x_equipo: equipmentId }, active, clear: ["x_ot", "x_check"] }
-}
-
-export function workAction(workId: string, active: boolean): CrossFilterAction {
-  return { values: { x_ot: workId }, active, clear: ["x_equipo", "x_check"] }
-}
-
-export function checkAction(checkId: string, active: boolean): CrossFilterAction {
-  return { values: { x_check: checkId }, active, clear: ["x_equipo", "x_ot"] }
-}
-
-export function conductorAction(label: string, active: boolean): CrossFilterAction {
-  // La URL guarda el nombre legible: el `nameKey` se deriva al resolver y el chip
-  // muestra «Conductor: CID SOTO NORA DEL C.», no la clave en minúsculas.
-  return { values: { x_conductor: label }, active }
-}
-
-export function monthAction(key: string, active: boolean): CrossFilterAction {
-  return { values: { x_mes: key }, active }
-}
-
-export function worksiteAction(worksiteId: string, active: boolean): CrossFilterAction {
-  return { values: { x_faena: worksiteId }, active }
-}
-
-export function mechanicAction(worksiteId: string, mechanicLabel: string, active: boolean): CrossFilterAction {
-  return { values: { x_faena: worksiteId, x_mecanico: mechanicLabel }, active }
-}
-
-/** Href para quitar un chip: los filtros múltiples quitan sólo su valor. */
-export function removeChipHref(pathname: string, current: URLSearchParams, chip: FilterChip): string {
-  const params = new URLSearchParams(Array.from(current.entries()))
-  if (["faena", "equipo", "frecuencia"].includes(chip.param)) {
-    const values = multiValue(Object.fromEntries(params.entries()), chip.param).filter((value) => value !== chip.value)
-    if (values.length) params.set(chip.param, values.join(","))
-    else params.delete(chip.param)
-  } else {
-    params.delete(chip.param)
-  }
-  params.delete("page")
-  const query = params.toString()
-  return query ? `${pathname}?${query}` : pathname
-}
-
-export function clearFiltersHref(pathname: string, tab: LookerTab): string {
-  return tab === "planificacion" || tab === "camiones" || tab === "maquinas" ? `${pathname}?pestana=${tab}` : pathname
-}
-
-/**
- * Parámetros que viajan al cambiar de pestaña: el período y la faena son el contexto del Panel entero (los mismos
- * nombres en «Hoy» y en las otras pestañas). Todo lo demás pertenece a la pestaña que se deja: los filtros cruzados
- * `x_*`, el equipo, la frecuencia (las opciones de cada pestaña dependen de su unidad) y la página.
- */
-export const TAB_CARRY_PARAMS = ["desde", "hasta", "faena"] as const
-
-/**
- * Enlace a una pestaña del Panel. `current` son los parámetros de la URL donde se está: de ellos sólo se conservan
- * los de `TAB_CARRY_PARAMS`, así quien elige un período y una faena no los pierde al cambiar de pestaña. Sin
- * `current` lleva sólo `pestana` (la pestaña «Hoy» es la página sin parámetro).
- */
-export function tabHref(pathname: string, tab: LookerTab, current: Raw = {}): string {
-  const params = new URLSearchParams()
-  if (tab !== "hoy") params.set("pestana", tab)
-  for (const key of TAB_CARRY_PARAMS) {
-    const value = current[key]
-    const list = Array.isArray(value) ? value : value === undefined ? [] : [value]
-    for (const item of list) {
-      if (item.trim() !== "") params.append(key, item)
-    }
-  }
-  const query = params.toString()
-  return query ? `${pathname}?${query}` : pathname
-}
-
 /** «oct 2026» a partir de `YYYY-MM`. */
 export function monthLabel(key: string): string {
   const month = Number(key.slice(5, 7))
@@ -302,54 +254,6 @@ export function monthLabel(key: string): string {
 
 export function frequencyLabel(value: number, unit: MantUnit): string {
   return `${formatQty(value)} ${unit === "km" ? "km" : "h"}`
-}
-
-/** Chips de la barra. Un valor manual y su equivalente cruzado se muestran una sola vez. */
-export function filterChips(filters: LookerFilters, options: LookerOptions, cross: ResolvedCrossFilters): FilterChip[] {
-  const chips: FilterChip[] = []
-  const seen = new Set<string>()
-  const push = (chip: FilterChip, dedupeKey: string) => {
-    if (seen.has(dedupeKey)) return
-    seen.add(dedupeKey)
-    chips.push(chip)
-  }
-  const worksiteName = (id: string) => options.worksites.find((site) => site.id === id)?.name ?? id
-  const equipmentLabel = (id: string) => options.equipment.find((equipment) => equipment.id === id)?.label ?? id
-
-  for (const id of filters.worksiteIds) {
-    push({ key: `faena:${id}`, label: "Faena", value: id, displayValue: worksiteName(id), param: "faena" }, `faena:${id}`)
-  }
-  for (const id of filters.equipmentIds) {
-    push({ key: `equipo:${id}`, label: "Código", value: id, displayValue: equipmentLabel(id), param: "equipo" }, `equipo:${id}`)
-  }
-  for (const value of filters.frequencies) {
-    const option = options.frequencies.find((frequency) => frequency.value === value)
-    const label = option?.label ?? String(value)
-    push({ key: `frecuencia:${value}`, label: "Frecuencia", value: String(value), displayValue: label, param: "frecuencia" }, `frecuencia:${value}`)
-  }
-  if (cross.equipment && !cross.equipment.derivedFrom) {
-    const shown = cross.equipment.plate && cross.equipment.plate !== cross.equipment.code ? cross.equipment.plate : cross.equipment.code
-    push({ key: `x_equipo:${cross.equipment.id}`, label: cross.equipment.plate ? "Patente" : "Código", value: cross.equipment.id, displayValue: shown, param: "x_equipo" }, `equipo:${cross.equipment.id}`)
-  }
-  if (cross.work) {
-    push({ key: `x_ot:${cross.work.id}`, label: cross.work.id.startsWith("ot:") ? "OT" : "Trabajo", value: cross.work.id, displayValue: cross.work.label, param: "x_ot" }, `work:${cross.work.id}`)
-  }
-  if (cross.check) {
-    push({ key: `x_check:${cross.check.id}`, label: "Mantención", value: cross.check.id, displayValue: cross.check.label, param: "x_check" }, `check:${cross.check.id}`)
-  }
-  if (cross.conductor) {
-    push({ key: `x_conductor:${cross.conductor.key}`, label: "Conductor", value: cross.conductor.key, displayValue: cross.conductor.label, param: "x_conductor" }, `conductor:${cross.conductor.key}`)
-  }
-  if (cross.month) {
-    push({ key: `x_mes:${cross.month.key}`, label: "Mes", value: cross.month.key, displayValue: monthLabel(cross.month.key), param: "x_mes" }, `mes:${cross.month.key}`)
-  }
-  if (cross.worksite) {
-    push({ key: `x_faena:${cross.worksite.id}`, label: "Faena", value: cross.worksite.id, displayValue: cross.worksite.name, param: "x_faena" }, `faena:${cross.worksite.id}`)
-  }
-  if (cross.mechanic) {
-    push({ key: `x_mecanico:${cross.mechanic.key}`, label: "Mecánico", value: cross.mechanic.key, displayValue: cross.mechanic.label, param: "x_mecanico" }, `mechanic:${cross.mechanic.key}`)
-  }
-  return chips
 }
 
 /** Etiqueta corta de una fila del eje de meses. */

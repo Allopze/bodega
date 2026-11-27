@@ -1,78 +1,53 @@
 import type { MantViewer } from "../access"
-import { loadCorrectiveSummary } from "./corrective"
 import { loadPlanningData } from "./planning"
 import { loadChecklistMatrix, loadPreventiveCompliance } from "./preventive"
-import type { ChecklistMatrix, CorrectiveSummary, LookerContext, PlanningData, PreventiveCompliance } from "./types"
+import type { ChecklistMatrix, LookerContext, PlanningData, PreventiveCompliance } from "./types"
 
 /**
- * Qué consulta cada pestaña y con qué filtros. Lo comparten la pestaña (`planificacion-tab.tsx`, `work-tab.tsx`)
- * y «Exportar Excel», para que el libro traiga exactamente las filas que la pantalla dibuja con los mismos
- * filtros de la URL: la regla «cada bloque ignora la dimensión que él mismo emite» vive aquí y en ningún otro lado.
+ * Qué consulta cada pestaña y con qué filtros. Lo comparten las pestañas (`planificacion-tab.tsx`,
+ * `correctivo-tab.tsx`, `preventivo-tab.tsx`) y «Exportar Excel», para que el libro traiga exactamente las filas
+ * que la pantalla dibuja con los mismos filtros de la URL: la regla «cada bloque ignora la dimensión que él mismo
+ * emite» vive aquí y en ningún otro lado.
  */
 
 /**
- * Planificación: la tabla de km ignora el equipo que ella misma emite (queda completa y se resalta la fila); la
- * de horas sí lo aplica y, si es de km, queda vacía con su mensaje contextual.
+ * Planificación (una unidad): la tabla y el gráfico de faltantes emiten `x_equipo` y lo ignoran, así siguen
+ * completos y se resalta la fila elegida.
  */
-export async function loadPlanningTabData(
-  viewer: MantViewer,
-  context: LookerContext,
-): Promise<{ kmData: PlanningData; hoursData: PlanningData }> {
-  const { filters, cross } = context
-  const [kmData, hoursData] = await Promise.all([
-    loadPlanningData(viewer, filters, cross, ["equipment"]),
-    loadPlanningData(viewer, filters, cross),
-  ])
-  return { kmData, hoursData }
+export async function loadPlanningTabData(viewer: MantViewer, context: LookerContext): Promise<PlanningData> {
+  return loadPlanningData(viewer, context.filters, context.cross, ["equipment"])
 }
 
-export interface WorkControlOptions {
+/** Correctivo: sus cargadores y la regla de qué ignora cada bloque viven en `corrective-tab-data.ts`. */
+export { loadCorrectiveTabData, type CorrectiveTabData, type CorrectiveTabOptions } from "./corrective-tab-data"
+
+export interface PreventiveTabOptions {
   /** Pautas de la matriz de checklist (la pantalla muestra las últimas 8). */
   matrixLimit?: number
-  /** Equipos de la serie de horas y registros (el gráfico dibuja los 8 con más horas). */
-  seriesLimit?: number
 }
 
-export interface WorkControlData<TRows> {
-  drivers: CorrectiveSummary
+export interface PreventiveTabData {
+  /** Todas las pautas con los filtros (sin ignorar nada): es la tira de cifras. */
+  summary: PreventiveCompliance
   monthly: PreventiveCompliance
   byWorksite: PreventiveCompliance
   byPlate: PreventiveCompliance
   matrix: ChecklistMatrix
-  chart: CorrectiveSummary
-  /** Las filas de la tabla de trabajos: una página (la pantalla) o todas (el Excel), según `loadRows`. */
-  rows: TRows
 }
 
-/**
- * Camiones (km) y Máquinas (h). El resumen de conductores se carga primero porque el conductor elegido filtra
- * la tabla de trabajos y el gráfico de equipos; el gráfico ignora el equipo que él mismo emite. `loadRows`
- * recibe los trabajos del conductor elegido (si hay) y devuelve las filas de la tabla: así la pantalla pide una
- * página y el Excel pide todas, sobre el mismo filtro y en paralelo con el gráfico.
- */
-export async function loadWorkControlData<TRows>(
+/** Preventivo. Cada bloque ignora la dimensión que él mismo emite, así el clic no lo vacía. */
+export async function loadPreventiveTabData(
   viewer: MantViewer,
   context: LookerContext,
-  loadRows: (conductorWorkIds: string[] | undefined) => Promise<TRows>,
-  options: WorkControlOptions = {},
-): Promise<WorkControlData<TRows>> {
+  options: PreventiveTabOptions = {},
+): Promise<PreventiveTabData> {
   const { filters, cross } = context
-  const [drivers, monthly, byWorksite, byPlate, matrix] = await Promise.all([
-    loadCorrectiveSummary(viewer, filters, cross, { ignore: ["conductor"], applyConductor: false }),
+  const [summary, monthly, byWorksite, byPlate, matrix] = await Promise.all([
+    loadPreventiveCompliance(viewer, filters, cross),
     loadPreventiveCompliance(viewer, filters, cross, ["month"]),
     loadPreventiveCompliance(viewer, filters, cross, ["worksite", "mechanic"]),
     loadPreventiveCompliance(viewer, filters, cross, ["equipment"]),
     loadChecklistMatrix(viewer, filters, cross, ["check"], options.matrixLimit),
   ])
-  const conductorWorkIds = drivers.selectedDriver?.workIds
-  const [chart, rows] = await Promise.all([
-    loadCorrectiveSummary(viewer, filters, cross, {
-      ignore: ["equipment"],
-      applyConductor: true,
-      conductorWorkIds,
-      ...(options.seriesLimit !== undefined ? { seriesLimit: options.seriesLimit } : {}),
-    }),
-    loadRows(conductorWorkIds),
-  ])
-  return { drivers, monthly, byWorksite, byPlate, matrix, chart, rows }
+  return { summary, monthly, byWorksite, byPlate, matrix }
 }

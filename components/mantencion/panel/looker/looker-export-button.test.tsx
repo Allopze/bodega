@@ -11,7 +11,7 @@ vi.mock("@/lib/toast", () => ({ toast }))
 import { LookerExcelButton } from "./looker-export-button"
 
 /**
- * «Exportar Excel» de Planificación, «Por kilómetros» y «Por horas»: lleva a la acción de servidor la pestaña y los
+ * «Exportar Excel» de Planificación, Correctivo y Preventivo: lleva a la acción de servidor la pestaña y los
  * parámetros de la URL, y nada más. Las filas no viajan desde el navegador: el servidor las vuelve a consultar.
  */
 describe("LookerExcelButton", () => {
@@ -23,21 +23,21 @@ describe("LookerExcelButton", () => {
   afterEach(cleanup)
 
   it("se ofrece como «Exportar Excel», con un nombre accesible que dice qué pestaña y que lleva los filtros", () => {
-    render(<LookerExcelButton tab="camiones" params={{}} />)
+    render(<LookerExcelButton tab="correctivo" params={{}} />)
     const button = screen.getByRole("button", { name: /Exportar Excel/ })
     expect(button).toBeEnabled()
-    expect(button.getAttribute("aria-label")).toBe("Exportar Excel: Panel de mantención, pestaña Por kilómetros, con los filtros elegidos")
+    expect(button.getAttribute("aria-label")).toBe("Exportar Excel: Panel de mantención, pestaña Correctivo, con los filtros elegidos")
     expect(button.textContent).toContain("Exportar Excel")
   })
 
   it("al pulsarlo llama a la acción con la pestaña y los parámetros actuales, y avisa al terminar", async () => {
     const params = { desde: "2026-10-01", hasta: "2026-10-31", faena: ["ws-1", "ws-2"], x_conductor: "JUAN PEREZ" }
-    render(<LookerExcelButton tab="maquinas" params={params} />)
+    render(<LookerExcelButton tab="preventivo" params={params} />)
 
     fireEvent.click(screen.getByRole("button", { name: /Exportar Excel/ }))
 
     await waitFor(() => expect(exportLookerPanelAction).toHaveBeenCalledTimes(1))
-    expect(exportLookerPanelAction).toHaveBeenCalledWith({ tab: "maquinas", params })
+    expect(exportLookerPanelAction).toHaveBeenCalledWith({ tab: "preventivo", params })
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Archivo exportado"))
   })
 

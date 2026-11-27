@@ -3,17 +3,37 @@ import type { MantEquipmentState, MantUnit } from "@/lib/mantencion/types"
 /**
  * Tipos del tablero de Mantención estilo Looker.
  *
- * La pestaña `hoy` es el Panel operativo de siempre; las otras tres leen los mismos datos con
- * agregaciones propias. Los filtros manuales (`faena`, `equipo`, `frecuencia`, período) y los
- * filtros cruzados (`x_*`) viajan en la URL: el servidor consulta y el navegador sólo dibuja.
+ * La pestaña `hoy` es el Panel operativo de siempre; Planificación, Correctivo y Preventivo leen los
+ * mismos datos con agregaciones propias, todas de UNA unidad (`unidad=km|h`, km por defecto). Los
+ * filtros manuales (`faena`, `equipo`, `frecuencia`, período), los de Planificación (`estado`, `fecha*`),
+ * la ficha de Preventivo (`ficha`, `pauta`) y los filtros cruzados (`x_*`) viajan en la URL: el servidor
+ * consulta y el navegador sólo dibuja.
  */
 
-export const LOOKER_TABS = ["hoy", "planificacion", "camiones", "maquinas"] as const
+export const LOOKER_TABS = ["hoy", "planificacion", "correctivo", "preventivo"] as const
 export type LookerTab = (typeof LOOKER_TABS)[number]
+
+/**
+ * Valores de `pestana` que hubo antes del reajuste de 2026-11 («Por kilómetros» y «Por horas»). Hay enlaces
+ * guardados con ellos: se leen como Correctivo en su unidad y la página redirige a la URL canónica.
+ */
+export const LEGACY_LOOKER_TABS = { camiones: "km", maquinas: "h" } as const satisfies Record<string, MantUnit>
+export type LegacyLookerTab = keyof typeof LEGACY_LOOKER_TABS
 
 export function isLookerTab(value: string | undefined): value is LookerTab {
   return value !== undefined && (LOOKER_TABS as readonly string[]).includes(value)
 }
+
+export function isLegacyLookerTab(value: string | undefined): value is LegacyLookerTab {
+  return value !== undefined && Object.hasOwn(LEGACY_LOOKER_TABS, value)
+}
+
+/** Estado de un equipo en Planificación (`estado=`). Sale de `remainingTone`. */
+export const PLANNING_STATES = ["vencida", "proxima", "al_dia", "sin_dato"] as const
+export type PlanningState = (typeof PLANNING_STATES)[number]
+
+/** Qué fecha filtra Planificación: la estimada de la próxima (por defecto) o la de la última mantención. */
+export type PlanningDateField = "proxima" | "ultima"
 
 /** Dimensión que un bloque puede emitir (y, por lo tanto, ignorar en su propia consulta). */
 export type CrossDimension = "equipment" | "work" | "check" | "month" | "conductor" | "worksite" | "mechanic"
@@ -30,6 +50,8 @@ export interface RawCrossFilters {
 
 export interface LookerFilters {
   tab: LookerTab
+  /** Unidad de control de Planificación, Correctivo y Preventivo (`unidad`; km por defecto). */
+  unit: MantUnit
   /** Período efectivo, ya cortado en hoy. */
   from: string
   to: string
@@ -43,6 +65,18 @@ export interface LookerFilters {
   frequencies: number[]
   page: number
   cross: RawCrossFilters
+  /** Planificación: estado de la tira de cifras (`estado`). */
+  planningState: PlanningState | null
+  /** Planificación: qué fecha filtra el rango (`fecha`). */
+  dateField: PlanningDateField
+  /** Planificación: rango `fecha_desde`/`fecha_hasta`, ya validado (un valor inválido queda en `null`). */
+  dateFrom: string | null
+  dateTo: string | null
+  /** Algún extremo del rango de fechas de Planificación llegó con un valor inválido y se ignoró. */
+  invalidDateRange: boolean
+  /** Preventivo: ficha abierta (`ficha=<vehicleId>`) y pauta elegida en ella (`pauta=<checkId>`). */
+  sheetVehicleId: string | null
+  sheetCheckId: string | null
 }
 
 export interface LookerEquipmentOption {
@@ -175,12 +209,20 @@ export interface PlanningRow extends Record<string, unknown> {
   manualReason: string | null
   /** La última mantención queda fuera del rango pedido (la fila igual se muestra). */
   outOfRange: boolean
+  /** Uso diario de los últimos 30 días (km/día u h/día); `null` si no se puede estimar. Es referencia. */
+  dailyUsage: number | null
+  /** Fecha estimada de la próxima (pasada si ya venció); `null` sin estimación. Nunca cambia `state`. */
+  estimatedDate: string | null
+  /** Por qué no hay fecha estimada (va en el `title` del «—»); `null` cuando la hay. */
+  estimateNote: string | null
 }
 
 export interface PlanningData {
-  km: PlanningRow[]
-  hours: PlanningRow[]
-  /** Equipo elegido por el filtro cruzado, si es de la unidad de la tabla. */
+  /** Filas de la unidad de la pestaña, con todos los filtros (incluidos `estado` y el rango de fechas). */
+  rows: PlanningRow[]
+  /** Conteo por estado con los DEMÁS filtros (sin `estado`): es la tira de cifras. */
+  counts: Record<PlanningState, number> & { total: number }
+  /** Equipo elegido por el filtro cruzado. */
   selectedId: string | null
 }
 
@@ -206,6 +248,8 @@ export interface CorrectiveWorkRow {
   photoId: string | null
   /** Enlace de respaldo del formulario histórico, si existe. */
   photoUrl: string | null
+  /** Conductores del trabajo, sin repetir (el histórico los trae como texto libre). */
+  drivers: string[]
 }
 
 export interface CorrectivePage {
@@ -222,21 +266,39 @@ export interface DriverRow {
   records: number
   /** Horas prorrateadas entre los conductores del registro. */
   hours: number
-  /** Ids normalizados de los trabajos donde aparece; filtran la tabla de OT. */
-  workIds: string[]
 }
 
 export interface EquipmentSeriesRow {
   vehicleId: string
+  /** Lo que rotula el eje del gráfico: la patente (el código si el equipo no la tiene). */
   label: string
+  code: string
+  plate: string
   records: number
   hours: number
 }
 
-export interface CorrectiveSummary {
-  drivers: DriverRow[]
-  series: EquipmentSeriesRow[]
-  selectedDriver: DriverRow | null
+/** Un mes del período con su conteo (trabajos correctivos por mes). */
+export interface MonthlyCount {
+  /** `YYYY-MM`. */
+  key: string
+  label: string
+  count: number
+  /** El mes en curso: todavía no termina y su columna no se lee como una caída. */
+  partial: boolean
+}
+
+/** La tira de cifras de Correctivo. */
+export interface CorrectiveStats {
+  total: number
+  /** Horas de trabajo (las que declara cada OT o registro; lo que no las trae no suma). */
+  hours: number
+  /** Equipos distintos con al menos un trabajo. */
+  equipment: number
+  /** Trabajos que pueden llevar foto: las OT y los registros de la plataforma (el histórico no trae fotos). */
+  photoEligible: number
+  /** De ésos, los que no tienen foto de respaldo. */
+  withoutPhoto: number
 }
 
 export interface ComplianceCheck {
@@ -260,6 +322,11 @@ export interface ComplianceCheck {
   notApplicable: number
   /** 0–100; `null` si la pauta no trae realizados ni no realizados. */
   percent: number | null
+  /**
+   * Las dos fotos de evidencia (filtros y sticker) están. Histórico: ambos enlaces con texto; nativo: una foto
+   * `filtros` y una `sticker` en la plataforma. Una pauta cerrada sin ellas «no debió cerrarse».
+   */
+  photosComplete: boolean
 }
 
 export interface ComplianceBucket {
@@ -275,7 +342,7 @@ export interface ComplianceBucket {
   mechanicLabel?: string | null
 }
 
-export interface ComplianceByPlate {
+export interface ComplianceByPlate extends Record<string, unknown> {
   vehicleId: string | null
   code: string
   plate: string
@@ -284,6 +351,13 @@ export interface ComplianceByPlate {
   percent: number | null
   checks: number
   levels: string[]
+  /** Ítems «no realizados» sumados en todas las pautas del período. */
+  notDone: number
+  /** Fecha y mecánico de la pauta más reciente del período. */
+  lastDate: string | null
+  lastMechanic: string | null
+  /** Pautas del período sin las dos fotos de evidencia. */
+  withoutPhotos: number
 }
 
 export interface PreventiveCompliance {
@@ -293,6 +367,10 @@ export interface PreventiveCompliance {
   byPlate: ComplianceByPlate[]
   average: number | null
   total: number
+  /** Ítems «no realizados» sumados en todas las pautas. */
+  notDone: number
+  /** Pautas sin las dos fotos de evidencia. */
+  withoutPhotos: number
 }
 
 export interface MatrixItem {
@@ -304,6 +382,8 @@ export interface MatrixItem {
 export interface MatrixCheck {
   id: string
   source: "historial" | "registro"
+  /** Para abrir la ficha del equipo en esta pauta. */
+  vehicleId: string | null
   date: string
   label: string
   code: string

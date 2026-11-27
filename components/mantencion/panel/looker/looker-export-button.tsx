@@ -5,8 +5,8 @@ import { ExportButton } from "@/components/ui/export-button"
 import { EXPORT_TAB_SHORT, type ExportTab } from "@/lib/services/mantencion/looker/export-filters"
 
 /**
- * «Exportar Excel» de Planificación, «Por kilómetros» y «Por horas». Lleva a la acción de servidor la pestaña y los parámetros
- * de la URL (período, filtros manuales y cruzados): el servidor vuelve a consultar con el alcance de quien exporta y
+ * «Exportar Excel» de Planificación, Correctivo y Preventivo. Lleva a la acción de servidor la pestaña y los parámetros
+ * de la URL (unidad, período, filtros manuales y cruzados): el servidor vuelve a consultar con el alcance de quien exporta y
  * arma el libro; del navegador no viaja ninguna fila. Es una acción de página: va en `PageHeader.actions`, y sólo se
  * ofrece a quien tiene `mant:export` (la acción lo vuelve a exigir).
  */

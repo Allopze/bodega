@@ -1,5 +1,6 @@
 import type { ReportCell, ReportSheet } from "@/lib/reports/export-module/types"
 import { formatDate } from "@/lib/utils"
+import { dateRangeChipValue, PLANNING_STATE_LABEL } from "./filter-chips"
 import { frequencyLabel } from "./filters"
 import type { LookerContext, LookerTab } from "./types"
 
@@ -13,16 +14,14 @@ export type ExportTab = Exclude<LookerTab, "hoy">
 
 export const EXPORT_TAB_LABEL: Record<ExportTab, string> = {
   planificacion: "Planificación",
-  camiones: "Por kilómetros",
-  maquinas: "Por horas",
+  correctivo: "Correctivo",
+  preventivo: "Preventivo",
 }
 
-/** «Por kilómetros», «Planificación»: el nombre de la pestaña, para el título del libro y el nombre del archivo. */
-export const EXPORT_TAB_SHORT: Record<ExportTab, string> = {
-  planificacion: "Planificación",
-  camiones: "Por kilómetros",
-  maquinas: "Por horas",
-}
+/** «Correctivo», «Planificación»: el nombre de la pestaña, para el título del libro y el nombre del archivo. */
+export const EXPORT_TAB_SHORT: Record<ExportTab, string> = EXPORT_TAB_LABEL
+
+export const UNIT_LABEL = { km: "Por kilómetros", h: "Por horas" } as const
 
 const dates = (from: string, to: string) => `${formatDate(from)} al ${formatDate(to)}`
 
@@ -46,7 +45,9 @@ export function filtersSheet({ tab, context, notes }: { tab: ExportTab; context:
   const rows: ReportCell[][] = []
 
   rows.push(["Pestaña", EXPORT_TAB_LABEL[tab]])
-  rows.push(["Período", periodText(filters)])
+  rows.push(["Unidad de control", UNIT_LABEL[filters.unit]])
+  // Planificación es el estado de hoy: no tiene período (PAN4-6), pero sí su filtro por fechas y por estado.
+  if (tab !== "planificacion") rows.push(["Período", periodText(filters)])
 
   // Las opciones traen sólo las faenas y los equipos ACTIVOS del alcance, y las consultas de datos no miran la actividad: un
   // id que no está entre ellas puede ser ajeno (sin filas) o estar inactivo (con filas). No se sabe cuál, así que no se afirma
@@ -58,15 +59,22 @@ export function filtersSheet({ tab, context, notes }: { tab: ExportTab; context:
     : namedOrCounted(known, filters.worksiteIds.length - known.length, { one: "faena", many: "faenas", inactive: "inactiva" })])
 
   const equipment = filters.equipmentIds.flatMap((id) => options.equipment.find((item) => item.id === id)?.label ?? [])
-  rows.push(["Códigos (equipos)", filters.equipmentIds.length === 0
+  rows.push(["Equipos", filters.equipmentIds.length === 0
     ? "Todos"
     : namedOrCounted(equipment, filters.equipmentIds.length - equipment.length, { one: "código", many: "códigos", inactive: "inactivo" })])
 
   const frequencies = filters.frequencies.map((value) => {
     const option = options.frequencies.find((item) => item.value === value)
-    return option?.label ?? frequencyLabel(value, tab === "maquinas" ? "h" : "km")
+    return option?.label ?? frequencyLabel(value, filters.unit)
   })
   rows.push(["Frecuencia", frequencies.length === 0 ? "Todas" : frequencies.join(", ")])
+
+  if (tab === "planificacion") {
+    if (filters.planningState) rows.push(["Estado", PLANNING_STATE_LABEL[filters.planningState]])
+    const range = dateRangeChipValue(filters)
+    if (range) rows.push([filters.dateField === "ultima" ? "Última mantención" : "Próxima mantención (estimada)", range])
+    if (filters.invalidDateRange) rows.push(["Fechas", "Las fechas de la dirección no eran válidas: no se filtró por fecha"])
+  }
 
   const crossRows: ReportCell[][] = []
   // Un equipo derivado de una OT o de una pauta no es un filtro cruzado propio: el chip tampoco lo muestra.

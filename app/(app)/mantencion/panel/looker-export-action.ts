@@ -8,14 +8,16 @@ import { logger } from "@/lib/logger"
 import { chartExportFilename } from "@/lib/reports/chart-data-export"
 import { countFilterValues, LOOKER_MAX_FILTER_VALUES, LOOKER_MULTI_VALUE_PARAMS, pickFilterParams } from "@/lib/services/mantencion/looker/filters"
 import { buildLookerExport, LOOKER_EXPORT_MAX_ROWS } from "@/lib/services/mantencion/looker/export"
+import type { ExportTab } from "@/lib/services/mantencion/looker/export-filters"
+import { isLegacyLookerTab, LEGACY_LOOKER_TABS } from "@/lib/services/mantencion/looker/types"
 import { todayInChile } from "@/lib/utils"
 import type { ExportActionResult } from "@/components/ui/export-button"
 
 /**
- * «Exportar Excel» de las pestañas Planificación, «Por kilómetros» y «Por horas» del Panel de mantención.
+ * «Exportar Excel» de las pestañas Planificación, Correctivo y Preventivo del Panel de mantención.
  *
  * Es el libro de la pantalla armado EN EL SERVIDOR: del navegador sólo llegan la pestaña y los parámetros de la URL
- * (`desde`, `hasta`, `faena`, `equipo`, `frecuencia` y los `x_*` del filtro cruzado). Con ellos se vuelve a consultar
+ * (`unidad`, `desde`, `hasta`, `faena`, `equipo`, `frecuencia`, los de Planificación y los `x_*` del filtro cruzado). Con ellos se vuelve a consultar
  * con el alcance de quien exporta (ver `buildLookerExport`): una faena ajena no devuelve filas, y ninguna fila viaja
  * desde el navegador. Se exige `mant:export` (la misma que el Excel de `Hoy`) y el permiso que abre la página
  * (`mant:records:view_worksite` o `mant:records:view_all`); ocultar el botón no es la seguridad, esto sí.
@@ -27,7 +29,9 @@ import type { ExportActionResult } from "@/components/ui/export-button"
 const paramValue = z.union([z.string().max(2000), z.array(z.string().max(2000)).max(100), z.undefined()])
 
 const lookerExportSchema = z.object({
-  tab: z.enum(["planificacion", "camiones", "maquinas"]),
+  // `camiones` y `maquinas` son las pestañas de antes del reajuste: un botón que quedó abierto con ellas sigue
+  // exportando, como Correctivo en su unidad (la misma conversión que hace la página con la URL).
+  tab: z.enum(["planificacion", "correctivo", "preventivo", "camiones", "maquinas"]),
   params: z.record(z.string().max(40), paramValue)
     .refine((value) => Object.keys(value).length <= 40, "Demasiados parámetros")
     // Cada valor de faena, equipo o frecuencia llega a un `IN (...)` (Postgres admite 65.535 parámetros) y los parámetros quedan en la
@@ -53,9 +57,11 @@ export async function exportLookerPanelAction(input: LookerExportActionInput): P
   }
 
   try {
-    const { tab } = parsed.data
+    const legacy = isLegacyLookerTab(parsed.data.tab) ? parsed.data.tab : null
+    const tab = legacy ? "correctivo" : parsed.data.tab as ExportTab
     // Sólo valen los parámetros que mueven la pestaña: el resto (incluida `pestana`) se descarta aquí.
     const params = pickFilterParams(parsed.data.params)
+    if (legacy) params.unidad = LEGACY_LOOKER_TABS[legacy]
     const built = await buildLookerExport(session, { tab, params })
     await recordAudit({
       userId: session.user.id,

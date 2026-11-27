@@ -4,18 +4,21 @@ import type { ReportSheet } from "@/lib/reports/export-module/types"
 import { todayInChile } from "@/lib/utils"
 import { viewerFromSession } from "../access"
 import { loadCorrectiveRows } from "./corrective"
-import { EXPORT_TAB_SHORT, filtersSheet, type ExportTab } from "./export-filters"
+import {
+  correctiveNotes, correctiveSheet, driversSheet, equipmentSeriesSheet, monthlyWorkSheet,
+} from "./export-corrective"
+import { EXPORT_TAB_SHORT, filtersSheet, UNIT_LABEL, type ExportTab } from "./export-filters"
 import { planningNotes, planningSheet } from "./export-planning"
 import {
-  checklistMatrixSheet, complianceByMonthSheet, complianceByPlateSheet, complianceByWorksiteMechanicSheet, correctiveSheet,
-  driversSheet, equipmentSeriesSheet, matrixChecksSheet, workNotes,
-} from "./export-work"
-import { pickFilterParams, tabUnit } from "./filters"
+  checklistMatrixSheet, complianceByMonthSheet, complianceByPlateSheet, complianceByWorksiteMechanicSheet,
+  matrixChecksSheet, preventiveNotes,
+} from "./export-preventive"
+import { pickFilterParams } from "./filters"
 import { loadLookerContext } from "./resolve"
-import { loadPlanningTabData, loadWorkControlData } from "./work-data"
+import { loadCorrectiveTabData, loadPlanningTabData, loadPreventiveTabData } from "./work-data"
 
 /**
- * «Exportar Excel» de Planificación, Camiones y Máquinas: arma el libro EN EL SERVIDOR, volviendo a consultar con
+ * «Exportar Excel» de Planificación, Correctivo y Preventivo: arma el libro EN EL SERVIDOR, volviendo a consultar con
  * los mismos filtros de la URL y el alcance de quien exporta. Nada viaja desde el navegador salvo los parámetros
  * de la URL: `loadLookerContext` los valida contra el alcance (una faena, un equipo, una OT o una pauta ajenos se
  * ignoran) y cada consulta vuelve a aplicar su visibilidad por faena. Es lo mismo que hace la página, con los
@@ -67,17 +70,17 @@ export async function buildLookerExport(session: Session, input: LookerExportInp
   let sheets: ReportSheet[]
   let readingNotes: string[]
 
+  const unit = filters.unit
   if (tab === "planificacion") {
-    const { kmData, hoursData } = await loadPlanningTabData(viewer, context)
-    sheets = [planningSheet(kmData.km, "km"), planningSheet(hoursData.hours, "h")].map((sheet) => capSheet(sheet, maxRows, truncation))
-    readingNotes = planningNotes(cross)
-  } else {
-    const unit = tabUnit(tab) ?? "km"
-    const data = await loadWorkControlData(
+    const data = await loadPlanningTabData(viewer, context)
+    sheets = [capSheet(planningSheet(data.rows, unit), maxRows, truncation)]
+    readingNotes = planningNotes(cross, unit)
+  } else if (tab === "correctivo") {
+    const data = await loadCorrectiveTabData(
       viewer,
       context,
-      (conductorWorkIds) => loadCorrectiveRows(viewer, filters, cross, { conductorWorkIds, limit: maxRows }),
-      { matrixLimit: LOOKER_EXPORT_MATRIX_CHECKS, seriesLimit: Number.POSITIVE_INFINITY },
+      () => loadCorrectiveRows(viewer, filters, cross, { limit: maxRows }),
+      { seriesLimit: Number.POSITIVE_INFINITY },
     )
     const corrective = correctiveSheet(data.rows.rows, unit)
     if (data.rows.total > data.rows.rows.length) {
@@ -86,19 +89,27 @@ export async function buildLookerExport(session: Session, input: LookerExportInp
     sheets = [
       corrective,
       ...[
-        driversSheet(data.drivers.drivers),
-        equipmentSeriesSheet(data.chart.series),
+        driversSheet(data.drivers),
+        equipmentSeriesSheet(data.series),
+        monthlyWorkSheet(data.monthly),
+      ].map((sheet) => capSheet(sheet, maxRows, truncation)),
+    ]
+    readingNotes = correctiveNotes(unit)
+  } else {
+    const data = await loadPreventiveTabData(viewer, context, { matrixLimit: LOOKER_EXPORT_MATRIX_CHECKS })
+    sheets = [
+      ...[
+        complianceByPlateSheet(data.byPlate.byPlate),
         complianceByMonthSheet(data.monthly.byMonth),
         complianceByWorksiteMechanicSheet(data.byWorksite.byWorksiteMechanic),
-        complianceByPlateSheet(data.byPlate.byPlate),
       ].map((sheet) => capSheet(sheet, maxRows, truncation)),
       checklistMatrixSheet(data.matrix),
       matrixChecksSheet(data.matrix),
     ]
-    readingNotes = workNotes(unit, data.matrix, LOOKER_EXPORT_MATRIX_CHECKS)
+    readingNotes = preventiveNotes(unit, data.matrix, LOOKER_EXPORT_MATRIX_CHECKS)
   }
 
-  const title = `Panel de mantención · ${EXPORT_TAB_SHORT[tab]}`
+  const title = `Panel de mantención · ${EXPORT_TAB_SHORT[tab]} · ${UNIT_LABEL[unit]}`
   const [primary, ...rest] = [...sheets, filtersSheet({ tab, context, notes: [...truncation, ...readingNotes] })]
   if (!primary) throw new Error("Un libro del Panel necesita al menos una hoja")
   const buffer = await buildXlsxBuffer(
@@ -111,7 +122,7 @@ export async function buildLookerExport(session: Session, input: LookerExportInp
       sheets: rest,
     },
     // «Metadatos» (quién, cuándo, alcance de faena y período). Los filtros con sus nombres van en «Filtros».
-    { session, filters: { tablero: "Panel de mantención", pestana: EXPORT_TAB_SHORT[tab] }, from: filters.from, to: filters.to },
+    { session, filters: { tablero: "Panel de mantención", pestana: EXPORT_TAB_SHORT[tab], unidad: UNIT_LABEL[unit] }, from: filters.from, to: filters.to },
   )
   return {
     base64: Buffer.from(buffer).toString("base64"),

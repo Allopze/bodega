@@ -6,7 +6,7 @@ import { useChartMotion } from "@/components/ui/chart-interactions"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { plural } from "@/lib/mantencion/format"
 import { cn, formatQty } from "@/lib/utils"
-import { equipmentAction } from "@/lib/services/mantencion/looker/filters"
+import { equipmentAction } from "@/lib/services/mantencion/looker/filter-hrefs"
 import { useCrossFilter } from "@/components/mantencion/panel/looker/use-cross-filter"
 
 export interface HoursRecordsPoint {
@@ -121,7 +121,7 @@ export function HoursRecordsComboChart({
               aria-pressed={active}
               onClick={() => activate(point.key)}
               className={cn(
-                "inline-flex min-h-8 items-center gap-1 rounded-full border px-2 py-0.5 text-2xs",
+                "inline-flex min-h-11 items-center gap-1 rounded-full border px-2 py-0.5 text-2xs sm:min-h-8",
                 "transition-colors duration-[var(--duration-fast)] ease-[var(--ease-out)]",
                 "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
                 active
