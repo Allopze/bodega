@@ -1,8 +1,8 @@
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm"
 import { db } from "@/db"
-import { costCenters, mantRecordObservations, mantRecords, mantSchedules, users, worksites } from "@/db/schema"
+import { costCenters, mantRecordObservations, mantRecords, mantSchedules, products, users, worksites } from "@/db/schema"
 import type {
-  CatalogCostCenter, CatalogEquipment, CatalogObservation, CatalogOtherEquipment, CatalogOwnRecord, MantCatalog, MantCatalogOthers,
+  CatalogCostCenter, CatalogEquipment, CatalogObservation, CatalogOtherEquipment, CatalogOwnRecord, CatalogSparePart, MantCatalog, MantCatalogOthers,
 } from "@/lib/mantencion/contracts"
 import type { MantRecordKind, MantReview, MantRecordStatus, MantUnit } from "@/lib/mantencion/types"
 import type { MantViewer } from "./access"
@@ -31,6 +31,11 @@ import { loadOwnPartsNotes } from "./parts-notes/overview"
 
 const OWN_RECORDS_LIMIT = 20
 const OBSERVATIONS_LIMIT = 50
+/**
+ * Tope de repuestos que viajan en el catálogo: hoy son decenas (unos 140 bytes cada uno), y un catálogo que creciera sin
+ * freno engordaría cada descarga del teléfono. Pasado el tope siguen sirviendo las líneas de texto libre.
+ */
+export const SPARE_PARTS_LIMIT = 5000
 
 interface ViewerWorksites {
   /** Faenas activas propias; `"all"` = un rol global sin faenas asignadas ve todas. */
@@ -169,6 +174,20 @@ async function loadCostCenters(scope: MantWorksiteScope): Promise<CatalogCostCen
   return rows.flatMap((row) => (row.worksiteId ? [{ id: row.id, name: row.name, worksiteId: row.worksiteId }] : []))
 }
 
+/**
+ * Repuestos activos del catálogo (`products.is_spare_part`), por nombre: lo que el buscador de «Pedir repuestos» ofrece
+ * sin red. Sólo identidad (nombre, SKU, N° de parte, unidad): ni precios ni proveedores. Los mismos filtros de la huella
+ * (`sync-catalog-version.ts`) y del servidor al validar la línea (`findLineIssueTx`).
+ */
+async function loadSpareParts(): Promise<CatalogSparePart[]> {
+  return db
+    .select({ id: products.id, name: products.name, sku: products.sku, partNumber: products.partNumber, unit: products.unitOfMeasure })
+    .from(products)
+    .where(and(eq(products.isSparePart, true), eq(products.isActive, true)))
+    .orderBy(asc(products.name), asc(products.id))
+    .limit(SPARE_PARTS_LIMIT)
+}
+
 /** `alcance=mias`. */
 export async function buildCatalog(
   context: Pick<SyncContext, "viewer" | "userName">,
@@ -182,7 +201,7 @@ export async function buildCatalog(
   // Pedir repuestos sin OT y ver sus notas (con y sin OT): `mant:np:create`; `mant:np:view_own` sólo ve las propias.
   const canRequestParts = viewer.permissions.includes(NP_PERMISSIONS.create)
   const withOwnNotes = canRequestParts || viewer.permissions.includes(NP_PERMISSIONS.viewOwn)
-  const [fleet, catalogs, scheduleRows, mechanics, myRecords, observations, workOrderLists, ownPartsNotes, partsCostCenters] = await Promise.all([
+  const [fleet, catalogs, scheduleRows, mechanics, myRecords, observations, workOrderLists, ownPartsNotes, partsCostCenters, spareParts] = await Promise.all([
     loadFleet({ scope: places.scope, includeRetired: false }),
     listMantCatalogs(),
     db.select({ id: mantSchedules.id }).from(mantSchedules).where(isNull(mantSchedules.deletedAt)),
@@ -192,6 +211,7 @@ export async function buildCatalog(
     withWorkOrders ? loadCatalogWorkOrders(viewer) : Promise.resolve(null),
     withOwnNotes ? loadOwnPartsNotes(viewer.userId) : Promise.resolve(null),
     canRequestParts ? loadCostCenters(places.scope) : Promise.resolve(null),
+    canRequestParts ? loadSpareParts() : Promise.resolve(null),
   ])
   // Todas las pautas vivas, no sólo las asignadas: «Elegir otra pauta» y los equipos de otras faenas las necesitan.
   const schedules = await getCurrentScheduleSnapshots(scheduleRows.map((row) => row.id))
@@ -215,6 +235,7 @@ export async function buildCatalog(
     ...(workOrderLists ?? {}),
     ...(ownPartsNotes ? { ownPartsNotes } : {}),
     ...(partsCostCenters ? { costCenters: partsCostCenters } : {}),
+    ...(spareParts ? { spareParts } : {}),
   }
 }
 

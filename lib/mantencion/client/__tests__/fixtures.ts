@@ -1,5 +1,5 @@
 import { IDBFactory } from "fake-indexeddb"
-import type { CatalogEquipment, CatalogPartsNote, CatalogWorkOrder, MantCatalog, SyncCorrectiveRecord, SyncPartsNote, SyncPreventiveRecord, WorkOrderOpPayload, WorkOrderOpRequest } from "../../contracts"
+import type { CatalogEquipment, CatalogPartsNote, CatalogSparePart, CatalogWorkOrder, MantCatalog, SyncCorrectiveRecord, SyncPartsNote, SyncPreventiveRecord, WorkOrderOpPayload, WorkOrderOpRequest } from "../../contracts"
 import type { MantScheduleSnapshot } from "../../types"
 import { resetDbConnectionForTests } from "../db"
 import { resetSignalForTests } from "../signal"
@@ -182,6 +182,11 @@ export function freePartsNoteItem(n: number, overrides: { worksiteId?: string; w
     },
     summary: { workOrderId: null, folio: null, equipmentCode: null, equipmentPlate: null, worksiteName: overrides.worksiteName ?? "Biodiversa" },
   }, UUID(800 + n), createdAt)
+}
+
+/** Un repuesto del catálogo como lo baja `spareParts` (el buscador de «Pedir repuestos»). */
+export function sparePart(overrides: Partial<CatalogSparePart> = {}): CatalogSparePart {
+  return { id: "p-1", name: "Filtro de aceite", sku: "REP-0001", partNumber: "1R-0750", unit: "unidad", ...overrides }
 }
 
 /** Una nota propia como la baja el catálogo (`ownPartsNotes`). */

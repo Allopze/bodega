@@ -7,9 +7,10 @@ import {
   fuelEquipmentTypes, fuelVehicles, mantBrands, mantDrivers, mantEquipmentProfiles, mantOils, mantRecordObservations,
   mantPartsAllocations, mantPartsAllocationSources, mantPartsNoteItems, mantPartsNotes,
   mantRecords, mantSchedules, mantScheduleVersions, mantWorkOrderEvents, mantWorkOrderItems, mantWorkOrders, mantWorkshops,
-  mantWorkshopUpdates, mantWorkTypes, receipts, rolePermissions, userPermissions, userRoles, users, worksites, worksiteUsers,
+  mantWorkshopUpdates, mantWorkTypes, products, receipts, rolePermissions, userPermissions, userRoles, users, worksites, worksiteUsers,
 } from "@/db/schema"
 import { OT_PERMISSIONS } from "@/lib/mantencion/work-order-states"
+import { NP_PERMISSIONS } from "./parts-notes/access"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { todayInChile } from "@/lib/utils"
 import type { MantViewer } from "./access"
@@ -35,9 +36,11 @@ import type { MantViewer } from "./access"
 //    mantención 0001).
 // 7 (2026-11-27): `ownPartsNotes` (mis notas de pedido, con y sin OT), `costCenters` y `user.canRequestParts` (notas de
 //    pedido sin OT desde el teléfono, ADR 0001).
-export const CATALOG_FORMAT = 7
+// 8 (2026-11-27): `spareParts` (repuestos activos del catálogo para buscarlos al pedir; sólo con `mant:np:create`).
+export const CATALOG_FORMAT = 8
 
-type Source = readonly [AnyPgTable, readonly AnyPgColumn[]]
+/** Tabla, sus marcas de tiempo y, si el catálogo sólo trae un subconjunto de sus filas, el filtro que lo define. */
+type Source = readonly [AnyPgTable, readonly AnyPgColumn[], SQL?]
 
 const SOURCES: readonly Source[] = [
   [mantRecords, [mantRecords.receivedAt, mantRecords.updatedAt]],
@@ -57,6 +60,10 @@ const SOURCES: readonly Source[] = [
   [receipts, [receipts.receivedAt, receipts.voidedAt]],
   // Centros de costo del cargo de una línea sin OT.
   [costCenters, [costCenters.updatedAt]],
+  // Repuestos activos del catálogo (formato 8): sólo ellos alimentan el buscador de «Pedir repuestos». El filtro evita que
+  // editar un EPP o un insumo (miles de filas en `products`) obligue a todos los teléfonos a bajar el catálogo de nuevo;
+  // pasar un repuesto a inactivo cambia el conteo, y editarlo (nombre, N° de parte, unidad) mueve `updated_at`.
+  [products, [products.updatedAt], sql`${products.isSparePart} and ${products.isActive}`],
   [mantEquipmentProfiles, [mantEquipmentProfiles.updatedAt]],
   [fuelVehicles, [fuelVehicles.updatedAt]],
   [fuelEquipmentTypes, [fuelEquipmentTypes.updatedAt]],
@@ -76,9 +83,10 @@ const SOURCES: readonly Source[] = [
   [userPermissions, []],
 ]
 
-function aggregate([table, columns]: Source): SQL {
+function aggregate([table, columns, filter]: Source): SQL {
   const stamps = columns.map((column) => sql`coalesce(max(${column})::text, '')`)
-  return sql`(select ${sql.join([...stamps, sql`count(*)::text`], sql` || '|' || `)} from ${table})`
+  const where = filter ? sql` where ${filter}` : sql``
+  return sql`(select ${sql.join([...stamps, sql`count(*)::text`], sql` || '|' || `)} from ${table}${where})`
 }
 
 function driverRows<T>(result: unknown): T[] {
@@ -95,6 +103,8 @@ export async function catalogVersion(viewer: MantViewer, scope: CatalogScope): P
   const own = [
     CATALOG_FORMAT,
     otEnabled ? "ot" : "sin-ot",
+    // Sólo con `mant:np:create` el catálogo trae los repuestos: quitar o dar el permiso cambia lo que baja.
+    viewer.permissions.includes(NP_PERMISSIONS.create) ? "np" : "sin-np",
     scope,
     viewer.userId,
     viewer.isGlobal ? "global" : "faena",

@@ -7,6 +7,7 @@ import { equipmentLabel } from "@/lib/mantencion/client/fleet-view"
 import type { OtView } from "@/lib/mantencion/client/ot-model"
 import { chargeChoices, chargeStillValid, NO_CHARGE, partsNoteInput, requestWorksites } from "@/lib/mantencion/client/parts-request-model"
 import { enqueueSimple, newPartsNoteItem } from "@/lib/mantencion/client/queue"
+import { buildSparePartIndex, catalogSpareParts } from "@/lib/mantencion/client/spare-part-search"
 import { useAppActions, useAppData } from "./app-context"
 import { Sheet, useSheetDirty, useSheetGuard } from "./dialog"
 import { blankLine, errorsFrom, LineCard, linesDirty, quantityOf, type FormErrors, type LineState } from "./parts-note-form"
@@ -28,6 +29,8 @@ function PartsNoteForm({ view, firstRef, onClose, onSaved }: { view: OtView | nu
   const catalog = stored?.catalog
   const ot = view?.ot ?? null
   const sites = useMemo(() => requestWorksites(catalog), [catalog])
+  // El catálogo de repuestos se normaliza una vez; sin él (catálogo antiguo o sin permiso) la línea es sólo texto libre.
+  const parts = useMemo(() => { const list = catalogSpareParts(catalog); return list.length > 0 ? buildSparePartIndex(list) : null }, [catalog])
   const nextKey = useRef(2)
   const [lines, setLines] = useState<LineState[]>(() => [blankLine(1)])
   const [focusKey, setFocusKey] = useState<number | null>(null)
@@ -64,7 +67,7 @@ function PartsNoteForm({ view, firstRef, onClose, onSaved }: { view: OtView | nu
     const parsed = partsNoteSchema.safeParse(partsNoteInput({
       id: crypto.randomUUID(), deviceId, appVersion, createdAt: new Date().toISOString(),
       workOrderId: ot?.id ?? null, worksiteId, equipmentStopped: ot ? stopped : false, urgent, notes,
-      lines: lines.map((line) => ({ description: line.description, quantity: quantityOf(line), partNumber: line.partNumber, charge: line.charge })),
+      lines: lines.map((line) => ({ description: line.description, quantity: quantityOf(line), partNumber: line.partNumber, charge: line.charge, productId: line.productId, unit: line.unit })),
     }))
     const found: FormErrors = parsed.success ? { lines: {} } : errorsFrom(parsed.error.issues, lines)
     if (!ot && !site) found.worksite = "Elige la faena a la que pides los repuestos."
@@ -97,7 +100,7 @@ function PartsNoteForm({ view, firstRef, onClose, onSaved }: { view: OtView | nu
         <WorksiteSelect id={siteId} sites={sites} value={worksiteId} error={errors.worksite} onChange={chooseWorksite} />
       )}
       {lines.map((line, index) => (
-        <LineCard key={line.key} line={line} number={index + 1} errors={errors.lines[line.key]} removable={lines.length > 1} firstRef={index === 0 ? firstRef : null} focusNow={line.key === focusKey} charges={charges}
+        <LineCard key={line.key} line={line} number={index + 1} errors={errors.lines[line.key]} removable={lines.length > 1} firstRef={index === 0 ? firstRef : null} focusNow={line.key === focusKey} charges={charges} parts={parts}
           onChange={(patch) => change(line.key, patch)} onRemove={() => setLines((current) => current.filter((entry) => entry.key !== line.key))} />
       ))}
       <button type="button" className="btns wide" style={{ borderStyle: "dashed" }} disabled={full}

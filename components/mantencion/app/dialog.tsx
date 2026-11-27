@@ -40,6 +40,9 @@ function useModalBehavior(panel: RefObject<HTMLElement | null>, onClose: () => v
     const onKey = (event: KeyboardEvent) => {
       if (modalStack[modalStack.length - 1] !== self) return
       if (event.key === "Escape") {
+        // Un combobox con su lista abierta usa Escape para cerrarla: la hoja se queda (el segundo Escape sí la cierra).
+        const focused = document.activeElement
+        if (focused instanceof HTMLElement && focused.getAttribute("role") === "combobox" && focused.getAttribute("aria-expanded") === "true") return
         event.stopPropagation()
         closeRef.current()
         return

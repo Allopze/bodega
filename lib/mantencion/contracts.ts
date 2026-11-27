@@ -395,6 +395,20 @@ export interface CatalogCostCenter {
   worksiteId: string
 }
 
+/**
+ * Repuesto activo del catálogo para el buscador de «Pedir repuestos» (ADR mantención 0001, R15). Sólo identidad: sin
+ * precios ni proveedores. Compacto a propósito (viaja entero en cada descarga del catálogo, y queda en el teléfono).
+ */
+export interface CatalogSparePart {
+  id: string
+  name: string
+  sku: string
+  /** N° de parte del fabricante; `null` si el repuesto no lo tiene. */
+  partNumber: string | null
+  /** Código de la unidad del catálogo de unidades (`unidad`, `litro`…). */
+  unit: string
+}
+
 /** Repuesto reservado para la OT y todavía sin usar: el chip «Disponibles para esta OT». */
 export interface CatalogPartsAvailable {
   allocationId: string
@@ -544,6 +558,11 @@ export interface MantCatalog {
   ownPartsNotes?: CatalogPartsNote[]
   /** Centros de costo activos de sus faenas. Opcional, como `ownPartsNotes`. */
   costCenters?: CatalogCostCenter[]
+  /**
+   * Repuestos activos del catálogo, para buscarlos al pedir (con o sin OT). Sólo con `mant:np:create`; opcional: catálogos
+   * de formato < 8 no lo traen y la app ofrece sólo texto libre.
+   */
+  spareParts?: CatalogSparePart[]
 }
 
 /** `alcance=todos`: el resto de los equipos activos, en versión liviana (sin historial). */

@@ -1,22 +1,43 @@
 "use client"
 
 import { useEffect, useId, useRef, type RefObject } from "react"
+import type { CatalogSparePart } from "@/lib/mantencion/contracts"
 import { NO_CHARGE, type ChargeChoices, chargeOfCostCenter, chargeOfVehicle } from "@/lib/mantencion/client/parts-request-model"
+import { fillFromSparePart, type SparePartIndex } from "@/lib/mantencion/client/spare-part-search"
 import { IconClose } from "./icons"
+import { SparePartField } from "./spare-part-field"
 import { FieldError, Label } from "./ui"
 
 /**
  * Las líneas del pedido de repuestos: lo comparten «Pedir repuestos» de una OT y el pedido sin OT del inicio. Cada
- * línea es todo texto hasta que el pedido se valida con el esquema del servidor (`partsNoteSchema`).
+ * línea es todo texto hasta que el pedido se valida con el esquema del servidor (`partsNoteSchema`). Cada línea se puede
+ * escribir libre o elegir del catálogo de repuestos (`productId` + `unit`: R15); lo escrito a mano siempre desvincula.
  */
 
-export interface LineState { key: number; quantity: string; description: string; partNumber: string; partOpen: boolean; charge: string }
+export interface LineState {
+  key: number; quantity: string; description: string; partNumber: string; partOpen: boolean; charge: string
+  /** Repuesto del catálogo elegido (`null` = texto libre) y su unidad; sin repuesto la unidad es «unidad». */
+  productId: string | null; unit: string
+}
 export interface LineErrors { description?: string; quantity?: string }
 export interface FormErrors { lines: Record<number, LineErrors>; general?: string; worksite?: string }
 
 export const QUANTITY_MAX_DIGITS = 6
 /** Una línea nueva hereda el cargo de la anterior: casi siempre un pedido es para el mismo equipo. */
-export const blankLine = (key: number, charge: string = NO_CHARGE): LineState => ({ key, quantity: "1", description: "", partNumber: "", partOpen: false, charge })
+export const blankLine = (key: number, charge: string = NO_CHARGE): LineState => ({ key, quantity: "1", description: "", partNumber: "", partOpen: false, charge, productId: null, unit: "unidad" })
+
+/** Elegir un repuesto del catálogo rellena nombre, unidad y N° de parte; el N° que ya se había escrito se respeta si el repuesto no trae uno. */
+export function lineFromPart(line: LineState, part: CatalogSparePart): Partial<LineState> {
+  const fill = fillFromSparePart(part)
+  const partNumber = fill.partNumber || line.partNumber
+  return { productId: fill.productId, description: fill.description, unit: fill.unit, partNumber, partOpen: line.partOpen || partNumber !== "" }
+}
+
+/** Escribir a mano suelta el vínculo: el texto ya no es el del repuesto. Su N° de parte, si no se tocó, se va con él. */
+export function lineFromText(line: LineState, text: string, linked: CatalogSparePart | null): Partial<LineState> {
+  if (!line.productId) return { description: text }
+  return { description: text, productId: null, unit: "unidad", ...(linked?.partNumber && line.partNumber === linked.partNumber ? { partNumber: "" } : {}) }
+}
 export const quantityOf = (line: LineState): number => Number(line.quantity || "0")
 
 /** ¿Hay algo escrito que se perdería al cerrar? (Una línea en blanco, con su cargo heredado, no cuenta.) */
@@ -78,12 +99,14 @@ function ChargeSelect({ id, value, choices, onChange }: { id: string; value: str
   )
 }
 
-export function LineCard({ line, number, errors, removable, firstRef, focusNow, charges, onChange, onRemove }: {
+export function LineCard({ line, number, errors, removable, firstRef, focusNow, charges, parts, onChange, onRemove }: {
   line: LineState; number: number; errors: LineErrors | undefined; removable: boolean; firstRef: RefObject<HTMLInputElement | null> | null
   /** Una línea recién agregada recibe el foco: el teclado sube y la hoja la trae a la vista. */
   focusNow: boolean
   /** Con opciones de cargo (pedido sin OT), la línea ofrece «Cargo»; sin ellas, no. */
   charges: ChargeChoices | null
+  /** El catálogo de repuestos para buscar; `null` si el teléfono no lo trae (sólo texto libre). */
+  parts: SparePartIndex | null
   onChange: (change: Partial<LineState>) => void; onRemove: () => void
 }) {
   const head = useId()
@@ -93,6 +116,7 @@ export function LineCard({ line, number, errors, removable, firstRef, focusNow, 
   const chargeId = useId()
   const own = useRef<HTMLInputElement | null>(null)
   useEffect(() => { if (focusNow) own.current?.focus() }, [focusNow])
+  const linked = (line.productId && parts?.byId.get(line.productId)) || null
   return (
     <div className="card pline" role="group" aria-labelledby={head}>
       <div className="plhead">
@@ -103,9 +127,9 @@ export function LineCard({ line, number, errors, removable, firstRef, focusNow, 
       {errors?.quantity ? <FieldError message={errors.quantity} /> : null}
       <div>
         <Label htmlFor={descId} size="sm">¿Qué repuesto necesitas?</Label>
-        <input id={descId} ref={(node) => { own.current = node; if (firstRef) firstRef.current = node }} className={errors?.description ? "inp bad" : "inp"} value={line.description} maxLength={300} autoComplete="off" placeholder="Ej: Filtro de aceite"
-          aria-invalid={Boolean(errors?.description)} aria-describedby={errors?.description ? errId : undefined}
-          onChange={(event) => onChange({ description: event.target.value })} />
+        <SparePartField id={descId} inputRef={(node) => { own.current = node; if (firstRef) firstRef.current = node }} value={line.description} linked={linked} index={parts}
+          invalid={Boolean(errors?.description)} describedBy={errors?.description ? errId : undefined}
+          onType={(text) => onChange(lineFromText(line, text, linked))} onPick={(part) => onChange(lineFromPart(line, part))} />
         <FieldError message={errors?.description} id={errId} />
       </div>
       {line.partOpen || line.partNumber ? (

@@ -63,6 +63,10 @@ export interface PartsNoteLineInput {
   description: string
   quantity: number
   partNumber: string
+  /** Repuesto del catálogo elegido en el buscador; sin él (texto libre) la línea viaja con `productId: null`. */
+  productId?: string | null
+  /** Unidad del repuesto elegido (código del catálogo de unidades); sin repuesto, «unidad». */
+  unit?: string
   /** `""`, `v:<id>` o `c:<id>`: ver `chargeFields`. */
   charge: string
 }
@@ -86,7 +90,8 @@ export interface PartsNoteInput {
 
 /**
  * El pedido tal como se valida con `partsNoteSchema` y se encola. Con OT es EXACTAMENTE el de siempre (sin `worksiteId`
- * ni `urgent`); sin OT lleva la faena y la urgencia, y cada línea su cargo sólo si lo eligió.
+ * ni `urgent`); sin OT lleva la faena y la urgencia, y cada línea su cargo sólo si lo eligió. Una línea con repuesto del
+ * catálogo lleva su `productId` y su unidad; la de texto libre, `productId: null` y «unidad» (el servidor valida el id).
  */
 export function partsNoteInput(input: PartsNoteInput): Record<string, unknown> {
   const free = !input.workOrderId
@@ -102,9 +107,9 @@ export function partsNoteInput(input: PartsNoteInput): Record<string, unknown> {
     lines: input.lines.map((line): SyncPartsNote["lines"][number] => ({
       description: line.description,
       quantity: line.quantity,
-      unitOfMeasure: "unidad",
+      unitOfMeasure: line.productId ? line.unit?.trim() || "unidad" : "unidad",
       partNumber: line.partNumber.trim() || null,
-      productId: null,
+      productId: line.productId ?? null,
       ...chargeFields(line.charge),
     })),
   }
