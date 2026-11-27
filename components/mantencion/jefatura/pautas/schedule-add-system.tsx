@@ -19,7 +19,7 @@ export function ScheduleAddSystem({ scheduleId, systems }: { scheduleId: string;
   const { pending, edit } = useScheduleEdit()
 
   function submit() {
-    if (!system.trim() || !item.trim()) { toast.error("Escribe el nombre del sistema y de su primer ítem."); return }
+    if (!system.trim() || !item.trim()) { toast.error("Escribe el nombre del sistema y su primera actividad."); return }
     edit(
       () => addScheduleItemAction({ scheduleId, groupName: system, name: item }),
       (outcome) => { setSystem(""); setItem(""); toast.success(outcome.message ?? "Sistema agregado.") },
@@ -28,14 +28,15 @@ export function ScheduleAddSystem({ scheduleId, systems }: { scheduleId: string;
 
   return (
     <form className="flex flex-wrap items-end gap-3 border-t border-[var(--color-border)] p-4" onSubmit={(event) => { event.preventDefault(); submit() }} aria-label="Agregar un sistema nuevo">
-      <Field label="Sistema nuevo" htmlFor="schedule-new-system" className="w-56">
-        <Input id="schedule-new-system" list="schedule-systems" value={system} maxLength={120} autoComplete="off" placeholder="Ej: Carrocería" onChange={(event) => setSystem(event.target.value)} />
+      <p className="w-full text-sm text-[var(--color-text-muted)]">¿Falta un sistema en la pauta? Escribe su nombre y la primera actividad que se revisa en él; las demás se agregan después en la matriz.</p>
+      <Field label="Nombre del sistema" htmlFor="schedule-new-system" className="w-56">
+        <Input id="schedule-new-system" list="schedule-systems" value={system} maxLength={120} autoComplete="off" placeholder="Ej: Carrocería, Frenos" onChange={(event) => setSystem(event.target.value)} />
         <datalist id="schedule-systems">{systems.map((name) => <option key={name} value={name} />)}</datalist>
       </Field>
-      <Field label="Primer ítem" htmlFor="schedule-new-system-item" className="w-72 max-w-full">
-        <Input id="schedule-new-system-item" value={item} maxLength={120} autoComplete="off" placeholder="Nombre de la actividad" onChange={(event) => setItem(event.target.value)} />
+      <Field label="Primera actividad del sistema" htmlFor="schedule-new-system-item" className="w-72 max-w-full">
+        <Input id="schedule-new-system-item" value={item} maxLength={120} autoComplete="off" placeholder="Ej: Revisar estado de la pintura" onChange={(event) => setItem(event.target.value)} />
       </Field>
-      <Button type="submit" variant="secondary" loading={pending}>Agregar sistema</Button>
+      <Button type="submit" variant="secondary" loading={pending}>Agregar sistema a la pauta</Button>
     </form>
   )
 }
