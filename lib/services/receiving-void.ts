@@ -12,7 +12,9 @@
  *
  * Todo lo que `registerReceipt` escribió: el stock que ingresó, las cantidades
  * recibidas de la OC, el estado del ítem de solicitud, el estado de la propia
- * orden y la proyección de conciliación.
+ * orden y la proyección de conciliación. Y, para un repuesto de una OT, la reserva
+ * que aportó y el estado de su nota de pedido, que se recalcula al final
+ * (ADR mantención 0001, D19).
  *
  * ## Qué se niega a revertir, y por qué
  *
@@ -46,6 +48,7 @@ import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 import { applyMovementTx } from "./stock"
 import { lockForStockTx, shrinkAllocationsForSourceTx } from "./mantencion/parts"
+import { lockOrdersOfLinesTx, noteItemIdsOfSourceTx, recalcNotesOfLinesTx } from "./mantencion/parts-notes/arrival-reversal"
 import { rollupOrderReceiptStatus } from "./receiving"
 import { persistPurchaseOrderInvoiceReconciliationTx } from "./purchasing-module/invoice-reconciliation-service"
 
@@ -116,6 +119,7 @@ export async function voidReceipt(
     const requestItems = requestItemIds.length === 0 ? [] : await tx.select({
       id: purchaseRequestItems.id,
       status: purchaseRequestItems.status,
+      partsNoteItemId: purchaseRequestItems.partsNoteItemId,
     }).from(purchaseRequestItems).where(inArray(purchaseRequestItems.id, requestItemIds)).for("update")
     const yaEntregado = requestItems.find((item) => (ITEM_ALREADY_OUT as readonly string[]).includes(item.status))
 
@@ -137,6 +141,14 @@ export async function voidReceipt(
         : "No se puede anular: alguno de los ítems ya se entregó. "
           + "Corrige con un ajuste de inventario, que deja su propio folio y motivo.")
     }
+
+    // Las notas de pedido que esta recepción atendía (por el ítem de solicitud o por lo que aportó a una reserva): su OT se toma
+    // `FOR SHARE` ahora, ANTES que el stock, para poder recalcularlas al final sin romper el orden global (ADR 0001 D19).
+    const noteLineIds = [...new Set([
+      ...requestItems.flatMap((item) => (item.partsNoteItemId ? [item.partsNoteItemId] : [])),
+      ...await noteItemIdsOfSourceTx(tx, { receiptId: receipt.id }),
+    ])]
+    await lockOrdersOfLinesTx(tx, noteLineIds)
 
     const isOffice = receipt.locationType === "office"
     /*
@@ -337,6 +349,18 @@ export async function voidReceipt(
       await persistPurchaseOrderInvoiceReconciliationTx(tx, order.id)
     }
 
+    /*
+     * 7. Las notas de pedido de lo que esta recepción había dejado en faena. La rebaja de la reserva ya lleva su línea
+     *    (`shrinkAllocationsForSourceTx`) y la compra volvió a estar viva (paso 3): una nota que ya figuraba «cerrada»
+     *    porque su repuesto había llegado vuelve a esperarlo. Al final, tras la orden de compra: el orden de `registerReceipt`.
+     */
+    const noteChanges = await recalcNotesOfLinesTx(tx, {
+      noteItemIds: noteLineIds,
+      reason: `Anulación de la recepción ${receipt.code}: ${reason}`,
+      actorUserId: input.voidedBy,
+      userEmail: input.userEmail,
+    })
+
     await recordAudit({
       userId: input.voidedBy,
       userEmail: input.userEmail,
@@ -345,7 +369,7 @@ export async function voidReceipt(
       entityId: receipt.id,
       entityCode: receipt.code,
       oldState: { status: receipt.status },
-      newState: { status: "voided", reversedMovements },
+      newState: { status: "voided", reversedMovements, ...(noteChanges.length > 0 ? { notesRecalculated: noteChanges } : {}) },
       reason,
     }, tx)
 

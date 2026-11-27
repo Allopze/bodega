@@ -7,6 +7,7 @@ import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { closePhysicalInventoryCount, savePhysicalInventoryDraft } from "@/lib/services/physical-inventory"
 import { registerStockDiscard, registerStockReturn } from "@/lib/services/stock"
 import { registerStockDocumentTx } from "@/lib/services/stock-movement"
+import { reconcileNotesAfterStockAdjustment } from "@/lib/services/mantencion/parts-notes/line-reconcile"
 import { db } from "@/db"
 import { worksites, worksiteStock } from "@/db/schema"
 import { and, eq } from "drizzle-orm"
@@ -113,6 +114,17 @@ export async function adjustStockAction(
       })
       return { adjustment, before, delta }
     })
+
+    // Un ajuste que baja el stock de un repuesto puede haber rebajado reservas: las líneas de nota de pedido que se apoyaban en
+    // ellas vuelven a pendiente ahora, ya confirmado el ajuste y en otra transacción (ADR mantención 0001, D21).
+    if (outcome.delta < 0) {
+      await reconcileNotesAfterStockAdjustment({
+        worksiteId,
+        productIds: [productId],
+        actor: { userId: session.user.id, email: session.user.email ?? undefined },
+        reason: `${outcome.adjustment.code}: ${reason}`,
+      })
+    }
 
     revalidateOperationalViews([REVALIDATE])
     const { adjustment, before, delta } = outcome

@@ -5,6 +5,7 @@ import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { applyMovementTx } from "@/lib/services/stock"
+import { reconcileNotesAfterStockAdjustment } from "@/lib/services/mantencion/parts-notes/line-reconcile"
 import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
 import type { Session } from "next-auth"
 
@@ -74,6 +75,8 @@ export async function closePhysicalInventoryCount(
   let id = nanoid()
   let code = ""
   let adjustmentCount = 0
+  // Los repuestos cuyo stock bajó con el conteo: sus reservas pudieron rebajarse (ver el cierre de abajo).
+  const reducedProductIds: string[] = []
 
   await db.transaction(async (tx) => {
     // Use the same worksite → product → stock order as the EPP preflight and
@@ -189,6 +192,7 @@ export async function closePhysicalInventoryCount(
       const difference = item.difference ?? 0
       if (difference === 0) continue
       adjustmentCount += 1
+      if (difference < 0) reducedProductIds.push(item.productId)
       await applyMovementTx(tx, {
         worksiteId: input.worksiteId,
         productId: item.productId,
@@ -203,6 +207,17 @@ export async function closePhysicalInventoryCount(
       })
     }
   })
+
+  // Un conteo que baja el stock de un repuesto puede haber rebajado reservas: las líneas de nota de pedido que se apoyaban en
+  // ellas vuelven a pendiente ahora, ya confirmado el conteo y en otra transacción (ADR mantención 0001, D21).
+  if (reducedProductIds.length > 0) {
+    await reconcileNotesAfterStockAdjustment({
+      worksiteId: input.worksiteId,
+      productIds: reducedProductIds,
+      actor: { userId: session.user.id, email: session.user.email ?? undefined },
+      reason: `Conteo físico ${code}`,
+    })
+  }
 
   return { id, code, adjustmentCount }
 }

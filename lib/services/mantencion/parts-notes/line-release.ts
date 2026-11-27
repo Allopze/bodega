@@ -92,12 +92,16 @@ export interface ReleasePlan {
 /**
  * Lee a qué líneas corresponde lo que se va a liberar y las bloquea. Sin líneas `desde_stock` en la reserva (lo normal
  * cuando la reserva viene de recepciones) no bloquea nada y devuelve una sola fila sin línea.
+ *
+ * `lock: false` sólo lee, sin tomar las filas de las líneas: lo usa el ajuste de inventario (`planAdjustmentCutTx`), que ya
+ * tiene la fila de stock y no puede tomar líneas ni OT después (rompería el orden global de bloqueo, ADR 0001 D21).
  */
 export async function planReleaseToLinesTx(tx: Tx, input: {
   allocationId: string
   workOrderId: string
   quantity: number
-}): Promise<ReleasePlan> {
+}, options: { lock?: boolean } = {}): Promise<ReleasePlan> {
+  const lock = options.lock ?? true
   const whole: ReleasePlan = { lines: [], sourceRows: [{ noteItemId: null, quantity: input.quantity }] }
 
   const held = await tx
@@ -116,7 +120,7 @@ export async function planReleaseToLinesTx(tx: Tx, input: {
   if (heldOf.size === 0) return whole
 
   // Las líneas, tomadas por id y después del stock. Una que dejó de ser `desde_stock` no se atribuye.
-  const locked = await tx
+  const lineRows = tx
     .select({
       itemId: mantPartsNoteItems.id,
       noteId: mantPartsNoteItems.noteId,
@@ -135,7 +139,7 @@ export async function planReleaseToLinesTx(tx: Tx, input: {
     .innerJoin(mantPartsNotes, eq(mantPartsNotes.id, mantPartsNoteItems.noteId))
     .where(inArray(mantPartsNoteItems.id, [...heldOf.keys()]))
     .orderBy(mantPartsNoteItems.id)
-    .for("no key update", { of: mantPartsNoteItems })
+  const locked = await (lock ? lineRows.for("no key update", { of: mantPartsNoteItems }) : lineRows)
   const candidates = locked.filter((row) => row.resolution === "desde_stock" && row.resolvedAt)
   if (candidates.length === 0) return whole
 
@@ -195,20 +199,44 @@ export interface ReturnedNoteLine {
 }
 
 /**
+ * Qué decir en el rastro de la línea según qué le quitó la reserva: una liberación a mano de jefatura o un ajuste de
+ * inventario (ADR 0001 D21). La liberación es el caso de siempre y no cambia.
+ */
+const CAUSE_TEXT = {
+  liberacion: {
+    trail: (reason: string) => `Reserva liberada: ${reason}`,
+    wholeLine: "reserva liberada",
+    partRejected: "lo liberado se rechazó solo",
+    partPending: "lo liberado pasa a una línea pendiente",
+  },
+  ajuste: {
+    trail: (reason: string) => `Reserva rebajada por un ajuste de inventario: ${reason}`,
+    wholeLine: "reserva rebajada por un ajuste de inventario",
+    partRejected: "lo que ya no está en la reserva se rechazó solo",
+    partPending: "lo que ya no está en la reserva pasa a una línea pendiente",
+  },
+} as const
+
+/**
  * Aplica el plan a las líneas: vuelve a pendiente (o rechaza si la OT terminó) lo liberado, recalcula el estado de cada
  * NP y deja el evento de la OT y la auditoría de la NP por línea. Llamar DESPUÉS de escribir la rebaja de la reserva.
+ * Todas las líneas del plan son de la misma OT (una reserva es de una OT).
  */
 export async function returnReleasedLinesTx(tx: Tx, input: {
   plan: ReleasePlan
-  allocationId: string
+  /** La reserva que perdió lo que se devuelve; `null` si no se sabe cuál. */
+  allocationId: string | null
   reason: string
   actor: { userId: string; email?: string | null }
+  /** Por qué bajó la reserva; por omisión, una liberación a mano. */
+  cause?: keyof typeof CAUSE_TEXT
 }): Promise<ReturnedNoteLine[]> {
   if (input.plan.lines.length === 0) return []
   const workOrderId = input.plan.lines[0]!.line.workOrderId
   const [ot] = await tx.select({ status: mantWorkOrders.status, voidReason: mantWorkOrders.voidReason }).from(mantWorkOrders).where(eq(mantWorkOrders.id, workOrderId)).limit(1)
   const end = ot ? workOrderEndOf(ot.status, ot.voidReason) : null
-  const trailReason = `Reserva liberada: ${input.reason}`
+  const text = CAUSE_TEXT[input.cause ?? "liberacion"]
+  const trailReason = text.trail(input.reason)
 
   const returned: ReturnedNoteLine[] = []
   const touched = new Set<string>()
@@ -233,7 +261,7 @@ export async function returnReleasedLinesTx(tx: Tx, input: {
           actor: input.actor, action: "update", reason: trailReason,
           oldState: { itemId: line.itemId, resolution: "desde_stock" },
           changeSet: {
-            itemId: line.itemId, resolution: "pendiente", previousResolution: "desde_stock", returned: "reserva liberada",
+            itemId: line.itemId, resolution: "pendiente", previousResolution: "desde_stock", returned: text.wholeLine,
             releasedQuantity: share, allocationId: input.allocationId,
           },
         })
@@ -260,7 +288,7 @@ export async function returnReleasedLinesTx(tx: Tx, input: {
       changeSet: {
         itemId: line.itemId, resolution: "desde_stock", quantity: keep, releasedQuantity: share, allocationId: input.allocationId,
         originalQuantity: split.originalQuantity, remainderItemId: split.remainderItemId, remainderQuantity: split.remainderQuantity,
-        returned: end ? "lo liberado se rechazó solo" : "lo liberado pasa a una línea pendiente",
+        returned: end ? text.partRejected : text.partPending,
       },
     })
     returned.push({
@@ -270,4 +298,23 @@ export async function returnReleasedLinesTx(tx: Tx, input: {
   }
   for (const noteId of [...touched].sort()) await recalcNoteStatusTx(tx, noteId)
   return returned
+}
+
+/**
+ * A qué líneas atribuir lo que un ajuste de inventario le quita a una reserva, para que la fila de la rebaja lleve su
+ * `note_item_id` (ADR 0001 D21). Mismo criterio que liberar a mano: las líneas `desde_stock` que la alimentaron, de la
+ * más nueva a la más vieja, y cada una sólo cede lo que no se usó; el resto no es de ninguna línea.
+ *
+ * Sólo LEE (`lock: false`): corre dentro de la transacción del ajuste, que ya tiene la fila de stock y no puede tomar ni la
+ * OT ni las líneas después de ella sin romper el orden global de bloqueo. Es seguro porque todo lo que mueve las reservas
+ * de ese repuesto en esa faena (resolver una línea, liberar, consumir, recibir) toma antes esa misma fila de stock. Las
+ * líneas se devuelven a pendiente después, en otra transacción con los bloqueos en orden (`line-reconcile.ts`).
+ */
+export async function planAdjustmentCutTx(tx: Tx, input: {
+  allocationId: string
+  workOrderId: string
+  quantity: number
+}): Promise<Array<{ noteItemId: string | null; quantity: number }>> {
+  const plan = await planReleaseToLinesTx(tx, input, { lock: false })
+  return plan.sourceRows
 }

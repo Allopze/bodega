@@ -692,7 +692,9 @@ describe("anular y reabrir", () => {
 
 describe("OT de un hallazgo de inspección: la conformidad acredita la CAPA", () => {
   const AUTOR = IDS.jefe
-  async function seedFindingWithCapa(status = "pending") {
+  /** Quién responde por la CAPA y quién es el inspector de la inspección (ejecutó, se asignó o la creó, en ese orden de prioridad). */
+  interface PreventionPeople { responsibleUserId?: string | null; executedByUserId?: string | null; assignedToUserId?: string | null; createdByUserId?: string }
+  async function seedFindingWithCapa(status = "pending", people: PreventionPeople = {}) {
     const templateId = crypto.randomUUID()
     await testDb.insert(schema.preventionInspectionTemplates).values({
       id: templateId, code: `PLT-${templateId.slice(0, 5)}`, versionLabel: "v1", name: "Camiones", kind: "inspection", definitionSnapshot: {},
@@ -700,19 +702,21 @@ describe("OT de un hallazgo de inspección: la conformidad acredita la CAPA", ()
     })
     const runId = crypto.randomUUID()
     await testDb.insert(schema.preventionInspectionRuns).values({
-      id: runId, code: `INS-${runId.slice(0, 5)}`, templateId, worksiteId: IDS.wsBio, status: "completed", createdByUserId: AUTOR,
+      id: runId, code: `INS-${runId.slice(0, 5)}`, templateId, worksiteId: IDS.wsBio, status: "completed", createdByUserId: people.createdByUserId ?? AUTOR,
+      executedByUserId: people.executedByUserId ?? null, assignedToUserId: people.assignedToUserId ?? null,
     })
     const capaId = crypto.randomUUID()
     await testDb.insert(schema.preventionCapaActions).values({
       id: capaId, code: `CAPA-${capaId.slice(0, 5)}`, sourceType: "inspection", sourceId: runId, worksiteId: IDS.wsBio,
       finding: "Falla en el sistema de frenos", actionDescription: "Reparar y probar los frenos", targetDate: addDaysToPlainDate(today, 10), status, createdByUserId: AUTOR,
+      responsibleUserId: people.responsibleUserId ?? null,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     })
     const findingId = crypto.randomUUID()
     await testDb.insert(schema.preventionInspectionFindings).values({
       id: findingId, runId, description: "Falla en el sistema de frenos", criticality: "high", status: "capa_linked", capaActionId: capaId,
     })
-    return { findingId, capaId }
+    return { findingId, capaId, runId }
   }
   async function otFromFinding(findingId: string) {
     const created = await testDb.transaction((tx) => createWorkOrderWithClient(tx, {
@@ -918,6 +922,143 @@ describe("OT de un hallazgo de inspección: la conformidad acredita la CAPA", ()
       const manual = ok(await createWorkOrder(await actorOf(IDS.jefe), adminInput({ assignedToUserId: null }))).id
       expect(await voidOt(manual, "Se creó por error")).toMatchObject({ ok: true })
       expect(await prevention(capaId, findingId)).toEqual(before)
+    })
+
+    describe("aviso a Prevención: la OT anulada canceló la acción correctiva (D18)", () => {
+      const REASON = "El equipo era otro: orden duplicada"
+      /** Los avisos de Prevención por la CAPA: el mismo `system_alert` de sus recordatorios. */
+      const capaNotices = () => notificationsOf("system_alert")
+      const noticeOf = async (userId: string) => (await capaNotices()).find((notice) => notice.userId === userId)
+
+      it("le llega al responsable de la CAPA (enlace a la acción) y al inspector (enlace a los hallazgos), con el texto y su clave; a quien anuló, no", async () => {
+        // La jefatura anula; responde por la CAPA la administradora de contrato y el inspector es el supervisor.
+        const { findingId, capaId, runId } = await seedFindingWithCapa("pending", { responsibleUserId: IDS.adminBio, executedByUserId: IDS.supBio })
+        const id = await otFromFinding(findingId)
+        const folio = (await row(id)).folio
+        const capaCode = (await capaOf(capaId)).code
+        await settle()
+
+        expect(await voidOt(id, REASON)).toMatchObject({ ok: true, value: { status: "anulada" } })
+        await settle()
+
+        const text = `La OT ${folio} se anuló: ${REASON}. La acción correctiva ${capaCode} se canceló y el hallazgo volvió a quedar abierto.`
+        const dedupeKey = `mant-ot:${id}:capa_cancelled:${capaId}`
+        expect((await capaNotices()).map((notice) => notice.userId).sort()).toEqual([IDS.adminBio, IDS.supBio].sort())
+        expect(await noticeOf(IDS.adminBio)).toMatchObject({
+          type: "system_alert", title: `Acción correctiva cancelada: ${capaCode}`, body: text, dedupeKey,
+          entityType: "prevention_capa", entityId: capaId, entityHref: `/prevencion/capa/${capaId}`,
+        })
+        expect(await noticeOf(IDS.supBio)).toMatchObject({
+          type: "system_alert", title: `Acción correctiva cancelada: ${capaCode}`, body: text, dedupeKey,
+          entityType: "inspection_run", entityId: runId, entityHref: `/prevencion/inspecciones/${runId}#hallazgos`,
+        })
+        // Quien anuló (la jefatura) no se avisa a sí mismo, y el aviso de la OT sigue siendo aparte (no hay a quién: nadie la tenía).
+        expect(await noticeOf(IDS.jefe)).toBeUndefined()
+        expect(await notificationsOf("mant_ot_voided")).toEqual([])
+      })
+
+      it("quien anuló no se avisa aunque sea el responsable o el inspector; si una misma persona cumple los dos papeles recibe un solo aviso, con el enlace al hallazgo", async () => {
+        // La jefatura anula y es la responsable de la acción: sólo se entera el inspector.
+        const first = await seedFindingWithCapa("pending", { responsibleUserId: IDS.jefe, executedByUserId: IDS.supBio })
+        const firstOt = await otFromFinding(first.findingId)
+        expect(await voidOt(firstOt, REASON)).toMatchObject({ ok: true })
+        await settle()
+        expect((await capaNotices()).map((notice) => notice.userId)).toEqual([IDS.supBio])
+
+        // La misma persona (el supervisor) es responsable e inspector: un solo aviso, al hallazgo que hay que volver a derivar.
+        const second = await seedFindingWithCapa("pending", { responsibleUserId: IDS.supBio, executedByUserId: IDS.supBio })
+        const secondOt = await otFromFinding(second.findingId)
+        expect(await voidOt(secondOt, REASON)).toMatchObject({ ok: true })
+        await settle()
+        const mine = (await capaNotices()).filter((notice) => notice.entityId === second.runId || notice.entityId === second.capaId)
+        expect(mine).toHaveLength(1)
+        expect(mine[0]).toMatchObject({ userId: IDS.supBio, entityType: "inspection_run", entityHref: `/prevencion/inspecciones/${second.runId}#hallazgos` })
+
+        // Si anula el único responsable e inspector, no hay a quién avisar.
+        const third = await seedFindingWithCapa("pending", { responsibleUserId: IDS.jefe, executedByUserId: IDS.jefe })
+        const thirdOt = await otFromFinding(third.findingId)
+        const before = (await capaNotices()).length
+        expect(await voidOt(thirdOt, REASON)).toMatchObject({ ok: true })
+        await settle()
+        expect((await capaNotices()).length).toBe(before)
+      })
+
+      it("el inspector es quien ejecutó la inspección; si no se ejecutó, a quien se asignó; y si no, quien la creó. Un usuario inactivo no recibe nada", async () => {
+        const executed = await seedFindingWithCapa("pending", { executedByUserId: IDS.supBio, assignedToUserId: IDS.adminBio, createdByUserId: IDS.mecBio })
+        const assigned = await seedFindingWithCapa("pending", { assignedToUserId: IDS.adminBio, createdByUserId: IDS.mecBio })
+        const created = await seedFindingWithCapa("pending", { createdByUserId: IDS.mecBio })
+        const inactive = await seedFindingWithCapa("pending", { responsibleUserId: IDS.inactive, createdByUserId: IDS.inactive })
+        for (const seeded of [executed, assigned, created, inactive]) {
+          expect(await voidOt(await otFromFinding(seeded.findingId), REASON)).toMatchObject({ ok: true })
+        }
+        await settle()
+        const recipientOf = async (seeded: { runId: string }) => (await capaNotices()).filter((notice) => notice.entityId === seeded.runId).map((notice) => notice.userId)
+        expect(await recipientOf(executed)).toEqual([IDS.supBio])
+        expect(await recipientOf(assigned)).toEqual([IDS.adminBio])
+        expect(await recipientOf(created)).toEqual([IDS.mecBio])
+        // El usuario inactivo es responsable de la acción y quien creó la inspección: no se le escribe (ni se le manda correo).
+        expect((await capaNotices()).filter((notice) => notice.userId === IDS.inactive)).toEqual([])
+      })
+
+      it.each(["pending_verification", "verified", "closed", "cancelled"])("una CAPA «%s» no se cancela y no hay aviso", async (status) => {
+        const { findingId } = await seedFindingWithCapa(status, { responsibleUserId: IDS.adminBio, executedByUserId: IDS.supBio })
+        const id = await otFromFinding(findingId)
+        expect(await voidOt(id, REASON)).toMatchObject({ ok: true, value: { status: "anulada" } })
+        await settle()
+        expect(await capaNotices()).toEqual([])
+      })
+
+      it("sin aviso si el hallazgo ya estaba cerrado, si la OT no nació de un hallazgo o si la anulación se rechaza", async () => {
+        const { findingId } = await seedFindingWithCapa("pending", { responsibleUserId: IDS.adminBio, executedByUserId: IDS.supBio })
+        const id = await otFromFinding(findingId)
+        // Una anulación rechazada (motivo corto) revierte todo: ni cancela la CAPA ni avisa.
+        expect(refused(await voidOt(id, "corto")).field).toBe("reason")
+        await settle()
+        expect(await capaNotices()).toEqual([])
+        // Hallazgo cerrado por Prevención: la CAPA no se toca y nadie recibe el aviso.
+        await testDb.update(schema.preventionInspectionFindings).set({ status: "closed", closedByUserId: AUTOR, closedAt: new Date().toISOString() }).where(eq(schema.preventionInspectionFindings.id, findingId))
+        expect(await voidOt(id, REASON)).toMatchObject({ ok: true })
+        // Una OT sin hallazgo se anula como siempre.
+        const manual = ok(await createWorkOrder(await actorOf(IDS.jefe), adminInput({ assignedToUserId: null }))).id
+        expect(await voidOt(manual, "Se creó por error")).toMatchObject({ ok: true })
+        await settle()
+        expect(await capaNotices()).toEqual([])
+      })
+
+      it("no se duplica: reenviar el mismo aviso o repetir la anulación no deja un segundo aviso", async () => {
+        const { findingId, capaId } = await seedFindingWithCapa("pending", { responsibleUserId: IDS.adminBio, executedByUserId: IDS.supBio })
+        const id = await otFromFinding(findingId)
+        expect(await voidOt(id, REASON)).toMatchObject({ ok: true })
+        await settle()
+        const once = await capaNotices()
+        expect(once).toHaveLength(2)
+
+        // Repetir la anulación se rechaza (la OT ya está anulada): ni más avisos ni más cambios en la CAPA.
+        expect(refused(await voidOt(id, REASON)).code).toBe("conflict")
+        // Y mandar otra vez el mismo plan (un reintento tras el commit) respeta la clave: cada persona sigue con uno.
+        const ot = await row(id)
+        const plan = {
+          event: "capa_cancelled" as const, workOrderId: id, folio: ot.folio, worksiteId: ot.worksiteId, version: ot.version, actorUserId: IDS.jefe,
+          requestedByUserId: ot.requestedByUserId, assigneeUserId: null, equipment: "KA-135 · Camión", detail: REASON,
+          capa: { capaActionId: capaId, capaCode: (await capaOf(capaId)).code, findingId },
+        }
+        await sendWorkOrderNotification(plan)
+        await sendWorkOrderNotification(plan)
+        await settle()
+        const after = await capaNotices()
+        expect(after.map((notice) => notice.id).sort()).toEqual(once.map((notice) => notice.id).sort())
+      })
+
+      it("el motivo con punto final no deja un doble punto en el texto", async () => {
+        const { findingId, capaId } = await seedFindingWithCapa("pending", { responsibleUserId: IDS.adminBio })
+        const id = await otFromFinding(findingId)
+        const folio = (await row(id)).folio
+        expect(await voidOt(id, "Se duplicó la orden de trabajo.")).toMatchObject({ ok: true })
+        await settle()
+        expect((await noticeOf(IDS.adminBio))?.body).toBe(
+          `La OT ${folio} se anuló: Se duplicó la orden de trabajo. La acción correctiva ${(await capaOf(capaId)).code} se canceló y el hallazgo volvió a quedar abierto.`,
+        )
+      })
     })
   })
 })

@@ -116,6 +116,17 @@ function formatQty(quantity: number): string {
 }
 
 /**
+ * Cómo repartir entre líneas de nota de pedido lo que un ajuste le quita a una reserva (ADR 0001 D21): filas de origen
+ * `ajuste`, una por línea que cede y una sin línea (`noteItemId: null`) por lo que no es de ninguna. Suman `quantity`.
+ * Lo inyecta quien llama (`applyMovementTx`) para que este módulo siga sin importar las notas de pedido.
+ */
+export type PlanAllocationCut = (tx: Tx, input: {
+  allocationId: string
+  workOrderId: string
+  quantity: number
+}) => Promise<Array<{ noteItemId: string | null; quantity: number }>>
+
+/**
  * Guarda de las salidas de un repuesto que no son consumo (desecho, traslado,
  * anulación de recepción o guía, ajuste negativo). Corre dentro de
  * `applyMovementTx`, después del bloqueo de la faena.
@@ -124,8 +135,12 @@ function formatQty(quantity: number): string {
  *   mensaje que nombra las OT, salvo el `ajuste`.
  * - El `ajuste` (conteo físico o documento) manda: la realidad física es la que
  *   es. Rebaja reservas de la más nueva a la más vieja hasta cuadrar, con una
- *   fila de origen `ajuste` por cada una. No escribe eventos de OT: tomaría un
- *   bloqueo sobre la OT después del de stock y rompería el orden global.
+ *   fila de origen `ajuste` por cada una. No escribe eventos de OT ni toca las
+ *   líneas de nota: tomaría un bloqueo sobre la OT después del de stock y
+ *   rompería el orden global. Con `planCut`, cada fila lleva la línea a la que se
+ *   atribuye (sólo lectura); devolver las líneas a pendiente y recalcular las notas
+ *   se hace después del commit, con los bloqueos en orden
+ *   (`parts-notes/line-reconcile.ts`).
  */
 export async function guardSparePartEgressTx(tx: Tx, input: {
   worksiteId: string
@@ -134,6 +149,7 @@ export async function guardSparePartEgressTx(tx: Tx, input: {
   quantity: number
   performedBy: string
   reason?: string | null
+  planCut?: PlanAllocationCut
 }): Promise<void> {
   const current = await lockedStockQuantityTx(tx, input.worksiteId, input.productId)
   const requested = input.type === "egreso_desecho" ? Math.abs(input.quantity) : -input.quantity
@@ -156,17 +172,24 @@ export async function guardSparePartEgressTx(tx: Tx, input: {
     if (toCents(toRelease) <= 0) break
     if (row.remaining <= 0) continue
     const cut = roundQty(Math.min(row.remaining, toRelease))
+    // A qué líneas se atribuye lo que baja (se lee antes de escribir: el reparto parte de la reserva tal como estaba).
+    const shares = input.planCut
+      ? await input.planCut(tx, { allocationId: row.allocationId, workOrderId: row.workOrderId, quantity: cut })
+      : [{ noteItemId: null, quantity: cut }]
     await tx.update(mantPartsAllocations)
       .set({ quantity: sql`${mantPartsAllocations.quantity} - ${cut}`, updatedAt: new Date().toISOString() })
       .where(eq(mantPartsAllocations.id, row.allocationId))
-    await tx.insert(mantPartsAllocationSources).values({
-      id: nanoid(),
-      allocationId: row.allocationId,
-      source: "ajuste",
-      quantity: -cut,
-      actorUserId: input.performedBy,
-      reason: input.reason?.trim() || "Ajuste de inventario",
-    })
+    for (const share of shares) {
+      await tx.insert(mantPartsAllocationSources).values({
+        id: nanoid(),
+        allocationId: row.allocationId,
+        source: "ajuste",
+        quantity: -share.quantity,
+        noteItemId: share.noteItemId,
+        actorUserId: input.performedBy,
+        reason: input.reason?.trim() || "Ajuste de inventario",
+      })
+    }
     toRelease = roundQty(toRelease - cut)
   }
 }
