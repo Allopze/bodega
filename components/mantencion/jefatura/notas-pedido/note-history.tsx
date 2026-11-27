@@ -1,13 +1,13 @@
 import type { PartsNoteEvent } from "@/lib/services/mantencion/parts/types"
 import { formatDateTime } from "@/lib/utils"
 import { SectionCard } from "../shared/section-card"
+import { EVENT_KIND_TEXT } from "./note-people-line"
 import { NoteStatusBadge } from "./note-status-badge"
 
 /** Qué pasó, en una frase: la alta, el cambio de estado «De → A» o el estado con el que ya venía la nota al activarse el historial. */
 function EventTitle({ event }: { event: PartsNoteEvent }) {
   const to = <NoteStatusBadge status={event.toStatus} />
-  if (event.kind === "creada") return <span className="flex flex-wrap items-center gap-1.5">Nota creada {to}</span>
-  if (event.kind === "migrada") return <span className="flex flex-wrap items-center gap-1.5">Estado inicial del historial {to}</span>
+  if (event.kind === "creada" || event.kind === "migrada") return <span className="flex flex-wrap items-center gap-1.5">{EVENT_KIND_TEXT[event.kind]} {to}</span>
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       {event.fromStatus && <NoteStatusBadge status={event.fromStatus} />}

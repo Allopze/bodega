@@ -11,6 +11,7 @@ import { formatDateTime, formatQty } from "@/lib/utils"
 import { SectionCard } from "../shared/section-card"
 import { LineProgress } from "./line-progress"
 import { NoteHistory } from "./note-history"
+import { NotePeopleLine } from "./note-people-line"
 import { NoteLineActions } from "./note-line-actions"
 import { NoteStatusBadge } from "./note-status-badge"
 import { ageText, isNotePending, stageMeta } from "./parts-notes-format"
@@ -139,6 +140,8 @@ export function PartsNoteDetailView({ note, buyHref, canOpenWorkOrder, canOpenRe
   const canAct = open && note.status !== "en_espera" && (note.canManage || note.canBuy)
   return (
     <div className="flex flex-col gap-4">
+      {/* Quién pide y la última acción del historial, justo bajo el título de la página. */}
+      <NotePeopleLine requestedByName={note.requestedByName} lastEvent={note.events.at(-1) ?? null} />
       {note.status === "anulada" && (
         <Callout tone="danger" title="Esta nota está anulada">
           <p>Motivo: {note.voidReason ?? "sin motivo"}</p>

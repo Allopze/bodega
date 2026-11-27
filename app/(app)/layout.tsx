@@ -163,7 +163,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const canViewFuel = can(session, "combustibles:view")
   // Los avisos de Mantención salen de la misma cola que «Mis pendientes», así que el cálculo corre también para quien tiene
   // trabajo de Mantención sin tener la bandeja (un rol personalizado): su número del menú no depende de ese permiso.
+  // El número de «Notas de pedido» de quien sólo compra o sólo ve las suyas (D34) tampoco sale de una fuente de la cola, pero se calcula aquí.
   const hasMantencionWork = actionableQueueSources(session.user.permissions ?? []).some((source) => source.startsWith("mant_"))
+    || canAny(session, "mant:np:purchase", "mant:np:view_own")
   const badgeTags = badgeCountsTags({ isGlobal, worksiteIds: session.user.worksiteIds ?? [] })
 
   const [ws, rawBadgeCounts, operationalCounts] = await Promise.all([

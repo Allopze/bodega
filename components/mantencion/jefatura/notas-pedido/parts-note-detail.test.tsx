@@ -317,7 +317,7 @@ describe("NoteHeaderActions", () => {
 
   it("muestra sólo las acciones que se le pasan, en su orden, y nada si no hay ninguna", () => {
     mount(["aceptar", "en_espera", "rechazar", "anular"])
-    expect(buttons()).toEqual(["Aceptar", "Poner en espera", "Rechazar nota", "Anular nota"])
+    expect(buttons()).toEqual(["Aceptar y enviar a compra", "Poner en espera", "Rechazar nota", "Anular nota"])
     cleanup()
     mount(["reabrir"])
     expect(buttons()).toEqual(["Reabrir"])
@@ -329,17 +329,39 @@ describe("NoteHeaderActions", () => {
   it("«Aceptar» llama a la acción de inmediato: sin diálogo de confirmación ni motivo", async () => {
     actions.acceptPartsNoteAction.mockResolvedValue({ ok: true, message: "La nota NP-2026-0001 quedó aceptada." })
     mount(["aceptar"])
-    fireEvent.click(screen.getByRole("button", { name: "Aceptar" }))
+    fireEvent.click(screen.getByRole("button", { name: "Aceptar y enviar a compra" }))
     await waitFor(() => expect(actions.acceptPartsNoteAction).toHaveBeenCalledWith({ noteId: "n1" }))
     expect(screen.queryByRole("dialog")).toBeNull()
     await waitFor(() => expect(refresh).toHaveBeenCalled())
     expect(toastSuccess).toHaveBeenCalledWith("La nota NP-2026-0001 quedó aceptada.")
   })
 
+  it("«Aceptar y enviar a compra» deja a la vista el enlace a la solicitud que salió, o avisa que faltan cotizaciones", async () => {
+    actions.acceptPartsNoteAction.mockResolvedValue({
+      ok: true, message: "Aceptada. 2 líneas a Compras (SOL-2026-0007).",
+      data: { requestId: "rq-7", requestCode: "SOL-2026-0007", approved: true, needsQuotation: false },
+    })
+    mount(["aceptar"])
+    fireEvent.click(screen.getByRole("button", { name: "Aceptar y enviar a compra" }))
+    const link = await screen.findByRole("link", { name: "SOL-2026-0007" })
+    expect(link.getAttribute("href")).toBe("/solicitudes/rq-7")
+    expect(screen.getByText(/Quedó en Compras con la solicitud/)).toBeTruthy()
+    cleanup()
+
+    actions.acceptPartsNoteAction.mockResolvedValue({
+      ok: true, message: "Aceptada. Supera el umbral de cotización: adjunta las cotizaciones en la solicitud SOL-2026-0008.",
+      data: { requestId: "rq-8", requestCode: "SOL-2026-0008", approved: false, needsQuotation: true },
+    })
+    mount(["aceptar"])
+    fireEvent.click(screen.getByRole("button", { name: "Aceptar y enviar a compra" }))
+    expect((await screen.findByRole("link", { name: "SOL-2026-0008" })).getAttribute("href")).toBe("/solicitudes/rq-8")
+    expect(screen.getByText(/Falta adjuntar cotizaciones en la solicitud/)).toBeTruthy()
+  })
+
   it("si «Aceptar» se rechaza en el servidor, la página no se refresca ni se cierra nada", async () => {
     actions.acceptPartsNoteAction.mockResolvedValue({ ok: false, message: "La nota NP-2026-0001 está cerrada: no se puede aceptar." })
     mount(["aceptar"])
-    fireEvent.click(screen.getByRole("button", { name: "Aceptar" }))
+    fireEvent.click(screen.getByRole("button", { name: "Aceptar y enviar a compra" }))
     await waitFor(() => expect(actions.acceptPartsNoteAction).toHaveBeenCalled())
     expect(refresh).not.toHaveBeenCalled()
   })
@@ -478,5 +500,15 @@ describe("PartsNoteDetailView: estado, historial y notas sin OT", () => {
     view({ note: noteDetail({ canManage: false, canBuy: false }) })
     expect(screen.queryAllByRole("button")).toHaveLength(0)
     expect(screen.queryByRole("link", { name: "Comprar" })).toBeNull()
+  })
+})
+
+describe("PartsNoteDetailView: línea de personas bajo el título", () => {
+  it("dice quién pide y la última acción del historial, de quien la hizo y cuándo (el último evento es el que manda)", () => {
+    view({ note: noteDetail({ events: [
+      { id: "e1", kind: "creada", fromStatus: null, toStatus: "enviada", reason: null, actorName: "Javier Roa", itemDescription: null, createdAt: "2026-11-20T15:00:00.000Z" },
+      { id: "e2", kind: "transicion", fromStatus: "enviada", toStatus: "aceptada", reason: null, actorName: "Ana Pérez", itemDescription: null, createdAt: "2026-11-21T09:30:00.000Z" },
+    ] }) })
+    expect(screen.getByText(/^Pide:/).textContent).toBe("Pide: Javier Roa · Última acción: Pasó a «Aceptada» por Ana Pérez · 21-11-2026 06:30")
   })
 })

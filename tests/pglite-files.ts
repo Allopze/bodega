@@ -729,6 +729,9 @@ export const pgliteTestFiles = [
   // que salen de la misma cola, escalamiento por faena, equipo trasladado y resiliencia. Aislada: ninguna otra suite de
   // la cola siembra `mant_*`.
   "lib/__tests__/operational-work-queue-mantencion-pglite.test.ts",
+  // El número del menú «Notas de pedido» por rol (D34): manage = por revisar, sólo purchase = «En compra» sin OC activa,
+  // sólo view_own = las propias «En espera»; manda el de mayor rango.
+  "lib/__tests__/operational-work-queue-notas-badge-pglite.test.ts",
 
   // NP · L5 app del mecánico (si alguna suite del cliente usa PGlite).
   // «Mis notas» del catálogo del teléfono: sólo las propias (con y sin OT), ventana de 30 días, motivos, avance de lo
