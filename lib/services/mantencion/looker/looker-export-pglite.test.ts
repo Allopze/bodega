@@ -150,8 +150,15 @@ beforeAll(async () => {
 
 type Params = Record<string, string | string[] | undefined>
 
-async function exportOf(session: Session, tab: "planificacion" | "camiones" | "maquinas", params: Params, maxRows?: number, today = TODAY) {
-  const result = await buildLookerExport(session, { tab, params, today, ...(maxRows ? { maxRows } : {}) })
+/** `camiones`/`maquinas` (los nombres de antes) se exportan como Correctivo en km u horas, igual que la acción de servidor. */
+async function exportOf(session: Session, tab: "planificacion" | "correctivo" | "preventivo" | "camiones" | "maquinas", params: Params, maxRows?: number, today = TODAY) {
+  const legacy = tab === "camiones" || tab === "maquinas"
+  const result = await buildLookerExport(session, {
+    tab: legacy ? "correctivo" : tab,
+    params: tab === "maquinas" ? { ...params, unidad: "h" } : params,
+    today,
+    ...(maxRows ? { maxRows } : {}),
+  })
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(Buffer.from(result.base64, "base64") as unknown as ArrayBuffer)
   return { result, workbook }
@@ -193,25 +200,30 @@ describe("Excel de Camiones · filtros de la URL", () => {
     expect(correctives).toHaveLength(30)
     expect(correctives.every((row) => row[6] === A.name)).toBe(true)
     expect(dataRows(workbook, "Conductores")).toEqual([["JUAN PEREZ", 30, 30]])
-    expect(dataRows(workbook, "Cumplimiento faena y mecánico")).toEqual([[A.name, "Javier Roa", 97.5, 1]])
-    expect(dataRows(workbook, "Pautas de la matriz")).toHaveLength(1)
-    expect(dataRows(workbook, "Matriz de checklist")).toEqual([
-      ["Cambio aceite motor", "", "Realizado"],
-      ["Revisión frenos", "", "No realizado"],
-    ])
     const filters = dataRows(workbook, "Filtros")
     expect(filters).toContainEqual(["Faenas", A.name])
     expect(filters).toContainEqual(["Período", "01-10-2026 al 31-10-2026"])
     expect(everything(workbook)).not.toContain(B.name)
+    // El libro de Preventivo, con la misma faena.
+    const preventive = (await exportOf(globalSession, "preventivo", { ...OCTOBER, faena: A.ws })).workbook
+    expect(dataRows(preventive, "Cumplimiento faena y mecánico")).toEqual([[A.name, "Javier Roa", 97.5, 1]])
+    expect(dataRows(preventive, "Pautas de la matriz")).toHaveLength(1)
+    expect(dataRows(preventive, "Matriz de checklist")).toEqual([
+      ["Cambio aceite motor", "", "Realizado"],
+      ["Revisión frenos", "", "No realizado"],
+    ])
+    expect(everything(preventive)).not.toContain(B.name)
   })
 
   it("el período de la URL acota: un mes sin trabajos deja las hojas sin filas", async () => {
     const { workbook } = await exportOf(globalSession, "camiones", { desde: "2026-07-01", hasta: "2026-07-31" })
     expect(dataRows(workbook, "Correctivos")).toEqual([])
     expect(dataRows(workbook, "Conductores")).toEqual([])
-    expect(dataRows(workbook, "Matriz de checklist")).toEqual([])
+    expect(dataRows(workbook, "Trabajos por mes")).toEqual([["jul 2026", 0]])
+    const preventive = (await exportOf(globalSession, "preventivo", { desde: "2026-07-01", hasta: "2026-07-31" })).workbook
+    expect(dataRows(preventive, "Matriz de checklist")).toEqual([])
     // «Cumplimiento por mes» conserva el mes del período, sin pautas: el % vacío y 0 pautas.
-    expect(dataRows(workbook, "Cumplimiento por mes")).toEqual([["jul 2026", "", 0]])
+    expect(dataRows(preventive, "Cumplimiento por mes")).toEqual([["jul 2026", "", 0]])
   })
 
   it("un conductor elegido acota «Correctivos» y la serie, pero «Conductores» sigue mostrando a todos, como la pantalla", async () => {
@@ -220,21 +232,22 @@ describe("Excel de Camiones · filtros de la URL", () => {
     expect(correctives).toHaveLength(2)
     expect(correctives.every((row) => row[6] === B.name)).toBe(true)
     expect(dataRows(workbook, "Conductores").map((row) => row[0]).sort()).toEqual(["JUAN PEREZ", "PEDRO SOTO"])
-    expect(dataRows(workbook, "Horas y registros")).toEqual([[`${B.code} · ${B.plate}`, 2, 2]])
+    expect(dataRows(workbook, "Horas y registros")).toEqual([[B.plate, B.code, 2, 2]])
     expect(dataRows(workbook, "Filtros")).toContainEqual(["Filtro cruzado: Conductor", "PEDRO SOTO"])
   })
 
   it("un equipo de la URL acota los correctivos y los códigos quedan nombrados en «Filtros»", async () => {
     const { workbook } = await exportOf(globalSession, "camiones", { ...OCTOBER, equipo: B.vehicle })
     expect(dataRows(workbook, "Correctivos")).toHaveLength(2)
-    expect(dataRows(workbook, "Filtros")).toContainEqual(["Códigos (equipos)", `${B.code} · ${B.plate}`])
+    expect(dataRows(workbook, "Filtros")).toContainEqual(["Equipos", `${B.code} · ${B.plate}`])
   })
 
   it("«Por horas» pide la otra unidad: sin máquinas por horas no hay filas, y el encabezado habla de horas", async () => {
     const { workbook } = await exportOf(globalSession, "maquinas", OCTOBER)
     expect(dataRows(workbook, "Correctivos")).toEqual([])
     expect(workbook.getWorksheet("Correctivos")!.getRow(1).getCell(8).value).toBe("Horómetro (h)")
-    expect(dataRows(workbook, "Filtros")).toContainEqual(["Pestaña", "Por horas"])
+    expect(dataRows(workbook, "Filtros")).toContainEqual(["Pestaña", "Correctivo"])
+    expect(dataRows(workbook, "Filtros")).toContainEqual(["Unidad de control", "Por horas"])
   })
 
   it("sobre el tope de filas corta la hoja y lo dice dentro del libro", async () => {
@@ -259,12 +272,16 @@ describe("Excel de Camiones · alcance por faena", () => {
 
   it("pedir la faena B no devuelve filas de B, en ninguna hoja, y no se nombra la faena ajena", async () => {
     const { workbook } = await exportOf(scopedToA, "camiones", { ...OCTOBER, faena: B.ws })
-    for (const name of ["Correctivos", "Conductores", "Horas y registros", "Cumplimiento faena y mecánico", "Cumplimiento por patente", "Matriz de checklist", "Pautas de la matriz"]) {
-      expect(dataRows(workbook, name), name).toEqual([])
+    const preventive = (await exportOf(scopedToA, "preventivo", { ...OCTOBER, faena: B.ws })).workbook
+    for (const name of ["Correctivos", "Conductores", "Horas y registros"]) expect(dataRows(workbook, name), name).toEqual([])
+    for (const name of ["Cumplimiento faena y mecánico", "Cumplimiento por equipo", "Matriz de checklist", "Pautas de la matriz"]) {
+      expect(dataRows(preventive, name), name).toEqual([])
     }
-    expect(dataRows(workbook, "Filtros")).toContainEqual(["Faenas", "1 faena sin nombre disponible (fuera de tu alcance o inactiva)"])
-    expect(everything(workbook)).not.toContain(B.name)
-    expect(everything(workbook)).not.toContain(B.ws)
+    for (const book of [workbook, preventive]) {
+      expect(dataRows(book, "Filtros")).toContainEqual(["Faenas", "1 faena sin nombre disponible (fuera de tu alcance o inactiva)"])
+      expect(everything(book)).not.toContain(B.name)
+      expect(everything(book)).not.toContain(B.ws)
+    }
   })
 
   it("un filtro cruzado hacia equipo, trabajo o pauta de la faena B no abre sus datos", async () => {
@@ -283,24 +300,26 @@ describe("Excel de Camiones · alcance por faena", () => {
     const { workbook } = await exportOf(nobody, "camiones", OCTOBER)
     expect(dataRows(workbook, "Correctivos")).toEqual([])
     expect(dataRows(workbook, "Conductores")).toEqual([])
-    expect(dataRows(workbook, "Matriz de checklist")).toEqual([])
+    expect(dataRows((await exportOf(nobody, "preventivo", OCTOBER)).workbook, "Matriz de checklist")).toEqual([])
   })
 })
 
 describe("Excel de Planificación", () => {
-  it("las dos tablas del consolidado traen A, B, próxima, delta y faltantes de la pantalla; lo que no existe queda vacío", async () => {
+  it("la tabla de la unidad trae «Tocaba a los», «Se hizo a los», próxima y faltantes de la pantalla; lo que no existe queda vacío", async () => {
     const { workbook } = await exportOf(globalSession, "planificacion", {})
-    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Consolidado por kilómetros", "Consolidado por horas", "Filtros", "Metadatos"])
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Consolidado por kilómetros", "Filtros", "Metadatos"])
     const km = dataRows(workbook, "Consolidado por kilómetros")
     expect(km).toHaveLength(2)
     const rowA = km.find((row) => row[1] === A.code)!
-    // [Patente, Código, Tipo, Faena, Pauta, Frecuencia, Última mantención, A, B, Actual, Próxima, Delta, Faltantes, Situación, Observación]
+    // [Patente, Código, Tipo, Faena, Pauta, Frecuencia, Última mantención, Tocaba a los, Se hizo a los, ¿A tiempo?, Lectura actual,
+    //  Próxima a los, Faltan, Fecha estimada, Uso diario, Estado, Observación]
     expect(rowA.slice(0, 6)).toEqual([A.plate, A.code, "Camión", A.name, "Camiones", 40_000])
-    expect(rowA.slice(7, 13)).toEqual([150_000, 151_000, 151_000, 160_000, -1_000, 9_000])
+    expect(rowA.slice(7, 13)).toEqual([150_000, 151_000, "1.000 km tarde", 151_000, 160_000, 9_000])
     const rowB = km.find((row) => row[1] === B.code)!
     // Sin preventiva ni lecturas: frecuencia, última mantención, A, B, actual, próxima, delta y faltantes quedan vacíos (no en cero).
-    expect(rowB.slice(5)).toEqual(["", "", "", "", "", "", "", "", "Sin dato", ""])
-    expect(dataRows(workbook, "Consolidado por horas")).toEqual([])
+    // La razón de que no haya fecha estimada va a «Observación» (en la pantalla es el `title` del «—»).
+    expect(rowB.slice(5)).toEqual(["", "", "", "", "", "", "", "", "", "", "Sin dato", "Sin fecha estimada: Sin lecturas suficientes en los últimos 30 días para calcular el uso diario"])
+    expect((await exportOf(globalSession, "planificacion", { unidad: "h" })).workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Consolidado por horas", "Filtros", "Metadatos"])
     // Orden de la pantalla: por faltantes, así que A (faltan 9.000) va antes que B (sin dato); la fecha es una fecha de Excel con formato de día.
     const sheet = workbook.getWorksheet("Consolidado por kilómetros")!
     expect([sheet.getRow(2).getCell(1).value, sheet.getRow(3).getCell(1).value]).toEqual([A.plate, B.plate])
@@ -312,8 +331,8 @@ describe("Excel de Planificación", () => {
     const filters = parseLookerFilters({ pestana: "planificacion", faena: A.ws }, TODAY)
     const screen = await loadPlanningData(viewerFromSession(globalSession), filters, {}, ["equipment"])
     const { workbook } = await exportOf(globalSession, "planificacion", { faena: A.ws })
-    expect(dataRows(workbook, "Consolidado por kilómetros").map((row) => row[1])).toEqual(screen.km.map((row) => row.code))
-    expect(screen.km).toHaveLength(1)
+    expect(dataRows(workbook, "Consolidado por kilómetros").map((row) => row[1])).toEqual(screen.rows.map((row) => row.code))
+    expect(screen.rows).toHaveLength(1)
   })
 
   it("el alcance también rige: con la faena A, pedir la B deja la tabla sin equipos", async () => {
@@ -353,9 +372,10 @@ describe("Excel de Camiones · faenas y equipos que no están entre las opciones
 
   it("faena AJENA: sin filas, el mismo texto veraz y sin nombrarla", async () => {
     const { workbook } = await exportOf(scopedToA, "camiones", { ...SEPTEMBER, faena: C.ws })
-    for (const name of ["Correctivos", "Conductores", "Horas y registros", "Cumplimiento por patente", "Matriz de checklist"]) {
-      expect(dataRows(workbook, name), name).toEqual([])
-    }
+    for (const name of ["Correctivos", "Conductores", "Horas y registros"]) expect(dataRows(workbook, name), name).toEqual([])
+    const preventive = (await exportOf(scopedToA, "preventivo", { ...SEPTEMBER, faena: C.ws })).workbook
+    for (const name of ["Cumplimiento por equipo", "Matriz de checklist"]) expect(dataRows(preventive, name), name).toEqual([])
+    expect(everything(preventive)).not.toContain(C.name)
     expect(dataRows(workbook, "Filtros")).toContainEqual(["Faenas", SINNOMBRE])
     expect(everything(workbook)).not.toContain(C.name)
     expect(everything(workbook)).not.toContain(C.ws)
@@ -366,11 +386,11 @@ describe("Excel de Camiones · faenas y equipos que no están entre las opciones
     const inactive = await exportOf(globalSession, "camiones", { ...SEPTEMBER, equipo: A2.vehicle })
     expect(dataRows(inactive.workbook, "Correctivos")).toHaveLength(3)
     const filters = dataRows(inactive.workbook, "Filtros")
-    expect(filters).toContainEqual(["Códigos (equipos)", "1 código sin nombre disponible (fuera de tu alcance o inactivo)"])
+    expect(filters).toContainEqual(["Equipos", "1 código sin nombre disponible (fuera de tu alcance o inactivo)"])
     expect(JSON.stringify(filters)).not.toMatch(/sin datos/)
     expect(JSON.stringify(filters)).not.toContain(A2.code)
     const active = await exportOf(globalSession, "camiones", { ...OCTOBER, equipo: B.vehicle })
-    expect(dataRows(active.workbook, "Filtros")).toContainEqual(["Códigos (equipos)", `${B.code} · ${B.plate}`])
+    expect(dataRows(active.workbook, "Filtros")).toContainEqual(["Equipos", `${B.code} · ${B.plate}`])
   })
 })
 

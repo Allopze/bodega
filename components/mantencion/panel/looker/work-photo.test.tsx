@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { WorkPhoto } from "./work-photo"
 
 afterEach(cleanup)
@@ -39,5 +39,27 @@ describe("WorkPhoto · visor de la foto de una correctiva", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cerrar" }))
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     await waitFor(() => expect(document.activeElement).toBe(thumb))
+  })
+})
+
+describe("WorkPhoto · respaldo de un trabajo", () => {
+  it("un formulario con enlace de respaldo lo ofrece en otra pestaña y no filtra la fila al abrirlo", () => {
+    const onRow = vi.fn()
+    render(<div onClick={onRow}><WorkPhoto photoId={null} photoUrl="https://drive.example/foto" alt="KA-143 del 12-11-2026" /></div>)
+    const link = screen.getByRole("link", { name: /Ver foto/ })
+    expect(link.getAttribute("href")).toBe("https://drive.example/foto")
+    expect(link.getAttribute("target")).toBe("_blank")
+    expect(link.getAttribute("rel")).toContain("noopener")
+    fireEvent.click(link)
+    expect(onRow).not.toHaveBeenCalled()
+  })
+
+  it("«Sin foto» en aviso lleva ícono y texto; el neutro es sólo texto", () => {
+    const { container, rerender } = render(<WorkPhoto photoId={null} alt="KA-143" missingTone="warn" />)
+    expect(screen.getByText("Sin foto").className).toContain("text-[var(--color-warning-ink)]")
+    expect(container.querySelector("svg")).toBeTruthy()
+    rerender(<WorkPhoto photoId={null} alt="KA-143" />)
+    expect(screen.getByText("Sin foto").className).not.toContain("text-[var(--color-warning-ink)]")
+    expect(container.querySelector("svg")).toBeNull()
   })
 })

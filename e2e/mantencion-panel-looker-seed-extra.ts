@@ -1,4 +1,5 @@
 import { expect, type Download, type Locator, type Page } from "@playwright/test"
+import { randomUUID } from "node:crypto"
 import ExcelJS from "exceljs"
 import postgres from "postgres"
 import { baseInterval, suggestInterval } from "../lib/mantencion/schedule"
@@ -66,7 +67,22 @@ export const USERS = {
   noExport: { id: "user-mant-mec1-e2e", email: "mecanico1@e2e.chome.cl" },
 } as const
 
-const EXTRA_VEHICLES = [EX.bulk.id, EX.matrix.id, EX.machine.id]
+/**
+ * Flujo de Planificación (`mantencion-panel-looker-flujo.spec.ts`): dos máquinas por horas con pauta, preventiva declarada y
+ * lecturas RELATIVAS a hoy (la fecha estimada usa los últimos 30 días, así que una fecha fija caducaría sola):
+ * `late` ya pasó su próxima mantención (vencida, fecha estimada pasada) y `ok` queda lejos (al día, ~40 días). Más un
+ * correctivo del formulario de `late` con otro conductor, para que el filtro por conductor tenga algo que sacar.
+ */
+export const FLOW = {
+  late: { id: "qa-looker-veh-x4", code: "QA-LK-X4", plate: "QALKX4", prior: { daysAgo: 90, reading: 3000, interval: 300 }, readings: [{ daysAgo: 20, value: 3300 }, { daysAgo: 2, value: 3400 }] },
+  ok: { id: "qa-looker-veh-x5", code: "QA-LK-X5", plate: "QALKX5", prior: { daysAgo: 30, reading: 5000, interval: 300 }, readings: [{ daysAgo: 20, value: 5010 }, { daysAgo: 2, value: 5100 }] },
+  driver: "QA_ CONDUCTOR FLUJO",
+  workRef: "QA-FLOW-01",
+  workDate: "2026-10-20",
+  recordFolios: ["MR-QA-LOOKER-F1", "MR-QA-LOOKER-F2", "MR-QA-LOOKER-F3", "MR-QA-LOOKER-F4"],
+} as const
+
+const EXTRA_VEHICLES = [EX.bulk.id, EX.matrix.id, EX.machine.id, FLOW.late.id, FLOW.ok.id]
 
 /** Pauta de horas vigente y sus intervalos, tal como los publica la base E2E (no se inventan: salen de ahí). */
 export async function hoursSchedule(sql: Sql): Promise<{ id: string; intervals: number[] }> {
@@ -135,6 +151,7 @@ async function insertCheck(
 
 /** Borra lo extra (filas y equipos). Idempotente; corre antes de `cleanupLooker`. */
 export async function cleanupExtra(sql: Sql) {
+  await sql`delete from mant_records where folio in ${sql([...FLOW.recordFolios])}`
   await sql`delete from mant_historical_records where source_key like 'qa-e2e-looker-work-%'`
   await sql`delete from mant_historical_schedule_checks where source_key like 'qa-e2e-looker-check-x%'`
   await sql`delete from mant_equipment_history where vehicle_id in ${sql(EXTRA_VEHICLES)}`
@@ -148,6 +165,7 @@ export async function extraLeftovers(sql: Sql): Promise<number> {
   const [row] = await sql`
     select (select count(*) from mant_historical_records where source_key like 'qa-e2e-looker-work-%')
          + (select count(*) from mant_historical_schedule_checks where source_key like 'qa-e2e-looker-check-x%')
+         + (select count(*) from mant_records where folio in ${sql([...FLOW.recordFolios])})
          + (select count(*) from mant_equipment_profiles where vehicle_id in ${sql(EXTRA_VEHICLES)})
          + (select count(*) from fuel_vehicles where id in ${sql(EXTRA_VEHICLES)}) as n`
   return Number(row?.n)
@@ -186,15 +204,63 @@ async function insertMatrixChecks(sql: Sql, admin: string) {
   }
 }
 
+/** Lecturas de horas como registros vigentes (`recentRecords` lee cualquier `mant_records` con lectura): el uso diario sale de ellas. */
+async function insertReadingRecord(sql: Sql, admin: string, vehicle: { id: string; code: string; plate: string }, folio: string, daysAgo: number, reading: number) {
+  const workDate = chileDay(-daysAgo)
+  const snapshot = sql.json({ code: vehicle.code, plate: vehicle.plate, noPlate: false, type: "Maquinaria", brand: "Scania", model: "QA Modelo", year: 2021, worksite: QA.wsA.name, unit: "h" })
+  await sql`
+    insert into mant_records (
+      id, folio, kind, vehicle_id, equipment_snapshot, worksite_id, reading, unit, work_date,
+      registered_by, executor_kind, executor_user_id, executor_name, signed_at, received_at, status, review
+    ) values (
+      ${randomUUID()}, ${folio}, 'C', ${vehicle.id}, ${snapshot}, ${QA.wsA.id}, ${reading}, 'h', ${workDate},
+      ${admin}, 'yo', ${admin}, 'QA_ Mecánico', ${`${workDate}T12:00:00Z`}, ${`${workDate}T12:00:00Z`}, 'vigente', 'pendiente'
+    )`
+}
+
+/** Las dos máquinas del flujo de Planificación y el correctivo del formulario de la vencida. */
+async function insertPlanningFlow(sql: Sql, admin: string, schedule: { id: string }) {
+  const [brand] = await sql`select id from mant_brands order by id limit 1`
+  const [type] = await sql`select id, slug from fuel_equipment_types where default_meter_type = 'hour_meter' and is_active order by name limit 1`
+  if (!brand || !type) throw new Error("La carga E2E no trae una marca ni un tipo por horas")
+  const folios = [...FLOW.recordFolios]
+  for (const [index, machine] of [FLOW.late, FLOW.ok].entries()) {
+    await sql`
+      insert into fuel_vehicles (id, code, plate, type, equipment_type_id, worksite_id, meter_type, brand, model, year, is_active)
+      values (${machine.id}, ${machine.code}, ${machine.plate}, ${type.slug}, ${type.id}, ${QA.wsA.id}, 'hour_meter', 'Scania', 'QA Modelo', 2021, true)`
+    await sql`
+      insert into mant_equipment_profiles (
+        vehicle_id, brand_id, schedule_id, prior_preventive_date, prior_preventive_reading, prior_preventive_interval, prior_preventive_evidence
+      ) values (
+        ${machine.id}, ${brand.id}, ${schedule.id}, ${chileDay(-machine.prior.daysAgo)}, ${machine.prior.reading}, ${machine.prior.interval}, ${`QA_ Respaldo ${machine.code}`}
+      )`
+    for (const [position, reading] of machine.readings.entries()) {
+      await insertReadingRecord(sql, admin, machine, folios[index * 2 + position]!, reading.daysAgo, reading.value)
+    }
+  }
+  await sql`
+    insert into mant_historical_records (
+      source_key, fingerprint, source_file, source_sheet, source_row, submitted_at, worksite_text, worksite_id,
+      equipment_text, vehicle_id, equipment_match, order_text, kind_text, reading_text, description,
+      entry_date, hours_text, fields, imported_by, action_type, labor_hours, is_test
+    ) values (
+      'qa-e2e-looker-work-f1', 'qa-e2e-looker-work-f1', 'QA_looker.xlsx', 'MANTENCIONES', 99,
+      ${`${FLOW.workDate} 09:00:00`}, ${QA.wsA.name}, ${QA.wsA.id}, ${`${FLOW.late.code} / ${FLOW.late.plate}`}, ${FLOW.late.id}, 'linked',
+      ${FLOW.workRef}, 'CORRECTIVA', '3250', 'QA_ Trabajo de la máquina vencida',
+      ${FLOW.workDate}, '1,5', ${sql.json([{ header: "CONDUCTOR", value: FLOW.driver }])}, ${admin}, 'correctiva', 1.5, false
+    )`
+}
+
 /**
  * Siembra lo extra que se pida (limpia antes). Devuelve los intervalos de la pauta de horas cuando se sembró la máquina,
  * que son los que gobiernan A, la próxima y los faltantes.
  */
-export async function seedExtra(sql: Sql, parts: { bulk?: boolean; matrix?: boolean; machine?: boolean }): Promise<number[]> {
+export async function seedExtra(sql: Sql, parts: { bulk?: boolean; matrix?: boolean; machine?: boolean; flow?: boolean }): Promise<number[]> {
   await cleanupExtra(sql)
   const admin = await adminId(sql)
   if (parts.bulk) await insertBulkCorrectives(sql, admin)
   if (parts.matrix) await insertMatrixChecks(sql, admin)
+  if (parts.flow) await insertPlanningFlow(sql, admin, await hoursSchedule(sql))
   if (!parts.machine) return []
   const schedule = await hoursSchedule(sql)
   await insertVehicle(sql, EX.machine, "hour_meter", { scheduleId: schedule.id })
@@ -253,12 +319,23 @@ export const tabUrl = (tab: string, extra: Record<string, string> = {}, period =
   `${RUTA}?${new URLSearchParams({ pestana: tab, ...Object.fromEntries(new URLSearchParams(period)), ...extra }).toString()}`
 
 export const filterBar = (page: Page) => page.locator("[data-looker-filter-bar]")
-export const otTable = (page: Page) => page.getByRole("table", { name: "Órdenes de trabajo y correctivas del período" })
-export const driversTable = (page: Page) => page.getByRole("table", { name: "Conductores del período" })
-export const plateTable = (page: Page) => page.getByRole("table", { name: "Cumplimiento por patente" })
+/** Correctivo: «Trabajos del período» (tabla de escritorio; en móvil es la lista del mismo nombre). */
+export const workTable = (page: Page) => page.getByRole("table", { name: "Trabajos correctivos del período" })
+/** Preventivo: «Cumplimiento por equipo». */
+export const equipmentTable = (page: Page) => page.getByRole("table", { name: "Cumplimiento por equipo", exact: true })
 export const matrixOf = (page: Page) => page.getByRole("table", { name: "Matriz de checklist de pautas" })
+/** Planificación: «Detalle por equipo · kilómetros|horas». */
+export const planningTable = (page: Page, unit: "km" | "h" = "km") =>
+  page.getByRole("table", { name: `Detalle por equipo · ${unit === "km" ? "kilómetros" : "horas"}`, exact: true })
 export const row = (table: Locator, text: string) => table.getByRole("row", { name: rx(text) })
 export const barsOf = (page: Page, name: string) => page.getByRole("group", { name })
+/** El botón de una barra o fila de un ranking: el nombre empieza por la etiqueta y sigue la cifra («QA_ CONDUCTOR: 2,5 h»). */
+export const barOf = (group: Locator, label: string) => group.getByRole("button", { name: new RegExp(`^${rx(label).source}`) })
+/** El embudo de una fila (equipo) o de una columna (pauta). */
+export const funnelOf = (scope: Page | Locator, name: string) => scope.getByRole("button", { name, exact: true })
+/** Quita `unidad`, `pestana`… de la comparación: los parámetros de una URL como objeto, sin importar el orden. */
+export const paramsOf = (page: Page) => Object.fromEntries(new URL(page.url()).searchParams.entries())
+export const chileDay = (offset = 0) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago" }).format(new Date(Date.now() + offset * 86_400_000))
 
 /** Chip de la barra («Faena: QA_ …»), con su botón de quitar. */
 export const chipsOf = (page: Page, label: string) =>

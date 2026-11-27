@@ -51,7 +51,7 @@ function first(value: string | string[] | undefined): string | undefined {
 /**
  * El Panel operativo de siempre: la franja «Hoy» (lo pendiente ahora) y los gráficos del
  * período. Es la pestaña `hoy`, la que abre el Panel sin parámetros; las tres pestañas nuevas
- * (Planificación, «Por kilómetros», «Por horas») viven en `planificacion-tab.tsx` y `work-tab.tsx`.
+ * (Planificación, Correctivo y Preventivo) viven en `planificacion-tab.tsx`, `correctivo-tab.tsx` y `preventivo-tab.tsx`.
  *
  * Se devuelve el árbol directamente (no un componente) para que las pruebas del Panel sigan
  * viendo las secciones que la página monta, sin un nivel extra que las oculte.
@@ -206,7 +206,7 @@ export async function renderHoyTab(session: Session, params: SearchParams) {
         }
       />
 
-      {/* Sin este menú, desde «Hoy» no se llega a Planificación, «Por kilómetros» ni «Por horas» sin escribir la URL. */}
+      {/* Sin este menú, desde «Hoy» no se llega a Planificación, Correctivo ni Preventivo sin escribir la URL. */}
       <PanelTabs active="hoy" params={params} />
 
       {period.invalid && (

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { buildCrossFilterHref, crossFilterActive, type CrossFilterAction } from "@/lib/services/mantencion/looker/filters"
+import { buildCrossFilterHref, crossFilterActive, type CrossFilterAction } from "@/lib/services/mantencion/looker/filter-hrefs"
 
 /**
  * Un clic de filtro cruzado navega con `router.replace(..., { scroll: false })`, igual que los

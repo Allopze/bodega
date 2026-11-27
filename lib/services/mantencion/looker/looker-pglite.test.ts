@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import type { LookerFilters } from "./types"
 
 /**
  * SQL del tablero Looker contra Postgres de verdad: la unión de correctivas (histórico + OT +
@@ -22,7 +23,8 @@ vi.mock("@/db", () => ({
   get Tx() { return undefined },
 }))
 
-const { loadCorrectivePage, loadCorrectiveSummary } = await import("@/lib/services/mantencion/looker/corrective")
+const { loadCorrectivePage } = await import("@/lib/services/mantencion/looker/corrective")
+const { loadCorrectiveTabData } = await import("@/lib/services/mantencion/looker/corrective-tab-data")
 const { loadChecklistMatrix, loadComplianceChecks, loadPreventiveCompliance } = await import("@/lib/services/mantencion/looker/preventive")
 const { loadLookerContext, loadLookerOptions } = await import("@/lib/services/mantencion/looker/resolve")
 const { loadPlanningData } = await import("@/lib/services/mantencion/looker/planning")
@@ -33,8 +35,18 @@ const V = { hist: "v-looker-hist", ot: "v-looker-ot", rec: "v-looker-rec", hours
 const GLOBAL = { userId: U, email: null, permissions: ["mant:records:view_all", "mant:ot:view_all"], worksiteIds: [], isGlobal: true }
 const SNAP = (code: string, plate: string) => ({ code, plate, noPlate: false, type: "Camión", brand: "Scania", model: "R450", year: 2021, worksite: "Faena Looker", unit: "km" as const })
 
-const filters = (from: string, to: string, tab: "camiones" | "maquinas" = "camiones") => ({
-  tab,
+/**
+ * Filtros de una pestaña. `camiones`/`maquinas` (los nombres de antes) se leen como Correctivo en km u horas, igual
+ * que la URL; el tercer argumento también acepta una pestaña nueva, que va en km salvo `unit`.
+ */
+const filters = (
+  from: string,
+  to: string,
+  tab: "camiones" | "maquinas" | "planificacion" | "correctivo" | "preventivo" = "camiones",
+  unit?: "km" | "h",
+): LookerFilters => ({
+  tab: tab === "camiones" || tab === "maquinas" ? "correctivo" : tab,
+  unit: unit ?? (tab === "maquinas" ? "h" : "km"),
   from,
   to,
   requestedFrom: from,
@@ -45,6 +57,13 @@ const filters = (from: string, to: string, tab: "camiones" | "maquinas" = "camio
   frequencies: [],
   page: 1,
   cross: {},
+  planningState: null,
+  dateField: "proxima",
+  dateFrom: null,
+  dateTo: null,
+  invalidDateRange: false,
+  sheetVehicleId: null,
+  sheetCheckId: null,
 })
 
 beforeAll(async () => {
@@ -119,6 +138,11 @@ beforeAll(async () => {
     { id: "i-nr", recordId: "rec-preventiva", itemKey: "nr", groupName: "Frenos", itemName: "Revisión frenos", sortOrder: 2, value: "NR", reason: "Sin repuesto" },
     { id: "i-na", recordId: "rec-preventiva", itemKey: "na", groupName: "Frenos", itemName: "Revisión ABS", sortOrder: 3, value: "NA" },
   ])
+  // El registro nativo trae sus dos fotos de evidencia (filtros y sticker): fotos completas.
+  await testDb.insert(schema.mantRecordPhotos).values(["filtros", "sticker"].map((kind, index) => ({
+    id: `ph-rec-prev-${kind}`, recordId: "rec-preventiva", kind, storageKey: `storage/mantencion/ph-rec-prev-${kind}.jpg`, mimeType: "image/jpeg",
+    sha256: "0".repeat(64), bytes: 4, width: 100, height: 100, stampedAt: "2026-12-10T15:00:00Z", uploadedBy: U, sortOrder: index,
+  })))
 
   // Pauta histórica del 15-10 con mecánico, observación y detalle por ítem.
   await testDb.insert(schema.mantHistoricalScheduleChecks).values({
@@ -127,6 +151,8 @@ beforeAll(async () => {
     equipmentText: "KA-H / HIST-01", vehicleId: V.hist, equipmentMatch: "linked", worksiteText: "Faena Looker", worksiteId: WS,
     reading: 145_000, doneCount: 39, notDoneCount: 1, notApplicableCount: 9, compliance: 0.975,
     mechanic: "Javier Roa", observations: "Cambio de refrigerante pendiente", isTest: false, fields: [], importedBy: U,
+    // Sólo el enlace de filtros: sin sticker, la pauta cuenta como de fotos incompletas.
+    filtersPhotoUrl: "https://drive.google.com/open?id=filtros-1",
   })
   await testDb.insert(schema.mantHistoricalScheduleItems).values([
     { sourceKey: "item-h-1", checkSourceKey: "pauta-hist-1", itemName: "Cambio aceite motor", result: "realizado", sortOrder: 0 },
@@ -165,61 +191,158 @@ beforeAll(async () => {
 describe("Contexto de la pestaña · opciones acotadas por unidad", () => {
   const ofTab = (raw: Record<string, string>) => loadLookerContext(GLOBAL, { desde: "2026-10-01", hasta: "2026-10-31", ...raw }, "2026-11-23")
 
-  it("Camiones ofrece sólo lo de km y Máquinas sólo lo de horas", async () => {
-    const trucks = await ofTab({ pestana: "camiones" })
-    expect(trucks.options.equipment.map((item) => item.id).sort()).toEqual([V.hist, V.ot, V.rec].sort())
-    expect(trucks.options.frequencies.map((item) => item.unit)).toEqual(["km", "km"])
-    const machines = await ofTab({ pestana: "maquinas" })
-    expect(machines.options.equipment.map((item) => item.id)).toEqual([V.hours])
-    expect(machines.options.frequencies.map((item) => item.value)).toEqual([300, 900])
+  it("km (por defecto) ofrece sólo lo de km y `unidad=h` sólo lo de horas, en las tres pestañas", async () => {
+    for (const pestana of ["planificacion", "correctivo", "preventivo"]) {
+      const trucks = await ofTab({ pestana })
+      expect(trucks.options.equipment.map((item) => item.id).sort(), pestana).toEqual([V.hist, V.ot, V.rec].sort())
+      expect(trucks.options.frequencies.map((item) => item.unit), pestana).toEqual(["km", "km"])
+      const machines = await ofTab({ pestana, unidad: "h" })
+      expect(machines.options.equipment.map((item) => item.id), pestana).toEqual([V.hours])
+      expect(machines.options.frequencies.map((item) => item.value), pestana).toEqual([300, 900])
+    }
   })
 
-  it("Planificación y Hoy conservan las dos unidades", async () => {
-    expect((await ofTab({ pestana: "planificacion" })).options.equipment).toHaveLength(4)
+  it("un enlace viejo `pestana=maquinas` se acota a horas, como Correctivo por horas", async () => {
+    const context = await ofTab({ pestana: "maquinas" })
+    expect(context.filters).toMatchObject({ tab: "correctivo", unit: "h" })
+    expect(context.options.equipment.map((item) => item.id)).toEqual([V.hours])
+  })
+
+  it("Hoy conserva las dos unidades", async () => {
     expect((await ofTab({})).options.frequencies).toHaveLength(4)
+    expect((await ofTab({})).options.equipment).toHaveLength(4)
   })
 
-  it("un equipo o una frecuencia de la otra unidad en la URL se ignora, manual o cruzado", async () => {
-    const context = await ofTab({ pestana: "camiones", equipo: `${V.rec},${V.hours}`, frecuencia: "40000,300", x_equipo: V.hours })
-    expect(context.filters.equipmentIds).toEqual([V.rec])
-    expect(context.filters.frequencies).toEqual([40_000])
-    expect(context.cross.equipment).toBeUndefined()
-    // En Planificación el mismo equipo sí se resuelve: la pestaña muestra las dos unidades.
-    expect((await ofTab({ pestana: "planificacion", x_equipo: V.hours })).cross.equipment?.id).toBe(V.hours)
+  it("un equipo o una frecuencia de la otra unidad en la URL se ignora, manual o cruzado, también en Planificación", async () => {
+    for (const pestana of ["correctivo", "planificacion"]) {
+      const context = await ofTab({ pestana, equipo: `${V.rec},${V.hours}`, frecuencia: "40000,300", x_equipo: V.hours })
+      expect(context.filters.equipmentIds, pestana).toEqual([V.rec])
+      expect(context.filters.frequencies, pestana).toEqual([40_000])
+      expect(context.cross.equipment, pestana).toBeUndefined()
+    }
+    // Con la unidad del equipo, sí se resuelve.
+    expect((await ofTab({ pestana: "planificacion", unidad: "h", x_equipo: V.hours })).cross.equipment?.id).toBe(V.hours)
   })
 })
 
-describe("Correctivo · unión y paginación", () => {
-  it("une histórico y OT con ingreso, y excluye la OT sin ingreso", async () => {
-    const page = await loadCorrectivePage(GLOBAL, filters("2026-10-01", "2026-10-31"), {})
-    expect(page.total).toBe(2)
-    expect(page.rows.map((row) => row.source)).toEqual(["ot", "historial"])
-    expect(page.rows[0]!.reference).toBe("OT-with-entry")
-    expect(page.rows[0]!.workPerformed).toBe("Reparación de frenos")
-    expect(page.rows[1]!.reference).toBe("33873")
+/** La pestaña Correctivo como la arma la página: contexto desde la URL y todos sus bloques con los filtros que cada uno aplica. */
+async function correctiveTab(raw: Record<string, string>, seriesLimit?: number) {
+  const context = await loadLookerContext(GLOBAL, { pestana: "correctivo", ...raw }, raw.hasta ?? "2026-12-31")
+  const data = await loadCorrectiveTabData(
+    GLOBAL,
+    context,
+    () => loadCorrectivePage(GLOBAL, context.filters, context.cross),
+    seriesLimit === undefined ? {} : { seriesLimit },
+  )
+  return { context, ...data }
+}
+
+describe("Correctivo · unión, tira de cifras y gráficos", () => {
+  const OCT = { desde: "2026-10-01", hasta: "2026-10-31" }
+  const OCT_DIC = { desde: "2026-10-01", hasta: "2026-12-31" }
+  const DIC = { desde: "2026-12-01", hasta: "2026-12-31" }
+
+  it("une histórico y OT con ingreso, y excluye la OT sin ingreso; el histórico trae sus conductores", async () => {
+    const { rows } = await correctiveTab(OCT)
+    expect(rows.total).toBe(2)
+    expect(rows.rows.map((row) => row.source)).toEqual(["ot", "historial"])
+    expect(rows.rows[0]!.reference).toBe("OT-with-entry")
+    expect(rows.rows[0]!.workPerformed).toBe("Reparación de frenos")
+    expect(rows.rows[1]!.reference).toBe("33873")
+    expect(rows.rows[1]!.drivers).toEqual(["JUAN PEREZ", "PEDRO SOTO"])
   })
 
-  it("filtra por unidad: una máquina por horas no entra en Camiones", async () => {
-    const page = await loadCorrectivePage(GLOBAL, filters("2026-10-01", "2026-10-31", "maquinas"), {})
-    expect(page.total).toBe(0)
+  it("filtra por unidad: una máquina por horas no entra en el correctivo de km y la unidad h no ve los camiones", async () => {
+    const hours = await correctiveTab({ ...OCT, unidad: "h" })
+    expect(hours.rows.total).toBe(0)
+    expect(hours.stats).toEqual({ total: 0, hours: 0, equipment: 0, photoEligible: 0, withoutPhoto: 0 })
+    expect(hours.context.options.equipment.map((item) => item.id)).toEqual([V.hours])
   })
 
-  it("el conductor del histórico reparte las horas y filtra la tabla por sus trabajos", async () => {
-    const summary = await loadCorrectiveSummary(GLOBAL, filters("2026-10-01", "2026-10-31"), {})
-    const juan = summary.drivers.find((driver) => driver.label === "JUAN PEREZ")
-    expect(juan?.hours).toBe(1.5)
-    expect(summary.drivers.find((driver) => driver.label === "PEDRO SOTO")?.hours).toBe(1.5)
-    const filtered = await loadCorrectivePage(GLOBAL, filters("2026-10-01", "2026-10-31"), {}, { conductorWorkIds: juan!.workIds })
-    expect(filtered.total).toBe(1)
-    expect(filtered.rows[0]!.source).toBe("historial")
+  it("la tira suma trabajos, horas y equipos distintos; sin foto cuenta sólo OT y registros (el histórico no trae fotos)", async () => {
+    const { stats } = await correctiveTab(OCT)
+    expect(stats).toEqual({ total: 2, hours: 7, equipment: 2, photoEligible: 1, withoutPhoto: 1 })
+  })
+
+  it("una foto correctiva del registro lo saca de «sin foto»", async () => {
+    await testDb.insert(schema.mantRecordPhotos).values({
+      id: "ph-rec-corr", recordId: "rec-correctiva", kind: "correctiva", storageKey: "storage/mantencion/ph-rec-corr.jpg", mimeType: "image/jpeg",
+      sha256: "1".repeat(64), bytes: 4, width: 100, height: 100, stampedAt: "2026-12-05T15:00:00Z", uploadedBy: U, sortOrder: 0,
+    })
+    try {
+      expect((await correctiveTab(DIC)).stats).toMatchObject({ total: 1, photoEligible: 1, withoutPhoto: 0 })
+    } finally {
+      await testDb.delete(schema.mantRecordPhotos).where(eq(schema.mantRecordPhotos.id, "ph-rec-corr"))
+    }
+    expect((await correctiveTab(DIC)).stats).toMatchObject({ total: 1, photoEligible: 1, withoutPhoto: 1 })
+  })
+
+  it("el conductor reparte las horas del trabajo entre sus conductores", async () => {
+    const { drivers } = await correctiveTab(OCT)
+    expect(drivers.find((driver) => driver.label === "JUAN PEREZ")).toMatchObject({ hours: 1.5, records: 1 })
+    expect(drivers.find((driver) => driver.label === "PEDRO SOTO")).toMatchObject({ hours: 1.5, records: 1 })
   })
 
   it("el registro nativo desde el corte también aparece y suma a sus dos conductores", async () => {
-    const summary = await loadCorrectiveSummary(GLOBAL, filters("2026-12-01", "2026-12-31"), {})
-    expect(summary.drivers.find((driver) => driver.label === "ANA DIAZ")?.hours).toBe(1)
-    expect(summary.drivers.find((driver) => driver.label === "LUIS ROJAS")?.hours).toBe(1)
-    const page = await loadCorrectivePage(GLOBAL, filters("2026-12-01", "2026-12-31"), {})
-    expect(page.rows[0]!.source).toBe("registro")
+    const { drivers, rows } = await correctiveTab(DIC)
+    expect(drivers.find((driver) => driver.label === "ANA DIAZ")?.hours).toBe(1)
+    expect(drivers.find((driver) => driver.label === "LUIS ROJAS")?.hours).toBe(1)
+    expect(rows.rows[0]!.source).toBe("registro")
+    expect(rows.rows[0]!.drivers).toEqual(["ANA DIAZ", "LUIS ROJAS"])
+  })
+
+  it("el conductor elegido acota la tabla, la tira, el equipo y el mes; el gráfico de conductores sigue completo", async () => {
+    const tab = await correctiveTab({ ...OCT_DIC, x_conductor: "JUAN PEREZ" })
+    expect(tab.rows.total).toBe(1)
+    expect(tab.rows.rows[0]!.source).toBe("historial")
+    expect(tab.stats).toMatchObject({ total: 1, hours: 3, equipment: 1 })
+    expect(tab.series.map((row) => row.vehicleId)).toEqual([V.hist])
+    expect(tab.monthly.map((month) => month.count)).toEqual([1, 0, 0])
+    // El gráfico de conductores no se filtra por el conductor que emite: todos siguen a la vista.
+    expect(tab.drivers.map((driver) => driver.label).sort()).toEqual(["ANA DIAZ", "JUAN PEREZ", "LUIS ROJAS", "PEDRO SOTO"])
+  })
+
+  it("un conductor sin trabajos deja todo vacío en vez de quitar el filtro", async () => {
+    const tab = await correctiveTab({ ...OCT, x_conductor: "NADIE EN ESTA FAENA" })
+    expect(tab.rows.total).toBe(0)
+    expect(tab.stats.total).toBe(0)
+    expect(tab.series).toEqual([])
+  })
+
+  it("el mes elegido acota la tabla, la tira y los demás gráficos, pero no el gráfico de meses", async () => {
+    const all = await correctiveTab(OCT_DIC)
+    expect(all.rows.total).toBe(3)
+
+    const tab = await correctiveTab({ ...OCT_DIC, x_mes: "2026-12" })
+    expect(tab.rows.total).toBe(1)
+    expect(tab.rows.rows[0]!.source).toBe("registro")
+    expect(tab.stats.total).toBe(1)
+    expect(tab.series.map((row) => row.vehicleId)).toEqual([V.rec])
+    expect(tab.drivers.map((driver) => driver.label).sort()).toEqual(["ANA DIAZ", "LUIS ROJAS"])
+    // Los meses siguen todos, con cero donde no hubo trabajo.
+    expect(tab.monthly.map((month) => [month.key, month.count])).toEqual([["2026-10", 2], ["2026-11", 0], ["2026-12", 1]])
+    expect(tab.monthly.map((month) => month.label)).toEqual(["oct 2026", "nov 2026", "dic 2026"])
+  })
+
+  it("el equipo elegido acota la tabla, la tira y los meses; el gráfico de equipos sigue completo y rotula con la patente", async () => {
+    const tab = await correctiveTab({ ...OCT, x_equipo: V.hist })
+    expect(tab.rows.total).toBe(1)
+    expect(tab.stats).toMatchObject({ total: 1, equipment: 1 })
+    expect(tab.monthly.map((month) => month.count)).toEqual([1])
+    // Ordenado de más a menos horas: la OT (4 h) antes que el formulario (3 h).
+    expect(tab.series.map((row) => [row.label, row.hours, row.records])).toEqual([["OT-01", 4, 1], ["HIST-01", 3, 1]])
+    expect(tab.series[1]).toMatchObject({ code: "KA-H", plate: "HIST-01" })
+  })
+
+  it("el gráfico de equipos dibuja los N con más horas; la exportación pide todos", async () => {
+    expect((await correctiveTab(OCT, 1)).series.map((row) => row.label)).toEqual(["OT-01"])
+    expect((await correctiveTab(OCT, Number.POSITIVE_INFINITY)).series).toHaveLength(2)
+  })
+
+  it("la OT elegida acota la tira y los gráficos, pero no la tabla (no se filtra a sí misma)", async () => {
+    const tab = await correctiveTab({ ...OCT, x_ot: "ot:with-entry" })
+    expect(tab.rows.total).toBe(2)
+    expect(tab.stats.total).toBe(1)
   })
 
   it("un registro con OT cuenta por la OT; si la OT se anula, cuenta el registro (REG4-1)", async () => {
@@ -240,7 +363,7 @@ describe("Correctivo · unión y paginación", () => {
     await testDb.insert(schema.mantRecordCorrectives).values({
       recordId: "rec-con-ot", workTypes: ["Mecánico"], oils: [], description: "Cambio de pastillas", noParts: true, hours: 1, inWorkshop: false,
     })
-    const week = async () => (await loadCorrectivePage(GLOBAL, filters("2026-12-14", "2026-12-20"), {})).rows.map((row) => `${row.source}:${row.reference}`)
+    const week = async () => (await correctiveTab({ desde: "2026-12-14", hasta: "2026-12-20" })).rows.rows.map((row) => `${row.source}:${row.reference}`)
     try {
       // Mientras la OT cuenta, el trabajo es la OT y el registro no se repite.
       expect(await week()).toEqual(["ot:OT-REG4-1"])
@@ -265,7 +388,7 @@ describe("Planificación · opciones y A/B", () => {
     expect(options.frequencies.map((frequency) => `${frequency.value} ${frequency.unit}`)).toEqual(["10000 km", "40000 km", "300 h", "900 h"])
 
     const planning = await loadPlanningData(GLOBAL, filters("2026-12-01", "2026-12-31"), {})
-    const row = planning.km.find((item) => item.vehicleId === V.rec)!
+    const row = planning.rows.find((item) => item.vehicleId === V.rec)!
     expect(row.programmed).toBe(150_000)
     expect(row.real).toBe(151_000)
     expect(row.delta).toBe(-1_000)
@@ -284,7 +407,11 @@ describe("Preventivo · cumplimiento y matriz", () => {
     const compliance = await loadPreventiveCompliance(GLOBAL, filters("2026-10-01", "2026-10-31"), {})
     expect(compliance.average).toBe(97.5)
     expect(compliance.byMonth.find((bucket) => bucket.key === "2026-10")?.percent).toBe(97.5)
-    expect(compliance.byPlate[0]).toMatchObject({ code: "KA-H", percent: 97.5, levels: ["40.000 KM"] })
+    expect(compliance.byPlate[0]).toMatchObject({
+      code: "KA-H", percent: 97.5, levels: ["40.000 KM"], notDone: 1, lastDate: "2026-10-15", lastMechanic: "Javier Roa", withoutPhotos: 1,
+    })
+    expect(compliance).toMatchObject({ notDone: 1, withoutPhotos: 1 })
+    expect(checks[0]!.photosComplete).toBe(false)
   })
 
   it("nativo desde el corte: 2 R, 1 NR y 1 NA → 66,7 %", async () => {
@@ -295,12 +422,14 @@ describe("Preventivo · cumplimiento y matriz", () => {
     expect(checks[0]!.notDone).toBe(1)
     expect(checks[0]!.notApplicable).toBe(1)
     expect(checks[0]!.percent).toBe(66.7)
+    expect(checks[0]!.photosComplete).toBe(true)
   })
 
   it("la matriz histórica trae una columna con sus ítems y observaciones", async () => {
     const matrix = await loadChecklistMatrix(GLOBAL, filters("2026-10-01", "2026-10-31"), {})
     expect(matrix.checks).toHaveLength(1)
     expect(matrix.checks[0]!.observations).toBe("Cambio de refrigerante pendiente")
+    expect(matrix.checks[0]!.vehicleId).toBe(V.hist)
     expect(matrix.items.map((item) => item.name)).toEqual(["Cambio aceite motor", "Revisión frenos", "Revisión ABS"])
     expect(matrix.checks[0]!.items["Revisión frenos"]).toBe("no_realizado")
     expect(matrix.withoutDetail).toBe(0)
@@ -394,16 +523,16 @@ describe("Unidad efectiva · el perfil de Mantención antes que el tipo", () => 
     expect(machines.filters.equipmentIds).toEqual([T.hours])
   })
 
-  it("el correctivo toma el odómetro en Camiones y el horómetro de la OT en Máquinas", async () => {
-    const trucks = await loadCorrectivePage(GLOBAL, filters(DESDE, HASTA, "camiones"), {})
-    expect(trucks.rows.filter((row) => OWN.includes(row.vehicleId!)).map((row) => [row.id, row.unit, row.reading])).toEqual([
+  it("el correctivo toma el odómetro en km y el horómetro de la OT en horas", async () => {
+    const trucks = await correctiveTab({ desde: DESDE, hasta: HASTA })
+    expect(trucks.rows.rows.filter((row) => OWN.includes(row.vehicleId!)).map((row) => [row.id, row.unit, row.reading])).toEqual([
       ["ot:ot-k", "km", 88_000],
       ["r:rec-k-c", "km", 90_000],
     ])
 
     // La correctiva en km de un camión que ya mide en horas sigue contando, sin lectura en la unidad activa.
-    const machines = await loadCorrectivePage(GLOBAL, filters(DESDE, HASTA, "maquinas"), {})
-    expect(machines.rows.filter((row) => OWN.includes(row.vehicleId!)).map((row) => [row.id, row.unit, row.reading])).toEqual([
+    const machines = await correctiveTab({ desde: DESDE, hasta: HASTA, unidad: "h" })
+    expect(machines.rows.rows.filter((row) => OWN.includes(row.vehicleId!)).map((row) => [row.id, row.unit, row.reading])).toEqual([
       ["ot:ot-h", "h", 2_300],
       ["r:rec-h-c-km", "h", null],
     ])

@@ -68,7 +68,9 @@ type Item = [name: string, result: "realizado" | "no_realizado" | "no_aplica"]
 const OIL: Item[] = [["QA_ Cambio aceite motor", "realizado"], ["QA_ Revisión frenos", "no_realizado"], ["QA_ Revisión ABS", "no_aplica"]]
 const OIL_OK: Item[] = [["QA_ Cambio aceite motor", "realizado"], ["QA_ Revisión frenos", "realizado"], ["QA_ Revisión ABS", "realizado"]]
 const OIL_B: Item[] = [["QA_ Cambio aceite motor", "no_realizado"], ["QA_ Revisión frenos", "realizado"], ["QA_ Revisión ABS", "no_aplica"]]
-const HYD: Item[] = [["QA_ Nivel hidráulico", "realizado"], ["QA_ Filtro de aire", "realizado"], ["QA_ Mangueras", "no_aplica"]]
+/** La pauta de 300 H del 05-11 trae un ítem sin hacer (sin motivo: el formulario histórico no lo captura): la ficha lo muestra primero. */
+export const NOT_DONE_ITEM = "QA_ Sensor de nivel"
+const HYD: Item[] = [["QA_ Nivel hidráulico", "realizado"], ["QA_ Filtro de aire", "realizado"], ["QA_ Mangueras", "no_aplica"], [NOT_DONE_ITEM, "no_realizado"]]
 const HYD_B: Item[] = [["QA_ Nivel hidráulico", "no_realizado"], ["QA_ Filtro de aire", "realizado"], ["QA_ Mangueras", "realizado"]]
 
 type Sql = postgres.Sql

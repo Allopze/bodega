@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
+import { legacyTabRedirect, monthLabel, multiValue, parseLookerFilters, parseLookerTab, parseLookerUnit, pickFilterParams, queryFilters } from "./filters"
 import {
-  buildCrossFilterHref, checkAction, clearFiltersHref, crossFilterActive, equipmentAction, filterChips,
-  monthLabel, multiValue, parseLookerFilters, parseLookerTab, pickFilterParams, queryFilters, removeChipHref, tabHref, workAction,
-} from "./filters"
+  activeDateShortcut, buildCrossFilterHref, checkAction, clearFiltersHref, closeSheetHref, crossFilterActive, dateFieldHref,
+  dateShortcutHref, equipmentAction, planningStateHref, removeChipHref, sheetHref, tabHref, unitHref, workAction,
+} from "./filter-hrefs"
+import { filterChips } from "./filter-chips"
 import type { LookerOptions, ResolvedCrossFilters } from "./types"
 
 const TODAY = "2026-11-23"
@@ -31,7 +33,8 @@ const noCross: ResolvedCrossFilters = {}
 
 describe("parseo de filtros", () => {
   it("lee la pestaña y cae a hoy con un valor inventado", () => {
-    expect(parseLookerTab({ pestana: "camiones" })).toBe("camiones")
+    expect(parseLookerTab({ pestana: "correctivo" })).toBe("correctivo")
+    expect(parseLookerTab({ pestana: "preventivo" })).toBe("preventivo")
     expect(parseLookerTab({ pestana: "otra" })).toBe("hoy")
     expect(parseLookerTab({})).toBe("hoy")
   })
@@ -44,10 +47,11 @@ describe("parseo de filtros", () => {
 
   it("parsea período, página y filtros cruzados", () => {
     const filters = parseLookerFilters({
-      pestana: "maquinas", desde: "2026-10-01", hasta: "2026-10-31", faena: "ws-2", equipo: "v-2",
+      pestana: "correctivo", unidad: "h", desde: "2026-10-01", hasta: "2026-10-31", faena: "ws-2", equipo: "v-2",
       frecuencia: "900", page: "3", x_equipo: "v-2", x_mes: "2026-10", x_conductor: "Juan Pérez", x_mecanico: "Pedro",
     }, TODAY)
-    expect(filters.tab).toBe("maquinas")
+    expect(filters.tab).toBe("correctivo")
+    expect(filters.unit).toBe("h")
     expect(filters.from).toBe("2026-10-01")
     expect(filters.to).toBe("2026-10-31")
     expect(filters.worksiteIds).toEqual(["ws-2"])
@@ -64,14 +68,16 @@ describe("parseo de filtros", () => {
 })
 
 describe("filtros efectivos", () => {
-  it("la pestaña fija la unidad", () => {
-    expect(queryFilters(parseLookerFilters({ pestana: "camiones" }, TODAY), noCross).unit).toBe("km")
-    expect(queryFilters(parseLookerFilters({ pestana: "maquinas" }, TODAY), noCross).unit).toBe("h")
+  it("la unidad sale de `unidad` (km por defecto) en las tres pestañas; «Hoy» no tiene", () => {
+    for (const pestana of ["planificacion", "correctivo", "preventivo"]) {
+      expect(queryFilters(parseLookerFilters({ pestana }, TODAY), noCross).unit).toBe("km")
+      expect(queryFilters(parseLookerFilters({ pestana, unidad: "h" }, TODAY), noCross).unit).toBe("h")
+    }
     expect(queryFilters(parseLookerFilters({}, TODAY), noCross).unit).toBeNull()
   })
 
   it("un filtro cruzado de equipo reemplaza al manual y deriva faena y unidad", () => {
-    const filters = parseLookerFilters({ pestana: "camiones", faena: "ws-2", equipo: "v-2" }, TODAY)
+    const filters = parseLookerFilters({ pestana: "correctivo", faena: "ws-2", equipo: "v-2" }, TODAY)
     const cross: ResolvedCrossFilters = {
       equipment: { id: "v-1", code: "KA-143", plate: "SJFC-66", label: "KA-143 · SJFC-66", worksiteId: "ws-1", worksiteName: "Teno", unit: "km", intervals: [10_000, 40_000], frequency: 40_000 },
     }
@@ -193,10 +199,26 @@ describe("chips y limpieza", () => {
     expect(params.get("page")).toBeNull()
   })
 
-  it("borrar filtros conserva la pestaña", () => {
-    expect(clearFiltersHref("/mantencion/panel", "camiones")).toBe("/mantencion/panel?pestana=camiones")
+  it("borrar filtros conserva la pestaña y la unidad (km no se escribe)", () => {
+    expect(clearFiltersHref("/mantencion/panel", "correctivo")).toBe("/mantencion/panel?pestana=correctivo")
+    expect(clearFiltersHref("/mantencion/panel", "preventivo", "h")).toBe("/mantencion/panel?pestana=preventivo&unidad=h")
     expect(clearFiltersHref("/mantencion/panel", "hoy")).toBe("/mantencion/panel")
-    expect(tabHref("/mantencion/panel", "maquinas")).toBe("/mantencion/panel?pestana=maquinas")
+    expect(tabHref("/mantencion/panel", "preventivo")).toBe("/mantencion/panel?pestana=preventivo")
+  })
+
+  it("el chip del rango de fechas quita los dos extremos y `fecha`", () => {
+    const filters = parseLookerFilters({ pestana: "planificacion", fecha: "ultima", fecha_desde: "2026-06-01", fecha_hasta: "2026-09-30" }, TODAY)
+    const chip = filterChips(filters, options, noCross).find((item) => item.key === "fecha")!
+    expect(chip).toMatchObject({ label: "Última mantención", displayValue: "01-06-2026 al 30-09-2026" })
+    const href = removeChipHref("/p", new URLSearchParams("pestana=planificacion&fecha=ultima&fecha_desde=2026-06-01&fecha_hasta=2026-09-30"), chip)
+    expect(href).toBe("/p?pestana=planificacion")
+    const shortcut = filterChips(parseLookerFilters({ pestana: "planificacion", fecha_hasta: "2026-12-27" }, TODAY), options, noCross)
+    expect(shortcut.find((item) => item.key === "fecha")).toMatchObject({ label: "Próxima mantención", displayValue: "hasta 27-12-2026" })
+  })
+
+  it("el estado de Planificación tiene su chip; en otra pestaña no", () => {
+    expect(filterChips(parseLookerFilters({ pestana: "planificacion", estado: "vencida" }, TODAY), options, noCross).map((chip) => chip.displayValue)).toContain("Vencidas")
+    expect(filterChips(parseLookerFilters({ pestana: "correctivo", estado: "vencida" }, TODAY), options, noCross)).toEqual([])
   })
 
   it("rotula el mes", () => {
@@ -206,25 +228,27 @@ describe("chips y limpieza", () => {
 
 describe("enlace entre pestañas del Panel", () => {
   const PANEL = "/mantencion/panel"
-  // Lo que hay en la URL de «Por kilómetros» cuando alguien filtró de todo.
+  // Lo que hay en la URL de Correctivo por horas cuando alguien filtró de todo.
   const CURRENT = {
-    pestana: "camiones", desde: "2026-01-01", hasta: "2026-10-31", faena: "ws-1,ws-2",
-    equipo: "v-1", frecuencia: "40000", page: "3",
+    pestana: "correctivo", unidad: "h", desde: "2026-01-01", hasta: "2026-10-31", faena: "ws-1,ws-2",
+    equipo: "v-1", frecuencia: "40000", page: "3", estado: "vencida", fecha: "ultima", fecha_desde: "2026-01-01", fecha_hasta: "2026-02-01",
+    ficha: "v-1", pauta: "h:1",
     x_equipo: "v-1", x_ot: "ot:1", x_check: "h:1", x_conductor: "JUAN PEREZ", x_mes: "2026-10", x_faena: "ws-1", x_mecanico: "Javier Roa",
   }
   const queryOf = (href: string) => new URLSearchParams(href.split("?")[1])
 
   it("sin parámetros actuales lleva sólo la pestaña, y «Hoy» es la página sin parámetro", () => {
     expect(tabHref(PANEL, "planificacion")).toBe(`${PANEL}?pestana=planificacion`)
-    expect(tabHref(PANEL, "maquinas", {})).toBe(`${PANEL}?pestana=maquinas`)
+    expect(tabHref(PANEL, "preventivo", {})).toBe(`${PANEL}?pestana=preventivo`)
     expect(tabHref(PANEL, "hoy")).toBe(PANEL)
     expect(tabHref(PANEL, "hoy", {})).toBe(PANEL)
   })
 
-  it("conserva el período y la faena al cambiar de pestaña, en el mismo orden para toda pestaña", () => {
-    for (const tab of ["planificacion", "camiones", "maquinas"] as const) {
+  it("conserva la unidad, el período y la faena al cambiar de pestaña, en el mismo orden para toda pestaña", () => {
+    for (const tab of ["planificacion", "correctivo", "preventivo"] as const) {
       const params = queryOf(tabHref(PANEL, tab, CURRENT))
-      expect([...params.keys()]).toEqual(["pestana", "desde", "hasta", "faena"])
+      expect([...params.keys()]).toEqual(["pestana", "unidad", "desde", "hasta", "faena"])
+      expect(params.get("unidad")).toBe("h")
       expect(params.get("pestana")).toBe(tab)
       expect(params.get("desde")).toBe("2026-01-01")
       expect(params.get("hasta")).toBe("2026-10-31")
@@ -233,40 +257,49 @@ describe("enlace entre pestañas del Panel", () => {
     }
   })
 
-  it("«Hoy» conserva período y faena, sin `pestana`", () => {
-    expect(tabHref(PANEL, "hoy", CURRENT)).toBe(`${PANEL}?desde=2026-01-01&hasta=2026-10-31&faena=ws-1%2Cws-2`)
+  it("«Hoy» conserva unidad, período y faena, sin `pestana` (la unidad vuelve al regresar)", () => {
+    expect(tabHref(PANEL, "hoy", CURRENT)).toBe(`${PANEL}?unidad=h&desde=2026-01-01&hasta=2026-10-31&faena=ws-1%2Cws-2`)
   })
 
-  it("descarta los filtros cruzados, el equipo, la frecuencia y la página de la pestaña que se deja", () => {
-    for (const tab of ["hoy", "planificacion", "camiones", "maquinas"] as const) {
+  it("la unidad km es la de por defecto y no se escribe", () => {
+    expect(queryOf(tabHref(PANEL, "preventivo", { unidad: "km", faena: "ws-1" })).has("unidad")).toBe(false)
+  })
+
+  it("descarta los filtros cruzados, el equipo, la frecuencia, la página, el estado, las fechas y la ficha de la pestaña que se deja", () => {
+    for (const tab of ["hoy", "planificacion", "correctivo", "preventivo"] as const) {
       const params = queryOf(tabHref(PANEL, tab, CURRENT))
-      for (const dropped of ["equipo", "frecuencia", "page", "x_equipo", "x_ot", "x_check", "x_conductor", "x_mes", "x_faena", "x_mecanico"]) {
+      for (const dropped of [
+        "equipo", "frecuencia", "page", "x_equipo", "x_ot", "x_check", "x_conductor", "x_mes", "x_faena", "x_mecanico",
+        "estado", "fecha", "fecha_desde", "fecha_hasta", "ficha", "pauta",
+      ]) {
         expect(params.has(dropped), `${tab} no debe llevar ${dropped}`).toBe(false)
       }
     }
   })
 
   it("una faena repetida (`?faena=a&faena=b`) sigue repetida, y los valores vacíos no viajan", () => {
-    const href = tabHref(PANEL, "camiones", { desde: "2026-10-01", hasta: " ", faena: ["ws-1", "", "ws-2"] })
+    const href = tabHref(PANEL, "correctivo", { desde: "2026-10-01", hasta: " ", faena: ["ws-1", "", "ws-2"] })
     expect(queryOf(href).getAll("faena")).toEqual(["ws-1", "ws-2"])
     expect(queryOf(href).has("hasta")).toBe(false)
     expect(tabHref(PANEL, "hoy", { desde: undefined, faena: "" })).toBe(PANEL)
   })
 
   it("lo que viaja se lee igual en la pestaña de llegada (mismo período y misma faena)", () => {
-    const raw = Object.fromEntries(queryOf(tabHref(PANEL, "maquinas", CURRENT)).entries())
+    const raw = Object.fromEntries(queryOf(tabHref(PANEL, "preventivo", CURRENT)).entries())
     const arrived = parseLookerFilters(raw, "2026-11-26")
-    expect(arrived).toMatchObject({ tab: "maquinas", from: "2026-01-01", to: "2026-10-31", worksiteIds: ["ws-1", "ws-2"], equipmentIds: [], frequencies: [], page: 1 })
+    expect(arrived).toMatchObject({ tab: "preventivo", unit: "h", planningState: null, dateFrom: null, sheetVehicleId: null, from: "2026-01-01", to: "2026-10-31", worksiteIds: ["ws-1", "ws-2"], equipmentIds: [], frequencies: [], page: 1 })
     expect(arrived.cross).toEqual({})
   })
 })
 
 describe("parámetros que mueven una pestaña", () => {
-  it("se queda con el período, los filtros manuales y los cruzados; descarta la pestaña, la página y lo desconocido", () => {
+  it("se queda con la unidad, el período, los filtros manuales, los de Planificación y los cruzados; descarta la pestaña, la página, la ficha y lo desconocido", () => {
     expect(pickFilterParams({
-      pestana: "camiones", page: "3", desde: "2026-10-01", hasta: "2026-10-31", faena: ["ws-1", "ws-2"], equipo: "v-1", frecuencia: "40000",
+      pestana: "correctivo", unidad: "h", estado: "vencida", fecha: "ultima", fecha_desde: "2026-01-01", fecha_hasta: "2026-02-01", ficha: "v-1", pauta: "h:1",
+      page: "3", desde: "2026-10-01", hasta: "2026-10-31", faena: ["ws-1", "ws-2"], equipo: "v-1", frecuencia: "40000",
       x_equipo: "v-1", x_ot: "ot:1", x_check: "h:1", x_conductor: "JUAN PEREZ", x_mes: "2026-10", x_faena: "ws-1", x_mecanico: "Javier Roa", otro: "1",
     })).toEqual({
+      unidad: "h", estado: "vencida", fecha: "ultima", fecha_desde: "2026-01-01", fecha_hasta: "2026-02-01",
       desde: "2026-10-01", hasta: "2026-10-31", faena: ["ws-1", "ws-2"], equipo: "v-1", frecuencia: "40000",
       x_equipo: "v-1", x_ot: "ot:1", x_check: "h:1", x_conductor: "JUAN PEREZ", x_mes: "2026-10", x_faena: "ws-1", x_mecanico: "Javier Roa",
     })
@@ -277,10 +310,127 @@ describe("parámetros que mueven una pestaña", () => {
   })
 
   it("lo que devuelve da los mismos filtros que la URL completa (es lo que viaja a la exportación)", () => {
-    const raw = { pestana: "camiones", page: "2", desde: "2026-10-01", hasta: "2026-10-31", faena: "ws-1,ws-2", frecuencia: ["10000", "40000"], x_conductor: "JUAN" }
-    const picked = { ...pickFilterParams(raw), pestana: "camiones" }
+    const raw = { pestana: "correctivo", unidad: "h", page: "2", desde: "2026-10-01", hasta: "2026-10-31", faena: "ws-1,ws-2", frecuencia: ["10000", "40000"], x_conductor: "JUAN" }
+    const picked = { ...pickFilterParams(raw), pestana: "correctivo" }
     const { page: _page, ...full } = parseLookerFilters(raw, TODAY)
     const { page: _otherPage, ...fromPicked } = parseLookerFilters(picked, TODAY)
     expect(fromPicked).toEqual(full)
+  })
+})
+
+describe("enlaces guardados de antes del reajuste (`pestana=camiones|maquinas`)", () => {
+  it("se leen como Correctivo en su unidad, aunque la URL diga otra `unidad`", () => {
+    expect(parseLookerTab({ pestana: "camiones" })).toBe("correctivo")
+    expect(parseLookerTab({ pestana: "maquinas" })).toBe("correctivo")
+    expect(parseLookerUnit({ pestana: "camiones" })).toBe("km")
+    expect(parseLookerUnit({ pestana: "maquinas", unidad: "km" })).toBe("h")
+    expect(parseLookerFilters({ pestana: "maquinas", faena: "ws-1" }, TODAY)).toMatchObject({ tab: "correctivo", unit: "h", worksiteIds: ["ws-1"] })
+  })
+
+  it("redirigen a la URL canónica conservando los demás parámetros", () => {
+    const camiones = legacyTabRedirect("/p", { pestana: "camiones", desde: "2026-10-01", faena: ["ws-1", "ws-2"], x_conductor: "JUAN" })!
+    const params = new URLSearchParams(camiones.split("?")[1])
+    expect(params.get("pestana")).toBe("correctivo")
+    expect(params.has("unidad")).toBe(false)
+    expect(params.get("desde")).toBe("2026-10-01")
+    expect(params.getAll("faena")).toEqual(["ws-1", "ws-2"])
+    expect(params.get("x_conductor")).toBe("JUAN")
+    expect(legacyTabRedirect("/p", { pestana: "maquinas", unidad: "km" })).toBe("/p?pestana=correctivo&unidad=h")
+  })
+
+  it("una URL ya canónica no redirige", () => {
+    expect(legacyTabRedirect("/p", { pestana: "correctivo", unidad: "h" })).toBeNull()
+    expect(legacyTabRedirect("/p", {})).toBeNull()
+  })
+})
+
+describe("parámetros nuevos", () => {
+  it("`unidad`: sólo `h` cambia la unidad; cualquier otro valor es km", () => {
+    expect(parseLookerUnit({ unidad: "h" })).toBe("h")
+    expect(parseLookerUnit({ unidad: "km" })).toBe("km")
+    expect(parseLookerUnit({ unidad: "horas" })).toBe("km")
+    expect(parseLookerUnit({})).toBe("km")
+  })
+
+  it("`estado` acepta los cuatro estados y descarta lo demás", () => {
+    for (const estado of ["vencida", "proxima", "al_dia", "sin_dato"]) {
+      expect(parseLookerFilters({ estado }, TODAY).planningState).toBe(estado)
+    }
+    expect(parseLookerFilters({ estado: "VENCIDA" }, TODAY).planningState).toBeNull()
+    expect(parseLookerFilters({}, TODAY).planningState).toBeNull()
+  })
+
+  it("`fecha` es la próxima por defecto y `ultima` si se pide", () => {
+    expect(parseLookerFilters({}, TODAY).dateField).toBe("proxima")
+    expect(parseLookerFilters({ fecha: "ultima" }, TODAY).dateField).toBe("ultima")
+    expect(parseLookerFilters({ fecha: "otra" }, TODAY).dateField).toBe("proxima")
+  })
+
+  it("`fecha_desde`/`fecha_hasta` válidos pasan; uno inválido se ignora y avisa; uno solo vale", () => {
+    expect(parseLookerFilters({ fecha_desde: "2026-06-01", fecha_hasta: "2026-09-30" }, TODAY)).toMatchObject({ dateFrom: "2026-06-01", dateTo: "2026-09-30", invalidDateRange: false })
+    expect(parseLookerFilters({ fecha_hasta: "2026-12-27" }, TODAY)).toMatchObject({ dateFrom: null, dateTo: "2026-12-27", invalidDateRange: false })
+    expect(parseLookerFilters({ fecha_desde: "2026-02-30", fecha_hasta: "2026-09-30" }, TODAY)).toMatchObject({ dateFrom: null, dateTo: "2026-09-30", invalidDateRange: true })
+    expect(parseLookerFilters({ fecha_hasta: "27-12-2026" }, TODAY)).toMatchObject({ dateTo: null, invalidDateRange: true })
+  })
+
+  it("un rango al revés se ignora entero y avisa", () => {
+    expect(parseLookerFilters({ fecha_desde: "2026-10-01", fecha_hasta: "2026-09-01" }, TODAY)).toMatchObject({ dateFrom: null, dateTo: null, invalidDateRange: true })
+  })
+
+  it("`ficha` abre la ficha; `pauta` sólo cuenta con ficha", () => {
+    expect(parseLookerFilters({ ficha: "v-1", pauta: "r:9" }, TODAY)).toMatchObject({ sheetVehicleId: "v-1", sheetCheckId: "r:9" })
+    expect(parseLookerFilters({ ficha: "v-1" }, TODAY)).toMatchObject({ sheetVehicleId: "v-1", sheetCheckId: null })
+    expect(parseLookerFilters({ pauta: "r:9" }, TODAY)).toMatchObject({ sheetVehicleId: null, sheetCheckId: null })
+  })
+})
+
+describe("enlaces de unidad, estado, fechas y ficha", () => {
+  const P = "/mantencion/panel"
+  const q = (href: string) => new URLSearchParams(href.split("?")[1])
+
+  it("cambiar la unidad suelta lo que nombra un equipo, el estado y la ficha, y conserva período, faena y fechas", () => {
+    const current = new URLSearchParams("pestana=planificacion&faena=ws-1&desde=2026-01-01&equipo=v-1&frecuencia=40000&x_equipo=v-1&x_ot=ot:1&x_check=h:1&estado=vencida&ficha=v-1&pauta=h:1&page=2&fecha_hasta=2026-12-27&x_conductor=JUAN")
+    const params = q(unitHref(P, current, "h"))
+    expect(params.get("unidad")).toBe("h")
+    for (const dropped of ["equipo", "frecuencia", "x_equipo", "x_ot", "x_check", "estado", "ficha", "pauta", "page"]) expect(params.has(dropped), dropped).toBe(false)
+    expect(params.get("faena")).toBe("ws-1")
+    expect(params.get("desde")).toBe("2026-01-01")
+    expect(params.get("fecha_hasta")).toBe("2026-12-27")
+    expect(params.get("x_conductor")).toBe("JUAN")
+    expect(q(unitHref(P, new URLSearchParams("pestana=correctivo&unidad=h"), "km")).has("unidad")).toBe(false)
+  })
+
+  it("una cifra de la tira fija el estado y un segundo clic lo quita; «Equipos controlados» lo quita", () => {
+    const set = planningStateHref(P, new URLSearchParams("pestana=planificacion&page=2"), "vencida")
+    expect(q(set).get("estado")).toBe("vencida")
+    expect(q(set).has("page")).toBe(false)
+    expect(q(planningStateHref(P, q(set), "vencida")).has("estado")).toBe(false)
+    expect(q(planningStateHref(P, q(set), "proxima")).get("estado")).toBe("proxima")
+    expect(q(planningStateHref(P, q(set), null)).has("estado")).toBe(false)
+  })
+
+  it("los atajos fijan sólo el término (entran las vencidas) y un segundo clic lo quita", () => {
+    const today = "2026-11-27"
+    const href = dateShortcutHref(P, new URLSearchParams("pestana=planificacion&fecha_desde=2026-01-01&fecha=ultima"), today, 30)
+    expect(q(href).get("fecha_hasta")).toBe("2026-12-27")
+    expect(q(href).has("fecha_desde")).toBe(false)
+    expect(q(href).has("fecha")).toBe(false)
+    expect(activeDateShortcut(q(href), today)).toBe(30)
+    expect(q(dateShortcutHref(P, q(href), today, 30)).has("fecha_hasta")).toBe(false)
+    expect(q(dateShortcutHref(P, q(href), today, 7)).get("fecha_hasta")).toBe("2026-12-04")
+  })
+
+  it("cambiar qué fecha filtra suelta el rango", () => {
+    const href = dateFieldHref(P, new URLSearchParams("pestana=planificacion&fecha_hasta=2026-12-27&estado=vencida"), "ultima")
+    expect(Object.fromEntries(q(href).entries())).toEqual({ pestana: "planificacion", estado: "vencida", fecha: "ultima" })
+    expect(q(dateFieldHref(P, q(href), "proxima")).has("fecha")).toBe(false)
+  })
+
+  it("la ficha se abre con o sin pauta y se cierra sin tocar los filtros", () => {
+    const current = new URLSearchParams("pestana=preventivo&faena=ws-1&x_mes=2026-10")
+    const open = sheetHref(P, current, "v-1", "r:9")
+    expect(Object.fromEntries(q(open).entries())).toEqual({ pestana: "preventivo", faena: "ws-1", x_mes: "2026-10", ficha: "v-1", pauta: "r:9" })
+    expect(q(sheetHref(P, q(open), "v-2")).has("pauta")).toBe(false)
+    expect(closeSheetHref(P, q(open))).toBe(`${P}?pestana=preventivo&faena=ws-1&x_mes=2026-10`)
   })
 })

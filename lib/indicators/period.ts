@@ -62,7 +62,7 @@ export const CHART_HISTORY_MONTHS = 6
 const PLAIN_DATE = /^\d{4}-\d{2}-\d{2}$/
 const pad = (n: number) => String(n).padStart(2, "0")
 
-function isPlainDate(value: unknown): value is string {
+export function isPlainDate(value: unknown): value is string {
   if (typeof value !== "string" || !PLAIN_DATE.test(value)) return false
   const [y = 0, m = 0, d = 0] = value.split("-").map(Number)
   const date = new Date(Date.UTC(y, m - 1, d))

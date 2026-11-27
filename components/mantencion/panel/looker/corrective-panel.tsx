@@ -1,219 +1,181 @@
 import { ChartFrame } from "@/components/charts/chart-frame"
+import { DenseChart } from "@/components/charts/dense-chart"
 import { HoursRecordsComboChartLazy } from "@/components/charts/hours-records-combo-chart-lazy"
-import { DashboardPanel, PanelBlock } from "@/components/ui/dashboard-panel"
-import { EmptyState } from "@/components/ui/empty-state"
-import { ServerPagination } from "@/components/ui/server-pagination"
-import { Table, TableBody, TableCaption, TableCell, TableCellNum, TableHead, TableHeader, TableRow, TableRoot } from "@/components/ui/table"
+import { MonthlyWorkChartLazy } from "@/components/charts/monthly-work-chart-lazy"
+import { DashboardSection } from "@/components/dashboard/dashboard-section"
+import { ChartSlot, PanelBlock } from "@/components/ui/dashboard-panel"
+import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { plural } from "@/lib/mantencion/format"
-import { resolvePagination } from "@/lib/pagination"
-import { conductorAction, workAction } from "@/lib/services/mantencion/looker/filters"
-import type { CorrectivePage, CorrectiveSummary } from "@/lib/services/mantencion/looker/types"
-import { formatDate, formatQty } from "@/lib/utils"
+import { conductorAction, equipmentAction } from "@/lib/services/mantencion/looker/filter-hrefs"
+import type { CorrectivePage, CorrectiveStats, DriverRow, EquipmentSeriesRow, MonthlyCount } from "@/lib/services/mantencion/looker/types"
+import { formatQty } from "@/lib/utils"
+import { CorrectiveWorkTable } from "./corrective-table"
 import { CrossFilterBars } from "./cross-filter-bars"
-import { CrossFilterRow } from "./cross-filter-row"
-import { FilterToggle } from "./filter-toggle"
-import { WorkPhoto } from "./work-photo"
 
-const SOURCE_LABEL = { ot: "OT", historial: "Formulario", registro: "Registro" } as const
+/** Cifras de la tira. «Sin foto» va en naranja (`signal`): es respaldo pendiente de subir, no una falla crítica. */
+export function correctiveStatBar(stats: CorrectiveStats, controlled: number): SummaryStat[] {
+  const photoShare = stats.photoEligible > 0 ? Math.round((stats.withoutPhoto * 100) / stats.photoEligible) : null
+  return [
+    {
+      key: "total",
+      label: "Trabajos correctivos",
+      value: stats.total,
+      secondary: "OT con ingreso a taller y correctivas",
+    },
+    {
+      key: "hours",
+      label: "Horas de trabajo",
+      value: formatQty(stats.hours, undefined, { maximumFractionDigits: 1 }),
+      secondary: "Las que declara cada trabajo",
+    },
+    {
+      key: "equipment",
+      label: "Equipos con correctivo",
+      value: stats.equipment,
+      secondary: `de ${controlled} ${controlled === 1 ? "controlado" : "controlados"}`,
+    },
+    {
+      key: "withoutPhoto",
+      label: "Sin foto de respaldo",
+      value: stats.withoutPhoto,
+      tone: "signal",
+      secondary: photoShare === null
+        ? "Sin OT ni registros de la plataforma"
+        : `${photoShare} % de las OT y registros`,
+    },
+  ]
+}
 
 /**
- * Columna Correctivo: trabajos correctivos paginados, conductores y dos gráficos.
- * El clic en una OT emite `x_ot`; la tabla no se filtra a sí misma (el cargador ignora esa
- * dimensión), pero sí aplica el conductor elegido. El clic en un conductor emite
- * `x_conductor`; la tabla de conductores no se filtra a sí misma.
+ * Pestaña Correctivo, en una sola columna: la tira de cifras, ¿dónde se concentra el trabajo? (equipos, conductores y
+ * meses) y la tabla de trabajos. Cada sección es un `h2` con su pregunta y UN panel de celdas. El clic en un equipo,
+ * un conductor o un mes filtra el resto de la pestaña; cada bloque ignora la dimensión que él mismo emite (el
+ * cargador lo decide, ver `corrective-tab-data.ts`), así sus propias barras siguen todas a la vista.
  */
 export function CorrectivePanel({
-  page,
+  stats,
+  controlled,
+  series,
   drivers,
-  chart,
+  monthly,
+  page,
   unit,
+  period,
   hrefForPage,
-  selectedWorkId,
-  selectedDriverKey,
-  selectedEquipmentId,
+  selected,
 }: {
+  stats: CorrectiveStats
+  /** Equipos de esta unidad dentro del alcance de los filtros: el «de N controlados». */
+  controlled: number
+  series: EquipmentSeriesRow[]
+  drivers: DriverRow[]
+  monthly: MonthlyCount[]
   page: CorrectivePage
-  drivers: CorrectiveSummary
-  chart: CorrectiveSummary
   unit: "km" | "h"
+  period: { from: string; to: string }
   hrefForPage: (page: number) => string
-  selectedWorkId: string | null
-  selectedDriverKey: string | null
-  selectedEquipmentId: string | null
+  selected: { workId: string | null; driverKey: string | null; equipmentId: string | null; monthKey: string | null }
 }) {
-  const pagination = resolvePagination({ pageParam: String(page.page), totalItems: page.total, pageSize: page.pageSize })
-  const readingLabel = unit === "km" ? "Odómetro" : "Horómetro"
+  const hasMonthly = monthly.some((month) => month.count > 0)
 
   return (
-    <div className="flex flex-col gap-4">
-      <DashboardPanel cols="single">
-        <PanelBlock padding="none">
-          <div className="border-b border-[var(--color-border)] px-4 py-3">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <h3 className="text-eyebrow text-[var(--color-text)]">Órdenes de trabajo y correctivas</h3>
+    <div className="flex flex-col gap-8">
+      <SummaryBar numerals="sans" stats={correctiveStatBar(stats, controlled)} />
+
+      <DashboardSection
+        id="correctivo-concentracion"
+        title="¿Dónde se concentra el trabajo?"
+        note="Clic en un equipo, un conductor o un mes filtra el resto de la pestaña."
+        links={[]}
+        charts={(
+          <>
+            {/* El combinado va a fila completa; conductor y meses, de a dos por fila (en 2xl, que tiene 3 columnas, los meses toman dos para no dejar hueco). */}
+            <ChartSlot span="full">
+              <ChartFrame title="Horas y registros por equipo" description="Barras: horas trabajadas. Línea: número de registros. Los 8 equipos con más horas.">
+                {series.length === 0 ? (
+                  <p className="text-sm text-[var(--color-text-muted)]">Sin trabajos con equipo en el período.</p>
+                ) : (
+                  // Bajo 360 px las patentes del eje no se leen: el gráfico pasa a la lista de horas por equipo, que filtra igual.
+                  <DenseChart
+                    when={series.length > 6}
+                    fallback={(
+                      <CrossFilterBars
+                        ariaLabel="Horas trabajadas por equipo"
+                        items={series.map((row) => ({ key: row.vehicleId, label: row.label, value: row.hours, detail: plural(row.records, "registro", "registros") }))}
+                        unit=" h"
+                        digits={1}
+                        mode="rank"
+                        selectedKey={selected.equipmentId}
+                        actionFor={(item) => equipmentAction(item.key, item.key === selected.equipmentId)}
+                      />
+                    )}
+                  >
+                    <HoursRecordsComboChartLazy
+                      data={series.map((row) => ({ key: row.vehicleId, label: row.label, hours: row.hours, records: row.records }))}
+                      ariaLabel="Horas trabajadas y número de registros por equipo"
+                      selectedKey={selected.equipmentId}
+                    />
+                  </DenseChart>
+                )}
+              </ChartFrame>
+            </ChartSlot>
+            <ChartSlot span="one">
+              <ChartFrame title="Horas trabajadas por conductor" description="Las 10 personas con más horas, repartidas entre los conductores de cada trabajo. Los nombres del histórico son texto libre.">
+                <CrossFilterBars
+                  ariaLabel="Horas trabajadas por conductor"
+                  items={drivers.slice(0, 10).map((driver) => ({
+                    key: driver.key,
+                    label: driver.label,
+                    value: driver.hours,
+                    detail: plural(driver.records, "registro", "registros"),
+                  }))}
+                  unit=" h"
+                  digits={1}
+                  mode="rank"
+                  selectedKey={selected.driverKey}
+                  actionFor={(item) => conductorAction(item.label, item.key === selected.driverKey)}
+                  emptyMessage="Sin conductores registrados en el período."
+                />
+              </ChartFrame>
+            </ChartSlot>
+            <ChartSlot span="one" className="2xl:col-span-2">
+              <ChartFrame title="Trabajos correctivos por mes" description="Trabajos con ingreso a taller en cada mes del período; el mes en curso está incompleto.">
+                {hasMonthly ? (
+                  <MonthlyWorkChartLazy
+                    data={monthly.map((month) => ({ key: month.key, label: month.label, count: month.count, partial: month.partial }))}
+                    ariaLabel="Trabajos correctivos por mes"
+                    selectedKey={selected.monthKey}
+                  />
+                ) : (
+                  <p className="text-sm text-[var(--color-text-muted)]">Sin trabajos correctivos en el período.</p>
+                )}
+              </ChartFrame>
+            </ChartSlot>
+          </>
+        )}
+      />
+
+      <DashboardSection
+        id="correctivo-trabajos"
+        title="Trabajos del período"
+        note="OT que ya entraron a taller y correctivas desde el corte; la fecha es el ingreso a taller. Clic en un trabajo filtra el resto de la pestaña."
+        links={[]}
+        charts={(
+          <PanelBlock span="full" padding="none">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-[var(--color-border)] px-4 py-3">
+              <p className="text-xs text-[var(--color-text-muted)]">Del más reciente al más antiguo.</p>
               <p className="font-mono text-2xs tabular-nums text-[var(--color-text-muted)]">{plural(page.total, "trabajo", "trabajos")}</p>
             </div>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-              OT que ya entraron a taller y correctivas desde el corte. La fecha es el ingreso a taller.
-            </p>
-          </div>
-          {page.rows.length === 0 ? (
-            <EmptyState
-              compact
-              title="Sin trabajos correctivos en el período"
-              description="Prueba con otro período, otra faena u otro equipo. Una OT entra cuando registra el ingreso a taller."
+            <CorrectiveWorkTable
+              page={page}
+              unit={unit}
+              period={period}
+              hrefForPage={hrefForPage}
+              selectedWorkId={selected.workId}
             />
-          ) : (
-            <>
-              <TableRoot framed={false}>
-                <Table className="min-w-max text-xs [&_td]:px-1.5 [&_th]:px-1.5">
-                  <TableCaption className="sr-only">Órdenes de trabajo y correctivas del período</TableCaption>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Ingreso / OT</TableHead>
-                      <TableHead>Equipo</TableHead>
-                      <TableHead className="text-right">{readingLabel}</TableHead>
-                      <TableHead>Trabajo realizado</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {page.rows.map((row) => {
-                      const action = workAction(row.id, selectedWorkId === row.id)
-                      const label = row.code || row.plate || "Equipo"
-                      return (
-                        <CrossFilterRow key={row.id} action={action} active={selectedWorkId === row.id}>
-                          <TableCell>
-                            <span className="block font-mono text-xs">{formatDate(row.date)}</span>
-                            <span className="block text-2xs text-[var(--color-text-subtle)]">{SOURCE_LABEL[row.source]}</span>
-                            <FilterToggle action={action} className="font-mono text-xs font-semibold">
-                              {row.reference || "Sin folio"}
-                            </FilterToggle>
-                          </TableCell>
-                          <TableCell>
-                            <span className="block font-mono text-xs font-semibold">{row.code || "—"}</span>
-                            {row.plate && row.plate !== row.code && <span className="block text-2xs text-[var(--color-text-muted)]">{row.plate}</span>}
-                            {row.typeName && <span className="block text-2xs text-[var(--color-text-subtle)]">{row.typeName}</span>}
-                            <span className="mt-1 block">
-                              {row.photoUrl ? (
-                                <a
-                                  href={row.photoUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(event) => event.stopPropagation()}
-                                  className="text-2xs font-medium text-[var(--color-primary-ink)] underline-offset-2 hover:underline"
-                                >
-                                  Ver foto
-                                </a>
-                              ) : <WorkPhoto photoId={row.photoId} alt={`${label} del ${formatDate(row.date)}`} compact />}
-                            </span>
-                          </TableCell>
-                          <TableCellNum>
-                            {row.reading != null ? `${formatQty(row.reading)} ${unit}` : row.readingText ?? "—"}
-                          </TableCellNum>
-                          <TableCell>
-                            <span className="line-clamp-2 max-w-40 text-xs" title={row.workPerformed}>{row.workPerformed || "—"}</span>
-                          </TableCell>
-                        </CrossFilterRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </TableRoot>
-              <ServerPagination pagination={pagination} hrefForPage={hrefForPage} />
-            </>
-          )}
-        </PanelBlock>
-      </DashboardPanel>
-
-      <DashboardPanel cols="single">
-        <PanelBlock padding="none">
-          <div className="border-b border-[var(--color-border)] px-4 py-3">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <h3 className="text-eyebrow text-[var(--color-text)]">Conductores</h3>
-              <p className="font-mono text-2xs tabular-nums text-[var(--color-text-muted)]">{plural(drivers.drivers.length, "conductor", "conductores")}</p>
-            </div>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-              Horas prorrateadas entre los conductores de cada registro. Los nombres del histórico son texto libre.
-            </p>
-          </div>
-          {drivers.drivers.length === 0 ? (
-            <EmptyState
-              compact
-              title="Sin conductores registrados"
-              description={page.total === 0
-                ? "No hay trabajos correctivos en el período, así que no hay conductores."
-                : "Los registros del período no declaran conductores."}
-            />
-          ) : (
-            <TableRoot framed={false}>
-              <Table className="text-xs">
-                <TableCaption className="sr-only">Conductores del período</TableCaption>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Conductor</TableHead>
-                    <TableHead className="text-right">Horas</TableHead>
-                    <TableHead className="text-right">Registros</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {drivers.drivers.map((driver) => {
-                    const action = conductorAction(driver.label, selectedDriverKey === driver.key)
-                    return (
-                      <CrossFilterRow key={driver.key} action={action} active={selectedDriverKey === driver.key}>
-                        <TableCell>
-                          <FilterToggle action={action} className="text-xs font-medium">{driver.label}</FilterToggle>
-                        </TableCell>
-                        <TableCellNum>{formatQty(driver.hours, undefined, { maximumFractionDigits: 1 })} h</TableCellNum>
-                        <TableCellNum>{driver.records}</TableCellNum>
-                      </CrossFilterRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </TableRoot>
-          )}
-        </PanelBlock>
-
-        <PanelBlock padding="none">
-          <ChartFrame
-            title="Horas trabajadas por conductor"
-            description="Las 10 personas con más horas del período."
-          >
-            <CrossFilterBars
-              ariaLabel="Horas trabajadas por conductor"
-              items={drivers.drivers.slice(0, 10).map((driver) => ({
-                key: driver.key,
-                label: driver.label,
-                value: driver.hours,
-                detail: `${driver.records} registros`,
-              }))}
-              unit=" h"
-              digits={1}
-              mode="rank"
-              selectedKey={selectedDriverKey}
-              actionFor={(item) => conductorAction(item.label, item.key === selectedDriverKey)}
-              emptyMessage="Sin horas de conductor en el período."
-            />
-          </ChartFrame>
-        </PanelBlock>
-
-        <PanelBlock padding="none">
-          <ChartFrame
-            title="Horas y registros por equipo"
-            description="Barras: horas trabajadas. Línea: número de registros."
-          >
-            {chart.series.length === 0 ? (
-              <p className="text-sm text-[var(--color-text-muted)]">Sin trabajos con horas en el período.</p>
-            ) : (
-              <HoursRecordsComboChartLazy
-                data={chart.series.map((row) => ({ key: row.vehicleId, label: row.label, hours: row.hours, records: row.records }))}
-                ariaLabel="Horas trabajadas y número de registros por equipo"
-                selectedKey={selectedEquipmentId}
-              />
-            )}
-          </ChartFrame>
-        </PanelBlock>
-      </DashboardPanel>
+          </PanelBlock>
+        )}
+      />
     </div>
   )
 }

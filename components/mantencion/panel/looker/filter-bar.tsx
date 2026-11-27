@@ -4,10 +4,10 @@ import * as React from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { FilterToolbar } from "@/components/ui/filter-toolbar"
 import { PeriodControl } from "@/components/ui/period-control"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { DEFAULT_RANGE_LABEL, defaultIndicatorRange } from "@/lib/indicators/period"
-import {
-  clearFiltersHref, frequencyLabel, removeChipHref,
-} from "@/lib/services/mantencion/looker/filters"
+import { frequencyLabel } from "@/lib/services/mantencion/looker/filters"
+import { clearFiltersHref, removeChipHref, unitHref } from "@/lib/services/mantencion/looker/filter-hrefs"
 import type {
   FilterChip, LookerFilters, LookerOptions, ResolvedCrossFilters,
 } from "@/lib/services/mantencion/looker/types"
@@ -38,8 +38,9 @@ function keepPeriod(href: string, current: URLSearchParams): string {
 }
 
 /**
- * Barra de filtros de las pestañas Looker: rango (salvo en Planificación, que no tiene período), faena múltiple,
- * código con búsqueda y frecuencia. Los controles reflejan lo que fijó un clic (el equipo deriva su faena y su
+ * Barra de filtros de las pestañas Looker: la unidad de control (km u horas, un enlace que suelta lo que nombra un
+ * equipo de la otra unidad), el rango (salvo en Planificación, que no tiene período y trae su filtro por fechas en
+ * `children`), faena múltiple, equipo con búsqueda y frecuencia. Los controles reflejan lo que fijó un clic (el equipo deriva su faena y su
  * frecuencia), pero el clic sigue viviendo en su propio parámetro `x_*`: cambiarlo a mano
  * limpia el filtro cruzado de esa dimensión para que no se contradigan.
  */
@@ -48,11 +49,14 @@ export function LookerFilterBar({
   options,
   cross,
   chips,
+  children,
 }: {
   filters: LookerFilters
   options: LookerOptions
   cross: ResolvedCrossFilters
   chips: FilterChip[]
+  /** Controles propios de la pestaña (el filtro por fechas de Planificación), después del período. */
+  children?: React.ReactNode
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -95,7 +99,7 @@ export function LookerFilterBar({
     if (values.length > 0) params.set(param, values.join(","))
     else params.delete(param)
     if (param === "faena") for (const key of ["x_faena", "x_equipo", "x_ot", "x_check"]) params.delete(key)
-    if (param === "equipo") for (const key of ["x_equipo", "x_ot", "x_check"]) params.delete(key)
+    if (param === "equipo") for (const key of ["x_equipo", "x_ot", "x_check", "ficha", "pauta"]) params.delete(key)
     if (param === "frecuencia") params.delete("x_equipo")
     params.delete("page")
     const query = params.toString()
@@ -104,7 +108,7 @@ export function LookerFilterBar({
 
   const showPeriod = hasPeriod(filters.tab)
   const clear = () => {
-    const href = clearFiltersHref(pathname, filters.tab)
+    const href = clearFiltersHref(pathname, filters.tab, filters.unit)
     // Sin el control a la vista, borrar filtros no puede llevarse el período que se eligió en otra pestaña.
     navigate(showPeriod ? href : keepPeriod(href, new URLSearchParams(Array.from(searchParams.entries()))))
   }
@@ -122,6 +126,17 @@ export function LookerFilterBar({
         hasActiveFilters={chips.length > 0}
         clearLabel="Borrar filtros"
       >
+        <SegmentedControl
+          variant="segmented"
+          eyebrow="Unidad de control"
+          ariaLabel="Unidad de control"
+          items={([["km", "Por kilómetros"], ["h", "Por horas"]] as const).map(([unit, label]) => ({
+            key: unit,
+            label,
+            active: filters.unit === unit,
+            href: unitHref(pathname, new URLSearchParams(Array.from(searchParams.entries())), unit),
+          }))}
+        />
         {showPeriod && (
           <PeriodControl
             mode="range"
@@ -130,6 +145,7 @@ export function LookerFilterBar({
             defaultRange={{ ...defaultIndicatorRange(), label: DEFAULT_RANGE_LABEL }}
           />
         )}
+        {children}
         <MultiSelectPopover
           label="Faena"
           options={worksiteOptions}
@@ -138,7 +154,7 @@ export function LookerFilterBar({
           emptyLabel="Todas"
         />
         <MultiSelectPopover
-          label="Código"
+          label="Equipo"
           options={equipmentOptions}
           values={equipmentValues}
           onChange={(values) => setMulti("equipo", values)}

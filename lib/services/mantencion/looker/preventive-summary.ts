@@ -71,11 +71,28 @@ function worksiteMechanicBuckets(checks: readonly ComplianceCheck[]): Compliance
     worksiteName: group.worksiteName,
     mechanicKey: group.mechanic ? nameKey(group.mechanic) : null,
     mechanicLabel: group.mechanic,
-  })).sort((a, b) => (b.percent ?? -1) - (a.percent ?? -1) || a.label.localeCompare(b.label, "es"))
+  })).sort(compareLowestFirst)
+}
+
+/** El % más bajo primero (donde hay que mirar); sin dato al final, luego más pautas y por nombre. */
+function compareLowestFirst(a: ComplianceBucket, b: ComplianceBucket): number {
+  return (a.percent ?? Number.POSITIVE_INFINITY) - (b.percent ?? Number.POSITIVE_INFINITY)
+    || b.checks - a.checks
+    || a.label.localeCompare(b.label, "es")
+}
+
+/**
+ * Orden de «Cumplimiento por equipo»: primero los equipos con más ítems sin hacer; a igual cantidad, el menor %
+ * (sin dato al final) y, por último, el código. Es la cola de lo que hay que mirar, no un listado alfabético.
+ */
+export function compareEquipmentRows(a: ComplianceByPlate, b: ComplianceByPlate): number {
+  return b.notDone - a.notDone
+    || (a.percent ?? Number.POSITIVE_INFINITY) - (b.percent ?? Number.POSITIVE_INFINITY)
+    || (a.code || a.plate).localeCompare(b.code || b.plate, "es", { numeric: true })
 }
 
 function plateRows(checks: readonly ComplianceCheck[]): ComplianceByPlate[] {
-  const groups = new Map<string, { row: ComplianceByPlate; values: number[]; levels: Set<string> }>()
+  const groups = new Map<string, { row: ComplianceByPlate; values: number[]; levels: Set<string>; last: ComplianceCheck | null }>()
   for (const check of checks) {
     const key = check.vehicleId ?? `${check.code}|${check.plate}`
     const group = groups.get(key) ?? {
@@ -88,20 +105,30 @@ function plateRows(checks: readonly ComplianceCheck[]): ComplianceByPlate[] {
         percent: null,
         checks: 0,
         levels: [],
+        notDone: 0,
+        lastDate: null,
+        lastMechanic: null,
+        withoutPhotos: 0,
       },
       values: [],
       levels: new Set<string>(),
+      last: null,
     }
     group.row.checks += 1
+    group.row.notDone += check.notDone
+    if (!check.photosComplete) group.row.withoutPhotos += 1
     if (check.percent != null) group.values.push(check.percent)
     if (check.level) group.levels.add(check.level)
+    if (!group.last || check.date > group.last.date) group.last = check
     groups.set(key, group)
   }
   return [...groups.values()].map((group) => ({
     ...group.row,
     percent: averagePercent(group.values),
     levels: [...group.levels],
-  })).sort((a, b) => (a.code || a.plate).localeCompare(b.code || b.plate, "es", { numeric: true }))
+    lastDate: group.last?.date ?? null,
+    lastMechanic: group.last?.mechanic ?? null,
+  })).sort(compareEquipmentRows)
 }
 
 export function summarizeCompliance(
@@ -116,6 +143,8 @@ export function summarizeCompliance(
     byPlate: plateRows(checks),
     average: averagePercent(checks.map((check) => check.percent)),
     total: checks.length,
+    notDone: checks.reduce((sum, check) => sum + check.notDone, 0),
+    withoutPhotos: checks.filter((check) => !check.photosComplete).length,
   }
 }
 
@@ -152,4 +181,9 @@ export function matrixCellShort(value: MatrixCheck["items"][string] | undefined)
   if (value === "no_realizado") return "NR"
   if (value === "no_aplica") return "NA"
   return "—"
+}
+
+/** «Todas» o «2 sin fotos»: las pautas del equipo que no traen las dos fotos de evidencia (filtros y sticker). */
+export function photosText(withoutPhotos: number): string {
+  return withoutPhotos === 0 ? "Todas" : `${withoutPhotos} sin fotos`
 }

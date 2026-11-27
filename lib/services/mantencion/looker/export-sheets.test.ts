@@ -3,11 +3,11 @@ import { EXCEL_DATE_FORMAT } from "@/lib/reports/excel-dates"
 import { filtersSheet } from "./export-filters"
 import { planningNotes, planningSheet } from "./export-planning"
 import {
-  checklistMatrixSheet, complianceByMonthSheet, complianceByPlateSheet, complianceByWorksiteMechanicSheet,
-  correctiveSheet, driversSheet, equipmentSeriesSheet, matrixChecksSheet, workNotes,
-} from "./export-work"
+  checklistMatrixSheet, complianceByMonthSheet, complianceByPlateSheet, complianceByWorksiteMechanicSheet, matrixChecksSheet,
+  preventiveNotes,
+} from "./export-preventive"
 import type {
-  ChecklistMatrix, ComplianceBucket, ComplianceByPlate, CorrectiveWorkRow, DriverRow, EquipmentSeriesRow, LookerContext,
+  ChecklistMatrix, ComplianceBucket, ComplianceByPlate, LookerContext,
   LookerFilters, LookerOptions, MatrixCheck, PlanningRow, ResolvedCrossFilters,
 } from "./types"
 
@@ -20,120 +20,78 @@ function planRow(over: Partial<PlanningRow> = {}): PlanningRow {
     worksiteName: "Teno", unit: "km", scheduleName: "Camiones", intervals: [10_000, 40_000], frequency: 40_000,
     lastDate: "2026-10-15", programmed: 340_000, real: 339_990, current: 345_000, next: 350_000, delta: 10, remaining: 5_000,
     base: 10_000, state: "al_dia", declared: false, evidence: null, manual: false, manualReason: null, outOfRange: false,
+    dailyUsage: 240, estimatedDate: "2026-12-17", estimateNote: null,
     ...over,
   }
 }
 
 describe("hoja de Planificación", () => {
-  it("km: una fila por equipo con A, B, actual, próxima, delta y faltantes como números, y la fecha como fecha de Excel", () => {
+  it("km: una fila por equipo con tocaba, se hizo, ¿a tiempo?, lectura, próxima y faltan como números, y las fechas como fecha de Excel", () => {
     const sheet = planningSheet([planRow()], "km")
     expect(sheet.worksheetName).toBe("Consolidado por kilómetros")
     expect(sheet.headers).toEqual([
       "Patente", "Código", "Tipo de equipo", "Faena", "Pauta", "Frecuencia (km)", "Última mantención",
-      "Km programados (A)", "Km reales (B)", "Km actuales", "Próxima mantención (km)", "Delta A − B (km)", "Faltantes (km)",
-      "Situación", "Observación",
+      "Tocaba a los (km)", "Se hizo a los (km)", "¿A tiempo?", "Lectura actual (km)", "Próxima a los (km)", "Faltan (km)",
+      "Fecha estimada", "Uso diario (km/día)", "Estado", "Observación",
     ])
     expect(sheet.rows).toEqual([[
       "SJFC-66", "KA-143", "Camión", "Teno", "Camiones", 40_000, day("2026-10-15"),
-      340_000, 339_990, 345_000, 350_000, 10, 5_000, "Al día", null,
+      340_000, 339_990, "A tiempo", 345_000, 350_000, 5_000, day("2026-12-17"), 240, "Al día", null,
     ]])
     expect(sheet.columnFormats?.[6]).toBe(EXCEL_DATE_FORMAT)
+    expect(sheet.columnFormats?.[13]).toBe(EXCEL_DATE_FORMAT)
+  })
+
+  it("¿A tiempo? dice cuánto tarde o antes con el mismo texto de la pantalla", () => {
+    const timing = (over: Partial<PlanningRow>) => planningSheet([planRow(over)], "km").rows[0]![9]
+    expect(timing({ delta: -14_394 })).toBe("14.394 km tarde")
+    expect(timing({ delta: 360 })).toBe("360 km antes")
   })
 
   it("horas: los rótulos hablan de horas, y lo que el equipo no tiene queda vacío, nunca en cero", () => {
     const sheet = planningSheet([
       planRow({
         unit: "h", plate: "TO-37", code: "TO-37", scheduleName: null, frequency: null, lastDate: null, programmed: null, real: null,
-        current: null, next: null, delta: null, remaining: null, base: null,
+        current: null, next: null, delta: null, remaining: null, base: null, dailyUsage: null, estimatedDate: null, estimateNote: null,
       }),
     ], "h")
     expect(sheet.worksheetName).toBe("Consolidado por horas")
-    expect(sheet.headers).toContain("Horas programadas (A)")
+    expect(sheet.headers).toContain("Tocaba a los (h)")
     expect(sheet.headers).toContain("Frecuencia (h)")
-    expect(sheet.rows[0]).toEqual(["TO-37", "TO-37", "Camión", "Teno", null, null, null, null, null, null, null, null, null, "Sin dato", null])
+    expect(sheet.headers).toContain("Uso diario (h/día)")
+    expect(sheet.rows[0]).toEqual(["TO-37", "TO-37", "Camión", "Teno", null, null, null, null, null, null, null, null, null, null, null, "Sin dato", null])
   })
 
-  it("la situación sigue el semáforo de la pantalla: vencida, por vencer o al día", () => {
-    const situation = (over: Partial<PlanningRow>) => planningSheet([planRow(over)], "km").rows[0]![13]
-    expect(situation({ remaining: 0 })).toBe("Vencida")
-    expect(situation({ remaining: -1_200 })).toBe("Vencida")
-    expect(situation({ remaining: 1_000, base: 10_000 })).toBe("Por vencer")
-    expect(situation({ remaining: 5_000, base: 10_000 })).toBe("Al día")
+  it("el estado sigue el semáforo de la pantalla: vencida, próxima o al día", () => {
+    const state = (over: Partial<PlanningRow>) => planningSheet([planRow(over)], "km").rows[0]![15]
+    expect(state({ remaining: 0 })).toBe("Vencida")
+    expect(state({ remaining: -1_200 })).toBe("Vencida")
+    expect(state({ remaining: 1_000, base: 10_000 })).toBe("Próxima")
+    expect(state({ remaining: 5_000, base: 10_000 })).toBe("Al día")
   })
 
-  it("la observación dice lo que la pantalla marca con un lápiz, «Declarada» o un tooltip", () => {
-    const observation = (over: Partial<PlanningRow>) => planningSheet([planRow(over)], "km").rows[0]![14]
+  it("la observación dice lo que la pantalla marca con un lápiz, «Declarada» o un tooltip, y por qué no hay fecha estimada", () => {
+    const observation = (over: Partial<PlanningRow>) => planningSheet([planRow(over)], "km").rows[0]![16]
     expect(observation({ manual: true, manualReason: "Terreno difícil" })).toBe("Intervalo ajustado a mano: Terreno difícil")
     expect(observation({ manual: true, manualReason: null })).toBe("Intervalo ajustado a mano")
     expect(observation({ declared: true, evidence: "Planilla 2026" })).toBe("Preventiva declarada (respaldo: Planilla 2026)")
     expect(observation({ declared: true, evidence: null })).toBe("Preventiva declarada")
     expect(observation({ outOfRange: true })).toBe("La última mantención queda fuera del período elegido")
     expect(observation({ manual: true, manualReason: "x", outOfRange: true })).toBe("Intervalo ajustado a mano: x; La última mantención queda fuera del período elegido")
+    expect(observation({ estimatedDate: null, estimateNote: "El equipo no registra uso en los últimos 30 días" })).toBe("Sin fecha estimada: El equipo no registra uso en los últimos 30 días")
   })
 
-  it("las notas explican A, B, delta, faltantes y la regla de «próxima»; con un equipo elegido avisan qué tabla lo aplica", () => {
-    const base = planningNotes({}).join("\n")
-    expect(base).toMatch(/Próxima mantención = punto de la última mantención \+ intervalo base/)
-    expect(base).toMatch(/Delta = A − B/)
-    expect(base).toMatch(/Faltantes = próxima − actual/)
+  it("las notas explican tocaba/se hizo, faltan, la fecha estimada y la regla de «próxima»; con un equipo elegido avisan que la hoja queda completa", () => {
+    const base = planningNotes({}, "km").join("\n")
+    expect(base).toMatch(/Próxima = punto de la última mantención \+ intervalo base/)
+    expect(base).toMatch(/«Tocaba a los» es el punto de la pauta/)
+    expect(base).toMatch(/«Faltan» = próxima − lectura actual/)
+    expect(base).toMatch(/uso diario de los últimos 30 días/)
     expect(base).toMatch(/dato que no existe, no un cero/)
     expect(base).not.toMatch(/equipo elegido/i)
     const cross: ResolvedCrossFilters = { equipment: { id: "v-1", code: "KA-143", plate: "SJFC-66", label: "KA-143 · SJFC-66", worksiteId: "ws-1", worksiteName: "Teno", unit: "km", intervals: [], frequency: null } }
-    expect(planningNotes(cross).join("\n")).toMatch(/la tabla de kilómetros no se filtra por el equipo elegido/i)
-    // El equipo es de kilómetros: la tabla de horas queda vacía, y la nota dice por qué como la pantalla,
-    // con la patente (el mismo identificador de la fila, las barras y el chip).
-    expect(planningNotes(cross)).toContain("SJFC-66 se controla por km; no tiene registros por horas.")
-  })
-})
-
-function work(over: Partial<CorrectiveWorkRow> = {}): CorrectiveWorkRow {
-  return {
-    id: "ot:1", source: "ot", date: "2026-10-20", vehicleId: "v-1", recordId: null, code: "KA-143", plate: "SJFC-66", typeName: "Camión",
-    unit: "km", reading: 345_000, readingText: null, reference: "OT-0001", workPerformed: "Reparación de frenos",
-    worksiteId: "ws-1", worksiteName: "Teno", hours: 4, photoId: "p-1", photoUrl: null, ...over,
-  }
-}
-
-describe("hoja «Correctivos»", () => {
-  it("una fila por trabajo con la fecha de Excel, la lectura numérica y las horas como número; la foto no viaja", () => {
-    const sheet = correctiveSheet([work()], "km")
-    expect(sheet.worksheetName).toBe("Correctivos")
-    expect(sheet.headers).toEqual([
-      "Fecha", "Fuente", "Referencia", "Código", "Patente", "Tipo de equipo", "Faena", "Odómetro (km)", "Lectura del formulario",
-      "Horas hombre", "Trabajo realizado",
-    ])
-    expect(sheet.rows[0]).toEqual([
-      day("2026-10-20"), "Orden de trabajo", "OT-0001", "KA-143", "SJFC-66", "Camión", "Teno", 345_000, null, 4, "Reparación de frenos",
-    ])
-    expect(sheet.columnFormats?.[0]).toBe(EXCEL_DATE_FORMAT)
-    expect(JSON.stringify(sheet.rows)).not.toContain("p-1")
-  })
-
-  it("el formulario histórico trae la lectura como texto y puede no tener faena, folio ni horas", () => {
-    const row = work({ id: "h:1", source: "historial", reading: null, readingText: "145.000", reference: "", worksiteName: null, hours: null, workPerformed: "" })
-    expect(correctiveSheet([row], "h").rows[0]).toEqual([
-      day("2026-10-20"), "Historial de formularios", null, "KA-143", "SJFC-66", "Camión", "Sin faena", null, "145.000", null, null,
-    ])
-    expect(correctiveSheet([row], "h").headers[7]).toBe("Horómetro (h)")
-    expect(correctiveSheet([work({ source: "registro" })], "km").rows[0]![1]).toBe("Registro de la plataforma")
-  })
-})
-
-describe("hojas de conductores y de horas por equipo", () => {
-  it("«Conductores»: horas prorrateadas y registros", () => {
-    const drivers: DriverRow[] = [{ key: "juan perez", label: "JUAN PEREZ", records: 2, hours: 1.5, workIds: ["h:1"] }]
-    const sheet = driversSheet(drivers)
-    expect(sheet.worksheetName).toBe("Conductores")
-    expect(sheet.headers).toEqual(["Conductor", "Horas (prorrateadas)", "Registros"])
-    expect(sheet.rows).toEqual([["JUAN PEREZ", 1.5, 2]])
-  })
-
-  it("«Horas y registros»: la serie del gráfico combinado, con todos los equipos que tuvieron trabajos", () => {
-    const series: EquipmentSeriesRow[] = [{ vehicleId: "v-1", label: "KA-143 · SJFC-66", records: 3, hours: 7.5 }]
-    const sheet = equipmentSeriesSheet(series)
-    expect(sheet.worksheetName).toBe("Horas y registros")
-    expect(sheet.headers).toEqual(["Equipo", "Horas trabajadas", "Registros"])
-    expect(sheet.rows).toEqual([["KA-143 · SJFC-66", 7.5, 3]])
+    expect(planningNotes(cross, "km").join("\n")).toMatch(/el equipo elegido con un clic no recorta la hoja/i)
+    expect(planningNotes({}, "h").join("\n")).toMatch(/diferencia en horas/)
   })
 })
 
@@ -160,24 +118,34 @@ describe("hojas de cumplimiento", () => {
     expect(sheet.rows).toEqual([["Teno", "Javier Roa", 97.5, 2], ["Teno", "Sin mecánico", null, 1]])
   })
 
-  it("por patente: los niveles de pauta van en una celda", () => {
+  it("por equipo: los niveles van en una celda y trae lo sin hacer, la última pauta y las fotos", () => {
     const rows: ComplianceByPlate[] = [
-      { vehicleId: "v-1", code: "KA-143", plate: "SJFC-66", worksiteId: "ws-1", worksiteName: "Teno", percent: 90, checks: 2, levels: ["40.000 KM", "10.000 KM"] },
-      { vehicleId: null, code: "KA-X", plate: "", worksiteId: null, worksiteName: null, percent: null, checks: 1, levels: [] },
+      {
+        vehicleId: "v-1", code: "KA-143", plate: "SJFC-66", worksiteId: "ws-1", worksiteName: "Teno", percent: 90, checks: 2,
+        levels: ["40.000 KM", "10.000 KM"], notDone: 3, lastDate: "2026-10-15", lastMechanic: "Javier Roa", withoutPhotos: 1,
+      },
+      {
+        vehicleId: null, code: "KA-X", plate: "", worksiteId: null, worksiteName: null, percent: null, checks: 1, levels: [],
+        notDone: 0, lastDate: "2026-10-02", lastMechanic: null, withoutPhotos: 0,
+      },
     ]
     const sheet = complianceByPlateSheet(rows)
-    expect(sheet.worksheetName).toBe("Cumplimiento por patente")
-    expect(sheet.headers).toEqual(["Patente", "Código", "Faena", "Niveles de pauta", "Cumplimiento (%)", "Pautas"])
-    expect(sheet.rows).toEqual([
-      ["SJFC-66", "KA-143", "Teno", "40.000 KM · 10.000 KM", 90, 2],
-      [null, "KA-X", "Sin faena", null, null, 1],
+    expect(sheet.worksheetName).toBe("Cumplimiento por equipo")
+    expect(sheet.headers).toEqual([
+      "Patente", "Código", "Faena", "Niveles de pauta", "Cumplimiento (%)", "Pautas", "Sin hacer", "Última pauta",
+      "Mecánico de la última pauta", "Fotos completas",
     ])
+    expect(sheet.rows).toEqual([
+      ["SJFC-66", "KA-143", "Teno", "40.000 KM · 10.000 KM", 90, 2, 3, day("2026-10-15"), "Javier Roa", "1 sin fotos"],
+      [null, "KA-X", "Sin faena", null, null, 1, 0, day("2026-10-02"), "Sin mecánico", "Todas"],
+    ])
+    expect(sheet.columnFormats?.[7]).toBe(EXCEL_DATE_FORMAT)
   })
 })
 
 function check(over: Partial<MatrixCheck> = {}): MatrixCheck {
   return {
-    id: "h:p1", source: "historial", date: "2026-10-15", label: "KA-143 · 40.000 KM", code: "KA-143", plate: "SJFC-66", worksiteName: "Teno",
+    id: "h:p1", source: "historial", vehicleId: "v-1", date: "2026-10-15", label: "KA-143 · 40.000 KM", code: "KA-143", plate: "SJFC-66", worksiteName: "Teno",
     level: "40.000 KM", mechanic: "Javier Roa", photoIds: [], photoUrls: [], observations: "Cambio de refrigerante pendiente",
     items: { "Cambio aceite": "realizado", "Revisión frenos": "no_realizado" }, itemOrder: { "Cambio aceite": 0, "Revisión frenos": 1 },
     itemGroups: { "Cambio aceite": null, "Revisión frenos": null },
@@ -253,19 +221,20 @@ describe("matriz de checklist", () => {
     expect(matrixChecksSheet(empty).rows).toEqual([])
   })
 
-  it("las notas de lectura traen el corte de fuentes, el prorrateo de conductores, la regla del % y los topes de la matriz", () => {
-    const notes = workNotes("km", matrix, 60).join("\n")
+  it("las notas de lectura de Preventivo dicen el corte, la regla del %, el orden por equipo, los topes de la matriz y lo que quedó fuera", () => {
+    const notes = preventiveNotes("km", matrix, 60).join("\n")
     expect(notes).toMatch(/hasta el 30-11-2026/)
     expect(notes).toMatch(/desde el 01-12-2026/)
     expect(notes).toMatch(/equipos por kilómetros/)
-    expect(notes).toMatch(/prorrateadas/)
     expect(notes).toMatch(/promedio de los % de cada pauta/)
+    expect(notes).toMatch(/más ítems dejaron sin hacer primero/)
     expect(notes).toMatch(/dato que no existe, no un cero/)
     expect(notes).toMatch(/hasta 60 pautas/)
     expect(notes).toMatch(/últimas 8/)
     expect(notes).toMatch(/2 de las últimas pautas no traen detalle/)
-    expect(workNotes("h", { ...matrix, withoutDetail: 0 }, 60).join("\n")).toMatch(/equipos por horas/)
-    expect(workNotes("h", { ...matrix, withoutDetail: 0 }, 60).join("\n")).not.toMatch(/no traen detalle/)
+    expect(notes).not.toMatch(/prorrateadas/)
+    expect(preventiveNotes("h", { ...matrix, withoutDetail: 0 }, 60).join("\n")).toMatch(/equipos por horas/)
+    expect(preventiveNotes("h", { ...matrix, withoutDetail: 0 }, 60).join("\n")).not.toMatch(/no traen detalle/)
   })
 })
 
@@ -280,8 +249,10 @@ const options: LookerOptions = {
 function context(over: { filters?: Partial<LookerFilters>; cross?: ResolvedCrossFilters } = {}): LookerContext {
   return {
     filters: {
-      tab: "camiones", from: "2026-10-01", to: "2026-10-31", requestedFrom: "2026-10-01", requestedTo: "2026-10-31", invalidPeriod: false,
-      worksiteIds: [], equipmentIds: [], frequencies: [], page: 1, cross: {}, ...over.filters,
+      tab: "correctivo", unit: "km", from: "2026-10-01", to: "2026-10-31", requestedFrom: "2026-10-01", requestedTo: "2026-10-31", invalidPeriod: false,
+      worksiteIds: [], equipmentIds: [], frequencies: [], page: 1, cross: {},
+      planningState: null, dateField: "proxima", dateFrom: null, dateTo: null, invalidDateRange: false, sheetVehicleId: null, sheetCheckId: null,
+      ...over.filters,
     },
     options,
     cross: over.cross ?? {},
@@ -291,14 +262,15 @@ function context(over: { filters?: Partial<LookerFilters>; cross?: ResolvedCross
 const detail = (sheet: ReturnType<typeof filtersSheet>, concept: string) => sheet.rows.filter((row) => row[0] === concept).map((row) => row[1])
 
 describe("hoja «Filtros»", () => {
-  it("sin filtros dice todo lo que se ve: pestaña, período, todas las faenas, todos los códigos, todas las frecuencias y ningún filtro cruzado", () => {
-    const sheet = filtersSheet({ tab: "camiones", context: context(), notes: [] })
+  it("sin filtros dice todo lo que se ve: pestaña, unidad, período, todas las faenas, todos los equipos, todas las frecuencias y ningún filtro cruzado", () => {
+    const sheet = filtersSheet({ tab: "correctivo", context: context(), notes: [] })
     expect(sheet.worksheetName).toBe("Filtros")
     expect(sheet.headers).toEqual(["Concepto", "Detalle"])
-    expect(detail(sheet, "Pestaña")).toEqual(["Por kilómetros"])
+    expect(detail(sheet, "Pestaña")).toEqual(["Correctivo"])
+    expect(detail(sheet, "Unidad de control")).toEqual(["Por kilómetros"])
     expect(detail(sheet, "Período")).toEqual(["01-10-2026 al 31-10-2026"])
     expect(detail(sheet, "Faenas")).toEqual(["Todas las faenas de tu alcance"])
-    expect(detail(sheet, "Códigos (equipos)")).toEqual(["Todos"])
+    expect(detail(sheet, "Equipos")).toEqual(["Todos"])
     expect(detail(sheet, "Frecuencia")).toEqual(["Todas"])
     expect(detail(sheet, "Filtros cruzados")).toEqual(["Ninguno"])
   })
@@ -313,12 +285,12 @@ describe("hoja «Filtros»", () => {
       work: { id: "ot:1", label: "OT-0001", equipmentId: "v-1", worksiteId: "ws-1" },
     }
     const sheet = filtersSheet({
-      tab: "camiones",
+      tab: "correctivo",
       context: context({ filters: { worksiteIds: ["ws-1", "ws-2"], equipmentIds: ["v-1"], frequencies: [40_000] }, cross }),
       notes: [],
     })
     expect(detail(sheet, "Faenas")).toEqual(["Teno, Arauco"])
-    expect(detail(sheet, "Códigos (equipos)")).toEqual(["KA-143 · SJFC-66"])
+    expect(detail(sheet, "Equipos")).toEqual(["KA-143 · SJFC-66"])
     expect(detail(sheet, "Frecuencia")).toEqual(["40.000 km"])
     expect(detail(sheet, "Filtros cruzados")).toEqual([])
     expect(detail(sheet, "Filtro cruzado: Equipo")).toEqual(["KA-143 · SJFC-66"])
@@ -333,17 +305,18 @@ describe("hoja «Filtros»", () => {
     const cross: ResolvedCrossFilters = {
       equipment: { id: "v-1", code: "KA-143", plate: "SJFC-66", label: "KA-143 · SJFC-66", worksiteId: "ws-1", worksiteName: "Teno", unit: "km", intervals: [], frequency: null, derivedFrom: "work" },
     }
-    const sheet = filtersSheet({ tab: "camiones", context: context({ cross }), notes: [] })
+    const sheet = filtersSheet({ tab: "correctivo", context: context({ cross }), notes: [] })
     expect(detail(sheet, "Filtro cruzado: Equipo")).toEqual([])
   })
 
   it("una faena sin nombre disponible no se nombra y el texto no afirma lo que no se sabe (ajena o inactiva); el período se corta en hoy", () => {
     const sheet = filtersSheet({
-      tab: "maquinas",
-      context: context({ filters: { tab: "maquinas", worksiteIds: ["ws-ajena"], requestedTo: "2026-11-30", to: "2026-11-24", from: "2026-11-01", requestedFrom: "2026-11-01" } }),
+      tab: "preventivo",
+      context: context({ filters: { tab: "preventivo", unit: "h", worksiteIds: ["ws-ajena"], requestedTo: "2026-11-30", to: "2026-11-24", from: "2026-11-01", requestedFrom: "2026-11-01" } }),
       notes: [],
     })
-    expect(detail(sheet, "Pestaña")).toEqual(["Por horas"])
+    expect(detail(sheet, "Pestaña")).toEqual(["Preventivo"])
+    expect(detail(sheet, "Unidad de control")).toEqual(["Por horas"])
     // Las opciones traen sólo faenas ACTIVAS del alcance: una faena que no está ahí puede ser ajena o estar cerrada, y el
     // libro puede traer filas de ella. Por eso no dice «sin datos» ni «fuera de tu alcance» a secas.
     expect(detail(sheet, "Faenas")).toEqual(["1 faena sin nombre disponible (fuera de tu alcance o inactiva)"])
@@ -353,14 +326,14 @@ describe("hoja «Filtros»", () => {
   })
 
   it("faenas activas del alcance se nombran y las que no, se cuentan, en plural y mezcladas", () => {
-    const faenas = (...ids: string[]) => detail(filtersSheet({ tab: "camiones", context: context({ filters: { worksiteIds: ids } }), notes: [] }), "Faenas")
+    const faenas = (...ids: string[]) => detail(filtersSheet({ tab: "correctivo", context: context({ filters: { worksiteIds: ids } }), notes: [] }), "Faenas")
     expect(faenas("ws-1")).toEqual(["Teno"])
     expect(faenas("ws-x", "ws-y")).toEqual(["2 faenas sin nombre disponible (fuera de tu alcance o inactiva)"])
     expect(faenas("ws-1", "ws-x", "ws-y")).toEqual(["Teno; 2 faenas sin nombre disponible (fuera de tu alcance o inactiva)"])
   })
 
   it("lo mismo con los códigos: un equipo que no está entre las opciones (ajeno o inactivo) no se nombra ni se declara «sin datos»", () => {
-    const codigos = (...ids: string[]) => detail(filtersSheet({ tab: "camiones", context: context({ filters: { equipmentIds: ids } }), notes: [] }), "Códigos (equipos)")
+    const codigos = (...ids: string[]) => detail(filtersSheet({ tab: "correctivo", context: context({ filters: { equipmentIds: ids } }), notes: [] }), "Equipos")
     expect(codigos("v-1")).toEqual(["KA-143 · SJFC-66"])
     expect(codigos("v-x")).toEqual(["1 código sin nombre disponible (fuera de tu alcance o inactivo)"])
     expect(codigos("v-x", "v-y")).toEqual(["2 códigos sin nombre disponible (fuera de tu alcance o inactivo)"])
@@ -369,9 +342,27 @@ describe("hoja «Filtros»", () => {
   })
 
   it("un rango inválido de la dirección avisa que se usó el período por defecto; las notas van al final, una por fila", () => {
-    const sheet = filtersSheet({ tab: "planificacion", context: context({ filters: { tab: "planificacion", invalidPeriod: true } }), notes: ["Primera.", "Segunda."] })
-    expect(detail(sheet, "Pestaña")).toEqual(["Planificación"])
+    const sheet = filtersSheet({ tab: "correctivo", context: context({ filters: { invalidPeriod: true } }), notes: ["Primera.", "Segunda."] })
     expect(detail(sheet, "Período")[0]).toMatch(/El rango de la dirección no era válido: se usó el período por defecto/)
     expect(sheet.rows.slice(-2)).toEqual([["Nota", "Primera."], ["Nota", "Segunda."]])
+  })
+
+  it("Planificación no tiene período (PAN4-6): lleva el estado y el rango de fechas que filtran la tabla", () => {
+    const plain = filtersSheet({ tab: "planificacion", context: context({ filters: { tab: "planificacion" } }), notes: [] })
+    expect(detail(plain, "Pestaña")).toEqual(["Planificación"])
+    expect(detail(plain, "Período")).toEqual([])
+    expect(detail(plain, "Estado")).toEqual([])
+    const sheet = filtersSheet({
+      tab: "planificacion",
+      context: context({ filters: { tab: "planificacion", unit: "h", planningState: "vencida", dateField: "ultima", dateFrom: "2026-06-01", dateTo: "2026-09-30" } }),
+      notes: [],
+    })
+    expect(detail(sheet, "Unidad de control")).toEqual(["Por horas"])
+    expect(detail(sheet, "Estado")).toEqual(["Vencidas"])
+    expect(detail(sheet, "Última mantención")).toEqual(["01-06-2026 al 30-09-2026"])
+    const shortcut = filtersSheet({ tab: "planificacion", context: context({ filters: { tab: "planificacion", dateTo: "2026-12-27" } }), notes: [] })
+    expect(detail(shortcut, "Próxima mantención (estimada)")).toEqual(["hasta 27-12-2026"])
+    const invalid = filtersSheet({ tab: "planificacion", context: context({ filters: { tab: "planificacion", invalidDateRange: true } }), notes: [] })
+    expect(detail(invalid, "Fechas")[0]).toMatch(/no eran válidas/)
   })
 })

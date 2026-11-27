@@ -69,14 +69,21 @@ vi.mock("@/components/mantencion/jefatura/panel/panel-export", () => ({ PanelExc
 vi.mock("@/lib/services/mantencion/looker/resolve", () => ({
   loadLookerContext: async (_viewer: unknown, raw: Record<string, string>) => ({
     filters: {
-      tab: raw.pestana, from: "2026-11-01", to: "2026-11-10", requestedFrom: "2026-11-01", requestedTo: "2026-11-10", invalidPeriod: false,
+      tab: raw.pestana, unit: raw.unidad === "h" ? "h" : "km", from: "2026-11-01", to: "2026-11-10", requestedFrom: "2026-11-01", requestedTo: "2026-11-10", invalidPeriod: false,
       worksiteIds: [], equipmentIds: [], frequencies: [], page: 1, cross: {},
+      planningState: null, dateField: "proxima", dateFrom: null, dateTo: null, invalidDateRange: raw.fecha_hasta === "malo",
+      sheetVehicleId: null, sheetCheckId: null,
     },
     options: { worksites: [], equipment: [], frequencies: [] },
     cross: {},
   }),
 }))
 vi.mock("@/components/mantencion/panel/looker/looker-export-button", () => ({ LookerExcelButton: () => null }))
+// Las pestañas consultan la base al renderizarse; aquí se prueba sólo el despacho.
+vi.mock("./planificacion-tab", () => ({ PlanificacionTab: () => null }))
+vi.mock("./correctivo-tab", () => ({ CorrectivoTab: () => null }))
+vi.mock("./preventivo-tab", () => ({ PreventivoTab: () => null }))
+vi.mock("@/components/mantencion/panel/looker/planning-date-filter", () => ({ PlanningDateFilter: () => null }))
 vi.mock("@/components/mantencion/jefatura/panel/panel-equipment-filter", () => ({ PanelEquipmentFilter: () => null }))
 
 import MantencionPanelPage from "./page"
@@ -88,6 +95,11 @@ import { PanelEmptyState } from "@/components/mantencion/jefatura/panel/panel-em
 import { PanelExcelButton, PanelPdfLink } from "@/components/mantencion/jefatura/panel/panel-export"
 import { PanelToday } from "@/components/mantencion/jefatura/panel/panel-today"
 import { PautasSection, WorkOrdersSection } from "./indicators-sections"
+import { CorrectivoTab } from "./correctivo-tab"
+import { PlanificacionTab } from "./planificacion-tab"
+import { PreventivoTab } from "./preventivo-tab"
+import { PlanningDateFilter } from "@/components/mantencion/panel/looker/planning-date-filter"
+import { Callout } from "@/components/ui/callout"
 import { FormsIndicatorsSection, MaintenanceWorkSection } from "./trinorma-sections"
 import { ReporteEquiposSection } from "./reporte-equipos-section"
 
@@ -116,7 +128,7 @@ function findElement(node: ReactNode, type: unknown): Found | null {
 const page = (searchParams: Record<string, string> = {}) => MantencionPanelPage({ searchParams: Promise.resolve(searchParams) })
 
 describe("/mantencion/panel · menú de pestañas", () => {
-  // Sin este menú, desde el Panel por defecto no se llega a Planificación, «Por kilómetros» ni «Por horas»
+  // Sin este menú, desde el Panel por defecto no se llega a Planificación, Correctivo ni Preventivo
   // si no es escribiendo la URL (verificado en navegador el 2026-11-24).
   it("la pestaña Hoy, por defecto y con ?pestana=hoy, ofrece el menú para llegar a las otras tres", async () => {
     const cases: Array<Record<string, string>> = [{}, { pestana: "hoy" }]
@@ -128,22 +140,45 @@ describe("/mantencion/panel · menú de pestañas", () => {
   })
 
   // PAN4-9 (2026-11-26): los enlaces llevaban sólo `pestana` y cambiar de pestaña borraba el período y la faena.
-  it("el menú recibe los parámetros de la URL en las cuatro pestañas, para conservar el período y la faena", async () => {
-    const params = { desde: "2026-01-01", hasta: "2026-10-31", faena: "ws-1", x_equipo: "v-1" }
-    for (const pestana of [undefined, "hoy", "planificacion", "camiones", "maquinas"]) {
+  it("el menú recibe los parámetros de la URL en las cuatro pestañas, para conservar la unidad, el período y la faena", async () => {
+    const params = { unidad: "h", desde: "2026-01-01", hasta: "2026-10-31", faena: "ws-1", x_equipo: "v-1" }
+    for (const pestana of [undefined, "hoy", "planificacion", "correctivo", "preventivo"]) {
       const tabs = findElement(await page({ ...params, ...(pestana ? { pestana } : {}) }), PanelTabs)
       expect(tabs, String(pestana)).not.toBeNull()
       expect(tabs!.props.params, String(pestana)).toMatchObject(params)
     }
   })
 
-  it("las pestañas por unidad se llaman «Por kilómetros» y «Por horas» en la miga y en la descripción", async () => {
-    for (const [pestana, label, unit] of [["camiones", "Por kilómetros", "kilómetros"], ["maquinas", "Por horas", "horas"]] as const) {
+  it("la miga nombra la pestaña y la pregunta va bajo las pestañas (no en la descripción de la cabecera)", async () => {
+    for (const [pestana, label] of [["planificacion", "Planificación"], ["correctivo", "Correctivo"], ["preventivo", "Preventivo"]] as const) {
       const header = findElement(await page({ pestana }), PageHeader)!
       const items = (header.props.breadcrumb as { props: { items: Array<{ label: string }> } }).props.items
       expect(items.at(-1)!.label).toBe(label)
-      expect(header.props.description).toContain(`equipos controlados por ${unit}`)
+      expect(header.props.description).toBeUndefined()
     }
+  })
+
+  it("despacha cada pestaña a su componente con el contexto y la URL", async () => {
+    const cases = [["planificacion", PlanificacionTab], ["correctivo", CorrectivoTab], ["preventivo", PreventivoTab]] as const
+    for (const [pestana, component] of cases) {
+      const tree = await page({ pestana, unidad: "h" })
+      const found = findElement(tree, component)
+      expect(found, pestana).not.toBeNull()
+      expect(found!.props).toMatchObject({ rawParams: { pestana, unidad: "h" } })
+      for (const [other, otherComponent] of cases) if (other !== pestana) expect(findElement(tree, otherComponent), `${pestana}→${other}`).toBeNull()
+    }
+  })
+
+  it("el filtro por fechas va en la barra sólo en Planificación, y un rango malo se avisa", async () => {
+    expect(findElement(await page({ pestana: "planificacion" }), PlanningDateFilter)).not.toBeNull()
+    expect(findElement(await page({ pestana: "correctivo" }), PlanningDateFilter)).toBeNull()
+    expect(findElement(await page({ pestana: "planificacion", fecha_hasta: "malo" }), Callout)).not.toBeNull()
+    expect(findElement(await page({ pestana: "planificacion" }), Callout)).toBeNull()
+  })
+
+  it("un enlace guardado con `pestana=camiones|maquinas` redirige a Correctivo con su unidad y el resto de los parámetros", async () => {
+    await expect(page({ pestana: "camiones", desde: "2026-10-01", faena: "ws-1" })).rejects.toThrow("redirect:/mantencion/panel?desde=2026-10-01&faena=ws-1&pestana=correctivo")
+    await expect(page({ pestana: "maquinas", x_conductor: "JUAN" })).rejects.toThrow("redirect:/mantencion/panel?x_conductor=JUAN&pestana=correctivo&unidad=h")
   })
 
   it("el menú también se ofrece cuando no hay equipos en el alcance", async () => {
@@ -349,8 +384,8 @@ describe("/mantencion/panel · trabajos de mantención y equipo elegido", () => 
   })
 })
 
-describe("/mantencion/panel · Exportar Excel de Planificación, «Por kilómetros» y «Por horas»", () => {
-  const tabs = ["planificacion", "camiones", "maquinas"] as const
+describe("/mantencion/panel · Exportar Excel de Planificación, Correctivo y Preventivo", () => {
+  const tabs = ["planificacion", "correctivo", "preventivo"] as const
 
   it("«Exportar Excel» sólo aparece con `mant:export`: sin él, la cabecera de las tres pestañas no lo trae", async () => {
     for (const pestana of tabs) {
@@ -371,9 +406,10 @@ describe("/mantencion/panel · Exportar Excel de Planificación, «Por kilómetr
 
   it("el botón recibe sólo los parámetros que mueven la pantalla (no `pestana` ni `page`), tal como están en la URL", async () => {
     session.permissions = ["mant:records:view_worksite", "mant:export"]
-    const tree = await page({ pestana: "camiones", desde: "2026-11-01", hasta: "2026-11-10", faena: "ws-1", x_conductor: "JUAN PEREZ", page: "3" })
+    const tree = await page({ pestana: "correctivo", unidad: "h", desde: "2026-11-01", hasta: "2026-11-10", faena: "ws-1", x_conductor: "JUAN PEREZ", page: "3", ficha: "v-1" })
     const button = findElement(findElement(tree, PageHeader)!.props.actions as ReactNode, LookerExcelButton)!
-    expect(button.props).toMatchObject({ tab: "camiones", params: { desde: "2026-11-01", hasta: "2026-11-10", faena: "ws-1", x_conductor: "JUAN PEREZ" } })
+    expect(button.props.params).not.toHaveProperty("ficha")
+    expect(button.props).toMatchObject({ tab: "correctivo", params: { unidad: "h", desde: "2026-11-01", hasta: "2026-11-10", faena: "ws-1", x_conductor: "JUAN PEREZ" } })
     expect(button.props.params).not.toHaveProperty("page")
     expect(button.props.params).not.toHaveProperty("pestana")
   })

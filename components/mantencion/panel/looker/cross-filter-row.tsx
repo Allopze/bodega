@@ -3,7 +3,7 @@
 import * as React from "react"
 import { TableRow } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
-import type { CrossFilterAction } from "@/lib/services/mantencion/looker/filters"
+import type { CrossFilterAction } from "@/lib/services/mantencion/looker/filter-hrefs"
 import { useCrossFilter } from "./use-cross-filter"
 
 /**
