@@ -1,11 +1,11 @@
 import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
-  mantPartsAllocations, mantPartsAllocationSources, mantRecordParts, mantRecords, purchaseOrderItems, purchaseOrders,
-  purchaseRequestItems, purchaseRequests,
+  mantRecordParts, mantRecords, purchaseOrderItems, purchaseOrders, purchaseRequestItems, purchaseRequests,
 } from "@/db/schema"
 import { roundQty } from "@/lib/services/stock-reservations"
 import type { PartsNoteDetailLine, PartsNoteLineStage } from "../parts/types"
+import { loadArrivedByLine } from "./arrivals"
 import { allocateUsed, lineStage, type PurchaseLiveness } from "./status"
 
 /**
@@ -13,6 +13,13 @@ import { allocateUsed, lineStage, type PurchaseLiveness } from "./status"
  * usado y la etapa legible. UNA lectura por cada cosa para todas las líneas que se
  * piden (la bandeja, el detalle, la OT web y el catálogo del teléfono la usan con
  * muchas NP a la vez: nunca una consulta por línea).
+ *
+ * «Llegó» depende de la vía de la línea (`arrivals.ts`): con OT, lo que aportó su reserva; sin OT, lo que la faena
+ * recibió de las OC que la compran. Lo usado sólo existe con OT (es consumo de una reserva de esa OT).
+ *
+ * Excepción: una nota importada de CHOME ERP que ya llegó «Cerrada» (`isImportedClosedNote`) trae sus líneas «en compra»
+ * sin ninguna compra en la plataforma: el ERP dio por llegado lo pedido, así que la línea cuenta como llegada completa
+ * (etapa «en bodega», llegó = cantidad). Es sólo de lectura: el estado de la nota no cambia (se deriva igual que siempre).
  */
 
 type Reader = Pick<Tx, "select">
@@ -21,19 +28,27 @@ type Reader = Pick<Tx, "select">
 export interface NoteLineRef {
   id: string
   noteId: string
-  workOrderId: string
+  /** Null: nota sin OT. */
+  workOrderId: string | null
   productId: string | null
   resolution: string
   sortOrder: number
   /** Creación de la NP: ordena el reparto de lo usado entre líneas del mismo repuesto. */
   noteCreatedAt: string
+  /** Lo pedido en la línea: sólo hace falta si `importedClosed`. */
+  quantity?: number
+  /** La nota es una importada de CHOME ERP que llegó «Cerrada» (`isImportedClosedNote`). */
+  importedClosed?: boolean
 }
+
+/** Nota importada de CHOME ERP (`external_ref`) cuyo estado de origen es «Cerrada»: lo pedido llegó a la faena según el ERP. */
+export const isImportedClosedNote = (note: { status: string; externalRef?: string | null }): boolean => note.status === "cerrada" && !!note.externalRef
 
 export interface NoteLineState {
   stage: PartsNoteLineStage
-  /** Σ de lo reservado para esta línea (`mant_parts_allocation_sources.note_item_id`). */
+  /** Lo que llegó a la faena para esta línea (reserva o compra recibida, según la vía). */
   arrived: number
-  /** Lo consumido de ese repuesto en registros vigentes de la OT, repartido entre sus líneas y con tope `arrived`. */
+  /** Lo consumido de ese repuesto en registros vigentes de la OT, repartido entre sus líneas y con tope `arrived`. Sin OT: 0. */
   used: number
   purchases: PartsNoteDetailLine["purchases"]
   /** Estado de cada compra tal como lo ve `allPurchasesDead` (incluye la solicitud). */
@@ -78,25 +93,6 @@ export async function loadPurchases(client: Reader, itemIds: readonly string[]):
   return result
 }
 
-async function loadArrivals(client: Reader, itemIds: readonly string[]): Promise<Map<string, { quantity: number; productId: string }>> {
-  const rows = await client
-    .select({
-      noteItemId: mantPartsAllocationSources.noteItemId,
-      quantity: mantPartsAllocationSources.quantity,
-      productId: mantPartsAllocations.productId,
-    })
-    .from(mantPartsAllocationSources)
-    .innerJoin(mantPartsAllocations, eq(mantPartsAllocations.id, mantPartsAllocationSources.allocationId))
-    .where(inArray(mantPartsAllocationSources.noteItemId, [...itemIds]))
-  const arrivals = new Map<string, { quantity: number; productId: string }>()
-  for (const row of rows) {
-    if (!row.noteItemId) continue
-    const current = arrivals.get(row.noteItemId)
-    arrivals.set(row.noteItemId, { quantity: roundQty((current?.quantity ?? 0) + Number(row.quantity)), productId: current?.productId ?? row.productId })
-  }
-  return arrivals
-}
-
 /** Lo descontado por (OT, producto) en registros vigentes. */
 async function loadConsumed(client: Reader, workOrderIds: readonly string[], productIds: readonly string[]): Promise<Map<string, number>> {
   if (workOrderIds.length === 0 || productIds.length === 0) return new Map()
@@ -122,17 +118,22 @@ export async function loadLineStates(refs: readonly NoteLineRef[], client: Reade
   const states = new Map<string, NoteLineState>()
   if (refs.length === 0) return states
   const itemIds = refs.map((ref) => ref.id)
-  const [purchases, arrivals] = await Promise.all([loadPurchases(client, itemIds), loadArrivals(client, itemIds)])
+  const [purchases, arrivals] = await Promise.all([loadPurchases(client, itemIds), loadArrivedByLine(client, refs)])
   const productOf = (ref: NoteLineRef) => ref.productId ?? arrivals.get(ref.id)?.productId ?? null
 
   const productIds = [...new Set(refs.map(productOf).filter((id): id is string => !!id))]
-  const consumed = await loadConsumed(client, [...new Set(refs.map((ref) => ref.workOrderId))], productIds)
+  const workOrderIds = [...new Set(refs.flatMap((ref) => (ref.workOrderId ? [ref.workOrderId] : [])))]
+  const consumed = await loadConsumed(client, workOrderIds, productIds)
   const ordered = [...refs].sort((a, b) =>
     a.noteCreatedAt.localeCompare(b.noteCreatedAt) || a.sortOrder - b.sortOrder || a.id.localeCompare(b.id))
   const used = allocateUsed(
     ordered.map((ref) => {
       const productId = productOf(ref)
-      return { id: ref.id, key: productId ? `${ref.workOrderId}:${productId}` : null, arrived: arrivals.get(ref.id)?.quantity ?? 0 }
+      return {
+        id: ref.id,
+        key: ref.workOrderId && productId ? `${ref.workOrderId}:${productId}` : null,
+        arrived: arrivals.get(ref.id)?.quantity ?? 0,
+      }
     }),
     consumed,
   )
@@ -140,7 +141,9 @@ export async function loadLineStates(refs: readonly NoteLineRef[], client: Reade
   for (const ref of refs) {
     const rows = purchases.get(ref.id) ?? []
     const liveness = rows.map((row) => ({ itemStatus: row.status, requestStatus: row.requestStatus }))
-    const arrived = arrivals.get(ref.id)?.quantity ?? 0
+    // Importada «Cerrada»: una línea «en compra» sin ninguna compra en la plataforma llegó completa (lo dijo el ERP).
+    const arrivedByImport = !!ref.importedClosed && ref.resolution === "en_compra" && rows.length === 0
+    const arrived = arrivedByImport ? roundQty(ref.quantity ?? 0) : arrivals.get(ref.id)?.quantity ?? 0
     states.set(ref.id, {
       stage: lineStage({ resolution: ref.resolution, arrived, purchases: liveness }),
       arrived,

@@ -18,6 +18,8 @@ import { countEquipmentRecords } from "@/lib/services/mantencion/equipment"
 import { loadEquipmentInsurance, loadEquipmentWorkOrders, loadLifeRows, loadLifeTotals, type LifeTotals } from "@/lib/services/mantencion/equipment-life"
 import { loadEquipmentTimeline } from "@/lib/services/mantencion/maintenance-work"
 import { listEquipmentHistory } from "@/lib/services/mantencion/equipment-history"
+import { loadEquipmentParts } from "@/lib/services/mantencion/equipment-parts"
+import { noteVisibility } from "@/lib/services/mantencion/parts-notes/access"
 import { loadEquipmentCurrents } from "@/lib/services/mantencion/equipment-resolve"
 import { loadFleet } from "@/lib/services/mantencion/fleet"
 import { listAssignableMechanics, listExecutionWorksiteOptions, listWorkOrderEquipmentOptions, listWorksiteMechanics } from "@/lib/services/mantencion/work-orders/query"
@@ -98,7 +100,7 @@ export default async function EquipmentDetailPage({
   // historial: el mismo permiso que decidía la visibilidad de «Historial anterior». Su alcance lo aplica el servicio.
   // Quien la ve no recibe además la lista de lo firmado (la línea de tiempo ya lo trae): no se consulta en balde.
   const canSeeHistory = canAny(session, "mant:records:view_all", "mant:records:view_worksite")
-  const [history, life, totals, insurance, recordCount, schedules, workOrders, timeline, purchases] = await Promise.all([
+  const [history, life, totals, insurance, recordCount, schedules, workOrders, timeline, purchases, parts] = await Promise.all([
     listEquipmentHistory(id),
     canSeeHistory ? Promise.resolve({ rows: [], hasMore: false }) : loadLifeRows(id, visibility, { limit: lifeLimit }),
     canSeeHistory ? Promise.resolve(NO_LIFE_TOTALS) : loadLifeTotals(id, visibility),
@@ -109,6 +111,8 @@ export default async function EquipmentDetailPage({
     loadEquipmentWorkOrders(id, viewer),
     canSeeHistory ? loadEquipmentTimeline(viewer, id, { limit: EQUIPMENT_TIMELINE_LIMIT }) : Promise.resolve(null),
     canSeePurchases ? getVehiclePurchaseHistory(id) : Promise.resolve(null),
+    // Notas de pedido y repuestos usados: cada lista llega recortada a su alcance y `null` si no hay permiso para verla.
+    loadEquipmentParts(id, viewer),
   ])
 
   // El efecto de cada OT cerrada en el rendimiento: dato del log de combustible, con su permiso.
@@ -191,6 +195,12 @@ export default async function EquipmentDetailPage({
       canOpenSpareParts: can(session, "repuestos:catalog"),
       // Un equipo dado de baja no admite solicitudes nuevas (el formulario lo rechazaría).
       newRequestHref: can(session, "repuestos:create") && !row.retired ? `/solicitudes/nueva?tipo=repuestos&vehiculo=${row.vehicleId}` : null,
+    },
+    parts: {
+      ...parts,
+      // Los enlaces siguen la puerta de cada pantalla (la nota y la OT validan permiso y alcance otra vez).
+      canOpenNotes: noteVisibility(viewer).kind !== "none",
+      canOpenWorkOrders: canAny(session, "mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute"),
     },
   }
 

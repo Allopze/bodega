@@ -547,6 +547,51 @@ describe("ReceiptForm", () => {
     })
   })
 
+  describe("recepción parcial de una OC con varias líneas", () => {
+    /**
+     * El servidor rechaza una línea con las tres cantidades en 0 («Registra al menos una cantidad») y con ella la recepción
+     * entera: llegó sólo una parte del pedido (o una línea ya estaba completa) y la persona no podía registrarla, ni
+     * dejando el campo en 0. Una línea en 0 no viaja: no llegó nada de ella.
+     */
+    it("no manda la línea que quedó en 0 y sí las que traen cantidad", () => {
+      const { container } = render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          officeName="Administración"
+          items={[makeItem({ id: "oci-1", productName: "Filtro", quantity: 3 }), makeItem({ id: "oci-2", productName: "Correa", quantity: 2 })]}
+          canOffice={true}
+          canFaena={false}
+        />,
+      )
+      fireEvent.change(screen.getByLabelText("Cantidad a recibir de Filtro"), { target: { value: "1" } })
+      fireEvent.change(screen.getByLabelText("Cantidad a recibir de Correa"), { target: { value: "0" } })
+      const itemsJson = container.querySelector('input[name="itemsJson"]') as HTMLInputElement
+      const sent = JSON.parse(itemsJson.value) as Array<{ purchaseOrderItemId: string; quantityReceived: number }>
+      expect(sent.map((line) => [line.purchaseOrderItemId, line.quantityReceived])).toEqual([["oci-1", 1]])
+    })
+
+    it("una línea sólo rechazada sigue viajando (recibido en 0 con lo rechazado)", () => {
+      const { container } = render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          officeName="Administración"
+          items={[makeItem({ id: "oci-1", productName: "Filtro", quantity: 3 })]}
+          canOffice={true}
+          canFaena={false}
+        />,
+      )
+      fireEvent.change(screen.getAllByLabelText("Cantidad a recibir de Filtro")[0]!, { target: { value: "0" } })
+      fireEvent.change(screen.getAllByLabelText("Cantidad rechazada de Filtro")[0]!, { target: { value: "3" } })
+      const itemsJson = container.querySelector('input[name="itemsJson"]') as HTMLInputElement
+      const sent = JSON.parse(itemsJson.value) as Array<{ quantityReceived: number; quantityRejected: number }>
+      expect(sent).toMatchObject([{ quantityReceived: 0, quantityRejected: 3 }])
+    })
+  })
+
   describe("líneas del mismo producto", () => {
     /**
      * Una OC puede traer el mismo producto en varias líneas (OC-2026-0032: dos

@@ -44,7 +44,7 @@ export async function reconcileDesdeStockLinesTx(tx: Tx, input: ReconcileLinesIn
   // Sin bloqueo: las líneas «desde stock» con aportes en las reservas de esos repuestos en esa faena, la OT de cada una y el
   // repuesto de la reserva (un conteo grande no debe tomar la fila de stock de cada producto que contó: sólo las que importan).
   const candidates = await tx
-    .selectDistinct({ itemId: mantPartsNoteItems.id, workOrderId: mantPartsNotes.workOrderId, productId: mantPartsAllocations.productId })
+    .selectDistinct({ itemId: mantPartsNoteItems.id, workOrderId: sql<string>`${mantPartsNotes.workOrderId}`, productId: mantPartsAllocations.productId })
     .from(mantPartsAllocationSources)
     .innerJoin(mantPartsAllocations, eq(mantPartsAllocations.id, mantPartsAllocationSources.allocationId))
     .innerJoin(mantPartsNoteItems, eq(mantPartsNoteItems.id, mantPartsAllocationSources.noteItemId))
@@ -71,7 +71,7 @@ export async function reconcileDesdeStockLinesTx(tx: Tx, input: ReconcileLinesIn
       noteId: mantPartsNoteItems.noteId,
       code: mantPartsNotes.code,
       noteWorksiteId: mantPartsNotes.worksiteId,
-      workOrderId: mantPartsNotes.workOrderId,
+      workOrderId: sql<string>`${mantPartsNotes.workOrderId}`,
       description: mantPartsNoteItems.description,
       quantity: mantPartsNoteItems.quantity,
       productId: mantPartsNoteItems.productId,

@@ -10,6 +10,7 @@ import type { SyncPartsNote } from "@/lib/mantencion/contracts"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { configureZodLocale } from "@/lib/validation/zod-locale"
 import { IDS, seedMantFixtures } from "./mantencion-sync-fixtures"
+import { clearNoteHistory } from "./np-history-reset"
 
 /**
  * Regresiones de las reglas de las notas de pedido (NP) de Mantención (auditoría 2026-11-26), contra Postgres real:
@@ -204,6 +205,7 @@ async function snapshotOf(workOrderId: string, noteIds: string[]) {
 }
 
 async function resetState() {
+  await clearNoteHistory(testDb)
   for (const table of [
     schema.notifications, schema.auditLog, schema.rateLimits, schema.mantRecordParts, schema.mantRecords, schema.approvalDecisions, schema.statusHistory,
     schema.purchaseOrderItems, schema.purchaseOrders, schema.purchaseRequestItems, schema.purchaseRequests,
@@ -243,9 +245,9 @@ describe("NP4-1 · rechazar el ítem de la solicitud que compraba una línea", (
 
     expect(await itemRow(bought)).toMatchObject({ resolution: "pendiente", resolutionReason: null, resolvedByUserId: null, resolvedAt: null })
     expect((await noteRow(note.noteId)).status).toBe("en_gestion")
-    const tray = await query.listPartsNotes(jefe, { tab: "pendientes", page: 1, pageSize: 25 })
-    expect(tray.rows.map((row) => [row.id, row.pendingLines])).toEqual([[note.noteId, 1]])
-    expect(tray.counts).toEqual({ pendientes: 1, en_gestion: 0, cerradas: 0 })
+    const tray = await query.listPartsNotes(jefe, { tab: "por_revisar", page: 1, pageSize: 25 })
+    expect(tray.rows.map((row) => [row.id, row.pendingLines.map((line) => line.id)])).toEqual([[note.noteId, [bought]]])
+    expect(tray.counts).toEqual({ por_revisar: 1, en_compra: 0, en_recepcion: 0, cerradas: 0 })
     const detail = (await query.getPartsNote(jefe, note.noteId))!
     expect(detail.lines[0]).toMatchObject({ resolution: "pendiente", stage: "pedido" })
     // Y jefatura puede actuar otra vez sobre ella.
@@ -279,7 +281,7 @@ describe("NP4-1 · rechazar el ítem de la solicitud que compraba una línea", (
     expect(await itemRow(line)).toMatchObject({
       resolution: "rechazada", resolutionReason: "La orden de trabajo se anuló: Se pidió para el equipo equivocado", resolvedByUserId: IDS.jefe,
     })
-    expect((await noteRow(note.noteId)).status).toBe("cerrada")
+    expect((await noteRow(note.noteId)).status).toBe("rechazada")
     const auto = (await eventsOf(OT.void, "parts_note_resolved")).find((event) => (event.changeSet as { cause?: string } | null)?.cause === "ot_anulada")
     expect(auto?.changeSet).toMatchObject({ automatic: true, previousResolution: "en_compra", itemId: line })
   })
@@ -288,7 +290,7 @@ describe("NP4-1 · rechazar el ítem de la solicitud que compraba una línea", (
 // ── NP4-2 · «por resolver» y compras que aún no llegan ──────────────────────────────────────────────
 
 describe("NP4-2 · «por resolver» es toda nota abierta con una línea pendiente", () => {
-  it("una nota con líneas resueltas y una pendiente sigue en «Pendientes», cuenta en el Panel y conserva la prioridad del equipo detenido", async () => {
+  it("una nota con líneas resueltas y una pendiente sigue en «Por revisar», cuenta en el Panel y conserva la prioridad del equipo detenido", async () => {
     const jefe = await viewerOf(IDS.jefe)
     const calm = await createNote(OT.arrive, [{ description: "Perno", quantity: 1 }], { equipmentStopped: false })
     const stopped = await createNote(OT.arrive, [{ description: "Sello", quantity: 1 }, { description: "Junta", quantity: 1 }, { description: "Tapa", quantity: 1 }])
@@ -296,20 +298,22 @@ describe("NP4-2 · «por resolver» es toda nota abierta con una línea pendient
     await resolver.rejectNoteItem(jefe, { itemId: stopped.itemIds[0]!, reason: "No corresponde al equipo" })
     expect((await noteRow(stopped.noteId)).status).toBe("en_gestion")
 
-    const tray = await query.listPartsNotes(jefe, { tab: "pendientes", page: 1, pageSize: 25 })
+    const tray = await query.listPartsNotes(jefe, { tab: "por_revisar", page: 1, pageSize: 25 })
     expect(tray.rows.map((row) => row.id)).toEqual([stopped.noteId, calm.noteId])
-    expect(tray.rows[0]).toMatchObject({ status: "en_gestion", equipmentStopped: true, pendingLines: 2, totalLines: 3 })
+    expect(tray.rows[0]).toMatchObject({ status: "en_gestion", equipmentStopped: true, totalLines: 3 })
+    // Las líneas pendientes viajan en la fila (sólo en «Por revisar»), con lo que hace falta para decidirlas sin abrir la nota.
+    expect(tray.rows[0]!.pendingLines).toEqual(stopped.itemIds.slice(1).map((id, index) => ({ id, description: ["Junta", "Tapa"][index], quantity: 1, unitOfMeasure: "unidad" })))
     // La cifra del Panel es este mismo conteo (`hoy-tab.tsx`).
-    expect(tray.counts).toEqual({ pendientes: 2, en_gestion: 0, cerradas: 0 })
-    const withoutRows = await query.listPartsNotes(jefe, { tab: "pendientes", page: 1, pageSize: 1 })
-    expect(withoutRows.counts.pendientes).toBe(2)
+    expect(tray.counts).toEqual({ por_revisar: 2, en_compra: 0, en_recepcion: 0, cerradas: 0 })
+    const withoutRows = await query.listPartsNotes(jefe, { tab: "por_revisar", page: 1, pageSize: 1 })
+    expect(withoutRows.counts.por_revisar).toBe(2)
 
-    // Resueltas todas sus líneas, sale de «Pendientes»; una anulada tampoco cuenta.
+    // Resueltas todas sus líneas, sale de «Por revisar»; una anulada tampoco cuenta.
     for (const itemId of stopped.itemIds.slice(1)) await resolver.rejectNoteItem(jefe, { itemId, reason: "No corresponde al equipo" })
     await resolver.voidPartsNote(jefe, { noteId: calm.noteId, reason: "Se pidió por error" })
-    const after = await query.listPartsNotes(jefe, { tab: "pendientes", page: 1, pageSize: 25 })
+    const after = await query.listPartsNotes(jefe, { tab: "por_revisar", page: 1, pageSize: 25 })
     expect(after.rows).toEqual([])
-    expect(after.counts).toEqual({ pendientes: 0, en_gestion: 0, cerradas: 2 })
+    expect(after.counts).toEqual({ por_revisar: 0, en_compra: 0, en_recepcion: 0, cerradas: 2 })
   })
 
   it("una nota con todas sus líneas en compra sigue en gestión hasta que el repuesto llega; al llegar completo se cierra sola", async () => {
@@ -322,18 +326,19 @@ describe("NP4-2 · «por resolver» es toda nota abierta con una línea pendient
     const purchase = await insertPurchase({ noteItemId: bought, workOrderId: OT.arrive, itemStatus: "in_purchase_order", requestStatus: "in_purchasing" })
     await markInPurchase(bought)
     // No cuenta como «por resolver» ni como cerrada: espera su compra.
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
-    expect(await query.listPartsNotes(jefe, { tab: "en_gestion", page: 1, pageSize: 25 })).toMatchObject({ counts: { pendientes: 0, en_gestion: 1, cerradas: 0 }, rows: [expect.objectContaining({ id: note.noteId, pendingLines: 0 })] })
+    expect((await noteRow(note.noteId)).status).toBe("en_compra")
+    // La compra aún no tiene OC: la nota espera en «En compra» y, sin líneas por resolver, no lleva líneas pendientes en la fila.
+    expect(await query.listPartsNotes(jefe, { tab: "en_compra", page: 1, pageSize: 25 })).toMatchObject({ counts: { por_revisar: 0, en_compra: 1, en_recepcion: 0, cerradas: 0 }, rows: [expect.objectContaining({ id: note.noteId, pendingLines: [] })] })
 
     // Llega parte: sigue esperando. Llega el resto (el ítem ya está recibido): la nota se cierra en la misma transacción de la llegada.
     await arrive(OT.arrive, filter, 1, bought)
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("recibida_parcial")
     await testDb.update(schema.purchaseRequestItems).set({ status: "delivered" }).where(eq(schema.purchaseRequestItems.id, purchase.itemId))
     await arrive(OT.arrive, filter, 1, bought)
     expect((await noteRow(note.noteId)).status).toBe("cerrada")
     const closed = await query.listPartsNotes(jefe, { tab: "cerradas", page: 1, pageSize: 25 })
     expect(closed.rows.map((row) => row.id)).toEqual([note.noteId])
-    expect(closed.counts).toEqual({ pendientes: 0, en_gestion: 0, cerradas: 1 })
+    expect(closed.counts).toEqual({ por_revisar: 0, en_compra: 0, en_recepcion: 0, cerradas: 1 })
 
     // Cero diferencias: recalcular otra vez no escribe ni mueve `updated_at`.
     const before = await snapshotOf(OT.arrive, [note.noteId])
@@ -345,7 +350,7 @@ describe("NP4-2 · «por resolver» es toda nota abierta con una línea pendient
     const note = await createNote(OT.arrive, [{ description: "Filtro de aceite", quantity: 4 }])
     const purchase = await insertPurchase({ noteItemId: note.itemIds[0]!, workOrderId: OT.arrive, itemStatus: "purchased", requestStatus: "in_purchasing" })
     await markInPurchase(note.itemIds[0]!)
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("en_compra")
     await testDb.update(schema.purchaseRequestItems).set({ status: "received" }).where(eq(schema.purchaseRequestItems.id, purchase.itemId))
     await testDb.transaction((tx) => recalcNoteStatusTx(tx as unknown as Tx, note.noteId))
     expect((await noteRow(note.noteId)).status).toBe("cerrada")
@@ -355,7 +360,7 @@ describe("NP4-2 · «por resolver» es toda nota abierta con una línea pendient
     const note = await createNote(OT.end, [{ description: "Manguera hidráulica", quantity: 2 }])
     await insertPurchase({ noteItemId: note.itemIds[0]!, workOrderId: OT.end, itemStatus: "approved", requestStatus: "approved" })
     await markInPurchase(note.itemIds[0]!)
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("en_compra")
 
     expect(await transitions.voidWorkOrder(await actorOf(IDS.jefe), { workOrderId: OT.end, reason: "Se dio de baja el equipo" })).toMatchObject({ ok: true })
 
@@ -618,7 +623,7 @@ describe("NP4-4 y NP4-6 · liberar la reserva de una línea «desde stock»", ()
 
     expect(outcome.returnedLines).toEqual([expect.objectContaining({ itemId: note.itemIds[0], outcome: "rechazada" })])
     expect(await itemRow(note.itemIds[0]!)).toMatchObject({ resolution: "rechazada", resolutionReason: "La orden de trabajo se anuló: Se dio de baja el equipo" })
-    expect((await noteRow(note.noteId)).status).toBe("cerrada")
+    expect((await noteRow(note.noteId)).status).toBe("rechazada")
     const auto = (await eventsOf(OT.gone, "parts_note_resolved")).find((event) => (event.changeSet as { cause?: string } | null)?.cause === "ot_anulada")
     expect(auto?.changeSet).toMatchObject({ automatic: true, previousResolution: "desde_stock", releasedQuantity: 2 })
   })

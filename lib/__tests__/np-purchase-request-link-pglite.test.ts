@@ -148,8 +148,9 @@ describe("solicitud de repuestos desde una nota de pedido", () => {
       status: "anulada", voidedAt: now, voidedByUserId: IDS.jefe, voidReason: "El mecánico la envió por error",
     }).where(eq(schema.mantPartsNotes.id, noteVoid.id))
 
-    // Una nota de otra faena (Cholguán), sobre la misma OT: fuera del alcance de la jefatura de Biodiversa.
-    await note("np-cho", "NP-2026-0005", otA, IDS.truckBio, [{ id: "npi-cho", description: "Termostato" }], IDS.wsCho)
+    // Una nota de otra faena (Cholguán) sobre un equipo que también está en Cholguán: sin relación con la faena de la jefatura de
+    // Biodiversa (con el equipo hoy en Biodiversa sí la tendría: ver `np-alcance-equipo-trasladado-pglite.test.ts`).
+    await note("np-cho", "NP-2026-0005", otA, IDS.truckCho, [{ id: "npi-cho", description: "Termostato" }], IDS.wsCho)
 
     await testDb.insert(schema.suppliers).values({
       id: "sup-np", name: "Repuestos del Sur", rut: "76.000.111-1", isActive: true, createdAt: now, updatedAt: now,
@@ -315,12 +316,36 @@ describe("solicitud de repuestos desde una nota de pedido", () => {
     })
 
     it("con la NP vigente y la OT abierta el envío sigue su curso", async () => {
-      const requestId = await persistRepuestoDraft(session, draft([npItem(LINE.a2, { description: "Abrazadera de acero", estimatedUnitPrice: 10_000 })]))
+      // Una línea que ninguna otra solicitud compra (a2 ya la compran borradores de las pruebas de arriba: doble compra).
+      await note("np-submit", "NP-2026-0099", otA, IDS.truckBio, [{ id: "npi-submit", description: "Abrazadera de acero" }])
+      const requestId = await persistRepuestoDraft(session, draft([npItem("npi-submit", { description: "Abrazadera de acero", estimatedUnitPrice: 10_000 })]))
       await submitRepuestoRequest({ requestId, userId: IDS.jefe })
       const [request] = await testDb.select({ status: schema.purchaseRequests.status }).from(schema.purchaseRequests)
         .where(eq(schema.purchaseRequests.id, requestId))
       expect(request?.status).toBe("submitted")
-      expect((await itemsOf(requestId))[0]).toMatchObject({ partsNoteItemId: LINE.a2, status: "requested" })
+      expect((await itemsOf(requestId))[0]).toMatchObject({ partsNoteItemId: "npi-submit", status: "requested" })
+    })
+
+    it("una línea que otra solicitud ya cubrió entretanto frena el envío (doble compra): el borrador sigue en borrador", async () => {
+      await note("np-double", "NP-2026-0098", otA, IDS.truckBio, [{ id: "npi-double", description: "Filtro de combustible" }])
+      const requestId = await persistRepuestoDraft(session, draft([npItem("npi-double", { description: "Filtro de combustible", estimatedUnitPrice: 10_000 })]))
+      // Otra solicitud (por otra vía) pasa a comprar las 2 unidades de la línea mientras el borrador esperaba.
+      await testDb.insert(schema.purchaseRequests).values({
+        id: "req-double", code: "SOL-2026-0098", worksiteId: IDS.wsBio, requesterId: IDS.jefe, requestType: "repuestos", urgency: "high", status: "submitted",
+      })
+      await testDb.insert(schema.purchaseRequestItems).values({
+        id: "rqi-double", requestId: "req-double", productNameFree: "Filtro de combustible", quantity: 2, unitOfMeasure: "unidad", status: "approved", partsNoteItemId: "npi-double",
+      })
+      expect(await message(() => submitRepuestoRequest({ requestId, userId: IDS.jefe })))
+        .toBe("La línea «Filtro de combustible» de NP-2026-0098 ya se está comprando en SOL-2026-0098: quita ese ítem de la solicitud.")
+      const [request] = await testDb.select({ status: schema.purchaseRequests.status }).from(schema.purchaseRequests)
+        .where(eq(schema.purchaseRequests.id, requestId))
+      expect(request?.status).toBe("draft")
+
+      // Comprar en partes sigue permitido: si lo vivo no cubre lo pedido, el envío pasa.
+      await testDb.update(schema.purchaseRequestItems).set({ quantity: 1 }).where(eq(schema.purchaseRequestItems.id, "rqi-double"))
+      await submitRepuestoRequest({ requestId, userId: IDS.jefe })
+      expect((await testDb.select({ status: schema.purchaseRequests.status }).from(schema.purchaseRequests).where(eq(schema.purchaseRequests.id, requestId)))[0]?.status).toBe("submitted")
     })
   })
 

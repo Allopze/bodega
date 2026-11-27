@@ -1,6 +1,8 @@
-import { and, eq, inArray, ne } from "drizzle-orm"
+import { and, eq, inArray, isNull, ne } from "drizzle-orm"
 import { db } from "@/db"
-import { permissions, rolePermissions, roles, userPermissions, userRoles } from "@/db/schema"
+import {
+  mantPartsNoteItems, mantPartsNotes, permissions, purchaseRequestItems, rolePermissions, roles, userPermissions, userRoles, worksites,
+} from "@/db/schema"
 import type { NotificationType } from "@/db/schema/audit"
 import { notifyManyUser } from "@/lib/services/notification-create"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
@@ -14,6 +16,7 @@ import { NP_PERMISSIONS } from "./access"
  */
 const NP_CREATED: NotificationType = "mant_np_created"
 const NP_REJECTED: NotificationType = "mant_np_rejected"
+const NP_ARRIVED: NotificationType = "mant_np_arrived"
 
 const ADMIN_ROLE = "administrador"
 
@@ -50,20 +53,24 @@ async function managersOf(worksiteId: string, actorUserId: string): Promise<stri
 export interface PartsNoteCreatedNotice {
   noteId: string
   code: string
-  workOrderFolio: string
+  /** Null: nota sin OT. */
+  workOrderFolio: string | null
   worksiteId: string
   lineCount: number
   equipmentStopped: boolean
-  /** Equipo («KA-135 · Camión») para el título. */
+  /** Urgencia que fijó quien la pidió («urgente» si no hay equipo detenido). */
+  urgent: boolean
+  /** Equipo («KA-135 · Camión») para el título; sin OT, la faena. */
   equipment: string
   actorUserId: string
 }
 
-/** Aviso a quienes resuelven NP en la faena: «NP-… · OT … · 2 repuestos · equipo detenido». */
+/** Aviso a quienes resuelven NP en la faena: «NP-… · OT … · 2 repuestos · equipo detenido». Sin OT, dice «sin OT». */
 export async function notifyPartsNoteCreated(notice: PartsNoteCreatedNotice): Promise<void> {
   const userIds = await managersOf(notice.worksiteId, notice.actorUserId)
   if (userIds.length === 0) return
-  const body = [notice.code, `OT ${notice.workOrderFolio}`, countOf(notice.lineCount, "repuesto"), notice.equipmentStopped ? "equipo detenido" : null]
+  const urgency = notice.equipmentStopped ? "equipo detenido" : notice.urgent ? "urgente" : null
+  const body = [notice.code, notice.workOrderFolio ? `OT ${notice.workOrderFolio}` : "sin OT", countOf(notice.lineCount, "repuesto"), urgency]
     .filter(Boolean)
     .join(" · ")
   await notifyManyUser(userIds, {
@@ -81,24 +88,79 @@ export interface PartsNoteRejectedNotice {
   noteId: string
   noteItemId: string
   code: string
-  workOrderId: string
+  /** Null: nota sin OT (el enlace va a la propia nota). */
+  workOrderId: string | null
   description: string
   reason: string
-  /** Quien pidió: el mecánico autor de la NP. */
-  authorUserId: string
+  /** Quien pidió: el autor de la NP. Null en las importadas: no hay a quién avisar en CHOME. */
+  authorUserId: string | null
   actorUserId: string
 }
 
 /** Aviso al autor de la NP de que jefatura rechazó una línea: «Rechazado: {motivo}». */
 export async function notifyPartsNoteItemRejected(notice: PartsNoteRejectedNotice): Promise<void> {
-  if (notice.authorUserId === notice.actorUserId) return
+  if (!notice.authorUserId || notice.authorUserId === notice.actorUserId) return
   await notifyManyUser([notice.authorUserId], {
     type: NP_REJECTED,
     title: `Se rechazó un repuesto de ${notice.code}`,
     body: `${notice.description} · Rechazado: ${notice.reason}`,
     entityType: "mant_parts_note",
     entityId: notice.noteId,
-    entityHref: `/mantencion/ot/${notice.workOrderId}`,
+    entityHref: notice.workOrderId ? `/mantencion/ot/${notice.workOrderId}` : `/mantencion/notas-pedido/${notice.noteId}`,
     dedupeKey: `mant-np:${notice.noteItemId}:rejected`,
   })
+}
+
+export interface PartsNoteArrivedNotice {
+  /** Recepción (o cotejo de guía) que dejó las compras completas en la faena: parte de la clave de deduplicación. */
+  receiptId: string
+  /** Quien recibió: nunca se avisa a sí mismo. */
+  actorUserId: string
+  /** Ítems de solicitud (las compras) que esa recepción dejó completos en faena. */
+  requestItemIds: readonly string[]
+}
+
+/**
+ * Aviso al autor de una nota de pedido SIN OT de que lo que pidió llegó a la faena (la nota con OT lo recibe por el aviso de la
+ * OT: `notifyWorkOrderPartsReceived`). Una notificación por nota y recepción: la clave `mant-np-arrived:{nota}:{recepción}` hace
+ * que reintentar no la repita. Las notas importadas no tienen autor en la plataforma y no avisan; las anuladas tampoco.
+ * Llamar DESPUÉS del commit (`notifyAfterCommit`).
+ */
+export async function notifyPartsNoteLinesArrived(notice: PartsNoteArrivedNotice): Promise<void> {
+  if (notice.requestItemIds.length === 0) return
+  const rows = await db
+    .select({
+      noteId: mantPartsNotes.id,
+      code: mantPartsNotes.code,
+      status: mantPartsNotes.status,
+      authorId: mantPartsNotes.requestedByUserId,
+      worksiteName: worksites.name,
+      description: mantPartsNoteItems.description,
+    })
+    .from(purchaseRequestItems)
+    .innerJoin(mantPartsNoteItems, eq(mantPartsNoteItems.id, purchaseRequestItems.partsNoteItemId))
+    .innerJoin(mantPartsNotes, eq(mantPartsNotes.id, mantPartsNoteItems.noteId))
+    .innerJoin(worksites, eq(worksites.id, mantPartsNotes.worksiteId))
+    .where(and(inArray(purchaseRequestItems.id, [...notice.requestItemIds]), isNull(mantPartsNotes.workOrderId)))
+    .orderBy(mantPartsNotes.code, mantPartsNoteItems.sortOrder)
+
+  const byNote = new Map<string, { authorId: string; code: string; worksiteName: string; descriptions: string[] }>()
+  for (const row of rows) {
+    if (!row.authorId || row.authorId === notice.actorUserId || row.status === "anulada") continue
+    const entry = byNote.get(row.noteId) ?? { authorId: row.authorId, code: row.code, worksiteName: row.worksiteName, descriptions: [] }
+    entry.descriptions.push(row.description)
+    byNote.set(row.noteId, entry)
+  }
+  for (const [noteId, entry] of byNote) {
+    const what = entry.descriptions.length === 1 ? entry.descriptions[0]! : `${entry.descriptions[0]!} y ${entry.descriptions.length - 1} más`
+    await notifyManyUser([entry.authorId], {
+      type: NP_ARRIVED,
+      title: `${entry.descriptions.length === 1 ? "Llegó" : "Llegaron"} a faena: ${what} · ${entry.code}`,
+      body: `${entry.worksiteName} · ${entry.descriptions.join("; ")}. Ya está en la bodega de la faena.`,
+      entityType: "mant_parts_note",
+      entityId: noteId,
+      entityHref: `/mantencion/notas-pedido/${noteId}`,
+      dedupeKey: `mant-np-arrived:${noteId}:${notice.receiptId}`,
+    })
+  }
 }

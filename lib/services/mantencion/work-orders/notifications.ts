@@ -315,7 +315,8 @@ async function loadNoteArrivals(requestItemIds: readonly string[]): Promise<Note
     .innerJoin(mantPartsNotes, eq(mantPartsNotes.id, mantPartsNoteItems.noteId))
     .where(inArray(purchaseRequestItems.id, [...requestItemIds]))
     .orderBy(mantPartsNotes.code, mantPartsNoteItems.sortOrder)
-  return rows
+  // Una nota importada no tiene autor en CHOME: no hay a quién avisarle.
+  return rows.flatMap((row) => (row.authorId ? [{ authorId: row.authorId, noteCode: row.noteCode, description: row.description }] : []))
 }
 
 /** «Llegó a faena: Filtro · NP-2026-0004 · OT OT-BIO-0007»; con varias líneas, un resumen legible. */

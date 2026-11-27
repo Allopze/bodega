@@ -291,17 +291,28 @@ export const partsNoteLineSchema = z.object({
   partNumber: z.string().trim().max(80).nullable(),
   /** Producto del catálogo de repuestos, si se eligió de la lista. */
   productId: id.nullable(),
+  /** Cargo de la línea (ADR 0001, 2026-11-27): equipo o centro de costo de la faena; opcionales. Teléfonos viejos no los mandan. */
+  chargeVehicleId: id.nullish(),
+  chargeCostCenterId: id.nullish(),
+  suggestedSupplierId: id.nullish(),
+  supplierHint: z.string().trim().max(120).nullish(),
 })
 export type SyncPartsNoteLine = z.infer<typeof partsNoteLineSchema>
 
+/**
+ * Nota desde el teléfono. Con OT (lo de siempre: `workOrderId`, la faena sale de la OT) o SIN OT (`worksiteId`: pedido de
+ * taller o reposición). `urgent` es la urgencia que fija quien pide; si no viene, vale lo de `equipmentStopped`.
+ */
 export const partsNoteSchema = z.object({
   id: uuid,
-  workOrderId: id,
+  workOrderId: id.nullish(),
+  worksiteId: id.nullish(),
   deviceId: uuid,
   appVersion: z.string().max(40),
   createdAt: isoDateTime,
   /** «El equipo está detenido esperando esto»: la solicitud nace con urgencia crítica. */
-  equipmentStopped: z.boolean(),
+  equipmentStopped: z.boolean().default(false),
+  urgent: z.boolean().optional(),
   notes: z.string().trim().max(500).nullable(),
   lines: z.array(partsNoteLineSchema).min(1, "Agrega al menos un repuesto.").max(MANT_PARTS_NOTE_MAX_LINES),
 })
@@ -312,7 +323,22 @@ export type SyncPartsNoteResponse =
   | { ok: true; id: string; noteId: string; code: string; receivedAt: string; duplicate: boolean }
   | { ok: false; code: "rejected" | "invalid"; message: string; field?: string }
 
-export type PartsNoteStatus = "enviada" | "en_gestion" | "cerrada" | "anulada"
+/**
+ * Estado de la cabecera de una NP (ADR 0001, 2026-11-27). `aceptada` y `en_espera` los fija jefatura; los demás los da el
+ * estado de sus líneas (`deriveNoteStatus`). Una NP abierta es cualquiera que no esté cerrada, rechazada ni anulada.
+ */
+export const PARTS_NOTE_STATUSES = [
+  "enviada", "aceptada", "en_espera", "en_gestion", "en_compra", "recibida_parcial", "cerrada", "rechazada", "anulada",
+] as const
+export type PartsNoteStatus = (typeof PARTS_NOTE_STATUSES)[number]
+
+/** Estados en que la NP ya no se resuelve: cerrada, rechazada o anulada. */
+export const PARTS_NOTE_CLOSED_STATUSES: readonly PartsNoteStatus[] = ["cerrada", "rechazada", "anulada"]
+
+/** La NP sigue abierta (aún puede resolverse, comprarse o recibirse). Lo comparten el servidor y la UI. */
+export function isPartsNoteOpen(status: PartsNoteStatus | string): boolean {
+  return !(PARTS_NOTE_CLOSED_STATUSES as readonly string[]).includes(status)
+}
 
 /**
  * Etapa legible de una línea de NP, ya calculada por el servidor:
@@ -343,6 +369,44 @@ export interface CatalogPartsNote {
   equipmentStopped: boolean
   createdAt: string
   lines: CatalogPartsNoteLine[]
+  // Lo que sigue lo trae el catálogo de las notas propias (`ownPartsNotes`, ADR 0001 2026-11-27); en las de una OT no viene.
+  // Todo opcional: un catálogo guardado antes no lo trae y la app lo lee como «sin dato».
+  /** Id con el que el teléfono la envió (`SyncPartsNote.id`): permite no listar dos veces la que ya está en el servidor. */
+  clientOpId?: string | null
+  urgent?: boolean
+  /** Observación de quien la pidió. */
+  notes?: string | null
+  /** Motivo de «En espera» o de «Anulada». Una nota rechazada lleva el motivo en sus líneas. */
+  statusReason?: string | null
+  worksiteId?: string
+  worksiteName?: string | null
+  /** Con OT: la OT y su equipo. Sin OT, `null`. */
+  workOrderId?: string | null
+  workOrderFolio?: string | null
+  equipmentCode?: string | null
+  equipmentPlate?: string | null
+  updatedAt?: string
+}
+
+/** Centro de costo de una faena del mecánico, para el cargo de una línea sin OT («Taller»…). */
+export interface CatalogCostCenter {
+  id: string
+  name: string
+  worksiteId: string
+}
+
+/**
+ * Repuesto activo del catálogo para el buscador de «Pedir repuestos» (ADR mantención 0001, R15). Sólo identidad: sin
+ * precios ni proveedores. Compacto a propósito (viaja entero en cada descarga del catálogo, y queda en el teléfono).
+ */
+export interface CatalogSparePart {
+  id: string
+  name: string
+  sku: string
+  /** N° de parte del fabricante; `null` si el repuesto no lo tiene. */
+  partNumber: string | null
+  /** Código de la unidad del catálogo de unidades (`unidad`, `litro`…). */
+  unit: string
 }
 
 /** Repuesto reservado para la OT y todavía sin usar: el chip «Disponibles para esta OT». */
@@ -467,7 +531,8 @@ export interface MantCatalog {
   /** Igual al ETag de la respuesta. */
   version: string
   generatedAt: string
-  user: { id: string; name: string; worksiteIds: string[] }
+  /** `canRequestParts`: puede pedir repuestos sin OT (`mant:np:create`); un catálogo antiguo no lo trae y la app lo da por falso. */
+  user: { id: string; name: string; worksiteIds: string[]; canRequestParts?: boolean }
   worksites: Array<{ id: string; name: string }>
   /** `alcance=mias` (por defecto): equipos activos de sus faenas, completos. */
   equipment: CatalogEquipment[]
@@ -486,6 +551,18 @@ export interface MantCatalog {
    * un catálogo guardado antes de 2026-11 no lo trae y la app lo toma como `[]`.
    */
   workOrders?: CatalogWorkOrder[]
+  /**
+   * Mis notas de pedido, con y sin OT: las abiertas y las cerradas, rechazadas o anuladas de los últimos 30 días, SÓLO las que
+   * pidió quien descarga (`requested_by_user_id`). Opcional: catálogos de formato < 7 no lo traen.
+   */
+  ownPartsNotes?: CatalogPartsNote[]
+  /** Centros de costo activos de sus faenas. Opcional, como `ownPartsNotes`. */
+  costCenters?: CatalogCostCenter[]
+  /**
+   * Repuestos activos del catálogo, para buscarlos al pedir (con o sin OT). Sólo con `mant:np:create`; opcional: catálogos
+   * de formato < 8 no lo traen y la app ofrece sólo texto libre.
+   */
+  spareParts?: CatalogSparePart[]
 }
 
 /** `alcance=todos`: el resto de los equipos activos, en versión liviana (sin historial). */

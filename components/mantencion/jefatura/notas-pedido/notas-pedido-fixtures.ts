@@ -5,9 +5,13 @@ import type {
 /** Datos de prueba de las pantallas de notas de pedido (no se importa desde código de producción). */
 export function noteRow(overrides: Partial<PartsNoteListRow> = {}): PartsNoteListRow {
   return {
-    id: "n1", code: "NP-2026-0001", status: "enviada", workOrderId: "ot-1", workOrderFolio: "OT-BIO-0001", equipmentCode: "KA-135", equipmentPlate: "RBYD-98",
-    worksiteId: "ws-1", worksiteName: "Biodiversa", requestedByName: "Javier Roa", equipmentStopped: false, pendingLines: 2, totalLines: 3,
-    createdAt: "2026-11-20T15:00:00.000Z", ...overrides,
+    id: "n1", code: "NP-2026-0001", externalRef: null, status: "enviada", statusSince: "2026-11-20T15:00:00.000Z", workOrderId: "ot-1", workOrderFolio: "OT-BIO-0001", equipmentCode: "KA-135", equipmentPlate: "RBYD-98",
+    worksiteId: "ws-1", worksiteName: "Biodiversa", requestedByName: "Javier Roa", equipmentStopped: false, totalLines: 3, charges: [], ageDays: 0,
+    pendingLines: [
+      { id: "i1", description: "Filtro de aceite", quantity: 2, unitOfMeasure: "unidad" },
+      { id: "i2", description: "Correa", quantity: 1, unitOfMeasure: "unidad" },
+    ],
+    createdAt: "2026-11-20T15:00:00.000Z", urgent: false, ...overrides,
   }
 }
 
@@ -15,19 +19,23 @@ export function noteLine(overrides: Partial<PartsNoteDetailLine> = {}): PartsNot
   return {
     id: "i1", description: "Filtro de aceite", quantity: 2, unit: "unidad", partNumber: "1R-0750", productId: "p1", productName: "Filtro de aceite motor",
     resolution: "pendiente", resolutionReason: null, resolvedByName: null, resolvedAt: null, stage: "pedido", arrived: 0, used: 0, purchases: [], freeInWorksite: 5,
+    charge: null, suggestedSupplierId: null, suggestedSupplierName: null, supplierHint: null,
     ...overrides,
   }
 }
 
 export function noteDetail(overrides: Partial<PartsNoteDetail> = {}): PartsNoteDetail {
-  const { pendingLines: _pending, totalLines: _total, ...base } = noteRow()
-  void _pending
-  void _total
+  const { pendingLines: _pending, totalLines: _total, charges: _charges, ageDays: _age, ...base } = noteRow()
+  void [_pending, _total, _charges, _age]
   return {
     ...base,
     notes: "Se rompió en la ruta; el equipo no puede salir.",
     voidReason: null,
+    holdReason: null,
     canManage: true,
+    canBuy: true,
+    actions: [],
+    events: [{ id: "ev-1", kind: "creada", fromStatus: null, toStatus: "enviada", reason: null, actorName: "Javier Roa", itemDescription: null, createdAt: "2026-11-20T15:00:00.000Z" }],
     lines: [noteLine()],
     ...overrides,
   }

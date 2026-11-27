@@ -95,7 +95,7 @@ async function insertNote(workOrderId: string, lines: LineSpec[]): Promise<{ not
   const code = `NP-2026-${String(9400 + noteSeq)}`
   const allBought = lines.every((line) => (line.resolution ?? "pendiente") === "en_compra")
   await testDb.insert(schema.mantPartsNotes).values({
-    id: noteId, code, workOrderId, vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, requestedByUserId: IDS.mecBio, status: allBought ? "en_gestion" : "enviada",
+    id: noteId, code, workOrderId, vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, requestedByUserId: IDS.mecBio, status: allBought ? "en_compra" : "enviada",
   })
   const itemIds: string[] = []
   for (const [index, line] of lines.entries()) {
@@ -256,7 +256,7 @@ describe("D19 · anular una recepción recalcula la nota", () => {
 
     // La compra vuelve a estar viva y sin llegar: la nota deja «Cerradas» y espera; la línea ya no dice «Llegó 2».
     expect(await itemStatus(order.requestItemIds[0]!)).toBe("purchased")
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("en_compra")
     expect(await arrivedOf(note.itemIds[0]!)).toBe(0)
     expect((await itemRow(note.itemIds[0]!)).resolution).toBe("en_compra")
     // La rebaja lleva la línea (con su recepción); la reserva quedó en cero.
@@ -275,9 +275,9 @@ describe("D19 · anular una recepción recalcula la nota", () => {
       action: "status_change", userId: IDS.jefe, reason: `Anulación de la recepción ${receiptCode}: Se registró contra la orden equivocada`,
     })
     expect(json(audits[0]!.oldState)).toEqual({ status: "cerrada" })
-    expect(json(audits[0]!.newState)).toEqual({ status: "en_gestion" })
+    expect(json(audits[0]!.newState)).toEqual({ status: "en_compra" })
     const receiptAudit = (await testDb.select().from(schema.auditLog).where(and(eq(schema.auditLog.entityId, receiptId), eq(schema.auditLog.entityType, "receipt")))).at(-1)
-    expect(json(receiptAudit!.newState)).toMatchObject({ status: "voided", notesRecalculated: [{ noteId: note.noteId, code: note.code, from: "cerrada", to: "en_gestion" }] })
+    expect(json(receiptAudit!.newState)).toMatchObject({ status: "voided", notesRecalculated: [{ noteId: note.noteId, code: note.code, from: "cerrada", to: "en_compra" }] })
 
     // Cero diferencias: anularla otra vez se rechaza y recalcular de nuevo no escribe nada.
     const before = await snapshotOf(OT.void, [note.noteId])
@@ -307,7 +307,7 @@ describe("D19 · anular una recepción recalcula la nota", () => {
     expect(rows.map((row) => [row.noteItemId, Number(row.quantity)]).sort()).toEqual([[first.itemIds[0], -1], [second.itemIds[0], -2]].sort())
     expect(await arrivedOf(first.itemIds[0]!)).toBe(0)
     expect(await arrivedOf(second.itemIds[0]!)).toBe(0)
-    expect([(await noteRow(first.noteId)).status, (await noteRow(second.noteId)).status]).toEqual(["en_gestion", "en_gestion"])
+    expect([(await noteRow(first.noteId)).status, (await noteRow(second.noteId)).status]).toEqual(["en_compra", "en_compra"])
     expect(Number((await allocationOf(OT.two, hose)).quantity)).toBe(0)
   })
 })
@@ -329,7 +329,7 @@ describe("D19 · anular una guía despachada recalcula la nota", () => {
 
     await cancelDispatchGuide(guide!.id, { reason: "Se despachó por error de bodega" }, ACTOR)
 
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("en_compra")
     expect(await arrivedOf(note.itemIds[0]!)).toBe(0)
     expect((await itemRow(note.itemIds[0]!)).resolution).toBe("en_compra")
     const allocation = await allocationOf(OT.guide, seal)
@@ -340,7 +340,7 @@ describe("D19 · anular una guía despachada recalcula la nota", () => {
     expect(await stockOf(seal)).toBe(0)
     expect(await stockOf(seal, OFFICE)).toBe(3)
     const guideAudit = (await testDb.select().from(schema.auditLog).where(and(eq(schema.auditLog.entityId, guide!.id), eq(schema.auditLog.entityType, "dispatch_guide"), eq(schema.auditLog.action, "cancel")))).at(-1)
-    expect(json(guideAudit!.newState)).toMatchObject({ status: "cancelled", notesRecalculated: [{ noteId: note.noteId, from: "cerrada", to: "en_gestion" }] })
+    expect(json(guideAudit!.newState)).toMatchObject({ status: "cancelled", notesRecalculated: [{ noteId: note.noteId, from: "cerrada", to: "en_compra" }] })
 
     // Cero diferencias: anularla otra vez se rechaza y recalcular de nuevo no escribe nada.
     const before = await snapshotOf(OT.guide, [note.noteId])
@@ -363,14 +363,14 @@ describe("D20 · cotejar una guía (con diferencias) recalcula la nota", () => {
     await dispatchDispatchGuide(guide!.id, ACTOR)
     const [guideLine] = await testDb.select().from(schema.dispatchGuideItems).where(eq(schema.dispatchGuideItems.guideId, guide!.id))
     const allocation = await allocationOf(OT.cotejo, gasket)
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("recibida_parcial")
     const sourcesBefore = await sourceSummary(allocation.id)
 
     // Primer cotejo, con diferencia: llegan 2 de 3. La compra sigue sin darse por recibida: la nota sigue esperando,
     // y la reserva no se toca (GDI-001: la diferencia no mueve stock ni reserva).
     await confirmDispatchGuideReceipt(guide!.id, { items: [{ guideItemId: guideLine!.id, quantityReceived: 2, differenceReason: "Una unidad llegó rota en el traslado" }] }, ACTOR)
     expect(await itemStatus(order.requestItemIds[0]!)).toBe("partially_received")
-    expect((await noteRow(note.noteId)).status).toBe("en_gestion")
+    expect((await noteRow(note.noteId)).status).toBe("recibida_parcial")
     expect(await sourceSummary(allocation.id)).toEqual(sourcesBefore)
     expect(Number((await allocationOf(OT.cotejo, gasket)).quantity)).toBe(3)
 
@@ -381,7 +381,7 @@ describe("D20 · cotejar una guía (con diferencias) recalcula la nota", () => {
     const audits = await noteAudits(note.noteId)
     expect(audits).toHaveLength(1)
     expect(audits[0]).toMatchObject({ action: "status_change", userId: IDS.jefe, reason: expect.stringContaining(`Cotejo de la guía ${guide!.code}`) })
-    expect(json(audits[0]!.oldState)).toEqual({ status: "en_gestion" })
+    expect(json(audits[0]!.oldState)).toEqual({ status: "recibida_parcial" })
     expect(json(audits[0]!.newState)).toEqual({ status: "cerrada" })
 
     // Cero diferencias: un tercer cotejo se rechaza (la guía ya está recibida) y recalcular otra vez no escribe nada.
@@ -543,7 +543,7 @@ describe("D21 · un ajuste que rebaja una reserva devuelve a pendiente las líne
 
     expect(returned).toEqual([expect.objectContaining({ itemId: note.itemIds[0], outcome: "rechazada" })])
     expect(await itemRow(note.itemIds[0]!)).toMatchObject({ resolution: "rechazada", resolutionReason: "La orden de trabajo se anuló: Se dio de baja el equipo" })
-    expect((await noteRow(note.noteId)).status).toBe("cerrada")
+    expect((await noteRow(note.noteId)).status).toBe("rechazada")
     const auto = (await trailOf(OT.late)).find((event) => (event.changeSet as { cause?: string } | null)?.cause === "ot_anulada")
     expect(auto?.changeSet).toMatchObject({ automatic: true, previousResolution: "desde_stock", releasedQuantity: 2 })
   })

@@ -1,0 +1,119 @@
+{
+  "notas": [
+    {
+      "id": 90001,
+      "fecha": "2026-05-02T10:15:00",
+      "solicitante": "Persona Ejemplo Uno",
+      "usuario": "pejemplo1",
+      "faena": "Biodiversa",
+      "urgente": true,
+      "observacion": "Camión detenido en el camino interior",
+      "estado": "Enviada",
+      "motivo": null,
+      "items": [
+        { "articulo": "Filtro de aceite", "codigo": "FA-100", "cargo": "KA 135", "cantidad": 2, "proveedor": "Repuestos de Ejemplo SpA" },
+        { "articulo": "Aceite hidráulico 68", "codigo": null, "cargo": "ka-135", "cantidad": 20, "proveedor": null }
+      ]
+    },
+    {
+      "id": 90002,
+      "fecha": "2026-05-03T08:30:00",
+      "solicitante": "Persona Ejemplo Dos",
+      "usuario": null,
+      "faena": "Biodiversa",
+      "urgente": false,
+      "observacion": "Reposición de taller",
+      "estado": "Aceptada",
+      "motivo": null,
+      "items": [
+        { "articulo": "Guantes de cuero", "codigo": null, "cargo": "TALLER", "cantidad": 6, "proveedor": "Ferretería Inventada Ltda." },
+        { "articulo": "Disco de corte 7 pulgadas", "codigo": "DC-7", "cargo": "CR43-51-52", "cantidad": 10, "proveedor": "76.123.456-7" }
+      ]
+    },
+    {
+      "id": 90003,
+      "fecha": "2026-05-10T16:45:00",
+      "solicitante": "Persona Ejemplo Uno",
+      "usuario": "pejemplo1",
+      "faena": "Cholguan",
+      "urgente": false,
+      "observacion": null,
+      "estado": "En espera",
+      "motivo": "Esperando cotización del proveedor",
+      "items": [
+        { "articulo": "Correa alternador", "codigo": "CA-22", "cargo": "KA200", "cantidad": 1, "proveedor": "Repuestos de Ejemplo SpA" }
+      ]
+    },
+    {
+      "id": 90004,
+      "fecha": "2026-05-12T09:00:00",
+      "solicitante": "Persona Ejemplo Tres",
+      "usuario": "pejemplo3",
+      "faena": "Biodiversa",
+      "urgente": false,
+      "observacion": "Pedido duplicado",
+      "estado": "Rechazada",
+      "motivo": "Ya está pedido en la nota 90001",
+      "items": [
+        { "articulo": "Filtro de aceite", "codigo": "FA-100", "cargo": "KA 135", "cantidad": 2, "proveedor": null }
+      ]
+    },
+    {
+      "id": 90005,
+      "fecha": "2026-06-01T11:20:00",
+      "solicitante": "Persona Ejemplo Dos",
+      "usuario": null,
+      "faena": "Biodiversa",
+      "urgente": false,
+      "observacion": "Llegó completo a la faena",
+      "estado": "Cerrada",
+      "motivo": null,
+      "items": [
+        { "articulo": "Manguera hidráulica 3/4", "codigo": null, "cargo": "Camion grua 1", "cantidad": 3, "proveedor": "Ferretería Inventada Ltda." },
+        { "articulo": "Abrazadera 2 pulgadas", "codigo": null, "cargo": "KA 777", "cantidad": 8, "proveedor": null }
+      ]
+    },
+    {
+      "id": 90006,
+      "fecha": "2026-06-05T14:00:00",
+      "solicitante": "Persona Ejemplo Cuatro",
+      "usuario": "pejemplo4",
+      "faena": "Faena Que No Existe",
+      "urgente": false,
+      "observacion": "Esta faena no está en la plataforma",
+      "estado": "Enviada",
+      "motivo": null,
+      "items": [
+        { "articulo": "Lámpara de trabajo", "codigo": null, "cargo": null, "cantidad": 2, "proveedor": null }
+      ]
+    },
+    {
+      "id": 90007,
+      "fecha": "2026-06-06T12:00:00",
+      "solicitante": "Admin",
+      "usuario": "admin",
+      "faena": "Biodiversa",
+      "urgente": false,
+      "observacion": "prueba de la nota de pedido TEST",
+      "estado": "Enviada",
+      "motivo": null,
+      "items": [
+        { "articulo": "Articulo test", "codigo": null, "cargo": null, "cantidad": 1, "proveedor": null }
+      ]
+    },
+    {
+      "id": 90008,
+      "fecha": "2026-13-45T10:00:00",
+      "solicitante": "Persona Ejemplo Uno",
+      "usuario": null,
+      "faena": "Biodiversa",
+      "urgente": false,
+      "observacion": "Fecha imposible: esta nota queda como inválida en el informe",
+      "estado": "Enviada",
+      "motivo": null,
+      "items": [
+        { "articulo": "Tuerca M12", "codigo": null, "cargo": null, "cantidad": 50, "proveedor": null }
+      ]
+    }
+  ]
+}

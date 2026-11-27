@@ -151,6 +151,28 @@ async function partsNotePrefill({ session, noteId }: { session: Session; noteId:
   const note = await loadPartsNotePrefill(viewerFromSession(session), noteId)
   if (!note) return { prefillNotice: "La nota de pedido no existe, ya no tiene repuestos por comprar o no tienes acceso a ella." }
 
+  // Nota sin OT (ADR 0001, 2026-11-27): la solicitud nace en la faena de la nota, sin OT; cada línea lleva su equipo de cargo.
+  if (!note.workOrderId) {
+    return {
+      initialWorksiteId: note.worksiteId,
+      initialUrgency: note.urgency,
+      prefillItems: note.items.map((line) => ({
+        productId: line.productId,
+        productNameFree: line.description,
+        quantity: line.quantity,
+        unitOfMeasure: line.unitOfMeasure,
+        urgency: note.urgency,
+        notes: line.partNumber ? `N° de parte: ${line.partNumber}` : "",
+        vehicleId: line.chargeVehicleId ?? "",
+        vehicleLabel: line.chargeVehicleLabel ?? "",
+        workOrderId: "",
+        workOrderFolio: "",
+        partsNoteItemId: line.partsNoteItemId,
+      })),
+      prefillNotice: `Solicitud desde la nota de pedido ${note.noteCode} (sin orden de trabajo). Revisa las cantidades antes de enviar.`,
+    }
+  }
+
   const fleet = await fleetPrefill({ session, workOrderId: note.workOrderId, vehicleId: "" })
   const equipment = fleet.prefillItems?.[0]
   // OT cerrada, fuera de tus faenas o equipo dado de baja: `fleetPrefill` ya dice cuál.

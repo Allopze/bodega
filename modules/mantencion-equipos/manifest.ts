@@ -35,6 +35,11 @@ export const mantencionEquiposModule = {
     "mant:np:create",
     "mant:np:view_worksite",
     "mant:np:manage",
+    // ADR 0001 (2026-11-27): notas sin OT, compra por quien no resuelve, reapertura y exportación.
+    "mant:np:view_own",
+    "mant:np:purchase",
+    "mant:np:reopen",
+    "mant:np:export",
   ] as const,
 
   permissionMeta: {
@@ -56,9 +61,13 @@ export const mantencionEquiposModule = {
     "mant:ot:execute":            { id: "p-mant-ot-execute", description: "Ejecutar las órdenes de trabajo asignadas (ingreso y salida de taller) desde la app o el PC" },
     "mant:ot:receive":            { id: "p-mant-ot-receive", description: "Registrar la recepción del equipo al salir del taller" },
     "mant:ot:conform":            { id: "p-mant-ot-conform", description: "Registrar la recepción en faena (conformidad) y cerrar la orden de trabajo" },
-    "mant:np:create":             { id: "p-mant-np-create", description: "Pedir repuestos para una orden de trabajo asignada (nota de pedido) desde la app o el PC" },
+    "mant:np:create":             { id: "p-mant-np-create", description: "Pedir repuestos (nota de pedido) desde la app o el PC: para una orden de trabajo asignada o, sin orden, para una faena de su alcance" },
     "mant:np:view_worksite":      { id: "p-mant-np-view-worksite", description: "Ver las notas de pedido de repuestos de sus faenas asignadas" },
     "mant:np:manage":             { id: "p-mant-np-manage", description: "Resolver notas de pedido (sacar de bodega, comprar o rechazar), liberar reservas y conciliar repuestos de sus faenas" },
+    "mant:np:view_own":           { id: "p-mant-np-view-own", description: "Ver las notas de pedido de repuestos que pidió él mismo, aunque la faena no sea de su alcance" },
+    "mant:np:purchase":           { id: "p-mant-np-purchase", description: "Comprar lo que pidió una nota de pedido (solicitud de repuestos) y ver la bandeja de notas de sus faenas" },
+    "mant:np:reopen":             { id: "p-mant-np-reopen", description: "Reabrir una nota de pedido rechazada, o cerrada con líneas rechazadas, de sus faenas" },
+    "mant:np:export":             { id: "p-mant-np-export", description: "Exportar a Excel la bandeja de notas de pedido de sus faenas" },
   },
 
   nav: [
@@ -88,12 +97,13 @@ export const mantencionEquiposModule = {
           badge: "count" as const,
         },
         {
-          // Bandeja de las notas de pedido del mecánico (2026-11-26). Quien las
-          // resuelve también las ve.
+          // Bandeja de las notas de pedido (2026-11-26). Quien las resuelve, quien las compra
+          // (`purchase`) y quien pidió las suyas (`view_own`) también la abren: el alcance lo pone
+          // `noteVisibility`, igual que en la página (`PARTS_NOTES_VIEW_PERMISSIONS`).
           label: "Notas de pedido",
           href: "/mantencion/notas-pedido",
           iconName: "Tray",
-          permissions: ["mant:np:view_worksite", "mant:np:manage"],
+          permissions: ["mant:np:view_worksite", "mant:np:manage", "mant:np:purchase", "mant:np:view_own"],
           group: "Mantención",
           // Notas por resolver que son de esta persona (`getOperationalWorkCounts`).
           badge: "count" as const,
@@ -232,5 +242,17 @@ export const mantencionEquiposModule = {
     { roleSlug: "supervisor_mantencion", permission: "mant:np:manage" },
     { roleSlug: "jefe_mantencion", permission: "mant:np:manage" },
     { roleSlug: "admin_contrato", permission: "mant:np:manage" },
+    // ADR 0001 (2026-11-27). `administrador` recibe todos los permisos por su rol: no se listan aquí.
+    { roleSlug: "mecanico", permission: "mant:np:view_own" },
+    { roleSlug: "supervisor_mantencion", permission: "mant:np:view_own" },
+    { roleSlug: "jefe_mantencion", permission: "mant:np:view_own" },
+    { roleSlug: "admin_contrato", permission: "mant:np:view_own" },
+    { roleSlug: "secretaria", permission: "mant:np:purchase" },
+    { roleSlug: "jefe_mantencion", permission: "mant:np:purchase" },
+    { roleSlug: "admin_contrato", permission: "mant:np:purchase" },
+    { roleSlug: "jefe_mantencion", permission: "mant:np:reopen" },
+    { roleSlug: "secretaria", permission: "mant:np:export" },
+    { roleSlug: "jefe_mantencion", permission: "mant:np:export" },
+    { roleSlug: "admin_contrato", permission: "mant:np:export" },
   ],
 } as const satisfies ModuleManifest

@@ -81,7 +81,7 @@ export function PanelToday({
       value: pendingPartsNotes === 0 ? "Ninguna" : pendingPartsNotes,
       valueKind: pendingPartsNotes === 0 ? "text" : "number",
       tone: "signal",
-      href: `/mantencion/notas-pedido?estado=pendientes${faena}`,
+      href: `/mantencion/notas-pedido?estado=por_revisar${faena}`,
     })
   }
   if (stats.length === 0) return null

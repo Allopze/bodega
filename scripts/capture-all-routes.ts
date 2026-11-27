@@ -5968,6 +5968,11 @@ async function prepareDatabase(captureDbUrl: string) {
     id: "mant-np-item-audit-1", noteId: "mant-np-audit-1", description: "Pastillas de freno delanteras", quantity: 1,
     unitOfMeasure: "juego", sortOrder: 0, createdAt: now,
   }).onConflictDoNothing()
+  // El estado de una nota es el de su último evento (ADR 0001, 2026-11-27): una nota sembrada sin su evento «creada» no tiene historial.
+  await db.insert(schema.mantPartsNoteEvents).values({
+    id: "mant-np-event-audit-1", noteId: "mant-np-audit-1", kind: "creada", fromStatus: null, toStatus: "enviada",
+    actorUserId: userId, createdAt: now,
+  }).onConflictDoNothing()
   await db.insert(schema.mantDeviceCredentials).values({
     id: "mant-dev-audit-1", userId, deviceId: "00000000-0000-4000-8000-000000000001",
     tokenHash: "a".repeat(64), label: "Tablet de captura", createdAt: now,

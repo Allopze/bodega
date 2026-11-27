@@ -21,6 +21,7 @@ import { IconChevronDown, IconChevronRight, IconChevronUp, IconWifi, IconWifiOff
 import { ObservationSheet } from "./observation-sheet"
 import { OtSection } from "./ot-lists"
 import { OtSheet } from "./ot-sheet"
+import { PartsHomeSection } from "./parts-home"
 import { RecordDetailSheet } from "./record-detail-sheet"
 import { useDrafts } from "./use-drafts"
 import { useGreeting } from "./use-greeting"
@@ -174,6 +175,8 @@ export function HomeScreen({ onStart, onResume, onFix, onDiscardRejected, onNeed
         <section className="sect">
           <button type="button" className="btns wide" aria-haspopup="dialog" onClick={() => setSearchingHistory(true)}>Historial de un equipo</button>
         </section>
+
+        <PartsHomeSection />
 
         <DueSection rows={due} onPick={(row) => start("P", row.eq.id)} />
 

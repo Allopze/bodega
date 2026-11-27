@@ -1,0 +1,10 @@
+{
+  "_ayuda": "Equivalencias de cargos de CHOME ERP. Cada alias lleva exactamente una de: {\"equipo\": \"KA-115\"} (código o patente de un equipo de la flota), {\"centro\": \"Taller\"} (centro de costo de la faena de la nota, por nombre) o {\"revisar\": true} (no se adivina: la línea conserva el texto y va al informe «Pendientes de cargo»). Los alias se comparan sin tildes, mayúsculas, espacios ni signos: «ka-115» y «KA 115» son el mismo. Un código de equipo escrito suelto («KA 115», «KA115») ya calza solo contra la flota: aquí sólo van los que no. Los de abajo son ejemplos inventados: jefatura los reemplaza con las equivalencias reales.",
+  "alias": {
+    "TALLER": { "centro": "Taller" },
+    "TALLER MECANICO": { "centro": "Taller" },
+    "BODEGA": { "centro": "Bodega" },
+    "CR43-51-52": { "revisar": true },
+    "CAMION GRUA 1": { "equipo": "KA-135" }
+  }
+}

@@ -1,5 +1,5 @@
 import { IDBFactory } from "fake-indexeddb"
-import type { CatalogEquipment, CatalogWorkOrder, MantCatalog, SyncCorrectiveRecord, SyncPartsNote, SyncPreventiveRecord, WorkOrderOpPayload, WorkOrderOpRequest } from "../../contracts"
+import type { CatalogEquipment, CatalogPartsNote, CatalogSparePart, CatalogWorkOrder, MantCatalog, SyncCorrectiveRecord, SyncPartsNote, SyncPreventiveRecord, WorkOrderOpPayload, WorkOrderOpRequest } from "../../contracts"
 import type { MantScheduleSnapshot } from "../../types"
 import { resetDbConnectionForTests } from "../db"
 import { resetSignalForTests } from "../signal"
@@ -168,4 +168,34 @@ export function partsNoteItem(n: number, overrides: { workOrderId?: string; auth
     },
     summary: { workOrderId, folio: "OT-BIO-0001", equipmentCode: "KA-140", equipmentPlate: "SGCP-84" },
   }, UUID(700 + n), createdAt)
+}
+
+/** Un pedido de repuestos SIN OT para la cola: a una faena, con urgencia y cargo por línea opcionales. */
+export function freePartsNoteItem(n: number, overrides: { worksiteId?: string; worksiteName?: string; authorUserId?: string; createdAt?: string; urgent?: boolean; lines?: SyncPartsNote["lines"]; notes?: string | null } = {}): QueuePartsNoteItem {
+  const createdAt = overrides.createdAt ?? `2026-10-28T15:0${n}:00.000Z`
+  return newPartsNoteItem({
+    authorUserId: overrides.authorUserId ?? "u-1",
+    payload: {
+      id: UUID(800 + n), worksiteId: overrides.worksiteId ?? "ws-bio", deviceId: UUID(900), appVersion: "test", createdAt,
+      equipmentStopped: false, urgent: overrides.urgent ?? false, notes: overrides.notes ?? null,
+      lines: overrides.lines ?? [{ description: "Rodamiento 6205", quantity: 4, unitOfMeasure: "unidad", partNumber: null, productId: null }],
+    },
+    summary: { workOrderId: null, folio: null, equipmentCode: null, equipmentPlate: null, worksiteName: overrides.worksiteName ?? "Biodiversa" },
+  }, UUID(800 + n), createdAt)
+}
+
+/** Un repuesto del catálogo como lo baja `spareParts` (el buscador de «Pedir repuestos»). */
+export function sparePart(overrides: Partial<CatalogSparePart> = {}): CatalogSparePart {
+  return { id: "p-1", name: "Filtro de aceite", sku: "REP-0001", partNumber: "1R-0750", unit: "unidad", ...overrides }
+}
+
+/** Una nota propia como la baja el catálogo (`ownPartsNotes`). */
+export function ownNote(overrides: Partial<CatalogPartsNote> = {}): CatalogPartsNote {
+  return {
+    id: "np-own-1", code: "NP-2026-0101", status: "enviada", equipmentStopped: false, createdAt: "2026-10-28T10:00:00.000Z",
+    urgent: false, notes: null, statusReason: null, worksiteId: "ws-bio", worksiteName: "Biodiversa", workOrderId: null, workOrderFolio: null,
+    equipmentCode: null, equipmentPlate: null, clientOpId: null, updatedAt: "2026-10-28T10:00:00.000Z",
+    lines: [{ id: "l-own-1", description: "Rodamiento 6205", quantity: 4, unit: "unidad", partNumber: null, stage: "pedido", arrived: 0, used: 0, rejectionReason: null }],
+    ...overrides,
+  }
 }

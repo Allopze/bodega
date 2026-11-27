@@ -96,7 +96,12 @@ async function titulosDeLaCola(page: Page): Promise<string[]> {
 }
 
 const ES_OT = /^(Asignar mecánico a |Recibir .+ del taller$|Dar conformidad por |Ingresar .+ a taller$|Trabajar en )/
-const ES_NOTA = /^Resolver repuestos de /
+/**
+ * Una nota con OT dice «Resolver repuestos de KA-135»; una sin OT (pedido de taller, reposición), «Resolver repuestos · Biodiversa»
+ * (`work-queue-sources.ts`). El aviso del menú cuenta las dos: contar sólo las primeras lo hace divergir de la lista apenas otra
+ * prueba deja una nota sin OT por resolver en la misma base.
+ */
+const ES_NOTA = /^Resolver repuestos (de|·) /
 const REGISTROS = /^Revisar (\d+) registros? de mantención$/
 
 /** Lo que dicen las filas de la cola: filas de OT, notas y REGISTROS (cada fila de registros trae el conteo de su faena). */
@@ -209,6 +214,10 @@ test.beforeAll(async () => {
     await sql`
       insert into mant_parts_notes (id, code, work_order_id, vehicle_id, worksite_id, requested_by_user_id, equipment_stopped, status)
       values (${notaId}, ${datos.nota}, ${delMecanico.id}, ${delMecanico.vehicleId}, ${delMecanico.worksiteId}, ${mecanico.id}, true, 'enviada')`
+    // El estado de una nota es siempre el del último evento de su historial: sembrada a mano, lleva su evento «creada».
+    await sql`
+      insert into mant_parts_note_events (id, note_id, kind, from_status, to_status, actor_user_id)
+      values (${randomUUID()}, ${notaId}, 'creada', null, 'enviada', ${mecanico.id})`
     await sql`
       insert into mant_parts_note_items (id, note_id, description, quantity, unit_of_measure, sort_order)
       values (${randomUUID()}, ${notaId}, ${`${PREFIJO} Filtro de aceite`}, 2, 'unidad', 0), (${randomUUID()}, ${notaId}, ${`${PREFIJO} Manguera`}, 1, 'unidad', 1)`
@@ -236,9 +245,19 @@ test.afterAll(async () => {
   await withSql(limpiar)
 })
 
-/** Borra lo sembrado: las notas primero (apuntan a la OT) y los registros por su folio. */
+/**
+ * Borra lo sembrado: las notas primero (apuntan a la OT) y los registros por su folio. El historial de una nota es append-only
+ * (trigger `mant_parts_note_events_append_only`, migración 0405) y una nota con historial no se borra (FK restrict): el trigger se
+ * apaga SÓLO dentro de la transacción que borra el historial de estas notas y vuelve a encenderse con ella (como `clearNoteHistory`
+ * de las pruebas PGlite).
+ */
 async function limpiar(sql: postgres.Sql) {
-  await sql`delete from mant_parts_notes where code like ${`${PREFIJO}-NP-%`}`
+  await sql.begin(async (tx) => {
+    await tx`alter table mant_parts_note_events disable trigger mant_parts_note_events_append_only`
+    await tx`delete from mant_parts_note_events where note_id in (select id from mant_parts_notes where code like ${`${PREFIJO}-NP-%`})`
+    await tx`alter table mant_parts_note_events enable trigger mant_parts_note_events_append_only`
+    await tx`delete from mant_parts_notes where code like ${`${PREFIJO}-NP-%`}`
+  })
   await sql`delete from mant_records where folio like ${`${PREFIJO}-MC-%`}`
   await sql`delete from mant_work_order_events where work_order_id in (select id from mant_work_orders where folio like ${`${PREFIJO}-OT-%`})`
   await sql`delete from mant_work_orders where folio like ${`${PREFIJO}-OT-%`}`
@@ -323,7 +342,7 @@ test.describe("Mantención en «Mis pendientes»", () => {
     await expect(conformidad.first()).toBeVisible()
     // Sólo lo suyo: ni por asignar ni las notas (esas las resuelve la jefatura primero).
     await expect(page.getByRole("link", { name: /^Asignar mecánico a / })).toHaveCount(0)
-    await expect(page.getByRole("link", { name: /^Resolver repuestos de / })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: ES_NOTA })).toHaveCount(0)
 
     await conformidad.first().click()
     await expect(page).toHaveURL(/\/mantencion\/ot\/[^/]+$/)
@@ -370,7 +389,7 @@ test.describe("Mantención en «Mis pendientes»", () => {
     // La del otro mecánico es de otro equipo: no aparece.
     await expect(page.getByRole("link", { name: `Ingresar ${datos.equipoB} a taller` })).toHaveCount(0)
     // Y nada que no sea suyo: ni por asignar ni conformidad ni notas por resolver.
-    await expect(page.getByRole("link", { name: /^(Asignar mecánico a |Dar conformidad por |Resolver repuestos de )/ })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: /^(Asignar mecánico a |Dar conformidad por |Resolver repuestos (de|·) )/ })).toHaveCount(0)
     expect(errores).toEqual([])
   })
 

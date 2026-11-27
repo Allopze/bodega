@@ -10,6 +10,7 @@ import {
   OtTransferredNotice, OtVoidedNotice,
 } from "@/components/mantencion/jefatura/ot/ot-sections"
 import type { EntryReadings } from "@/components/mantencion/jefatura/ot/ot-entry-reading"
+import { PARTS_NOTES_VIEW_PERMISSIONS } from "@/components/mantencion/jefatura/notas-pedido/parts-notes-format"
 import { reservedUnusedNotice } from "@/components/mantencion/jefatura/notas-pedido/reserved-unused"
 import { can, canAny, requireAnyPermission } from "@/lib/auth/can"
 import { logger } from "@/lib/logger"
@@ -72,8 +73,8 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
   const canOpenSpareParts = can(session, "repuestos:catalog")
   // Los catálogos sólo se consultan cuando el usuario puede usarlos.
   const needsClassificationForm = detail.canEditRequest || detail.canReclassify
-  // Notas de pedido de la OT: quien las ve en la bandeja las abre desde aquí; quien administra libera reservas.
-  const canOpenNotes = canAny(session, "mant:np:view_worksite", "mant:np:manage")
+  // Notas de pedido de la OT: quien las ve en la bandeja (`PARTS_NOTES_VIEW_PERMISSIONS`, con el alcance que pone el servidor) las abre desde aquí; quien administra libera reservas.
+  const canOpenNotes = canAny(session, ...PARTS_NOTES_VIEW_PERMISSIONS)
   const canManageNotes = can(session, "mant:np:manage")
   // El resumen también alimenta los chips del registro web y el aviso al conformar o anular, así que se pide si se
   // puede ver o registrar. Si falla, la OT se muestra igual con lo de siempre: no se cae la página por esta sección.

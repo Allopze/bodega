@@ -1,9 +1,11 @@
-import { and, eq } from "drizzle-orm"
+import { and, asc, eq } from "drizzle-orm"
 import { db } from "@/db"
 import {
   purchaseRequests,
   purchaseRequestItems,
   approvalDecisions,
+  mantPartsNoteItems,
+  mantPartsNotes,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
@@ -11,6 +13,13 @@ import type { ApproveWithoutQuotationInput, RequestModuleConfig } from "../reque
 
 /** Motivo base de la decisión; el fundamento de quien aprueba, si lo hay, va a continuación. */
 const DECISION_REASON = "Aprobada sin cotización (bajo umbral o vía rápida)"
+
+/**
+ * `roleContext` de la decisión que toma quien envía a compra una nota de pedido (ADR mantención 0001, D30/D31): aquí no hay umbral
+ * ni vía rápida que invocar —la regla de cotización no se evaluó—, así que el motivo base dice de qué nota viene la aprobación.
+ */
+const NOTE_ROLE_CONTEXT = "mantencion_np"
+const NOTE_DECISION_REASON = "Aprobada al enviar a compra la nota de pedido"
 
 /**
  * Aprueba una solicitud de repuestos que se envió sin cotización: bajo el
@@ -73,7 +82,20 @@ export async function approveWithoutQuotation(
     if (pendingQuotation) throw new Error("Hay cotizaciones adjuntas: selecciona la ganadora")
 
     const justification = input.justification?.trim() || null
-    const reason = justification ? `${DECISION_REASON}. Fundamento: ${justification}` : DECISION_REASON
+    let reason: string
+    if (input.roleContext === NOTE_ROLE_CONTEXT) {
+      // El texto de la justificación («Nota de pedido NP-x enviada a compra por Y») ya queda en las notas de la solicitud.
+      const notes = await tx
+        .selectDistinct({ code: mantPartsNotes.code })
+        .from(purchaseRequestItems)
+        .innerJoin(mantPartsNoteItems, eq(mantPartsNoteItems.id, purchaseRequestItems.partsNoteItemId))
+        .innerJoin(mantPartsNotes, eq(mantPartsNotes.id, mantPartsNoteItems.noteId))
+        .where(eq(purchaseRequestItems.requestId, input.requestId))
+        .orderBy(asc(mantPartsNotes.code))
+      reason = notes.length > 0 ? `${NOTE_DECISION_REASON} ${notes.map((note) => note.code).join(", ")}` : NOTE_DECISION_REASON
+    } else {
+      reason = justification ? `${DECISION_REASON}. Fundamento: ${justification}` : DECISION_REASON
+    }
 
     const requestedItems = await tx
       .select({ id: purchaseRequestItems.id })

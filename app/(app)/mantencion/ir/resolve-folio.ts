@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
+import { PARTS_NOTES_VIEW_PERMISSIONS } from "@/components/mantencion/jefatura/notas-pedido/parts-notes-format"
 import { fuelVehicles, mantPartsNotes, mantRecords, mantWorkOrders } from "@/db/schema"
 import { canSeeRecord, recordVisibility, type MantViewer } from "@/lib/services/mantencion/access"
 import { canSeeNote, noteVisibility } from "@/lib/services/mantencion/parts-notes/access"
@@ -45,7 +46,8 @@ export const FOLIO_KINDS: Record<FolioKind, FolioKindInfo> = {
   nota: {
     listHref: "/mantencion/notas-pedido",
     listLabel: "Notas de pedido",
-    permissions: ["mant:np:view_worksite", "mant:np:manage"],
+    // Los mismos que la bandeja y su ficha: ver las de sus faenas, resolverlas, comprarlas o ver las propias.
+    permissions: [...PARTS_NOTES_VIEW_PERMISSIONS],
     detailBase: "/mantencion/notas-pedido",
   },
 }
@@ -129,9 +131,11 @@ async function findNoteId(viewer: MantViewer, folio: string): Promise<string | n
       id: mantPartsNotes.id,
       worksiteId: mantPartsNotes.worksiteId,
       vehicleWorksiteId: fuelVehicles.worksiteId,
+      requestedByUserId: mantPartsNotes.requestedByUserId,
     })
     .from(mantPartsNotes)
-    .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
+    // Una nota sin OT puede no tener equipo (ADR 0001, 2026-11-27): el alcance sale de su faena.
+    .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
     .where(eq(mantPartsNotes.code, folio))
     .limit(1)
   return row && canSeeNote(noteVisibility(viewer), row) ? row.id : null

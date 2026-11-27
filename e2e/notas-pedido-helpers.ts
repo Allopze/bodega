@@ -203,9 +203,11 @@ export const esc = (texto: string) => texto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&
  */
 export async function registrarCorrectivaDesdeOt(
   app: Page,
-  opciones: { folio: string; equipoCode: string; lectura: number; descripcion: string; usarBodega: boolean },
+  opciones: { folio: string; equipoCode: string; lectura: number; descripcion: string; usarBodega: boolean; /** Nombre del repuesto reservado (por omisión el de esta suite). */ repuesto?: string
+    /** Se ejecuta con el registro ya revisado, justo antes de «Firmar y guardar» (p. ej. para cambiar el stock a espaldas del teléfono). */ antesDeFirmar?: () => Promise<void> },
 ): Promise<number> {
   const { folio } = opciones
+  const nombreRepuesto = opciones.repuesto ?? REPUESTO.name
   await app.getByRole("dialog", { name: folio, exact: true }).getByRole("button", { name: "Registrar correctiva", exact: true }).click()
   await expect(app.getByText("PASO 2/5")).toBeVisible()
   await expect(app.getByRole("button", { name: /^Cambiar equipo/ })).toHaveCount(0)
@@ -226,17 +228,17 @@ export async function registrarCorrectivaDesdeOt(
   if (opciones.usarBodega) {
     // Lo reservado para esta OT se ofrece sobre «+ Agregar repuesto»: un toque agrega la línea de bodega.
     const disponibles = app.getByRole("group", { name: "Disponibles para esta OT" })
-    const chip = disponibles.getByRole("button", { name: new RegExp(`^\\+ ${esc(REPUESTO.name)} · 1 disp\\.$`) })
+    const chip = disponibles.getByRole("button", { name: new RegExp(`^\\+ ${esc(nombreRepuesto)} · 1 disp\\.$`) })
     await expect(chip).toBeVisible()
     await chip.click()
-    const linea = app.getByRole("group", { name: `Repuesto de bodega: ${REPUESTO.name}` })
+    const linea = app.getByRole("group", { name: `Repuesto de bodega: ${nombreRepuesto}` })
     await expect(linea).toBeVisible()
     await expect(linea.getByText("De la bodega · reservado para la OT")).toBeVisible()
     await expect(linea.getByText("de 1 disp.")).toBeVisible()
     // El tope es lo disponible: con 1 reservado, «+» no sube.
-    await expect(linea.getByRole("button", { name: `Sumar uno a ${REPUESTO.name}` })).toBeDisabled()
+    await expect(linea.getByRole("button", { name: `Sumar uno a ${nombreRepuesto}` })).toBeDisabled()
     await expect(linea.getByRole("status")).toHaveText("1")
-    await expect(disponibles.getByRole("button", { name: new RegExp(`^\\+ ${esc(REPUESTO.name)} · 0 disp\\.$`) })).toBeDisabled()
+    await expect(disponibles.getByRole("button", { name: new RegExp(`^\\+ ${esc(nombreRepuesto)} · 0 disp\\.$`) })).toBeDisabled()
   } else {
     await app.getByRole("checkbox", { name: "No se usaron repuestos" }).check()
   }
@@ -251,6 +253,7 @@ export async function registrarCorrectivaDesdeOt(
   await app.getByLabel("Agregar foto del trabajo").setInputFiles(await jpeg(app, `${opciones.equipoCode} NP`))
   await expect(app.getByRole("img", { name: "Foto 1 del trabajo" })).toBeVisible()
   await app.getByRole("button", { name: "Revisar registro", exact: true }).click()
+  await opciones.antesDeFirmar?.()
   await app.getByRole("button", { name: "Firmar y guardar", exact: true }).click()
   await expect(app.getByRole("heading", { name: "Registro guardado" })).toBeVisible()
   await expect(app.getByText(`Quedó enlazado a ${folio}.`)).toBeVisible()

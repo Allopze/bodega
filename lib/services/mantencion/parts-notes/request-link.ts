@@ -1,11 +1,12 @@
 import { and, asc, eq, inArray } from "drizzle-orm"
 import type { Tx } from "@/db"
-import { mantPartsNoteItems, mantPartsNotes, mantWorkOrders } from "@/db/schema"
+import { mantPartsNoteItems, mantPartsNotes, mantWorkOrders, purchaseRequestItems, purchaseRequests } from "@/db/schema"
+import { toCents } from "@/lib/services/stock-reservations"
 import { PartsValidationError } from "../parts/types"
 import { lockWorkOrdersShare } from "./context"
 import { autoRejectionReason, autoRejectionTrail, rejectLineTx, workOrderEndOf } from "./line-rejection"
 import { loadPurchases } from "./lines"
-import { allPurchasesDead, recalcNoteStatusTx } from "./status"
+import { allPurchasesDead, isDeadPurchase, recalcNoteStatusTx } from "./status"
 import { writeTrail } from "./trail"
 
 /**
@@ -14,10 +15,11 @@ import { writeTrail } from "./trail"
  * transacción de la solicitud; las líneas se toman `FOR NO KEY UPDATE`, ordenadas por
  * id (no chocan con la FK de las reservas ni de las solicitudes, que piden `KEY SHARE`).
  * Antes de las líneas se toman sus OT `FOR SHARE` (orden global de bloqueo): cerrar o
- * anular una OT rechaza sus líneas pendientes y no se cruza con esta transacción.
+ * anular una OT rechaza sus líneas pendientes y no se cruza con esta transacción. Una
+ * línea sin OT no tiene OT que tomar.
  */
 
-/** Líneas con su NP y el estado de su OT, tomadas con el bloqueo (la OT va primero). */
+/** Líneas con su NP y el estado de su OT (si tiene), tomadas con el bloqueo (la OT va primero). */
 async function lockLines(tx: Tx, itemIds: readonly string[]) {
   const owners = await tx
     .select({ workOrderId: mantPartsNotes.workOrderId })
@@ -29,6 +31,7 @@ async function lockLines(tx: Tx, itemIds: readonly string[]) {
     .select({
       itemId: mantPartsNoteItems.id,
       description: mantPartsNoteItems.description,
+      quantity: mantPartsNoteItems.quantity,
       resolution: mantPartsNoteItems.resolution,
       noteId: mantPartsNotes.id,
       code: mantPartsNotes.code,
@@ -40,22 +43,62 @@ async function lockLines(tx: Tx, itemIds: readonly string[]) {
     })
     .from(mantPartsNoteItems)
     .innerJoin(mantPartsNotes, eq(mantPartsNotes.id, mantPartsNoteItems.noteId))
-    .innerJoin(mantWorkOrders, eq(mantWorkOrders.id, mantPartsNotes.workOrderId))
+    .leftJoin(mantWorkOrders, eq(mantWorkOrders.id, mantPartsNotes.workOrderId))
     .where(inArray(mantPartsNoteItems.id, [...itemIds]))
     .orderBy(asc(mantPartsNoteItems.id))
     .for("no key update", { of: mantPartsNoteItems })
 }
 
 /**
+ * Doble compra: una línea no se compra dos veces. Rechaza que `requestId` compre una línea cuando OTRA solicitud ya la compra
+ * con compras VIVAS (ítem no rechazado, solicitud no cancelada ni rechazada: `isDeadPurchase`; un borrador cuenta) que suman al
+ * menos lo pedido. Comprar en partes sigue permitido mientras lo vivo no cubra la cantidad. Las compras de la propia solicitud no
+ * cuentan (el borrador se reescribe en cada autoguardado). Se llama con las líneas ya bloqueadas (al guardar, `linkNoteItemsToRequestTx`)
+ * y al ENVIAR (`submit-request.ts`): un borrador guardado antes no puede enviarse si entretanto otra solicitud cubrió la línea.
+ */
+export async function assertNoteLinesNotBoughtElsewhereTx(tx: Tx, input: { requestId: string; noteItemIds: readonly string[] }): Promise<void> {
+  const ids = [...new Set(input.noteItemIds)]
+  if (ids.length === 0) return
+  const purchases = await tx
+    .select({
+      noteItemId: purchaseRequestItems.partsNoteItemId,
+      quantity: purchaseRequestItems.quantity,
+      status: purchaseRequestItems.status,
+      requestId: purchaseRequests.id,
+      requestCode: purchaseRequests.code,
+      requestStatus: purchaseRequests.status,
+    })
+    .from(purchaseRequestItems)
+    .innerJoin(purchaseRequests, eq(purchaseRequests.id, purchaseRequestItems.requestId))
+    .where(inArray(purchaseRequestItems.partsNoteItemId, ids))
+  const others = purchases.filter((purchase) => purchase.requestId !== input.requestId && !isDeadPurchase({ itemStatus: purchase.status, requestStatus: purchase.requestStatus }))
+  if (others.length === 0) return
+
+  const lines = await tx
+    .select({ id: mantPartsNoteItems.id, description: mantPartsNoteItems.description, quantity: mantPartsNoteItems.quantity, code: mantPartsNotes.code })
+    .from(mantPartsNoteItems)
+    .innerJoin(mantPartsNotes, eq(mantPartsNotes.id, mantPartsNoteItems.noteId))
+    .where(inArray(mantPartsNoteItems.id, [...new Set(others.map((purchase) => purchase.noteItemId!))]))
+    .orderBy(asc(mantPartsNoteItems.id))
+  for (const line of lines) {
+    const covering = others.filter((purchase) => purchase.noteItemId === line.id)
+    const covered = covering.reduce((sum, purchase) => sum + toCents(Number(purchase.quantity)), 0)
+    if (covered >= toCents(Number(line.quantity))) {
+      throw new PartsValidationError(`La línea «${line.description}» de ${line.code} ya se está comprando en ${covering[0]!.requestCode}: quita ese ítem de la solicitud.`)
+    }
+  }
+}
+
+/**
  * Llamada por la solicitud de repuestos al guardar ítems que compran líneas de NP:
- * deja cada línea PENDIENTE «en compra», con evento en la OT.
+ * deja cada línea PENDIENTE «en compra», con evento en la OT si la hay.
  *
  * Es idempotente: el autoguardado del borrador, o una segunda solicitud que compra el
  * saldo, la vuelven a llamar con líneas que ya están «en compra» (aunque su compra
  * anterior haya muerto), y eso ni falla ni repite el evento. Sólo una línea pendiente
- * cambia y deja rastro. Una línea rechazada, apartada del stock o de una NP anulada NO
- * se puede comprar: se lanza `PartsValidationError` y la solicitud entera se revierte
- * (comprarla otra vez duplicaría lo que jefatura ya resolvió).
+ * cambia y deja rastro. Una línea rechazada, apartada del stock, de una NP anulada o de
+ * una NP en espera NO se puede comprar: se lanza `PartsValidationError` y la solicitud
+ * entera se revierte (comprarla otra vez duplicaría lo que jefatura ya resolvió).
  */
 export async function linkNoteItemsToRequestTx(tx: Tx, input: { links: Array<{ noteItemId: string; requestItemId: string }>; actorUserId: string }): Promise<void> {
   const requestOf = new Map<string, string>()
@@ -65,12 +108,26 @@ export async function linkNoteItemsToRequestTx(tx: Tx, input: { links: Array<{ n
   const rows = await lockLines(tx, [...requestOf.keys()])
   if (rows.length !== requestOf.size) throw new PartsValidationError("Una línea de la nota de pedido ya no existe: vuelve a abrirla desde la bandeja.")
 
+  // Con las líneas bloqueadas: ninguna se compra dos veces (el ítem nuevo ya está insertado, así que se excluye su propia solicitud).
+  const ownItems = await tx
+    .select({ id: purchaseRequestItems.id, requestId: purchaseRequestItems.requestId })
+    .from(purchaseRequestItems)
+    .where(inArray(purchaseRequestItems.id, [...new Set(requestOf.values())]))
+  const requestIdOfItem = new Map(ownItems.map((item) => [item.id, item.requestId]))
+  const noteItemIdsByRequest = new Map<string, string[]>()
+  for (const [noteItemId, requestItemId] of requestOf) {
+    const requestId = requestIdOfItem.get(requestItemId)
+    if (requestId) noteItemIdsByRequest.set(requestId, [...(noteItemIdsByRequest.get(requestId) ?? []), noteItemId])
+  }
+  for (const [requestId, noteItemIds] of noteItemIdsByRequest) await assertNoteLinesNotBoughtElsewhereTx(tx, { requestId, noteItemIds })
+
   const touched = new Set<string>()
   for (const row of rows) {
     if (row.noteStatus === "anulada") throw new PartsValidationError(`La nota ${row.code} está anulada: no se puede comprar «${row.description}».`)
     if (row.resolution === "rechazada") throw new PartsValidationError(`«${row.description}» de ${row.code} ya está rechazada: no se puede comprar.`)
     if (row.resolution === "desde_stock") throw new PartsValidationError(`«${row.description}» de ${row.code} ya se apartó del stock: no se puede comprar.`)
     if (row.resolution !== "pendiente") continue
+    if (row.noteStatus === "en_espera") throw new PartsValidationError("La nota está en espera: acéptala primero.")
     await tx.update(mantPartsNoteItems).set({
       resolution: "en_compra", resolutionReason: null, resolvedByUserId: input.actorUserId, resolvedAt: new Date().toISOString(),
     }).where(and(eq(mantPartsNoteItems.id, row.itemId), eq(mantPartsNoteItems.resolution, "pendiente")))
@@ -82,7 +139,7 @@ export async function linkNoteItemsToRequestTx(tx: Tx, input: { links: Array<{ n
     })
     touched.add(row.noteId)
   }
-  for (const noteId of touched) await recalcNoteStatusTx(tx, noteId)
+  for (const noteId of touched) await recalcNoteStatusTx(tx, noteId, { actorUserId: input.actorUserId })
 }
 
 /**
@@ -98,7 +155,8 @@ export async function linkNoteItemsToRequestTx(tx: Tx, input: { links: Array<{ n
  *
  * Si la OT ya se cerró o se anuló nadie va a gestionar la línea: en vez de volver a «pendiente»
  * (y dejar la NP otra vez en «Pendientes» por una orden terminada) se rechaza sola, con el
- * mismo motivo que las líneas pendientes al terminar la OT (NP4-7).
+ * mismo motivo que las líneas pendientes al terminar la OT (NP4-7). Una NP sin OT nunca se
+ * rechaza sola por esto: vuelve a pendiente.
  */
 export async function unlinkNoteItemsFromRequestTx(tx: Tx, input: { noteItemIds: string[]; actorUserId: string }): Promise<void> {
   const itemIds = [...new Set(input.noteItemIds)]
@@ -111,11 +169,11 @@ export async function unlinkNoteItemsFromRequestTx(tx: Tx, input: { noteItemIds:
   for (const row of rows) {
     const liveness = (purchases.get(row.itemId) ?? []).map((purchase) => ({ itemStatus: purchase.status, requestStatus: purchase.requestStatus }))
     if (!allPurchasesDead(liveness)) continue
-    const end = workOrderEndOf(row.workOrderStatus, row.workOrderVoidReason)
+    const end = row.workOrderId && row.workOrderStatus ? workOrderEndOf(row.workOrderStatus, row.workOrderVoidReason) : null
     if (end) {
       await rejectLineTx(tx, {
         itemId: row.itemId, noteId: row.noteId, code: row.code, noteWorksiteId: row.worksiteId, workOrderId: row.workOrderId, resolution: "en_compra",
-      }, { reason: autoRejectionReason(end), actor: { userId: input.actorUserId }, extra: { ...autoRejectionTrail(end), previousResolution: "en_compra" } })
+      }, { reason: autoRejectionReason(end), actor: { userId: input.actorUserId }, extra: { ...autoRejectionTrail(end), previousResolution: "en_compra" }, automatic: true })
       touched.add(row.noteId)
       continue
     }
@@ -131,5 +189,5 @@ export async function unlinkNoteItemsFromRequestTx(tx: Tx, input: { noteItemIds:
     })
     touched.add(row.noteId)
   }
-  for (const noteId of touched) await recalcNoteStatusTx(tx, noteId)
+  for (const noteId of touched) await recalcNoteStatusTx(tx, noteId, { actorUserId: input.actorUserId })
 }

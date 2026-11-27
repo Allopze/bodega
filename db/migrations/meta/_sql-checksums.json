@@ -402,5 +402,7 @@
   "0400_marvelous_umar": "c1d42d15e08abed7027967069131f5e40f741ebc0a39d42c0be3dd113ae088e1",
   "0401_clumsy_taskmaster": "328ae7bf8e416fd5d20ae473d5e76ede6736f67995ecb9d9e0c41ccd267dadba",
   "0402_mant_equipment_unit": "c3778aa20c53819770665af41307c2c1135dbfe146c4f06a3c174a88a472d66b",
-  "0403_repuestos_stock_notas_pedido": "52797f28e242714f3894f2bef4f04d0d951cd3a9b182bdf9c30c4fbe165e780d"
+  "0403_repuestos_stock_notas_pedido": "52797f28e242714f3894f2bef4f04d0d951cd3a9b182bdf9c30c4fbe165e780d",
+  "0404_mant_schedule_cyclic": "d2cb3ab1ab98ca55526fe8297703cc70cae31e97a4967fbeee2d9093494c78a3",
+  "0405_friendly_vampiro": "6a5bf360ef7c8e36c95db22a763a2c4989201901599bbf0db8307e2587763b3a"
 }

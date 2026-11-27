@@ -2,12 +2,12 @@
 
 import { useId, useState, type ReactNode } from "react"
 import { discardRejectedNote } from "@/lib/mantencion/client/queue"
-import { partStatusText, qtyText, type OtPartLine, type OtView } from "@/lib/mantencion/client/ot-model"
+import { partStatusText, qtyText, type OtPartLine, type OtPartStage, type OtView } from "@/lib/mantencion/client/ot-model"
 import { PartsNoteSheet } from "./parts-note-sheet"
 import { Banner } from "./ui"
 
-/** Un ícono por etapa, siempre decorativo: la etapa ya va dicha con texto. */
-function StageIcon({ line }: { line: OtPartLine }) {
+/** Un ícono por etapa, siempre decorativo: la etapa ya va dicha con texto. Lo comparte «Mis notas». */
+export function StageIcon({ line }: { line: { stage: OtPartStage; used: number } }) {
   let paths: ReactNode
   if (line.stage === "por_enviar") paths = <><path d="M12 16V4" /><path d="M7 9l5-5 5 5" /><path d="M5 20h14" /></>
   else if (line.stage === "pedido") paths = <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>

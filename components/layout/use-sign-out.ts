@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { getSession, signOut } from "next-auth/react"
+import { clearAllNewNoteDrafts } from "@/components/mantencion/jefatura/notas-pedido/new-note-draft-keys"
 import { clearAllInspectionDrafts } from "@/lib/prevention/inspection-draft-storage"
 
 /**
@@ -40,6 +41,19 @@ function clearLocalInspectionDrafts() {
 }
 
 /**
+ * Vacía el borrador de «Nueva nota de pedido» (`localStorage`, uno por persona): lo escrito a medias en terreno vive en claro y
+ * no puede heredarlo quien use el equipo después. Síncrono y sin dependencias (sólo la clave), por la misma razón que las
+ * inspecciones: va estático y aparte de las colas.
+ */
+function clearLocalNewNoteDrafts() {
+  try {
+    clearAllNewNoteDrafts()
+  } catch {
+    /* no-op: cerrar sesión nunca se bloquea por la limpieza local */
+  }
+}
+
+/**
  * Cierre de sesión compartido por la barra superior y el perfil del panel
  * lateral.
  *
@@ -66,12 +80,13 @@ export function useSignOut() {
     setIsSigningOut(true)
     try {
       // Lo que quedó guardado sin conexión (borradores de incidentes y RE-20,
-      // cola antigua de incidentes, PPA, inspecciones) vive en claro en este
-      // equipo y no puede sobrevivir al cambio de usuario en un equipo de faena
-      // compartido. Lo aún sin enviar se pierde: por eso los avisos de sin
-      // conexión piden no cerrar sesión hasta que vuelva la señal. Best-effort:
-      // no bloquea el cierre.
+      // cola antigua de incidentes, PPA, inspecciones y el borrador de nueva
+      // nota de pedido) vive en claro en este equipo y no puede sobrevivir al
+      // cambio de usuario en un equipo de faena compartido. Lo aún sin enviar
+      // se pierde: por eso los avisos de sin conexión piden no cerrar sesión
+      // hasta que vuelva la señal. Best-effort: no bloquea el cierre.
       clearLocalInspectionDrafts()
+      clearLocalNewNoteDrafts()
       await clearOfflineQueues()
       await signOut({ redirect: false })
       // Tercera lección (2026-08-06): el middleware re-emite la cookie de

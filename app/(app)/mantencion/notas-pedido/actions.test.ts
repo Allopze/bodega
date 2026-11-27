@@ -13,7 +13,12 @@ const services = vi.hoisted(() => ({
   resolveNoteItemFromStock: vi.fn(),
   rejectNoteItem: vi.fn(),
   voidPartsNote: vi.fn(),
+  acceptPartsNote: vi.fn(),
+  holdPartsNote: vi.fn(),
+  rejectPartsNote: vi.fn(),
+  reopenPartsNote: vi.fn(),
   conciliatePart: vi.fn(),
+  sendToPurchase: vi.fn(),
   loadWorkOrderPartsOverview: vi.fn(),
   releaseAllocationTx: vi.fn(),
   transaction: vi.fn(async (run: (tx: unknown) => unknown) => run("tx")),
@@ -24,7 +29,15 @@ vi.mock("next/cache", () => ({ revalidatePath, revalidateTag }))
 vi.mock("@/lib/auth/can", () => ({ guardAnyPermission: guard }))
 vi.mock("@/lib/services/mantencion/access", () => ({ viewerFromSession: () => viewer.current }))
 vi.mock("@/lib/services/mantencion/parts-notes/resolve", () => ({
-  resolveNoteItemFromStock: services.resolveNoteItemFromStock, rejectNoteItem: services.rejectNoteItem, voidPartsNote: services.voidPartsNote,
+  resolveNoteItemFromStock: services.resolveNoteItemFromStock, rejectNoteItem: services.rejectNoteItem,
+}))
+vi.mock("@/lib/services/mantencion/parts-notes/transitions", () => ({
+  acceptPartsNote: services.acceptPartsNote, holdPartsNote: services.holdPartsNote, rejectPartsNote: services.rejectPartsNote,
+  reopenPartsNote: services.reopenPartsNote, voidPartsNote: services.voidPartsNote,
+}))
+vi.mock("@/lib/services/mantencion/parts-notes/send-to-purchase", () => ({
+  sendPartsNoteLinesToPurchase: services.sendToPurchase,
+  NoLinesToSendError: class NoLinesToSendError extends Error {},
 }))
 vi.mock("@/lib/services/mantencion/parts-notes/query", () => ({ loadWorkOrderPartsOverview: services.loadWorkOrderPartsOverview }))
 vi.mock("@/lib/services/mantencion/parts/conciliation", () => ({ conciliatePart: services.conciliatePart }))
@@ -42,7 +55,9 @@ beforeEach(() => {
   services.resolveNoteItemFromStock.mockResolvedValue({ ok: true, message: "Apartaste 2." })
   services.rejectNoteItem.mockResolvedValue({ ok: true })
   services.voidPartsNote.mockResolvedValue({ ok: true })
+  for (const service of [services.acceptPartsNote, services.holdPartsNote, services.rejectPartsNote, services.reopenPartsNote]) service.mockResolvedValue({ ok: true, message: "Listo." })
   services.conciliatePart.mockResolvedValue({ ok: true, message: "Descontado." })
+  services.sendToPurchase.mockResolvedValue({ requestId: "rq1", requestCode: "SOL-1", approved: true, lineCount: 2, message: "2 líneas a Compras (SOL-1)." })
   services.loadWorkOrderPartsOverview.mockResolvedValue({ notes: [], available: [ALLOCATION], consumptions: [] })
   services.releaseAllocationTx.mockResolvedValue({ released: 2 })
 })
@@ -200,5 +215,120 @@ describe("conciliatePartAction", () => {
     services.conciliatePart.mockResolvedValue({ ok: false, message: "Esa línea ya fue conciliada." })
     expect(await actions.conciliatePartAction({ recordPartId: "rp-1", mode: "aplicar" })).toEqual({ ok: false, message: "Esa línea ya fue conciliada." })
     expect(revalidatePath).not.toHaveBeenCalled()
+  })
+})
+
+describe("acciones de cabecera de la nota", () => {
+  const HEADER: Array<[string, (input: unknown) => Promise<unknown>, ReturnType<typeof vi.fn>, string[]]> = [
+    ["acceptPartsNoteAction", actions.acceptPartsNoteAction, services.acceptPartsNote, ["mant:np:manage"]],
+    ["holdPartsNoteAction", actions.holdPartsNoteAction, services.holdPartsNote, ["mant:np:manage"]],
+    ["rejectPartsNoteAction", actions.rejectPartsNoteAction, services.rejectPartsNote, ["mant:np:manage"]],
+    ["voidPartsNoteAction", actions.voidPartsNoteAction, services.voidPartsNote, ["mant:np:manage"]],
+    // Reabrir tiene su propio permiso: quien resuelve notas no necesariamente puede reabrirlas.
+    ["reopenPartsNoteAction", actions.reopenPartsNoteAction, services.reopenPartsNote, ["mant:np:reopen"]],
+  ]
+  const input = { noteId: "n1", reason: "Se pidió para el equipo equivocado" }
+
+  it.each(HEADER)("%s exige su permiso en el servidor y, sin él, no llama al servicio ni refresca nada", async (_name, call, service, permissions) => {
+    guard.mockResolvedValue({ session: null, error: { ok: false, message: "No tienes permisos para realizar esta acción" } })
+    expect(await call(input)).toEqual({ ok: false, message: "No tienes permisos para realizar esta acción" })
+    expect(guard).toHaveBeenCalledWith(permissions, "/mantencion/notas-pedido")
+    expect(service).not.toHaveBeenCalled()
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("quien sólo ve notas (mant:np:view_own o view_worksite, sin manage) no llega a ningún servicio de cabecera", async () => {
+    // El guard es el de la sesión real: aquí se simula con lo que devuelve para un usuario sin `mant:np:manage`.
+    guard.mockImplementation(async (permissions: string[]) => (
+      permissions.every((permission) => ["mant:np:view_own", "mant:np:view_worksite"].includes(permission))
+        ? { session: SESSION, error: null }
+        : { session: null, error: { ok: false, message: "No tienes permisos para realizar esta acción" } }
+    ))
+    for (const [, call, service] of HEADER) {
+      expect(await call(input)).toMatchObject({ ok: false })
+      expect(service).not.toHaveBeenCalled()
+    }
+  })
+
+  it.each(HEADER.filter(([name]) => name !== "acceptPartsNoteAction"))("%s exige un motivo de al menos 5 caracteres y viaja recortado", async (_name, call, service) => {
+    expect(await call({ noteId: "n1", reason: "  no " })).toMatchObject({ ok: false, fieldErrors: { reason: expect.any(Array) } })
+    expect(await call({ noteId: "n1" })).toMatchObject({ ok: false })
+    expect(service).not.toHaveBeenCalled()
+    await call({ noteId: "n1", reason: "  Falta confirmar el equipo  " })
+    expect(service).toHaveBeenCalledWith(viewer.current, { noteId: "n1", reason: "Falta confirmar el equipo" })
+  })
+
+  it("aceptar no pide motivo: acepta, envía sus líneas pendientes a compra y refresca la bandeja, la ficha, la cola, el Panel y Compras", async () => {
+    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({
+      ok: true,
+      message: "Aceptada. 2 líneas a Compras (SOL-1).",
+      data: { requestId: "rq1", requestCode: "SOL-1", approved: true },
+    })
+    expect(services.acceptPartsNote).toHaveBeenCalledWith(viewer.current, { noteId: "n1" })
+    expect(services.sendToPurchase).toHaveBeenCalledWith(SESSION, { noteId: "n1", origin: "aceptar" })
+    expect(revalidatePath).toHaveBeenCalledWith("/mantencion/notas-pedido")
+    expect(revalidatePath).toHaveBeenCalledWith("/mantencion/notas-pedido/n1")
+    expect(revalidatePath).toHaveBeenCalledWith("/mantencion/panel")
+    expect(revalidatePath).toHaveBeenCalledWith("/pendientes")
+    expect(revalidatePath).toHaveBeenCalledWith("/compras")
+    expect(revalidatePath).toHaveBeenCalledWith("/solicitudes/rq1")
+  })
+
+  it("si la aprobación automática falla, la nota queda aceptada y el aviso dice que la solicitud espera en Aprobaciones, con su enlace", async () => {
+    services.sendToPurchase.mockResolvedValue({
+      requestId: "rq2", requestCode: "SOL-2", approved: false, lineCount: 1,
+      message: "La solicitud SOL-2 quedó enviada a aprobación: No tienes acceso a esta faena.",
+    })
+    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({
+      ok: true,
+      message: "Aceptada. La solicitud SOL-2 quedó enviada a aprobación: No tienes acceso a esta faena.",
+      data: { requestId: "rq2", requestCode: "SOL-2", approved: false },
+    })
+  })
+
+  it("una nota sin líneas pendientes queda aceptada y no hay nada que enviar: el mensaje es el de la aceptación", async () => {
+    const { NoLinesToSendError } = await import("@/lib/services/mantencion/parts-notes/send-to-purchase")
+    services.sendToPurchase.mockRejectedValue(new NoLinesToSendError("NP-1"))
+    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({ ok: true, message: "Listo." })
+    expect(revalidatePath).toHaveBeenCalledWith("/mantencion/notas-pedido/n1")
+  })
+
+  it("si el envío a compra falla, la aceptación queda (se refresca la pantalla) y el mensaje lo dice, sin filtrar el error del motor", async () => {
+    services.sendToPurchase.mockRejectedValue(new Error("El repuesto «Filtro» está inactivo"))
+    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({
+      ok: false, message: "La nota quedó aceptada, pero no se pudo enviar a compra: El repuesto «Filtro» está inactivo",
+    })
+    expect(revalidatePath).toHaveBeenCalledWith("/mantencion/notas-pedido/n1")
+    services.sendToPurchase.mockRejectedValue(Object.assign(new Error("Failed query: insert ..."), { query: "insert ...", params: [] }))
+    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({
+      ok: false, message: "La nota quedó aceptada, pero no se pudo enviar a compra: error inesperado",
+    })
+  })
+
+  it("si la aceptación se rechaza (estado, alcance), no se envía nada a compra ni se refresca", async () => {
+    services.acceptPartsNote.mockResolvedValue({ ok: false, message: "La nota NP-1 está cerrada: no se puede aceptar." })
+    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({ ok: false, message: "La nota NP-1 está cerrada: no se puede aceptar." })
+    expect(services.sendToPurchase).not.toHaveBeenCalled()
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("un identificador con caracteres raros no llega al servicio ni a revalidatePath", async () => {
+    expect(await actions.acceptPartsNoteAction({ noteId: "../../admin" })).toMatchObject({ ok: false })
+    expect(services.acceptPartsNote).not.toHaveBeenCalled()
+    expect(services.sendToPurchase).not.toHaveBeenCalled()
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("el rechazo del servicio (estado, alcance o motivo) vuelve como mensaje y no refresca nada", async () => {
+    services.holdPartsNote.mockResolvedValue({ ok: false, message: "La nota NP-1 ya está en espera." })
+    expect(await actions.holdPartsNoteAction(input)).toEqual({ ok: false, message: "La nota NP-1 ya está en espera." })
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("un error inesperado no se filtra: sale el mensaje seguro de cada acción", async () => {
+    services.rejectPartsNote.mockRejectedValue(Object.assign(new Error("Failed query: update ..."), { query: "update ...", params: [] }))
+    expect(await actions.rejectPartsNoteAction(input)).toEqual({ ok: false, message: "No se pudo rechazar la nota." })
+    services.acceptPartsNote.mockRejectedValue(Object.assign(new Error("Failed query: update ..."), { query: "update ...", params: [] }))
+    expect(await actions.acceptPartsNoteAction({ noteId: "n1" })).toEqual({ ok: false, message: "No se pudo aceptar la nota." })
   })
 })

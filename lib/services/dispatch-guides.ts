@@ -74,6 +74,7 @@ import {
 import { receiveItemTx } from "@/lib/services/item-state"
 import { notifyAfterCommit } from "@/lib/services/notifications"
 import { notifyWorkOrderPartsReceived } from "@/lib/services/mantencion/work-orders/notifications"
+import { notifyPartsNoteLinesArrived } from "@/lib/services/mantencion/parts-notes/notifications"
 import { addToAllocationTx, lockForStockTx, shrinkAllocationsForSourceTx } from "@/lib/services/mantencion/parts"
 import {
   lockOrdersOfLinesTx, noteItemIdsOfRequestItemsTx, noteItemIdsOfSourceTx, recalcNotesOfLinesTx,
@@ -1149,12 +1150,15 @@ export async function confirmDispatchGuideReceipt(
   const partsArrivals = new Map<string, Set<string>>()
   // De esas líneas, las que nacieron de una nota de pedido: su autor también recibe aviso.
   const partsNoteLines = new Map<string, Set<string>>()
+  // Compras de líneas de nota SIN OT que el cotejo dejó completas en faena: su autor recibe aviso (la nota con OT, el de la OT).
+  const noteArrivalsWithoutOt = new Set<string>()
   const partsReceipt: { id: string | null } = { id: null }
 
   const result = await db.transaction(async (tx) => {
     shortfallNotices.length = 0
     partsArrivals.clear()
     partsNoteLines.clear()
+    noteArrivalsWithoutOt.clear()
     partsReceipt.id = null
     const guide = await lockGuide(tx, guideId)
     if (guide.status === "received") throw new Error("La recepción de esta guía ya fue confirmada")
@@ -1272,6 +1276,10 @@ export async function confirmDispatchGuideReceipt(
               .select({ workOrderId: purchaseRequestItems.workOrderId, partsNoteItemId: purchaseRequestItems.partsNoteItemId })
               .from(purchaseRequestItems)
               .where(eq(purchaseRequestItems.id, line.poItem.requestItemId))
+            if (requestItem?.partsNoteItemId && !requestItem.workOrderId) {
+              noteArrivalsWithoutOt.add(line.poItem.requestItemId)
+              partsReceipt.id = receiptId
+            }
             if (requestItem?.workOrderId) {
               const lines = partsArrivals.get(requestItem.workOrderId) ?? new Set<string>()
               lines.add(line.poItem.requestItemId)
@@ -1415,6 +1423,9 @@ export async function confirmDispatchGuideReceipt(
 
   flushRequesterShortfallNotifications(shortfallNotices)
   const receiptForParts = partsReceipt.id
+  if (receiptForParts && noteArrivalsWithoutOt.size > 0) {
+    notifyAfterCommit(() => notifyPartsNoteLinesArrived({ receiptId: receiptForParts, actorUserId: actor.userId, requestItemIds: [...noteArrivalsWithoutOt] }))
+  }
   if (receiptForParts) {
     for (const [workOrderId, lines] of partsArrivals) {
       const noteLines = partsNoteLines.get(workOrderId)

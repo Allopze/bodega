@@ -45,6 +45,7 @@ vi.mock("@/db", async () => {
   }
 })
 
+import { PARTS_NOTES_VIEW_PERMISSIONS } from "@/components/mantencion/jefatura/notas-pedido/parts-notes-format"
 import { FOLIO_KINDS, FOLIO_VIEW_PERMISSIONS, canOpenKind, folioKindsFor, listFor, normalizeFolio, resolveFolio } from "./resolve-folio"
 
 const viewer = (permissions: string[], overrides: Partial<MantViewer> = {}): MantViewer => ({
@@ -179,6 +180,17 @@ describe("resolveFolio · nota de pedido", () => {
   })
 })
 
+describe("resolveFolio · nota de pedido: quien compra y quien ve las suyas", () => {
+  it("con mant:np:purchase se encuentran las notas de su faena; con mant:np:view_own sólo las que pidió él (aunque la faena no sea suya)", async () => {
+    expect(await resolveFolio(viewer(["mant:np:purchase"]), "NP-2026-0001")).toEqual({ kind: "nota", href: "/mantencion/notas-pedido/np-1" })
+    tables.nota = [nota({ worksiteId: "ws-2", vehicleWorksiteId: "ws-2", requestedByUserId: "u-1" })]
+    expect(await resolveFolio(viewer(["mant:np:view_own"]), "NP-2026-0001")).toEqual({ kind: "nota", href: "/mantencion/notas-pedido/np-1" })
+    tables.nota = [nota({ worksiteId: "ws-2", vehicleWorksiteId: "ws-2", requestedByUserId: "u-9" })]
+    expect(await resolveFolio(viewer(["mant:np:view_own"]), "NP-2026-0001")).toBeNull()
+    expect(await resolveFolio(viewer(["mant:np:purchase"]), "NP-2026-0001")).toBeNull()
+  })
+})
+
 describe("resolveFolio · permisos y prefijos", () => {
   it("sin el permiso de ese tipo ni se consulta: el folio de una OT no se busca con permisos de registros", async () => {
     expect(await resolveFolio(viewer(["mant:records:view_all"]), "OT-BIO-0001")).toBeNull()
@@ -216,7 +228,9 @@ describe("permisos del resolvedor", () => {
   it("cada tipo pide los mismos permisos que la página de su ficha", () => {
     expect(FOLIO_KINDS.ot.permissions).toEqual(["mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute"])
     expect(FOLIO_KINDS.registro.permissions).toEqual(["mant:records:view_own", "mant:records:view_worksite", "mant:records:view_all"])
-    expect(FOLIO_KINDS.nota.permissions).toEqual(["mant:np:view_worksite", "mant:np:manage"])
+    // La bandeja y la ficha de las notas también las abren quien compra (`purchase`) y quien ve las suyas (`view_own`).
+    expect(FOLIO_KINDS.nota.permissions).toEqual(["mant:np:view_worksite", "mant:np:manage", "mant:np:purchase", "mant:np:view_own"])
+    expect(FOLIO_KINDS.nota.permissions).toEqual(PARTS_NOTES_VIEW_PERMISSIONS)
     expect(FOLIO_VIEW_PERMISSIONS).toEqual([...FOLIO_KINDS.ot.permissions, ...FOLIO_KINDS.registro.permissions, ...FOLIO_KINDS.nota.permissions])
   })
 
@@ -224,6 +238,9 @@ describe("permisos del resolvedor", () => {
     expect(canOpenKind(viewer(["mant:ot:execute"]), "ot")).toBe(true)
     expect(canOpenKind(viewer(["mant:ot:execute"]), "registro")).toBe(false)
     expect(canOpenKind(viewer(["mant:np:manage"]), "nota")).toBe(true)
+    expect(canOpenKind(viewer(["mant:np:purchase"]), "nota")).toBe(true)
+    expect(canOpenKind(viewer(["mant:np:view_own"]), "nota")).toBe(true)
+    expect(canOpenKind(viewer(["mant:np:reopen", "mant:np:export"]), "nota")).toBe(false)
   })
 })
 

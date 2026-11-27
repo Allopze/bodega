@@ -11,6 +11,7 @@ import {
   EMPTY_OWNERSHIP, hasMyWorkOrderSources, loadMantencionQueueOwnership, mantencionRecordsToReviewWhere, mantencionSourceBranches,
   type MantencionQueueOwnership,
 } from "./mantencion/work-queue-sources"
+import { countPartsNotesForBadge, partsNotesBadgeTier } from "./mantencion/parts-notes/badge-count"
 import { and, asc, eq, inArray, notInArray, or, sql, type SQL } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
@@ -1877,7 +1878,8 @@ export async function getOperationalWorkQueue(session: Session, rawFilters: Oper
  *
  * - `total`: filas de la cola (acciones). Es el aviso de `/pendientes`.
  * - `ot`: filas de OT de la persona: por asignar, por recibir, por conformidad y sus OT asignadas o en taller.
- * - `notas`: notas de pedido por resolver.
+ * - `notas`: el número de «Notas de pedido», según el rol de mayor rango (D34, `parts-notes/badge-count.ts`): quien las resuelve, las
+ *   notas por resolver (la fuente de la cola); quien sólo compra, las «En compra» sin OC; quien sólo ve las suyas, las suyas «En espera».
  * - `registros`: REGISTROS por revisar, no filas: la cola agrupa por faena pero el aviso de «Registros firmados» cuenta
  *   registros. Los dos comparten `reviewableRecordsWhere`.
  */
@@ -1913,7 +1915,10 @@ function firstRow<T>(result: unknown): T | undefined {
  */
 export async function getOperationalWorkCounts(session: Session): Promise<OperationalWorkCounts> {
   const scope = resolveWorksiteScope(session)
-  if (hasNoQueueScope(session, scope)) return NO_WORK_COUNTS
+  // Sólo `manage` cuenta las notas desde la cola; `purchase` y `view_own` tienen su propio conteo, que no depende de la faena de la cola.
+  const notesTier = partsNotesBadgeTier(session.user.permissions ?? [])
+  const notesByRole = notesTier === "purchase" || notesTier === "view_own" ? countPartsNotesForBadge(session, notesTier) : null
+  if (hasNoQueueScope(session, scope)) return { ...NO_WORK_COUNTS, notas: (await notesByRole) ?? 0 }
 
   const context = await loadOperationalQueueContext(session, scope)
   const { branches } = context
@@ -1964,8 +1969,8 @@ export async function getOperationalWorkCounts(session: Session): Promise<Operat
     }
   }
 
-  const [union, registros] = await Promise.all([countUnion(), countRecords()])
-  return { total: union.total, ot: union.ot, notas: union.notas, registros }
+  const [union, registros, roleNotes] = await Promise.all([countUnion(), countRecords(), notesByRole])
+  return { total: union.total, ot: union.ot, notas: roleNotes ?? union.notas, registros }
 }
 
 /** El total de la cola. Lo conservan las pruebas que lo comparan con `getOperationalWorkQueue`. */

@@ -118,6 +118,9 @@ export function ReceiptForm({
     }
   }, [state])
 
+  // Una línea con las tres cantidades en 0 no viaja (ver el `filter`): el servidor rechaza esa línea («Registra al menos una
+  // cantidad») y con ella la recepción entera, así que registrar sólo una parte de la OC —o con una línea ya completa— era
+  // imposible. Si ninguna trae cantidad, el servidor responde «Ingresa las cantidades recibidas».
   const itemsJson = JSON.stringify(
     items.map((i) => ({
       purchaseOrderItemId: i.id,
@@ -135,7 +138,7 @@ export function ReceiptForm({
       maintenanceDate:     i.isEmergencyService && stage === "faena" ? (maintenanceDates[i.id] || null) : null,
       nextExpiryDate:      i.isEmergencyService && stage === "faena" ? (expiryDates[i.id] || null) : null,
       notes:               null,
-    }))
+    })).filter((line) => line.quantityReceived + line.quantityRejected + line.quantityDamaged > 0)
   )
   const progress = describeStageProgress(items, deliveryMode)
   const lines = describeLines(items)

@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm"
 import type { Tx } from "@/db"
-import { mantWorkOrders } from "@/db/schema"
+import { fuelVehicles, mantWorkOrders } from "@/db/schema"
 import { OT_OPEN_STATUSES, type OtStatus } from "@/lib/mantencion/work-order-states"
 
 /**
@@ -24,4 +24,20 @@ export async function assertLinkedWorkOrderOpen(
   if (!(OT_OPEN_STATUSES as readonly OtStatus[]).includes(workOrder.status as OtStatus)) {
     throw new Error(`La OT ya está cerrada o anulada${closedHint}`)
   }
+}
+
+/**
+ * Por qué el equipo de flota no puede ir en un ítem de la solicitud de esa faena, o `null` si puede: existe, está activo y
+ * es de la faena de la solicitud. Es la regla única del vínculo ítem–equipo: `assertItemFleetLink` (`persist-draft.ts`) la
+ * convierte en error, y la línea de una nota de pedido SIN OT la usa para NO imponer su equipo de cargo cuando ya no sirve
+ * (se dio de baja o se trasladó a otra faena después de pedir): el ítem va sin equipo y el cargo queda en la línea de la nota.
+ */
+export async function fleetVehicleProblem(tx: Tx, worksiteId: string, vehicleId: string): Promise<string | null> {
+  const [vehicle] = await tx
+    .select({ worksiteId: fuelVehicles.worksiteId, isActive: fuelVehicles.isActive })
+    .from(fuelVehicles)
+    .where(eq(fuelVehicles.id, vehicleId))
+  if (!vehicle || !vehicle.isActive) return "El equipo seleccionado no existe o está inactivo"
+  if (vehicle.worksiteId !== worksiteId) return "El equipo pertenece a otra faena"
+  return null
 }

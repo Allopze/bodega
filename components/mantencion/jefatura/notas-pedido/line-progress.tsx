@@ -7,8 +7,8 @@ import { lineProgress } from "./parts-notes-format"
  * con `aria-current`, los hechos atenuados y los que faltan más tenues: el estado no depende del color. Una
  * línea rechazada no avanza y no dibuja la cadena. Componente de servidor.
  */
-export function LineProgress({ line }: { line: { stage: PartsNoteLineStage; quantity: number; arrived: number; used: number } }) {
-  const steps = lineProgress(line)
+export function LineProgress({ line, usage = true }: { line: { stage: PartsNoteLineStage; quantity: number; arrived: number; used: number }; /** Sin OT no hay consumo de una reserva: la cadena termina en «Llegó». */ usage?: boolean }) {
+  const steps = lineProgress(line, { usage })
   if (!steps) return null
   return (
     <ol aria-label="Avance de la línea" className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs">

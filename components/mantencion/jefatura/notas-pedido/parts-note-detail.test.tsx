@@ -8,6 +8,10 @@ const actions = {
   resolveNoteItemFromStockAction: vi.fn(),
   rejectNoteItemAction: vi.fn(),
   voidPartsNoteAction: vi.fn(),
+  acceptPartsNoteAction: vi.fn(),
+  holdPartsNoteAction: vi.fn(),
+  rejectPartsNoteAction: vi.fn(),
+  reopenPartsNoteAction: vi.fn(),
 }
 const toastSuccess = vi.fn()
 
@@ -16,7 +20,7 @@ vi.mock("@/app/(app)/mantencion/notas-pedido/actions", () => actions)
 vi.mock("@/lib/toast", () => ({ toast: { success: (...args: unknown[]) => toastSuccess(...args), error: vi.fn(), warning: vi.fn() } }))
 
 const { PartsNoteDetailView } = await import("./parts-note-detail")
-const { VoidNoteButton } = await import("./void-note-button")
+const { NoteHeaderActions } = await import("./note-header-actions")
 
 const BUY = "/solicitudes/nueva?tipo=repuestos&np=n1"
 /** Las filas de línea (no los renglones de compras que anidan dentro). */
@@ -54,7 +58,7 @@ describe("PartsNoteDetailView: cabecera", () => {
     expect(screen.queryByRole("heading", { name: "Pedido" })).toBeNull()
     expect(screen.queryByText(/Resuelve cada línea/)).toBeNull()
     cleanup()
-    view({ note: noteDetail({ canManage: false }) })
+    view({ note: noteDetail({ canManage: false, canBuy: false }) })
     expect(screen.queryByText(/Dónde está cada repuesto pedido/)).toBeNull()
   })
 
@@ -86,7 +90,9 @@ describe("PartsNoteDetailView: líneas", () => {
     const first = within(items[0]!)
     expect(first.getByText("Filtro de aceite")).toBeTruthy()
     expect(first.getByText("Reservado")).toBeTruthy()
-    expect(first.getByText("Llegó 2 · Usado 1")).toBeTruthy()
+    // La cadena de avance de la línea: lo que llegó y lo usado, sobre lo pedido.
+    expect(first.getByText("Llegó 2/2")).toBeTruthy()
+    expect(first.getByText("Usado 1/2")).toBeTruthy()
     expect(first.getByRole("link", { name: "REP-0007" }).getAttribute("href")).toBe("/solicitudes/req-1")
     expect(first.getByRole("link", { name: "OC-2026-0100" }).getAttribute("href")).toBe("/compras/ord-1")
     // El estado de la compra sale en español, nunca el valor crudo.
@@ -160,8 +166,26 @@ describe("PartsNoteDetailView: líneas", () => {
     expect(resolved!.queryByRole("link", { name: "Comprar" })).toBeNull()
   })
 
+  it("una nota cerrada, rechazada o anulada no ofrece ninguna acción de línea, aunque una línea siga pendiente o «en compra» sin compra (importadas)", () => {
+    for (const status of ["cerrada", "rechazada", "anulada"] as const) {
+      view({
+        note: noteDetail({
+          status,
+          voidReason: status === "anulada" ? "Duplicada" : null,
+          canManage: true,
+          canBuy: true,
+          lines: [noteLine(), noteLine({ id: "i2", description: "Correa", resolution: "en_compra", stage: "en_compra", productId: null, freeInWorksite: null })],
+        }),
+      })
+      expect(screen.queryByRole("button", { name: "Reservar de bodega" }), status).toBeNull()
+      expect(screen.queryByRole("button", { name: "Rechazar" }), status).toBeNull()
+      expect(screen.queryByRole("link", { name: "Comprar" }), status).toBeNull()
+      cleanup()
+    }
+  })
+
   it("sin canManage sólo se ve el estado; sin permiso para pedir no hay «Comprar»", () => {
-    view({ note: noteDetail({ canManage: false }) })
+    view({ note: noteDetail({ canManage: false, canBuy: false }) })
     expect(screen.queryByRole("button", { name: "Reservar de bodega" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Rechazar" })).toBeNull()
     expect(screen.queryByRole("link", { name: "Comprar" })).toBeNull()
@@ -287,18 +311,204 @@ describe("«Rechazar»", () => {
   })
 })
 
-describe("VoidNoteButton", () => {
-  it("«Anular nota» pide el motivo y anula la nota", async () => {
-    actions.voidPartsNoteAction.mockResolvedValue({ ok: true })
-    render(<VoidNoteButton noteId="n1" code="NP-2026-0001" />)
+describe("NoteHeaderActions", () => {
+  const mount = (keys: React.ComponentProps<typeof NoteHeaderActions>["actions"]) => render(<NoteHeaderActions noteId="n1" code="NP-2026-0001" actions={keys} />)
+  const buttons = () => screen.queryAllByRole("button").map((button) => button.textContent)
+
+  it("muestra sólo las acciones que se le pasan, en su orden, y nada si no hay ninguna", () => {
+    mount(["aceptar", "en_espera", "rechazar", "anular"])
+    expect(buttons()).toEqual(["Aceptar y enviar a compra", "Poner en espera", "Rechazar nota", "Anular nota"])
+    cleanup()
+    mount(["reabrir"])
+    expect(buttons()).toEqual(["Reabrir"])
+    cleanup()
+    const { container } = mount([])
+    expect(container.textContent).toBe("")
+  })
+
+  it("«Aceptar» llama a la acción de inmediato: sin diálogo de confirmación ni motivo", async () => {
+    actions.acceptPartsNoteAction.mockResolvedValue({ ok: true, message: "La nota NP-2026-0001 quedó aceptada." })
+    mount(["aceptar"])
+    fireEvent.click(screen.getByRole("button", { name: "Aceptar y enviar a compra" }))
+    await waitFor(() => expect(actions.acceptPartsNoteAction).toHaveBeenCalledWith({ noteId: "n1" }))
+    expect(screen.queryByRole("dialog")).toBeNull()
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
+    expect(toastSuccess).toHaveBeenCalledWith("La nota NP-2026-0001 quedó aceptada.")
+  })
+
+  it("«Aceptar y enviar a compra» deja a la vista el enlace a la solicitud que salió, o avisa que quedó esperando aprobación", async () => {
+    actions.acceptPartsNoteAction.mockResolvedValue({
+      ok: true, message: "Aceptada. 2 líneas a Compras (SOL-2026-0007).",
+      data: { requestId: "rq-7", requestCode: "SOL-2026-0007", approved: true },
+    })
+    mount(["aceptar"])
+    fireEvent.click(screen.getByRole("button", { name: "Aceptar y enviar a compra" }))
+    const link = await screen.findByRole("link", { name: "SOL-2026-0007" })
+    expect(link.getAttribute("href")).toBe("/solicitudes/rq-7")
+    expect(screen.getByText(/Quedó en Compras con la solicitud/)).toBeTruthy()
+    cleanup()
+
+    actions.acceptPartsNoteAction.mockResolvedValue({
+      ok: true, message: "Aceptada. La solicitud SOL-2026-0008 quedó enviada a aprobación: No tienes acceso a esta faena.",
+      data: { requestId: "rq-8", requestCode: "SOL-2026-0008", approved: false },
+    })
+    mount(["aceptar"])
+    fireEvent.click(screen.getByRole("button", { name: "Aceptar y enviar a compra" }))
+    expect((await screen.findByRole("link", { name: "SOL-2026-0008" })).getAttribute("href")).toBe("/solicitudes/rq-8")
+    expect(screen.getByText(/Quedó esperando aprobación en la solicitud/)).toBeTruthy()
+  })
+
+  it("si «Aceptar» se rechaza en el servidor, la página no se refresca ni se cierra nada", async () => {
+    actions.acceptPartsNoteAction.mockResolvedValue({ ok: false, message: "La nota NP-2026-0001 está cerrada: no se puede aceptar." })
+    mount(["aceptar"])
+    fireEvent.click(screen.getByRole("button", { name: "Aceptar y enviar a compra" }))
+    await waitFor(() => expect(actions.acceptPartsNoteAction).toHaveBeenCalled())
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["Poner en espera", "holdPartsNoteAction", "Poner NP-2026-0001 en espera", "Nota en espera"],
+    ["Rechazar nota", "rejectPartsNoteAction", "Rechazar NP-2026-0001", "Nota rechazada"],
+    ["Anular nota", "voidPartsNoteAction", "Anular NP-2026-0001", "Nota anulada"],
+    ["Reabrir", "reopenPartsNoteAction", "Reabrir NP-2026-0001", "Nota reabierta"],
+  ] as const)("«%s» pide un motivo de al menos 5 caracteres antes de llamar a %s", async (label, action, title, success) => {
+    actions[action].mockResolvedValue({ ok: true })
+    mount([label === "Poner en espera" ? "en_espera" : label === "Rechazar nota" ? "rechazar" : label === "Anular nota" ? "anular" : "reabrir"])
+    fireEvent.click(screen.getByRole("button", { name: label }))
+    const dialog = within(await screen.findByRole("dialog"))
+    expect(dialog.getByText(title)).toBeTruthy()
+    const submit = dialog.getByRole("button", { name: label }) as HTMLButtonElement
+    expect(submit.disabled).toBe(true)
+    fireEvent.change(dialog.getByRole("textbox", { name: /Motivo/ }), { target: { value: "no" } })
+    expect(submit.disabled).toBe(true)
+    fireEvent.change(dialog.getByRole("textbox", { name: /Motivo/ }), { target: { value: "  Falta confirmar el equipo  " } })
+    fireEvent.click(submit)
+    await waitFor(() => expect(actions[action]).toHaveBeenCalledWith({ noteId: "n1", reason: "Falta confirmar el equipo" }))
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith(success))
+  })
+
+  it("el rechazo del servidor queda dentro del diálogo, con lo escrito, y el diálogo sigue abierto", async () => {
+    actions.voidPartsNoteAction.mockResolvedValue({ ok: false, message: "«Filtro» tiene una compra en curso: anula esa solicitud antes de anular la nota NP-2026-0001." })
+    mount(["anular"])
     fireEvent.click(screen.getByRole("button", { name: "Anular nota" }))
     const dialog = within(await screen.findByRole("dialog"))
-    expect(dialog.getByText("Anular NP-2026-0001")).toBeTruthy()
-    const submit = dialog.getByRole("button", { name: "Anular nota" }) as HTMLButtonElement
-    expect(submit.disabled).toBe(true)
     fireEvent.change(dialog.getByRole("textbox", { name: /Motivo/ }), { target: { value: "Se pidió para el equipo equivocado" } })
-    fireEvent.click(submit)
-    await waitFor(() => expect(actions.voidPartsNoteAction).toHaveBeenCalledWith({ noteId: "n1", reason: "Se pidió para el equipo equivocado" }))
-    expect(toastSuccess).toHaveBeenCalledWith("Nota anulada")
+    fireEvent.click(dialog.getByRole("button", { name: "Anular nota" }))
+    expect((await dialog.findByRole("alert")).textContent).toContain("tiene una compra en curso")
+    expect((dialog.getByRole("textbox", { name: /Motivo/ }) as HTMLTextAreaElement).value).toBe("Se pidió para el equipo equivocado")
+  })
+})
+
+describe("PartsNoteDetailView: estado, historial y notas sin OT", () => {
+  const events = [
+    { id: "e1", kind: "creada" as const, fromStatus: null, toStatus: "enviada" as const, reason: null, actorName: "Javier Roa", itemDescription: null, createdAt: "2026-11-20T15:00:00.000Z" },
+    { id: "e2", kind: "transicion" as const, fromStatus: "enviada" as const, toStatus: "aceptada" as const, reason: null, actorName: "Ana Pérez", itemDescription: null, createdAt: "2026-11-21T09:30:00.000Z" },
+    { id: "e3", kind: "transicion" as const, fromStatus: "aceptada" as const, toStatus: "en_espera" as const, reason: "Falta confirmar el equipo", actorName: "Ana Pérez", itemDescription: null, createdAt: "2026-11-21T10:00:00.000Z" },
+    { id: "e4", kind: "transicion" as const, fromStatus: "en_espera" as const, toStatus: "aceptada" as const, reason: null, actorName: null, itemDescription: "Filtro de aceite", createdAt: "2026-11-22T08:15:00.000Z" },
+  ]
+
+  it("«Historial» lista cada evento con fecha y hora, de qué estado a cuál, el motivo y quién (o «Automático»)", () => {
+    view({ note: noteDetail({ status: "aceptada", events }) })
+    expect(screen.getByRole("heading", { name: "Historial" })).toBeTruthy()
+    const items = within(screen.getByRole("list", { name: "Historial de la nota" })).getAllByRole("listitem")
+    expect(items).toHaveLength(4)
+    expect(items[0]!.textContent).toContain("20-11-2026")
+    expect(items[0]!.textContent).toContain("Nota creada")
+    expect(items[0]!.textContent).toContain("Enviada")
+    expect(items[0]!.textContent).toContain("Javier Roa")
+    expect(items[1]!.textContent).toMatch(/Enviada.*Aceptada/)
+    expect(items[1]!.textContent).toContain("Ana Pérez")
+    expect(items[2]!.textContent).toMatch(/Aceptada.*En espera/)
+    expect(items[2]!.textContent).toContain("Motivo: Falta confirmar el equipo")
+    // Sin quien actuó, lo hizo el sistema; y dice qué línea lo causó.
+    expect(items[3]!.textContent).toContain("Automático")
+    expect(items[3]!.textContent).toContain("Línea: Filtro de aceite")
+    // La hora viaja en un <time> con la fecha completa.
+    expect(items[0]!.querySelector("time")?.getAttribute("datetime")).toBe("2026-11-20T15:00:00.000Z")
+  })
+
+  it("una nota en espera muestra el motivo de la espera, y quien la administra lee que se acepta para seguir", () => {
+    view({ note: noteDetail({ status: "en_espera", holdReason: "Falta confirmar el equipo" }) })
+    expect(screen.getByText("Esta nota está en espera")).toBeTruthy()
+    expect(screen.getByText(/Motivo: Falta confirmar el equipo/)).toBeTruthy()
+    expect(screen.getByText(/Acéptala para seguir resolviendo/)).toBeTruthy()
+    // En espera las líneas no se resuelven: el servidor lo rechaza y la pantalla no ofrece los botones.
+    expect(screen.queryByRole("button", { name: "Reservar de bodega" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Rechazar" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Comprar" })).toBeNull()
+    cleanup()
+    view({ note: noteDetail({ status: "en_espera", holdReason: "Falta confirmar el equipo", canManage: false, canBuy: false }) })
+    expect(screen.getByText(/Motivo: Falta confirmar el equipo/)).toBeTruthy()
+    expect(screen.queryByText(/Acéptala para seguir/)).toBeNull()
+  })
+
+  it("dice el estado con su insignia y desde cuándo, y la referencia externa de una nota importada", () => {
+    view({ note: noteDetail({ status: "en_compra", externalRef: "CHOME-123", statusSince: "2026-11-20T15:00:00.000Z" }) })
+    const estado = screen.getByText("Estado", { selector: "dt" }).parentElement!
+    expect(within(estado).getByText("En compra")).toBeTruthy()
+    expect(screen.getByText("CHOME-123")).toBeTruthy()
+  })
+
+  it("sin OT: «Sin OT», «Sin equipo», cargo y proveedor sugerido por línea, y sin «Reservar de bodega»", () => {
+    view({
+      note: noteDetail({
+        workOrderId: null, workOrderFolio: null, equipmentCode: "", equipmentPlate: "", urgent: true,
+        lines: [
+          noteLine({ charge: { vehicleId: "v1", costCenterId: null, label: "KA-135 · RBYD-98" }, suggestedSupplierId: "s1", suggestedSupplierName: "Repuestos Tr", supplierHint: "Repuestos Tr" }),
+          noteLine({ id: "i2", description: "Grasa", productId: null, freeInWorksite: null, charge: { vehicleId: null, costCenterId: null, label: "CR43-51-52" }, supplierHint: "Don Pepe" }),
+        ],
+      }),
+    })
+    expect(screen.getByText("Sin OT")).toBeTruthy()
+    expect(screen.getByText("Sin equipo")).toBeTruthy()
+    expect(screen.queryByRole("link", { name: /OT-BIO/ })).toBeNull()
+    expect(screen.getByText("Urgente")).toBeTruthy()
+    const [first, second] = lineItems().map((item) => within(item))
+    expect(first!.getByText("KA-135 · RBYD-98")).toBeTruthy()
+    expect(first!.getByText("Repuestos Tr")).toBeTruthy()
+    expect(second!.getByText("CR43-51-52")).toBeTruthy()
+    expect(second!.getByText("Don Pepe")).toBeTruthy()
+    // Sin OT no hay reserva: sólo comprar o rechazar.
+    expect(screen.queryByRole("button", { name: "Reservar de bodega" })).toBeNull()
+    expect(first!.getByRole("link", { name: "Comprar" })).toBeTruthy()
+    expect(first!.getByRole("button", { name: "Rechazar" })).toBeTruthy()
+  })
+
+  it("sin OT lo que llegó queda «En la faena» y la cadena de avance termina en «Llegó» (no hay consumo de una reserva)", () => {
+    view({
+      note: noteDetail({
+        workOrderId: null, workOrderFolio: null,
+        lines: [noteLine({ resolution: "en_compra", stage: "en_bodega", arrived: 2, quantity: 2, purchases: [] })],
+      }),
+    })
+    const line = within(lineItems()[0]!)
+    expect(line.getByText("En la faena")).toBeTruthy()
+    expect(line.queryByText("Reservado")).toBeNull()
+    expect(line.getByText("Llegó 2/2")).toBeTruthy()
+    expect(line.queryByText(/^Usado/)).toBeNull()
+  })
+
+  it("quien sólo compra (mant:np:purchase) ve «Comprar» pero no «Reservar de bodega» ni «Rechazar»", () => {
+    view({ note: noteDetail({ canManage: false, canBuy: true }) })
+    const line = within(lineItems()[0]!)
+    expect(line.getByRole("link", { name: "Comprar" }).getAttribute("href")).toBe(BUY)
+    expect(line.queryByRole("button", { name: "Reservar de bodega" })).toBeNull()
+    expect(line.queryByRole("button", { name: "Rechazar" })).toBeNull()
+  })
+
+  it("modo lectura (view_own): ningún botón de línea ni «Comprar», aunque la página tuviera un enlace", () => {
+    view({ note: noteDetail({ canManage: false, canBuy: false }) })
+    expect(screen.queryAllByRole("button")).toHaveLength(0)
+    expect(screen.queryByRole("link", { name: "Comprar" })).toBeNull()
+  })
+})
+
+describe("PartsNoteDetailView: línea de personas bajo el título", () => {
+  it("dice quién pide y la última acción del historial, de quien la hizo y cuándo (el último evento es el que manda)", () => {
+    view({ note: noteDetail({ events: [
+      { id: "e1", kind: "creada", fromStatus: null, toStatus: "enviada", reason: null, actorName: "Javier Roa", itemDescription: null, createdAt: "2026-11-20T15:00:00.000Z" },
+      { id: "e2", kind: "transicion", fromStatus: "enviada", toStatus: "aceptada", reason: null, actorName: "Ana Pérez", itemDescription: null, createdAt: "2026-11-21T09:30:00.000Z" },
+    ] }) })
+    expect(screen.getByText(/^Pide:/).textContent).toBe("Pide: Javier Roa · Última acción: Pasó a «Aceptada» por Ana Pérez · 21-11-2026 06:30")
   })
 })

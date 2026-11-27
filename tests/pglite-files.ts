@@ -712,14 +712,51 @@ export const pgliteTestFiles = [
 
   // NP · L4 consumo: registro, anulación, cierre de OT y conciliación.
   "lib/__tests__/np-consumption-pglite.test.ts",
+  // ADR 0001 (2026-11-27): transiciones de cabecera, historial append-only, backfill 0405 y notas sin OT.
+  "lib/__tests__/np-transiciones-pglite.test.ts",
+  "lib/__tests__/np-sin-ot-pglite.test.ts",
+  // Notas en estado final (cerrada, rechazada, anulada): una persona no resuelve, rechaza ni compra sus líneas, y el prellenado de la
+  // solicitud (?np=) exige la faena en el alcance (view_own por autoría no basta).
+  "lib/__tests__/np-estados-finales-pglite.test.ts",
+  // Revisión de «Notas de pedido ERP»: la compra real de líneas sin OT (borrador y envío de la solicitud, equipo de cargo que dejó de
+  // servir) con el aviso al autor al llegar a la faena, y los estados que salen del historial (aceptada, espera con OT que termina,
+  // importadas «Cerradas»), el recálculo de las notas anteriores a 0405 y el alta en faena cerrada.
+  "lib/__tests__/np-compra-sin-ot-pglite.test.ts",
+  "lib/__tests__/np-estados-historial-pglite.test.ts",
+  // Importación de las notas de CHOME ERP: simulación sin escritura, evento «migrada» único, idempotencia por external_ref.
+  "lib/__tests__/np-import-chome-pglite.test.ts",
   // «Mis pendientes» de Mantención: siete tipos de fila repartidos entre quienes pueden resolverlos, avisos del menú
   // que salen de la misma cola, escalamiento por faena, equipo trasladado y resiliencia. Aislada: ninguna otra suite de
   // la cola siembra `mant_*`.
   "lib/__tests__/operational-work-queue-mantencion-pglite.test.ts",
+  // El número del menú «Notas de pedido» por rol (D34): manage = por revisar, sólo purchase = «En compra» sin OC activa,
+  // sólo view_own = las propias «En espera»; manda el de mayor rango.
+  "lib/__tests__/operational-work-queue-notas-badge-pglite.test.ts",
 
   // NP · L5 app del mecánico (si alguna suite del cliente usa PGlite).
+  // «Mis notas» del catálogo del teléfono: sólo las propias (con y sin OT), ventana de 30 días, motivos, avance de lo
+  // recibido sin OT, centros de costo, permiso de pedir, huella del catálogo y el pedido sin OT que arma la app.
+  "lib/__tests__/np-catalogo-propias-pglite.test.ts",
 
   // NP · L6 jefatura web.
+  // Bandeja (R14) y exportación a Excel (R16): filtros por estado exacto, urgencia, fechas de Chile, solicitante, equipo y repuesto;
+  // el alcance que ningún filtro amplía; el detalle (historial, espera, acciones, modo lectura de view_own) y el libro.
+  "lib/__tests__/np-bandeja-export-pglite.test.ts",
+
+  // NP · Fase 2 (puntos 3 y 4): pestañas de la bandeja por el recorrido de la compra (Por revisar, En compra, En recepción, Cerradas),
+  // antigüedad en días civiles de Chile desde el último evento, urgentes abiertas del alcance y el Excel que sigue la pestaña activa.
+  "lib/__tests__/np-bandeja-pestanas-pglite.test.ts",
+
+  // NP · Fase 2 (D30 a D33): aceptar la nota = aprobar su compra (solicitud aprobada o en borrador por la regla de cotización,
+  // alcance, permiso y fallos del envío) y las decisiones por línea en lote desde la bandeja (comprar, sacar de bodega, rechazar).
+  "lib/__tests__/np-enviar-a-compra-pglite.test.ts",
+  "lib/__tests__/np-enviar-a-compra-guardas-pglite.test.ts",
+  // El alcance de una nota (faena de la nota o actual de su equipo) es el mismo al gestionar, precargar y comprar a mano.
+  "lib/__tests__/np-alcance-equipo-trasladado-pglite.test.ts",
+  "lib/__tests__/np-lote-lineas-pglite.test.ts",
+
+  // NP · R9: notas de pedido y consumos de repuestos en la hoja de vida del equipo.
+  "lib/__tests__/equipment-parts-pglite.test.ts",
 
   // NP · L7 bodega: vistas, trazabilidad y exportaciones.
   "lib/__tests__/bodega-repuestos-vistas-pglite.test.ts",

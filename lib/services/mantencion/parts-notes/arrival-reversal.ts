@@ -85,7 +85,8 @@ export async function recalcNotesOfLinesTx(tx: Tx, input: {
       .limit(1)
       .for("no key update")
     if (!current || current.status === "anulada") continue
-    const next = await recalcNoteStatusTx(tx, note.noteId, { onlyIfChanged: true })
+    // El evento de la nota lleva a quien anuló o cotejó (y el motivo): es la causa del cambio, no el sistema.
+    const next = await recalcNoteStatusTx(tx, note.noteId, { onlyIfChanged: true, actorUserId: input.actorUserId, reason: input.reason })
     if (next === current.status) continue
     changes.push({ noteId: note.noteId, code: note.code, from: current.status, to: next })
     await recordAudit({

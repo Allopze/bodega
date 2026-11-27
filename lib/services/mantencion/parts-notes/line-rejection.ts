@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm"
 import type { Tx } from "@/db"
 import { mantPartsNoteItems, mantPartsNotes } from "@/db/schema"
-import { recalcNoteStatusTx } from "./status"
+import { OPEN_NOTE_STATUSES, recalcNoteStatusTx } from "./status"
 import { writeTrail } from "./trail"
 
 /**
@@ -9,17 +9,17 @@ import { writeTrail } from "./trail"
  * resolver cuando su OT termina (NP4-7).
  *
  * - `rejectLineTx` es el paso común: línea `rechazada` con su motivo, estado de la NP recalculado y rastro (evento
- *   `parts_note_resolved` en la OT + auditoría de la NP). Lo usa el rechazo de jefatura y el automático.
+ *   `parts_note_resolved` en la OT si la hay, y auditoría de la NP). Lo usa el rechazo de jefatura y el automático.
+ *   `skipRecalc` deja el recálculo a quien llama: el rechazo de la nota entera recalcula UNA vez, al final y forzado.
  * - `rejectOpenLinesOfWorkOrderTx` lo llama la transición que cierra (conformidad) o anula la OT, en la MISMA
  *   transacción, con la OT ya bloqueada `FOR UPDATE`: las líneas `pendiente` de las NP abiertas se rechazan solas,
  *   con el motivo, para que la NP no siga en «Pendientes» ni en la cifra del Panel por una orden que ya terminó.
- *   No toca lo ya resuelto (`desde_stock`, `en_compra`, `rechazada`) ni las NP `cerrada` o `anulada`, y repetirla no
- *   hace nada: sin líneas pendientes ni estado que cambiar no escribe. No avisa al mecánico: el cierre o la anulación de
- *   la OT ya lo avisan.
+ *   No toca lo ya resuelto (`desde_stock`, `en_compra`, `rechazada`) ni las NP `cerrada`, `rechazada` o `anulada`, y
+ *   repetirla no hace nada. No avisa al mecánico: el cierre o la anulación de la OT ya lo avisan. Una NP sin OT nunca
+ *   llega aquí (D13 no aplica).
  *
  * Bloqueo: llamar con la OT tomada (`FOR UPDATE` en la transición, `FOR SHARE` en las demás escrituras de la NP). Las
- * filas de las NP y de sus líneas se toman `FOR NO KEY UPDATE` ordenadas por id, como `voidPartsNote` y las
- * solicitudes de repuestos (no chocan con las FK de las reservas ni de las solicitudes, que sólo piden `KEY SHARE`).
+ * filas de las NP y de sus líneas se toman `FOR NO KEY UPDATE` ordenadas por id.
  */
 
 /** Cómo terminó la OT: decide el motivo con que se rechazan sus líneas pendientes. */
@@ -45,23 +45,33 @@ export interface RejectableLine {
   noteId: string
   code: string
   noteWorksiteId: string
-  workOrderId: string
+  /** Null: nota sin OT. */
+  workOrderId: string | null
   resolution: string
 }
 
 /**
- * Deja la línea `rechazada` con su motivo, recalcula el estado de su NP y escribe el rastro. La línea ya va bloqueada
- * y comprobada por quien llama. `extra` se suma al `changeSet` del rastro (el automático dice que lo fue y por qué).
+ * Deja la línea `rechazada` con su motivo y escribe el rastro; recalcula el estado de su NP salvo `skipRecalc`. La línea ya
+ * va bloqueada y comprobada por quien llama. `extra` se suma al `changeSet` del rastro (el automático dice que lo fue y por qué).
  */
 export async function rejectLineTx(tx: Tx, line: RejectableLine, input: {
   reason: string
   actor: { userId: string; email?: string | null }
   extra?: Record<string, unknown>
+  skipRecalc?: boolean
+  /** Lo causó el sistema (la OT que termina, la compra que muere): el evento de la NP queda sin actor humano. */
+  automatic?: boolean
 }): Promise<void> {
   await tx.update(mantPartsNoteItems).set({
     resolution: "rechazada", resolutionReason: input.reason, resolvedByUserId: input.actor.userId, resolvedAt: new Date().toISOString(),
   }).where(eq(mantPartsNoteItems.id, line.itemId))
-  await recalcNoteStatusTx(tx, line.noteId)
+  if (!input.skipRecalc) {
+    await recalcNoteStatusTx(tx, line.noteId, {
+      actorUserId: input.automatic ? null : input.actor.userId,
+      reason: input.reason,
+      itemId: line.itemId,
+    })
+  }
   await writeTrail(tx, {
     workOrderId: line.workOrderId, worksiteId: line.noteWorksiteId, noteId: line.noteId, code: line.code,
     actor: input.actor, action: "update", reason: input.reason,
@@ -77,11 +87,12 @@ export const autoRejectionTrail = (end: WorkOrderEnd): Record<string, unknown> =
 })
 
 /**
- * Rechaza las líneas `pendiente` de las NP abiertas (`enviada` o `en_gestion`) de la OT que termina. Devuelve cuántas
- * NP y líneas tocó (`{ notes: 0, lines: 0 }` si no había nada que hacer, que es lo que pasa al repetirla).
+ * Rechaza las líneas `pendiente` de las NP abiertas de la OT que termina. Devuelve cuántas NP y líneas tocó (`{ notes: 0,
+ * lines: 0 }` si no había nada que hacer, que es lo que pasa al repetirla).
  *
- * Además recalcula el estado de esas NP, sin escribir si no cambia: una NP que sólo esperaba una compra (`en_gestion`
- * sin líneas pendientes) deja de esperar cuando la OT termina, porque lo que llegue ya no se reserva para ella (NP4-2).
+ * Además recalcula el estado de esas NP, sin escribir si no cambia: una NP que sólo esperaba una compra deja de esperar
+ * cuando la OT termina, porque lo que llegue ya no se reserva para ella (NP4-2). Una NP en espera sale de la espera: ya no hay
+ * nada que esperar y sigue el estado que dicen sus líneas (rechazada o cerrada).
  */
 export async function rejectOpenLinesOfWorkOrderTx(tx: Tx, input: {
   workOrderId: string
@@ -91,7 +102,7 @@ export async function rejectOpenLinesOfWorkOrderTx(tx: Tx, input: {
   const notes = await tx
     .select({ id: mantPartsNotes.id, code: mantPartsNotes.code, worksiteId: mantPartsNotes.worksiteId })
     .from(mantPartsNotes)
-    .where(and(eq(mantPartsNotes.workOrderId, input.workOrderId), inArray(mantPartsNotes.status, ["enviada", "en_gestion"])))
+    .where(and(eq(mantPartsNotes.workOrderId, input.workOrderId), inArray(mantPartsNotes.status, [...OPEN_NOTE_STATUSES])))
     .orderBy(asc(mantPartsNotes.id))
     .for("no key update")
   if (notes.length === 0) return { notes: 0, lines: 0 }
@@ -106,16 +117,20 @@ export async function rejectOpenLinesOfWorkOrderTx(tx: Tx, input: {
 
   // Las filas se tomaron por id; el rastro sale en el orden de la NP y de la línea, que es como se leen.
   const ordered = [...lines].sort((a, b) => a.noteId.localeCompare(b.noteId) || a.sortOrder - b.sortOrder)
-  const reason = autoRejectionReason(input.end)
+  const rejectionReason = autoRejectionReason(input.end)
   const extra = autoRejectionTrail(input.end)
   for (const line of ordered) {
     const note = noteById.get(line.noteId)!
     await rejectLineTx(tx, {
       itemId: line.itemId, noteId: note.id, code: note.code, noteWorksiteId: note.worksiteId,
       workOrderId: input.workOrderId, resolution: line.resolution,
-    }, { reason, actor: input.actor, extra })
+    }, { reason: rejectionReason, actor: input.actor, extra, automatic: true })
   }
-  // La OT ya figura terminada en esta transacción: una NP con compras en curso pasa de «en gestión» a «cerrada».
-  for (const note of notes) await recalcNoteStatusTx(tx, note.id, { onlyIfChanged: true })
+  // La OT ya figura terminada en esta transacción: una NP con compras en curso pasa de «en gestión» a «cerrada». Y una NP «en
+  // espera» deja de estarlo (`force`): ya no queda nada que esperar, y con sus líneas pendientes rechazadas seguiría en
+  // «En gestión» por una orden que terminó. El evento queda automático (sin actor) y con el motivo de la OT.
+  const { end } = input
+  const reason = end.kind === "cerrada" ? "La orden de trabajo se cerró." : `La orden de trabajo se anuló: ${end.reason}`
+  for (const note of notes) await recalcNoteStatusTx(tx, note.id, { onlyIfChanged: true, force: true, actorUserId: null, reason })
   return { notes: new Set(ordered.map((line) => line.noteId)).size, lines: ordered.length }
 }

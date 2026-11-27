@@ -16,6 +16,7 @@ import { NavigationProgress } from "@/components/layout/navigation-progress"
 import { AppToaster } from "@/components/ui/app-toaster"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { can, canAny } from "@/lib/auth/can"
+import { PARTS_NOTES_VIEW_PERMISSIONS } from "@/components/mantencion/jefatura/notas-pedido/parts-notes-format"
 import { getNavigationToggleState, routeIsEnabled, type NavigationToggleState } from "@/lib/services/module-toggles"
 import { registry } from "@/modules/registry"
 import { getOperationalWorkCounts, type OperationalWorkCounts } from "@/lib/services/operational-work-queue"
@@ -162,7 +163,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const canViewFuel = can(session, "combustibles:view")
   // Los avisos de Mantención salen de la misma cola que «Mis pendientes», así que el cálculo corre también para quien tiene
   // trabajo de Mantención sin tener la bandeja (un rol personalizado): su número del menú no depende de ese permiso.
+  // El número de «Notas de pedido» de quien sólo compra o sólo ve las suyas (D34) tampoco sale de una fuente de la cola, pero se calcula aquí.
   const hasMantencionWork = actionableQueueSources(session.user.permissions ?? []).some((source) => source.startsWith("mant_"))
+    || canAny(session, "mant:np:purchase", "mant:np:view_own")
   const badgeTags = badgeCountsTags({ isGlobal, worksiteIds: session.user.worksiteIds ?? [] })
 
   const [ws, rawBadgeCounts, operationalCounts] = await Promise.all([
@@ -187,7 +190,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     "/pendientes":   canViewOperations ? operationalCounts.total : 0,
     // Mantención: el mismo cálculo que la cola. Cada número sólo viaja si la sesión puede abrir esa pantalla.
     "/mantencion/ot":            canAny(session, "mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute") ? operationalCounts.ot : 0,
-    "/mantencion/notas-pedido":  canAny(session, "mant:np:view_worksite", "mant:np:manage") ? operationalCounts.notas : 0,
+    // Los mismos permisos que abren la bandeja y su ítem del menú (`PARTS_NOTES_VIEW_PERMISSIONS`); el número es el de la cola.
+    "/mantencion/notas-pedido":  canAny(session, ...PARTS_NOTES_VIEW_PERMISSIONS) ? operationalCounts.notas : 0,
     "/mantencion/registros":     canAny(session, "mant:records:view_own", "mant:records:view_worksite", "mant:records:view_all") ? operationalCounts.registros : 0,
   }
 

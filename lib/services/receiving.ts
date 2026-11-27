@@ -22,7 +22,9 @@ import { applyMovementTx } from "./stock"
 import { OFFICE_ORIGIN_LABEL, prepareDispatchGuideForOfficeReceiptTx, resolveOfficeWorksite } from "./dispatch-guides"
 import { notifyManyUser, notifyAfterCommit } from "./notifications"
 import { notifyWorkOrderPartsReceived } from "./mantencion/work-orders/notifications"
+import { notifyPartsNoteLinesArrived } from "./mantencion/parts-notes/notifications"
 import { addToAllocationTx, freeStockTx, lockForStockTx } from "./mantencion/parts"
+import { recalcNotesOfLinesTx } from "./mantencion/parts-notes/arrival-reversal"
 import { closeOrderTx } from "./purchasing-module/receiving"
 import {
   collectRequesterShortfallNoticesTx,
@@ -182,6 +184,10 @@ export async function registerReceipt(
   const partsArrivals = new Map<string, Set<string>>()
   // De esas líneas, las que nacieron de una nota de pedido: su autor también recibe aviso.
   const partsNoteLines = new Map<string, Set<string>>()
+  // ADR 0001 (2026-11-27): líneas de NP SIN OT que esta recepción atendió en faena. Su estado se recalcula al final.
+  const noteLinesWithoutOt = new Set<string>()
+  // De esas, las compras que esta recepción dejó COMPLETAS en faena: su autor recibe aviso (la nota con OT lo recibe por la OT).
+  const noteArrivalsWithoutOt = new Set<string>()
   const countArrival = (requestItemId: string, request: { id: string; code: string; requesterId: string | null }) => {
     if (!request.requesterId) return
     const arrival = arrivals.get(request.id)
@@ -198,6 +204,8 @@ export async function registerReceipt(
     arrivals.clear()
     partsArrivals.clear()
     partsNoteLines.clear()
+    noteLinesWithoutOt.clear()
+    noteArrivalsWithoutOt.clear()
     shortfallNotices = []
     const shortfalls: RequesterShortfall[] = []
     // Read order INSIDE the transaction to avoid stale status checks.
@@ -444,6 +452,13 @@ export async function registerReceipt(
             fullReceived,
             userEmail: input.userEmail,
           })
+          // La línea de NP sin OT espera lo que la faena recibe de su OC: se recalcula al final de la transacción.
+          const [noteLink] = await tx
+            .select({ noteItemId: purchaseRequestItems.partsNoteItemId, workOrderId: purchaseRequestItems.workOrderId })
+            .from(purchaseRequestItems)
+            .where(eq(purchaseRequestItems.id, lockedOcItem.requestItemId))
+            .limit(1)
+          if (noteLink?.noteItemId && !noteLink.workOrderId) noteLinesWithoutOt.add(noteLink.noteItemId)
 
           // F-7: notify the original requester when the item is fully received at faena.
           if (fullReceived) {
@@ -453,6 +468,7 @@ export async function registerReceipt(
               with: { request: { columns: { requesterId: true, code: true, id: true } } },
             })
             if (reqItem?.request) countArrival(reqItem.id, reqItem.request)
+            if (reqItem?.partsNoteItemId && !reqItem.workOrderId) noteArrivalsWithoutOt.add(reqItem.id)
             if (reqItem?.workOrderId) {
               const lines = partsArrivals.get(reqItem.workOrderId) ?? new Set<string>()
               lines.add(reqItem.id)
@@ -563,6 +579,17 @@ export async function registerReceipt(
     // observen una recepción nueva con una proyección tributaria anterior.
     await persistPurchaseOrderInvoiceReconciliationTx(tx, input.purchaseOrderId)
 
+    // Las notas de pedido sin OT que esta recepción atiende: al final, después de la orden de compra (el orden de bloqueo
+    // de la recepción: la nota es lo último). Con OT no hace falta: su llegada pasa por la reserva (`addToAllocationTx`).
+    if (noteLinesWithoutOt.size > 0) {
+      await recalcNotesOfLinesTx(tx, {
+        noteItemIds: [...noteLinesWithoutOt],
+        reason: `Recepción ${txCode}`,
+        actorUserId: input.receivedBy,
+        userEmail: input.userEmail,
+      })
+    }
+
     await recordAudit({
       userId:     input.receivedBy,
       userEmail:  input.userEmail,
@@ -592,6 +619,10 @@ export async function registerReceipt(
       workOrderId, receiptId, actorUserId: input.receivedBy, itemCount: lines.size,
       ...(noteLines?.size ? { requestItemIds: [...noteLines] } : {}),
     }))
+  }
+  // Notas de pedido sin OT: una vez por recepción, al autor de cada nota (idempotente por nota y recepción).
+  if (noteArrivalsWithoutOt.size > 0) {
+    notifyAfterCommit(() => notifyPartsNoteLinesArrived({ receiptId, actorUserId: input.receivedBy, requestItemIds: [...noteArrivalsWithoutOt] }))
   }
   flushRequesterShortfallNotifications(shortfallNotices)
 

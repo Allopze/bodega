@@ -13,13 +13,14 @@ import { formatQty } from "@/lib/utils"
 import { LineProgress } from "./line-progress"
 import { NoteReasonDialog } from "./note-reason-dialog"
 import { consumptionMeta, NOTE_STATUS_TEXT, parseQty, qtyInputText } from "./parts-notes-format"
+import { isPartsNoteOpen } from "@/lib/mantencion/contracts"
 
 const TEXT_LINK = "font-mono text-sm font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
 const SUBHEADING = "mb-1.5 text-sm font-semibold text-[var(--color-text)]"
 
 /** Una nota sigue esperando mientras esté abierta y tenga una línea sin resolver o sin llegar. */
 function noteWaiting(note: WorkOrderPartsOverview["notes"][number]): boolean {
-  return (note.status === "enviada" || note.status === "en_gestion") && note.lines.some((line) => line.stage === "pedido" || line.stage === "en_compra")
+  return isPartsNoteOpen(note.status) && note.lines.some((line) => line.stage === "pedido" || line.stage === "en_compra")
 }
 
 function ReleaseButton({ workOrderId, part }: { workOrderId: string; part: WorkOrderAvailablePart }) {
