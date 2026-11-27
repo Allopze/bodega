@@ -78,7 +78,13 @@ export function SparePartField({ id, inputRef, value, linked, index, invalid, de
         "aria-controls": expanded ? listId : undefined, "aria-activedescendant": expanded && active >= 0 ? optionId(active) : undefined,
       } : {})}
       onChange={(event) => { onType(event.target.value); setOpen(true); setActive(-1) }}
-      onBlur={() => { setOpen(false); setActive(-1) }}
+      onBlur={(event) => {
+        const close = () => { setOpen(false); setActive(-1) }
+        // Un toque en un botón («+ Otro repuesto», «Enviar pedido») saca el foco del campo ANTES de que llegue el clic: cerrar
+        // la lista ahí sube el botón de lugar y el clic se pierde (había que tocar dos veces). Se cierra cuando el toque termina.
+        if (event.relatedTarget instanceof HTMLButtonElement) document.addEventListener("click", close, { once: true })
+        else close()
+      }}
       onKeyDown={onKeyDown}
     />
   )

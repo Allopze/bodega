@@ -237,6 +237,21 @@ describe("con el teclado", () => {
     fireEvent.blur(search())
     expect(screen.queryByRole("listbox")).toBeNull()
   })
+
+  it("un toque en un botón no cierra la lista antes de terminar: «+ Otro repuesto» con la lista abierta agrega la línea al primer toque", () => {
+    open()
+    type("filtro")
+    expect(screen.getByRole("listbox")).toBeTruthy()
+    const otro = screen.getByRole("button", { name: "+ Otro repuesto" })
+    // El toque saca el foco del campo ANTES de que llegue el clic: si la lista se cerrara ahí, el botón subiría de lugar y el clic
+    // se perdería (había que tocar dos veces).
+    fireEvent.blur(search(), { relatedTarget: otro })
+    expect(screen.getByRole("listbox")).toBeTruthy()
+    fireEvent.click(otro)
+    expect(screen.getByRole("group", { name: "Repuesto 2" })).toBeTruthy()
+    // Terminado el toque, la lista del campo anterior ya no sigue abierta.
+    expect(screen.queryByRole("listbox")).toBeNull()
+  })
 })
 
 describe("sin catálogo de repuestos y con OT", () => {
