@@ -646,7 +646,9 @@ export function useRequestForm({
         // registro del vehículo: no se mandan (el servidor tampoco los guarda).
         vehicleId: item.vehicleId || null,
         workOrderId: item.vehicleId ? (item.workOrderId || null) : null,
-        partsNoteItemId: item.vehicleId && item.workOrderId ? (item.partsNoteItemId || null) : null,
+        // La línea que compra una nota de pedido SIN OT no lleva OT (y puede no llevar equipo de cargo): el vínculo viaja igual.
+        // El servidor (`assertPartsNoteLineBuyable`) decide si la OT corresponde; cambiar de equipo, de OT o de faena ya lo suelta.
+        partsNoteItemId: item.partsNoteItemId || null,
         estimatedUnitPrice: parseEstimatedPrice(item.estimatedUnitPrice),
         partNumber: item.partNumber || null, location: item.location || null,
         equipmentName: item.vehicleId ? null : (item.equipmentName || null),

@@ -185,6 +185,15 @@ describe("useRequestForm — líneas de una nota de pedido (?np=)", () => {
     expect(serializedItem(result)).toMatchObject({ vehicleId: "v-1", workOrderId: "ot-1", partsNoteItemId: "npi-1" })
   })
 
+  it("una línea de una nota SIN OT manda su vínculo, con equipo de cargo o sin él (sin OT ni equipo el ítem sigue atado a la nota)", () => {
+    const withCharge = { ...NOTE_ITEM, workOrderId: "", workOrderFolio: "", partsNoteItemId: "npi-2" }
+    const free = { ...withCharge, productNameFree: "Correa sin catalogar", vehicleId: "", vehicleLabel: "", partsNoteItemId: "npi-3" }
+    const { result } = setup({ initialWorksiteId: "ws-1", prefillItems: [withCharge, free] })
+    const serialized = JSON.parse(result.current.buildDraftFormData().get("itemsJson") as string) as Array<Record<string, unknown>>
+    expect(serialized[0]).toMatchObject({ vehicleId: "v-1", workOrderId: null, partsNoteItemId: "npi-2" })
+    expect(serialized[1]).toMatchObject({ vehicleId: null, workOrderId: null, partsNoteItemId: "npi-3" })
+  })
+
   it("un ítem sin línea de nota manda null", () => {
     const { result } = setup()
     expect(serializedItem(result).partsNoteItemId).toBeNull()
