@@ -1,31 +1,22 @@
 import { describe, expect, it } from "vitest"
-import { defaultMaintenanceUnit, effectiveMaintenanceUnit } from "./equipment-unit"
+import { defaultMaintenanceUnit, effectiveMaintenanceUnit, parseMaintenanceUnit } from "./equipment-unit"
 
 describe("defaultMaintenanceUnit", () => {
-  const truck = { typeMeterType: "odometer", typeFamily: "camiones" }
-
-  it("un camión o tracto de producción mide en horas aunque su tipo sea de odómetro", () => {
-    expect(defaultMaintenanceUnit({ ...truck, worksiteCode: "SANTA-FE" })).toBe("h")
-    expect(defaultMaintenanceUnit({ ...truck, worksiteCode: "FA-007" })).toBe("h")
-  })
-
-  it("un camión sin faena resuelta (vista previa de una importación) mide en horas", () => {
-    expect(defaultMaintenanceUnit({ ...truck, worksiteCode: null })).toBe("h")
-  })
-
-  it("un camión de Biodiversa mide en kilómetros, sin importar mayúsculas", () => {
-    expect(defaultMaintenanceUnit({ ...truck, worksiteCode: "BIODIVERSA" })).toBe("km")
-    expect(defaultMaintenanceUnit({ ...truck, worksiteCode: "biodiversa" })).toBe("km")
-  })
-
-  it("los demás tipos miden como su tipo, también en Biodiversa", () => {
-    expect(defaultMaintenanceUnit({ typeMeterType: "odometer", typeFamily: "cargadores_camionetas", worksiteCode: "SANTA-FE" })).toBe("km")
-    expect(defaultMaintenanceUnit({ typeMeterType: "hour_meter", typeFamily: "maquinaria", worksiteCode: "BIODIVERSA" })).toBe("h")
-    expect(defaultMaintenanceUnit({ typeMeterType: "odometer", typeFamily: null, worksiteCode: "SANTA-FE" })).toBe("km")
+  it("nace con la unidad de su tipo: odómetro en km, horómetro en horas", () => {
+    expect(defaultMaintenanceUnit({ typeMeterType: "odometer" })).toBe("km")
+    expect(defaultMaintenanceUnit({ typeMeterType: "hour_meter" })).toBe("h")
   })
 
   it("un tipo que no se mide en km ni en horas no tiene unidad", () => {
-    expect(defaultMaintenanceUnit({ typeMeterType: "none", typeFamily: "camiones", worksiteCode: "SANTA-FE" })).toBeNull()
+    expect(defaultMaintenanceUnit({ typeMeterType: "none" })).toBeNull()
+  })
+})
+
+describe("parseMaintenanceUnit", () => {
+  it("sólo km y h son unidades de Mantención", () => {
+    expect(parseMaintenanceUnit("km")).toBe("km")
+    expect(parseMaintenanceUnit("h")).toBe("h")
+    for (const value of ["", "KM", "mi", "horas", null, undefined]) expect(parseMaintenanceUnit(value)).toBeNull()
   })
 })
 

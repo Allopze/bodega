@@ -1,4 +1,5 @@
 import { PGlite } from "@electric-sql/pglite"
+import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import path from "node:path"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
@@ -37,7 +38,7 @@ const { listSchedules } = await import("@/lib/services/mantencion/schedules")
 
 /** Camión del tipo odómetro que el perfil fija en HORAS (Cholguán). */
 const HOURS_TRUCK = "v-h-prod"
-/** Camión de Biodiversa y tractocamión sin perfil: sólo para la regla de alta de la incorporación. */
+/** Dos tractocamiones sin perfil, uno en Cholguán y otro en una faena «BIODIVERSA»: sólo para la unidad con que se incorporan. */
 const INC_CHOLGUAN = "v-inc-cho"
 const INC_BIODIVERSA = "v-inc-bio"
 
@@ -110,8 +111,8 @@ beforeAll(async () => {
     reading: 20_500, unit: "km", workDate: daysAgo(15), scheduleId: IDS.schKm, scheduleName: "Camiones y tractos", intervalValue: 10_000,
   })
 
-  // Incorporación desde la flota: un tractocamión en Cholguán (producción → horas) y otro en una faena
-  // «BIODIVERSA» (→ km). Ninguno tiene perfil todavía.
+  // Incorporación desde la flota: un tractocamión en Cholguán y otro en una faena «BIODIVERSA». Ninguno tiene perfil
+  // todavía y los dos son del mismo tipo (odómetro): la faena ya no decide su unidad (2026-11-26).
   await testDb.insert(schema.worksites).values({ id: "ws-bio-camiones", name: "Biodiversa camiones", code: "BIODIVERSA", isActive: true, createdAt: now, updatedAt: now })
   await testDb.insert(schema.fuelEquipmentTypes).values({
     id: "fet-test-tractor", slug: "t-tractor", name: "Tractocamión", category: "truck", defaultMeterType: "odometer",
@@ -190,9 +191,39 @@ describe("unidad por equipo: flota, registros y pautas", () => {
     expect(options.find((option) => option.id === IDS.truckCho)?.unit).toBe("km")
   })
 
-  it("la incorporación propone la unidad de la regla de alta y la pauta de esa unidad", async () => {
+  it("la incorporación propone la unidad de su tipo (la faena no cuenta) y la pauta de esa unidad", async () => {
     const candidates = await listIncorporationCandidates("all")
-    expect(candidates.find((candidate) => candidate.vehicleId === INC_CHOLGUAN)).toMatchObject({ unit: "h", suggestedScheduleId: IDS.schH })
+    expect(candidates.find((candidate) => candidate.vehicleId === INC_CHOLGUAN)).toMatchObject({ unit: "km", suggestedScheduleId: IDS.schKm })
     expect(candidates.find((candidate) => candidate.vehicleId === INC_BIODIVERSA)).toMatchObject({ unit: "km", suggestedScheduleId: IDS.schKm })
+  })
+
+  it("incorporar con la unidad elegida la guarda en el perfil; sin elegir, la del tipo; una inválida se rechaza en su fila sin escribir nada", async () => {
+    const { incorporateFleetVehicles } = await import("@/lib/services/mantencion/fleet-incorporation")
+    const actor = { userId: IDS.jefe, email: "jefe@chome.test", scope: "all" as const }
+    const base = { brandId: IDS.brandVolvo, initialReading: null, initialReadingDate: null }
+    const unitOf = async (vehicleId: string) => (await testDb.select().from(schema.mantEquipmentProfiles).where(eq(schema.mantEquipmentProfiles.vehicleId, vehicleId)))[0]
+    const fuelMeter = async (vehicleId: string) => (await testDb.select({ meter: schema.fuelVehicles.meterType }).from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, vehicleId)))[0]?.meter
+
+    const meterBefore = await fuelMeter(INC_CHOLGUAN)
+    const rejected = await incorporateFleetVehicles(actor, [{ ...base, vehicleId: INC_CHOLGUAN, scheduleId: null, unit: "millas" }])
+    expect(rejected.incorporated).toBe(0)
+    expect(rejected.rows[0]).toMatchObject({ ok: false, messages: ["Elige la unidad de mantención: kilómetros u horas."] })
+    expect(await unitOf(INC_CHOLGUAN)).toBeUndefined()
+
+    // La pauta tiene que ser de la unidad elegida: la de km no calza con horas.
+    const mismatch = await incorporateFleetVehicles(actor, [{ ...base, vehicleId: INC_CHOLGUAN, scheduleId: IDS.schKm, unit: "h" }])
+    expect(mismatch.rows[0]).toMatchObject({ ok: false, messages: ["Esa pauta se mide en kilómetros y el equipo en horas."] })
+
+    const result = await incorporateFleetVehicles(actor, [
+      { ...base, vehicleId: INC_CHOLGUAN, scheduleId: IDS.schH, unit: "h" },
+      { ...base, vehicleId: INC_BIODIVERSA, scheduleId: IDS.schKm },
+    ])
+    expect(result.incorporated).toBe(2)
+    expect(await unitOf(INC_CHOLGUAN)).toMatchObject({ unit: "h", scheduleId: IDS.schH })
+    expect(await unitOf(INC_BIODIVERSA)).toMatchObject({ unit: "km", scheduleId: IDS.schKm })
+    // El medidor de Combustible es el del tipo y no cambia, y la incorporación deja auditoría.
+    expect(await fuelMeter(INC_CHOLGUAN)).toBe(meterBefore)
+    const audited = await testDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, INC_CHOLGUAN))
+    expect(audited.some((row) => row.entityType === "mant_equipment" && String(row.newState).includes('"unit":"horas"'))).toBe(true)
   })
 })

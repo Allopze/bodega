@@ -2,14 +2,10 @@ import type { MantUnit } from "@/lib/mantencion/types"
 
 /** Listas cerradas que alimentan el formulario del equipo (se cargan en el servidor). */
 export interface EquipmentFormCatalogs {
-  /**
-   * `unit` es la del TIPO (su default). La del equipo depende además de la faena (los camiones de producción
-   * miden en horas, los de Biodiversa en km): el formulario la calcula con `meterType`, `family` y el `code`
-   * de la faena, igual que el servidor. Sin esos datos vale `unit`.
-   */
-  types: Array<{ id: string; name: string; unit: MantUnit; meterType?: string; family?: string | null }>
+  /** `unit` es la del medidor del TIPO: con ella se prellena la «Unidad de mantención» del equipo, que se puede cambiar. */
+  types: Array<{ id: string; name: string; unit: MantUnit }>
   brands: Array<{ id: string; name: string }>
-  worksites: Array<{ id: string; name: string; code?: string }>
+  worksites: Array<{ id: string; name: string }>
   schedules: Array<{ id: string; name: string; unit: MantUnit; intervalCount: number }>
 }
 
@@ -23,6 +19,11 @@ export interface EquipmentFormValues {
   model: string
   year: string
   worksiteId: string
+  /**
+   * Unidad de mantención elegida: `km` o `h`. Vacía = la de su tipo, que es con la que se prellena el control
+   * (cambiar el tipo la devuelve a la del tipo nuevo). El servidor valida que sea `km` o `h`.
+   */
+  unit: string
   scheduleId: string
   initialReading: string
   initialReadingDate: string
@@ -30,5 +31,5 @@ export interface EquipmentFormValues {
 
 export const EMPTY_EQUIPMENT_VALUES: EquipmentFormValues = {
   code: "", plate: "", noPlate: false, equipmentTypeId: "", brandId: "", model: "", year: "", worksiteId: "",
-  scheduleId: "", initialReading: "", initialReadingDate: "",
+  unit: "", scheduleId: "", initialReading: "", initialReadingDate: "",
 }

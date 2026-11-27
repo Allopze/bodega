@@ -38,7 +38,8 @@ const { setEquipmentUnit } = await import("@/lib/services/mantencion/equipment-u
 const { previewEquipmentImport, commitEquipmentImport, buildEquipmentTemplate, similarName } = await import("@/lib/services/mantencion/equipment-import")
 
 const actor = { userId: "u-jefe-eq", email: "jefe@example.test" }
-// `camion` y `tracto` son de la familia camiones: su unidad depende de la faena (Biodiversa, km; las demás, horas).
+// `camion` y `tracto` son de la familia camiones. Ya no tienen regla propia (2026-11-26): nacen con la unidad de su tipo
+// (odómetro, km) y quien los da de alta puede elegir horas; la faena no interviene.
 const T = { km: "t-camion", h: "t-excavadora", none: "t-estanque", camion: "t-camion-prod", tracto: "t-tracto-prod" } as const
 const B = { scania: "b-scania", volvo: "b-volvo" } as const
 const WS = { arauco: "ws-arauco", cholguan: "ws-cholguan", teno: "ws-teno", bio: "ws-biodiversa" } as const
@@ -680,9 +681,10 @@ describe("EQN-1: preventiva declarada en un equipo con registros y sin lectura i
   })
 })
 
-// Decisión del usuario (2026-11-25): la unidad de un equipo de Mantención es la de su perfil. Un camión de producción
-// mide en horas aunque su tipo sea de odómetro, y uno de Biodiversa en km. Combustible no cambia: su medidor es otro.
-describe("unidad de medida del equipo: camiones de producción en horas, Biodiversa en km", () => {
+// Decisión del usuario (2026-11-26): la unidad de un equipo de Mantención es la de su perfil y se pregunta al darlo de
+// alta (por defecto, la de su tipo). Ya no hay una regla escondida por faena (la de Biodiversa). Combustible no cambia:
+// su medidor es otro.
+describe("unidad de medida del equipo: se elige al dar de alta, por defecto la del tipo", () => {
   async function fuelRow(vehicleId: string) {
     const [row] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, vehicleId))
     return row!
@@ -699,17 +701,52 @@ describe("unidad de medida del equipo: camiones de producción en horas, Biodive
     await testDb.update(schema.mantEquipmentProfiles).set({ updatedAt: "2020-01-01T00:00:00.000Z" }).where(eq(schema.mantEquipmentProfiles.vehicleId, vehicleId))
   }
 
-  it("(a) el alta de un camión: en una faena que no es Biodiversa mide en horas; en Biodiversa, en km; el medidor de Combustible queda como el del tipo", async () => {
+  it("(a) sin elegir unidad, un camión nace con la de su tipo (km) en cualquier faena: la de Biodiversa ya no cuenta", async () => {
     const otra = await createdId(await createEquipment(actor, input({ code: "CM-100", plate: "BCDG-10", equipmentTypeId: T.camion, worksiteId: WS.arauco })))
     const bio = await createdId(await createEquipment(actor, input({ code: "CM-101", plate: "BCDG-11", equipmentTypeId: T.tracto, worksiteId: WS.bio })))
-    expect(await profileOf(otra)).toMatchObject({ unit: "h" })
+    const vacio = await createdId(await createEquipment(actor, input({ code: "CM-107", plate: "BCDG-17", equipmentTypeId: T.camion, worksiteId: WS.cholguan, unit: "" })))
+    expect(await profileOf(otra)).toMatchObject({ unit: "km" })
     expect(await profileOf(bio)).toMatchObject({ unit: "km" })
+    expect(await profileOf(vacio)).toMatchObject({ unit: "km" })
     expect(await fuelRow(otra)).toMatchObject({ meterType: "odometer", performanceUnit: "km_per_liter" })
-    expect(await fuelRow(bio)).toMatchObject({ meterType: "odometer", performanceUnit: "km_per_liter" })
+    // Un tipo de horómetro, sin elegir, nace en horas.
+    const excavadora = await createdId(await createEquipment(actor, input({ code: "CM-108", plate: "BCDG-19", equipmentTypeId: T.h, worksiteId: WS.bio })))
+    expect(await profileOf(excavadora)).toMatchObject({ unit: "h" })
+  })
+
+  it("(a2) con la unidad elegida, el perfil guarda esa: un camión en horas y un tipo de horómetro en km; el medidor de Combustible queda como el del tipo; la auditoría y el historial la dicen", async () => {
+    const horas = await createdId(await createEquipment(actor, input({ code: "CM-109", plate: "BCDG-20", equipmentTypeId: T.camion, worksiteId: WS.arauco, unit: "h" })))
+    const km = await createdId(await createEquipment(actor, input({ code: "CM-110", plate: "BCDG-21", equipmentTypeId: T.h, worksiteId: WS.bio, unit: "km" })))
+    expect(await profileOf(horas)).toMatchObject({ unit: "h" })
+    expect(await profileOf(km)).toMatchObject({ unit: "km" })
+    expect(await fuelRow(horas)).toMatchObject({ meterType: "odometer", performanceUnit: "km_per_liter" })
+    expect(await fuelRow(km)).toMatchObject({ meterType: "hour_meter", performanceUnit: "liters_per_hour" })
+    const [audit] = await audits("mant_equipment", horas)
+    expect(audit).toMatchObject({ action: "create", entityCode: "CM-109" })
+    expect(String(audit?.newState)).toContain('"unit":"horas"')
+    expect((await listEquipmentHistory(horas))[0]).toMatchObject({ action: "create", summary: "Equipo creado" })
+  })
+
+  it("(a3) el servidor rechaza una unidad que no es km ni h, con el error bajo el campo, y no escribe nada", async () => {
+    const before = (await testDb.select().from(schema.fuelVehicles)).length
+    for (const unit of ["mi", "KM", "horas", " h"]) {
+      const result = await createEquipment(actor, input({ code: "CM-111", plate: "BCDG-42", equipmentTypeId: T.camion, worksiteId: WS.arauco, unit }))
+      expect(result).toMatchObject({ ok: false, fieldErrors: { unit: "Elige la unidad de mantención: kilómetros u horas." } })
+    }
+    expect((await testDb.select().from(schema.fuelVehicles)).length).toBe(before)
+    expect(await vehicleByCode("CM-111")).toHaveLength(0)
+  })
+
+  it("(a4) un vehículo que ya estaba en la flota se incorpora con la unidad elegida y su medidor de Combustible no cambia", async () => {
+    await testDb.insert(schema.fuelVehicles).values({ id: "veh-flota-h", plate: "BCDG23", code: "CM-112", type: "test-camion-prod", equipmentTypeId: T.camion, worksiteId: WS.arauco, isActive: true, meterType: "odometer" })
+    const id = await createdId(await createEquipment(actor, input({ code: "CM-112", plate: "BCDG-23", equipmentTypeId: T.camion, worksiteId: WS.arauco, unit: "h", scheduleId: scheduleH })))
+    expect(id).toBe("veh-flota-h")
+    expect(await profileOf(id)).toMatchObject({ unit: "h", scheduleId: scheduleH })
+    expect(await fuelRow(id)).toMatchObject({ meterType: "odometer" })
   })
 
   it("(b) editar otros campos de un camión en horas no lo devuelve a km ni toca el medidor de Combustible", async () => {
-    const id = await createdId(await createEquipment(actor, input({ code: "CM-102", plate: "BCDG-18", equipmentTypeId: T.camion, worksiteId: WS.arauco })))
+    const id = await createdId(await createEquipment(actor, input({ code: "CM-102", plate: "BCDG-18", equipmentTypeId: T.camion, worksiteId: WS.arauco, unit: "h" })))
     const fuelBefore = await fuelRow(id)
     expect(await editIdentity(id, { model: "FH 540", year: 2023 })).toMatchObject({ ok: true })
     expect(await updateEquipmentPlan(actor, id, { scheduleId: null, initialReading: 2_000, initialReadingDate: "2026-10-01" }, { active: true, retiredReason: "" })).toMatchObject({ ok: true })
@@ -717,8 +754,20 @@ describe("unidad de medida del equipo: camiones de producción en horas, Biodive
     expect(await fuelRow(id)).toMatchObject({ equipmentTypeId: T.camion, meterType: fuelBefore.meterType, performanceUnit: fuelBefore.performanceUnit })
   })
 
-  it("(c) un camión en horas con registros puede pasar de «Camión» a «Tractocamión»: sigue en horas", async () => {
-    const id = await createdId(await createEquipment(actor, input({ code: "CM-103", plate: "BCDG-13", equipmentTypeId: T.camion, worksiteId: WS.arauco })))
+  it("(b2) la edición no cambia la unidad: ni el padrón ni «Editar plan» la reciben, y una `unit` en la entrada de una edición se ignora", async () => {
+    const id = await createdId(await createEquipment(actor, input({ code: "CM-113", plate: "BCDG-24", equipmentTypeId: T.camion, worksiteId: WS.arauco, unit: "h" })))
+    // La resolución de una edición (con `current`) ignora `unit`: es del alta.
+    const result = await testDb.transaction(async (tx) => {
+      const { loadEquipmentCurrent, resolveEquipment } = await import("@/lib/services/mantencion/equipment-resolve")
+      const current = await loadEquipmentCurrent(tx, id)
+      return resolveEquipment(tx, input({ code: "CM-113", plate: "BCDG-24", equipmentTypeId: T.camion, worksiteId: WS.arauco, unit: "km" }), { current })
+    })
+    expect(result.ok && result.value.unit).toBe("h")
+    expect(await profileOf(id)).toMatchObject({ unit: "h" })
+  })
+
+  it("(c) un camión dado de alta en horas con registros puede pasar de «Camión» a «Tractocamión»: ambos de odómetro, sigue en horas", async () => {
+    const id = await createdId(await createEquipment(actor, input({ code: "CM-103", plate: "BCDG-13", equipmentTypeId: T.camion, worksiteId: WS.arauco, unit: "h" })))
     await testDb.insert(schema.mantRecords).values({
       id: "rec-cm-103", kind: "C", vehicleId: id, equipmentSnapshot: { code: "CM-103", plate: "BCDG-13", noPlate: false, type: "Camión", brand: "Scania", model: null, year: null, worksite: "Arauco", unit: "h" },
       worksiteId: WS.arauco, reading: 1_500, unit: "h", workDate: "2026-10-10", registeredBy: actor.userId, executorKind: "yo", executorUserId: actor.userId,
@@ -730,13 +779,29 @@ describe("unidad de medida del equipo: camiones de producción en horas, Biodive
     expect(await fuelRow(id)).toMatchObject({ equipmentTypeId: T.tracto, meterType: "odometer" })
   })
 
-  it("(d) una pauta en km se rechaza para un camión en horas; la de horas se acepta, y en Biodiversa la de km", async () => {
-    const rejected = await createEquipment(actor, input({ code: "CM-104", plate: "BCDG-14", equipmentTypeId: T.camion, worksiteId: WS.arauco, scheduleId: scheduleKm }))
+  it("(c2) sin registros ni pauta, un cambio a un tipo que mide como el actual tampoco mueve la unidad elegida; a uno que mide distinto, sí", async () => {
+    const id = await createdId(await createEquipment(actor, input({ code: "CM-114", plate: "BCDG-25", equipmentTypeId: T.camion, worksiteId: WS.arauco, unit: "h" })))
+    expect(await editIdentity(id, { equipmentTypeId: T.tracto })).toMatchObject({ ok: true })
+    expect(await profileOf(id)).toMatchObject({ unit: "h" })
+    // «Excavadora» mide en horas, otra unidad que la del tipo actual (odómetro): la del tipo nuevo.
+    expect(await editIdentity(id, { equipmentTypeId: T.h })).toMatchObject({ ok: true })
+    expect(await profileOf(id)).toMatchObject({ unit: "h" })
+    // Un camión en km que pasa a un tipo de horómetro, sin nada que lo fije, pasa a horas.
+    const km = await createdId(await createEquipment(actor, input({ code: "CM-115", plate: "BCDG-26", equipmentTypeId: T.camion, worksiteId: WS.arauco })))
+    expect(await editIdentity(km, { equipmentTypeId: T.h })).toMatchObject({ ok: true })
+    expect(await profileOf(km)).toMatchObject({ unit: "h" })
+  })
+
+  it("(d) la pauta tiene que ser de la unidad elegida: con horas se rechaza la de km y se acepta la de horas; sin elegir, la del tipo (km)", async () => {
+    const rejected = await createEquipment(actor, input({ code: "CM-104", plate: "BCDG-14", equipmentTypeId: T.camion, worksiteId: WS.arauco, unit: "h", scheduleId: scheduleKm }))
     expect(rejected).toMatchObject({ ok: false, fieldErrors: { scheduleId: "Esa pauta se mide en kilómetros y el equipo en horas." } })
-    const accepted = await createdId(await createEquipment(actor, input({ code: "CM-104", plate: "BCDG-14", equipmentTypeId: T.camion, worksiteId: WS.arauco, scheduleId: scheduleH })))
+    const accepted = await createdId(await createEquipment(actor, input({ code: "CM-104", plate: "BCDG-14", equipmentTypeId: T.camion, worksiteId: WS.arauco, unit: "h", scheduleId: scheduleH })))
     expect(await profileOf(accepted)).toMatchObject({ unit: "h", scheduleId: scheduleH })
+    // Sin elegir unidad, vale la del tipo: acepta la de km y rechaza la de horas, también en Biodiversa.
     const bio = await createdId(await createEquipment(actor, input({ code: "CM-105", plate: "BCDG-15", equipmentTypeId: T.camion, worksiteId: WS.bio, scheduleId: scheduleKm })))
     expect(await profileOf(bio)).toMatchObject({ unit: "km", scheduleId: scheduleKm })
+    const wrong = await createEquipment(actor, input({ code: "CM-116", plate: "BCDG-27", equipmentTypeId: T.camion, worksiteId: WS.bio, scheduleId: scheduleH }))
+    expect(wrong).toMatchObject({ ok: false, fieldErrors: { scheduleId: "Esa pauta se mide en horas y el equipo en kilómetros." } })
   })
 
   it("el perfil sube su updated_at cuando cambia la unidad: por el cambio de tipo del padrón y por setEquipmentUnit", async () => {
@@ -760,7 +825,7 @@ describe("unidad de medida del equipo: camiones de producción en horas, Biodive
     let id = ""
 
     it("cambia la unidad, libera la pauta y limpia la lectura inicial y la preventiva declarada; conserva los registros; deja historial y auditoría; no toca Combustible", async () => {
-      id = await createdId(await createEquipment(actor, input({ code: "CM-200", plate: "BCDG-20", equipmentTypeId: T.camion, worksiteId: WS.arauco, scheduleId: scheduleH, initialReading: 1_000, initialReadingDate: "2026-09-01" })))
+      id = await createdId(await createEquipment(actor, input({ code: "CM-200", plate: "BCDG-40", equipmentTypeId: T.camion, worksiteId: WS.arauco, unit: "h", scheduleId: scheduleH, initialReading: 1_000, initialReadingDate: "2026-09-01" })))
       expect(await updateEquipmentPlan(actor, id, {
         scheduleId: scheduleH, initialReading: 1_000, initialReadingDate: "2026-09-01",
         priorPreventive: { date: "2026-08-15", reading: 900, intervalValue: 300, evidence: "OT 12345" },
@@ -811,7 +876,7 @@ describe("unidad de medida del equipo: camiones de producción en horas, Biodive
     })
 
     it("rechaza una pauta de la unidad vieja, una lectura sin fecha y un motivo corto, sin escribir nada", async () => {
-      const fresh = await createdId(await createEquipment(actor, input({ code: "CM-201", plate: "BCDG-21", equipmentTypeId: T.camion, worksiteId: WS.arauco })))
+      const fresh = await createdId(await createEquipment(actor, input({ code: "CM-201", plate: "BCDG-41", equipmentTypeId: T.camion, worksiteId: WS.arauco, unit: "h" })))
       const before = await profileOf(fresh)
       const badSchedule = await testDb.transaction((tx) => setEquipmentUnit(tx, actor, { vehicleId: fresh, unit: "km", scheduleId: scheduleH, reason: REASON }))
       expect(badSchedule).toMatchObject({ ok: false, fieldErrors: { scheduleId: "Esa pauta se mide en horas y el equipo quedaría en kilómetros." } })
@@ -838,7 +903,9 @@ describe("unidad de medida del equipo: camiones de producción en horas, Biodive
     })
   })
 
-  it("la importación valida la pauta contra la unidad del equipo: un camión fuera de Biodiversa acepta horas y rechaza km; en Biodiversa, km", async () => {
+  it("la importación crea cada equipo con la unidad de su tipo, en cualquier faena, y valida la pauta contra ella", async () => {
+    // La planilla no trae unidad: un camión (tipo de odómetro) nace en km tanto en Arauco como en Biodiversa, así que acepta
+    // la pauta en km y rechaza la de horas.
     const rows: Array<Array<string | number | null>> = [
       ["IMC-1", "BCDG-31", "Camión producción (prueba)", "Scania", null, null, "Arauco", "Maquinaria prueba", 800, "01-10-2026"],
       ["IMC-2", "BCDG-32", "Camión producción (prueba)", "Scania", null, null, "Arauco", "Camiones prueba", 800, "01-10-2026"],
@@ -847,16 +914,15 @@ describe("unidad de medida del equipo: camiones de producción en horas, Biodive
     const preview = await previewEquipmentImport(await workbookBuffer(rows))
     expect(preview.ok).toBe(true)
     if (!preview.ok) return
-    expect(Object.fromEntries(preview.data.rows.map((row) => [row.code, row.kind]))).toEqual({ "IMC-1": "create", "IMC-2": "error", "IMC-3": "create" })
-    expect(preview.data.rows.find((row) => row.code === "IMC-2")?.messages.join(" ")).toMatch(/Esa pauta se mide en kilómetros y el equipo en horas/)
+    expect(Object.fromEntries(preview.data.rows.map((row) => [row.code, row.kind]))).toEqual({ "IMC-1": "error", "IMC-2": "create", "IMC-3": "create" })
+    expect(preview.data.rows.find((row) => row.code === "IMC-1")?.messages.join(" ")).toMatch(/Esa pauta se mide en horas y el equipo en kilómetros/)
 
     const commit = await commitEquipmentImport(actor, await workbookBuffer(rows), "equipos.xlsx")
     expect(commit).toMatchObject({ ok: true, data: { created: 2, errors: 1 } })
-    const [horas] = await vehicleByCode("IMC-1")
+    const [arauco] = await vehicleByCode("IMC-2")
     const [bio] = await vehicleByCode("IMC-3")
-    expect(await profileOf(horas!.id)).toMatchObject({ unit: "h", scheduleId: scheduleH })
+    expect(await profileOf(arauco!.id)).toMatchObject({ unit: "km", scheduleId: scheduleKm })
     expect(await profileOf(bio!.id)).toMatchObject({ unit: "km", scheduleId: scheduleKm })
-    const [horasVehicle] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, horas!.id))
-    expect(horasVehicle).toMatchObject({ meterType: "odometer" })
+    expect(arauco).toMatchObject({ meterType: "odometer" })
   })
 })

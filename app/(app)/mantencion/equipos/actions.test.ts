@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 const guard = vi.hoisted(() => vi.fn())
 const createEquipment = vi.hoisted(() => vi.fn())
 const updateEquipmentPlan = vi.hoisted(() => vi.fn())
+const incorporateFleetVehicles = vi.hoisted(() => vi.fn())
 
 vi.mock("@/db", () => ({ db: {} }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
@@ -19,9 +20,9 @@ vi.mock("@/lib/services/mantencion/access", () => ({ equipmentScope: () => "all"
 vi.mock("@/lib/services/mantencion/equipment", () => ({ createEquipment, updateEquipmentPlan }))
 vi.mock("@/lib/services/mantencion/equipment-import", () => ({ buildEquipmentTemplate: vi.fn(), commitEquipmentImport: vi.fn(), IMPORT_MAX_BYTES: 5_000_000, previewEquipmentImport: vi.fn() }))
 vi.mock("@/lib/services/mantencion/export-equipment", () => ({ exportEquipment: vi.fn() }))
-vi.mock("@/lib/services/mantencion/fleet-incorporation", () => ({ INCORPORATE_MAX_ROWS: 200, incorporateFleetVehicles: vi.fn() }))
+vi.mock("@/lib/services/mantencion/fleet-incorporation", () => ({ INCORPORATE_MAX_ROWS: 200, incorporateFleetVehicles }))
 
-const { createEquipmentAction, updateEquipmentPlanAction } = await import("./actions")
+const { createEquipmentAction, incorporateFleetAction, updateEquipmentPlanAction } = await import("./actions")
 
 const SESSION = { user: { id: "u-jefe", email: "jefe@chome.test" } }
 
@@ -49,6 +50,34 @@ describe("el alta y la edición de equipos no crean faenas", () => {
     createEquipment.mockResolvedValue({ ok: false, message: "x", fieldErrors: { worksiteId: "Llegó a Santa Fe el 18-11: la fecha no puede ser anterior." } })
     const state = await createEquipmentAction({ ok: false }, form({ code: "KA-1", plate: "ABCD-12", worksiteId: "ws-2" }))
     expect(state).toMatchObject({ ok: false, fieldErrors: { worksiteId: [expect.stringContaining("Llegó a Santa Fe")] } })
+  })
+})
+
+describe("la unidad de mantención del alta (2026-11-26)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    guard.mockResolvedValue({ session: SESSION })
+    createEquipment.mockResolvedValue({ ok: false, message: "x", fieldErrors: {} })
+    incorporateFleetVehicles.mockResolvedValue({ incorporated: 0, rows: [] })
+  })
+
+  it("el formulario de «Nuevo equipo» lleva la unidad elegida al servicio, que la valida", async () => {
+    await createEquipmentAction({ ok: false }, form({ code: "KA-1", unit: "h" }))
+    expect(createEquipment.mock.calls[0]![1]).toMatchObject({ unit: "h" })
+  })
+
+  it("sin unidad viaja como nula (el servicio usa la del tipo) y un valor raro llega tal cual, para que el servidor lo rechace", async () => {
+    await createEquipmentAction({ ok: false }, form({ code: "KA-1" }))
+    expect(createEquipment.mock.calls[0]![1]).toMatchObject({ unit: null })
+    await createEquipmentAction({ ok: false }, form({ code: "KA-2", unit: "millas" }))
+    expect(createEquipment.mock.calls[1]![1]).toMatchObject({ unit: "millas" })
+  })
+
+  it("«Incorporar desde la flota» lleva la unidad de cada fila y deja nula la que viene vacía", async () => {
+    const row = { brandId: "b1", scheduleId: null, initialReading: "", initialReadingDate: null }
+    await incorporateFleetAction({ rows: [{ ...row, vehicleId: "v-1", unit: "h" }, { ...row, vehicleId: "v-2", unit: "" }, { ...row, vehicleId: "v-3" }] })
+    const sent = incorporateFleetVehicles.mock.calls[0]![1] as Array<{ vehicleId: string; unit: string | null }>
+    expect(sent.map((item) => [item.vehicleId, item.unit])).toEqual([["v-1", "h"], ["v-2", null], ["v-3", null]])
   })
 })
 

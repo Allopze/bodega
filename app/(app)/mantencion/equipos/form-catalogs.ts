@@ -14,7 +14,7 @@ export async function loadEquipmentFormCatalogs(): Promise<EquipmentFormCatalogs
   return {
     types,
     brands: catalogs.brands.map((item) => ({ id: item.id, name: item.name })),
-    worksites: worksites.map((item) => ({ id: item.id, name: item.name, code: item.code })),
+    worksites: worksites.map((item) => ({ id: item.id, name: item.name })),
     schedules: schedules.map((item) => ({ id: item.id, name: item.name, unit: item.unit, intervalCount: item.intervals.length })),
   }
 }

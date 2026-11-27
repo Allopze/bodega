@@ -324,8 +324,8 @@ describe("primera carga", () => {
     expect(plain?.noPlate).toBe(false)
   })
 
-  it("cada equipo con pauta la tiene en la unidad que mide; un camión fuera de Biodiversa mide en horas y su pauta en km queda fuera y se reporta", async () => {
-    // Decisión del 2026-11-25: la unidad es del perfil (no del tipo). Esta carga no tiene la faena Biodiversa.
+  it("cada equipo con pauta la tiene en la unidad que mide; un camión nace con la unidad de su tipo (km) en cualquier faena y conserva su pauta en km", async () => {
+    // Decisión del 2026-11-26: la unidad es del perfil y, en la carga, la de su tipo; ya no hay una regla por faena.
     const rows = await testDb
       .select({ profileUnit: schema.mantEquipmentProfiles.unit, scheduleId: schema.mantEquipmentProfiles.scheduleId, scheduleUnit: schema.mantSchedules.unit, family: schema.fuelEquipmentTypes.performanceFamily })
       .from(schema.mantEquipmentProfiles)
@@ -337,10 +337,10 @@ describe("primera carga", () => {
     // Toda pauta está en la unidad del equipo: nunca una de km sobre un equipo en horas.
     const withSchedule = rows.filter((r) => r.scheduleId !== null)
     expect(withSchedule.every((r) => r.scheduleUnit === r.profileUnit)).toBe(true)
-    // Los camiones de esta faena miden en horas, y el que no tiene pauta de su unidad aparece como diferencia.
+    // Los camiones miden en km (su tipo es de odómetro), también fuera de Biodiversa, y su pauta de km cabe.
     const trucks = rows.filter((r) => r.family === "camiones")
     expect(trucks.length).toBeGreaterThan(0)
-    expect(trucks.every((r) => r.profileUnit === "h")).toBe(true)
+    expect(trucks.every((r) => r.profileUnit === "km" && r.scheduleUnit === "km")).toBe(true)
     const withoutSchedule = rows.length - withSchedule.length
     expect(first.equipment.differences.filter((d) => d.field === "pauta")).toHaveLength(withoutSchedule)
     const history = await testDb.select().from(schema.mantEquipmentHistory)
@@ -358,12 +358,12 @@ describe("primera carga", () => {
     })
     const [profile] = await testDb.select().from(schema.mantEquipmentProfiles).where(eq(schema.mantEquipmentProfiles.vehicleId, "veh-pre-ka135"))
     expect(profile).toBeDefined()
-    // Un camión de Santa Fe mide en horas (no es Biodiversa): su pauta de kilómetros no le cabe y queda sin pauta.
-    expect(profile).toMatchObject({ unit: "h", scheduleId: null })
+    // Un camión de Santa Fe nace con la unidad de su tipo (km), como en cualquier faena: su pauta de kilómetros le cabe.
+    expect(profile).toMatchObject({ unit: "km" })
+    expect(profile?.scheduleId).not.toBeNull()
     expect(first.equipment.differences.filter((d) => d.code === "KA-135")).toEqual([
       { code: "KA-135", field: "año", fleet: "2020", seed: "2021" },
       { code: "KA-135", field: "faena", fleet: "Santa Fe", seed: "Arauco" },
-      { code: "KA-135", field: "pauta", fleet: "su unidad de medida es horas", seed: "Camiones y tractos (kilómetros); queda sin pauta" },
     ])
   })
 

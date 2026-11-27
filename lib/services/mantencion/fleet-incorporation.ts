@@ -28,6 +28,7 @@ export interface IncorporationCandidate {
   code: string | null
   plate: string
   typeName: string
+  /** La unidad con que nace si nadie elige otra: la de su tipo. */
   unit: MantUnit
   worksiteId: string
   worksiteName: string
@@ -60,8 +61,9 @@ function blockerFor(row: { code: string | null; plate: string }): string | null 
 
 /**
  * Vehículos activos de la flota, con odómetro u horómetro, en las faenas de `scope`, que aún no están en Mantención.
- * La unidad de cada candidato es la con que nacería el equipo al incorporarlo (regla de alta de
- * `lib/mantencion/equipment-unit.ts`): aún no tiene perfil, así que no hay unidad fijada que leer.
+ * La unidad de cada candidato es la con que nacería el equipo al incorporarlo si nadie elige otra: la de su
+ * tipo (`lib/mantencion/equipment-unit.ts`). Aún no tiene perfil, así que no hay unidad fijada que leer; la pantalla
+ * deja elegir `km` u `h` por fila y la que elija viaja en `IncorporationRowInput.unit`.
  */
 export async function listIncorporationCandidates(scope: MantWorksiteScope, catalogs?: EquipmentCatalogs): Promise<IncorporationCandidate[]> {
   if (Array.isArray(scope) && scope.length === 0) return []
@@ -69,8 +71,7 @@ export async function listIncorporationCandidates(scope: MantWorksiteScope, cata
     .select({
       vehicleId: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, brand: fuelVehicles.brand,
       model: fuelVehicles.model, year: fuelVehicles.year, worksiteId: fuelVehicles.worksiteId, worksiteName: worksites.name,
-      worksiteCode: worksites.code,
-      typeName: fuelEquipmentTypes.name, meterType: fuelEquipmentTypes.defaultMeterType, typeFamily: fuelEquipmentTypes.performanceFamily,
+      typeName: fuelEquipmentTypes.name, meterType: fuelEquipmentTypes.defaultMeterType,
     })
     .from(fuelVehicles)
     .innerJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
@@ -86,7 +87,7 @@ export async function listIncorporationCandidates(scope: MantWorksiteScope, cata
   const activeBrands = lists.brands.filter((brand) => brand.isActive)
   const candidates: IncorporationCandidate[] = []
   for (const row of rows) {
-    const unit = defaultMaintenanceUnit({ typeMeterType: row.meterType, typeFamily: row.typeFamily, worksiteCode: row.worksiteCode })
+    const unit = defaultMaintenanceUnit({ typeMeterType: row.meterType })
     if (!unit) continue
     const schedules = lists.schedules.filter((schedule) => schedule.unit === unit)
     candidates.push({
@@ -112,6 +113,8 @@ export interface IncorporationRowInput {
   scheduleId: string | null
   initialReading: number | null
   initialReadingDate: string | null
+  /** Unidad de Mantención elegida: `km` u `h`. Ausente o vacía = la de su tipo; otro valor es un error de la fila. */
+  unit?: string | null
 }
 
 export interface IncorporationRowResult {
@@ -178,6 +181,7 @@ export async function incorporateFleetVehicles(actor: MantActor, rows: Incorpora
         scheduleId: row.scheduleId,
         initialReading: row.initialReading,
         initialReadingDate: row.initialReadingDate,
+        unit: row.unit,
       }
       const resolved = await resolveEquipment(tx, input, { current: null, catalogs, keepWorksiteId: identity.worksiteId })
       if (!resolved.ok) { fail(...Object.values(resolved.fieldErrors)); continue }

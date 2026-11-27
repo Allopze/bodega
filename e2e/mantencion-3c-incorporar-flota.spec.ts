@@ -21,13 +21,15 @@ const VEHICLE = { id: "qa-fl1-e2e", code: "QA-FL1", plate: "ZZ-9911" }
 /** Su marca de la flota no está en la lista de Mantención. */
 const VEHICLE_NEW_BRAND = { id: "qa-fl2-e2e", code: "QA-FL2", plate: "ZZ-9912", brand: "QA Marca Flota E2E" }
 const TYPED_BRAND = "QA Marca Escrita E2E"
+/** Se incorpora eligiendo horas, aunque su tipo sea de odómetro (2026-11-26: la unidad se pregunta). */
+const VEHICLE_HOURS = { id: "qa-fl3-e2e", code: "QA-FL3", plate: "ZZ-9913" }
 
 test.describe("Incorporar desde la flota", () => {
   test.beforeAll(async () => {
     await withSql(async (sql) => {
       const [type] = await sql`select id, slug from fuel_equipment_types where default_meter_type = 'odometer' and is_active order by name limit 1`
       const [site] = await sql`select id from worksites where is_active order by name limit 1`
-      const ids = [VEHICLE.id, VEHICLE_NEW_BRAND.id]
+      const ids = [VEHICLE.id, VEHICLE_NEW_BRAND.id, VEHICLE_HOURS.id]
       await sql`delete from mant_equipment_history where vehicle_id in ${sql(ids)}`
       await sql`delete from mant_equipment_profiles where vehicle_id in ${sql(ids)}`
       await sql`delete from fuel_vehicles where id in ${sql(ids)}`
@@ -36,6 +38,8 @@ test.describe("Incorporar desde la flota", () => {
         values (${VEHICLE.id}, ${VEHICLE.code}, ${VEHICLE.plate}, ${type!.slug}, ${type!.id}, ${site!.id}, 'odometer', 'scania', 'QA Modelo', 2020, true)`
       await sql`insert into fuel_vehicles (id, code, plate, type, equipment_type_id, worksite_id, meter_type, brand, model, year, is_active)
         values (${VEHICLE_NEW_BRAND.id}, ${VEHICLE_NEW_BRAND.code}, ${VEHICLE_NEW_BRAND.plate}, ${type!.slug}, ${type!.id}, ${site!.id}, 'odometer', ${VEHICLE_NEW_BRAND.brand}, 'QA Modelo', 2021, true)`
+      await sql`insert into fuel_vehicles (id, code, plate, type, equipment_type_id, worksite_id, meter_type, brand, model, year, is_active)
+        values (${VEHICLE_HOURS.id}, ${VEHICLE_HOURS.code}, ${VEHICLE_HOURS.plate}, ${type!.slug}, ${type!.id}, ${site!.id}, 'odometer', 'scania', 'QA Modelo', 2022, true)`
     })
   })
 
@@ -89,6 +93,37 @@ test.describe("Incorporar desde la flota", () => {
       from mant_equipment_profiles p join mant_brands b on b.id = p.brand_id join fuel_vehicles v on v.id = p.vehicle_id
       where p.vehicle_id = ${VEHICLE_NEW_BRAND.id}`)
     expect(row).toMatchObject({ profile_brand: TYPED_BRAND, fleet_brand: VEHICLE_NEW_BRAND.brand })
+    expect(errors).toEqual([])
+  })
+
+  test("la incorporación pregunta la unidad: parte con la del tipo y se puede cambiar por fila", async ({ page }) => {
+    const errors = trackConsole(page)
+    await asJefe(page)
+    await page.goto("/mantencion/equipos/incorporar")
+    await expectPageTitle(page, "Incorporar desde la flota")
+
+    const unit = page.getByRole("combobox", { name: `Unidad de ${VEHICLE_HOURS.code}`, exact: true })
+    // Su tipo es de odómetro: parte en kilómetros.
+    await expect(unit).toContainText("Kilómetros")
+    await unit.click()
+    await page.getByRole("option", { name: "Horas", exact: true }).click()
+    await expect(unit).toContainText("Horas")
+    // La pauta que se había sugerido (en kilómetros) ya no calza y se suelta; las que se ofrecen son de horas.
+    const schedule = page.getByRole("combobox", { name: `Pauta de ${VEHICLE_HOURS.code}`, exact: true })
+    await expect(schedule).toContainText("Sin pauta")
+    await schedule.click()
+    await expect(page.getByRole("option", { name: /^Camiones y tractos/ })).toHaveCount(0)
+    await page.getByRole("option", { name: /^Maquinaria pesada/ }).click()
+
+    await page.getByRole("checkbox", { name: `Incorporar ${VEHICLE_HOURS.code}`, exact: true }).check()
+    await page.getByRole("button", { name: "Incorporar 1 equipo", exact: true }).click()
+    await expect(page.getByRole("checkbox", { name: `Incorporar ${VEHICLE_HOURS.code}`, exact: true })).toHaveCount(0)
+
+    // El perfil guarda la unidad elegida; el medidor de Combustible no cambia.
+    const [row] = await withSql(async (sql) => sql`
+      select p.unit, v.meter_type, s.name as schedule from mant_equipment_profiles p
+      join fuel_vehicles v on v.id = p.vehicle_id left join mant_schedules s on s.id = p.schedule_id where p.vehicle_id = ${VEHICLE_HOURS.id}`)
+    expect(row).toMatchObject({ unit: "h", meter_type: "odometer", schedule: "Maquinaria pesada" })
     expect(errors).toEqual([])
   })
 

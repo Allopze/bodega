@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { toast } from "@/lib/toast"
-import { defaultMaintenanceUnit, TRUCK_PERFORMANCE_FAMILY } from "@/lib/mantencion/equipment-unit"
 import { unitName } from "@/lib/mantencion/format"
 import type { MantUnit } from "@/lib/mantencion/types"
 import type { ActionState } from "@/lib/validation/operations"
@@ -23,12 +22,20 @@ const SELECT = "h-11 w-full sm:h-9"
 /** ¿Hay al menos un error por campo? Un `{}` no cuenta: el mensaje general tiene que verse. */
 const hasFieldErrors = (state: ActionState) => Object.keys(state.fieldErrors ?? {}).length > 0
 
+/** Lo que dice la ayuda de la unidad: la del tipo y, si se eligió otra, la del equipo. */
+function unitHelper(typeUnit: MantUnit | null, unit: MantUnit | null): string {
+  if (!typeUnit || !unit) return "Elige primero el tipo de equipo."
+  if (unit === typeUnit) return `El tipo se mide en ${unitName(typeUnit)}. Cámbiala si este equipo se mide distinto.`
+  return `El tipo se mide en ${unitName(typeUnit)}; este equipo se mide en ${unitName(unit)}.`
+}
+
 type FormAction = (prev: ActionState, formData: FormData) => Promise<ActionState>
 
 /**
- * Formulario de «Nuevo equipo». Los campos están controlados porque unos dependen de otros (el
- * tipo fija la unidad y con ella las pautas que se ofrecen). El servidor vuelve a validar todo y
- * devuelve los errores por campo.
+ * Formulario de «Nuevo equipo». Los campos están controlados porque unos dependen de otros: el tipo
+ * prellena la «Unidad de mantención» (km u horas, que se puede cambiar) y la unidad fija las pautas que
+ * se ofrecen. El servidor vuelve a validar todo (la unidad tiene que ser km u horas y la pauta, de esa
+ * unidad) y devuelve los errores por campo.
  *
  * Un equipo que ya existe no se edita aquí (crítica 2026-11-15, paso 4b): su identidad se edita
  * en «Editar vehículo» (el padrón, con estas mismas reglas) y su pauta, lectura inicial y baja en
@@ -53,21 +60,17 @@ export function EquipmentForm({
   const error = (field: string) => state.fieldErrors?.[field]?.[0]
 
   const type = catalogs.types.find((item) => item.id === values.equipmentTypeId)
-  const worksite = catalogs.worksites.find((item) => item.id === values.worksiteId)
-  // La unidad la fijan el tipo y la faena (los camiones de producción miden en horas, los de Biodiversa en km): el
-  // servidor aplica la misma regla, así que lo que se ofrece aquí es lo que acepta.
-  const unit: MantUnit | null = !type
-    ? null
-    : type.meterType === undefined
-      ? type.unit
-      : defaultMaintenanceUnit({ typeMeterType: type.meterType, typeFamily: type.family ?? null, worksiteCode: worksite?.code ?? null }) ?? type.unit
-  const isTruck = type?.family === TRUCK_PERFORMANCE_FAMILY
-  const schedules = React.useMemo(() => (unit ? catalogs.schedules.filter((item) => item.unit === unit) : []), [unit, catalogs.schedules])
+  // La unidad que se elige al dar de alta (decisión del usuario, 2026-11-26): el control parte con la del tipo y se puede
+  // cambiar. Sin elección propia (`values.unit` vacío) vale la del tipo, y cambiar el tipo la devuelve a la del tipo nuevo.
+  const chosenUnit: MantUnit | null = values.unit === "km" || values.unit === "h" ? values.unit : null
+  const unit: MantUnit | null = type ? chosenUnit ?? type.unit : null
 
-  // Una pauta elegida antes de cambiar el tipo a otra unidad ya no sirve: se suelta, no se envía a escondidas.
+  // Una pauta elegida antes de cambiar la unidad (o el tipo) ya no sirve: se suelta, no se envía a escondidas.
   React.useEffect(() => {
-    if (values.scheduleId && unit && !schedules.some((item) => item.id === values.scheduleId)) setValues((current) => ({ ...current, scheduleId: "" }))
-  }, [unit, schedules, values.scheduleId])
+    if (values.scheduleId && unit && !catalogs.schedules.some((item) => item.id === values.scheduleId && item.unit === unit)) {
+      setValues((current) => ({ ...current, scheduleId: "" }))
+    }
+  }, [unit, catalogs.schedules, values.scheduleId])
 
   const reportedRef = React.useRef<ActionState | null>(null)
   React.useEffect(() => {
@@ -93,14 +96,11 @@ export function EquipmentForm({
             {values.noPlate && <input type="hidden" name="noPlate" value="1" />}
           </div>
         </div>
-        <Field
-          label="Tipo de equipo" required htmlFor="eq-type" error={error("equipmentTypeId")}
-          helper={!type || !unit ? undefined : isTruck && !worksite ? "Los camiones miden en horas; los de Biodiversa, en kilómetros. Elige la faena." : `Se mide en ${unitName(unit)}.`}
-        >
+        <Field label="Tipo de equipo" required htmlFor="eq-type" error={error("equipmentTypeId")}>
           <OptionSelect
             id="eq-type" name="equipmentTypeId" className={SELECT} placeholder="Elige el tipo…" value={values.equipmentTypeId} error={!!error("equipmentTypeId")}
-            onValueChange={(v) => set("equipmentTypeId", v)}
-            options={catalogs.types.map((item) => ({ value: item.id, label: item.family === TRUCK_PERFORMANCE_FAMILY ? item.name : `${item.name} · ${item.unit}`, textValue: item.name }))}
+            onValueChange={(v) => setValues((current) => ({ ...current, equipmentTypeId: v, unit: "" }))}
+            options={catalogs.types.map((item) => ({ value: item.id, label: item.name }))}
           />
         </Field>
         <Field label="Marca" required htmlFor="eq-brand" error={error("brandId")} helper="Lista cerrada: las pautas dependen de la marca.">
@@ -117,6 +117,16 @@ export function EquipmentForm({
           <OptionSelect
             id="eq-worksite" name="worksiteId" className={SELECT} placeholder="Elige la faena…" value={values.worksiteId} error={!!error("worksiteId")} onValueChange={(v) => set("worksiteId", v)}
             options={catalogs.worksites.map((item) => ({ value: item.id, label: item.name }))}
+          />
+        </Field>
+        <Field
+          label="Unidad de mantención" required htmlFor="eq-unit" error={error("unit")}
+          helper={unitHelper(type?.unit ?? null, unit)}
+        >
+          <OptionSelect
+            id="eq-unit" name="unit" className={SELECT} placeholder="Elige la unidad…" disabled={!type} value={unit ?? ""} error={!!error("unit")}
+            onValueChange={(v) => set("unit", v)}
+            options={[{ value: "km", label: "Kilómetros" }, { value: "h", label: "Horas" }]}
           />
         </Field>
         <EquipmentPlanFields

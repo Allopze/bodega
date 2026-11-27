@@ -16,6 +16,7 @@ import { ResponsiveDataListCard } from "@/components/ui/responsive-data-list"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { ALL_WORKSITES_LABEL } from "@/lib/auth/worksite-label"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { parseMaintenanceUnit } from "@/lib/mantencion/equipment-unit"
 import { plural, unitName } from "@/lib/mantencion/format"
 import { nameKey } from "@/lib/mantencion/normalize"
 import type { MantUnit } from "@/lib/mantencion/types"
@@ -25,10 +26,12 @@ import { incorporateFleetAction } from "@/app/(app)/mantencion/equipos/actions"
 /**
  * `brand` es el id de una marca de la lista o, si no es ninguno, el nombre de
  * una marca nueva que se crea al incorporar (sólo quien ve todas las faenas).
+ * `unit` nace con la del tipo del vehículo (`IncorporationCandidate.unit`) y se puede cambiar por fila (2026-11-26).
  */
-interface Draft { brand: string; scheduleId: string; reading: string; date: string }
+interface Draft { brand: string; unit: MantUnit; scheduleId: string; reading: string; date: string }
 
 const UNIT_SHORT: Record<MantUnit, string> = { km: "km", h: "h" }
+const UNIT_OPTIONS = [{ value: "km", label: "Kilómetros" }, { value: "h", label: "Horas" }]
 
 /**
  * «Incorporar desde la flota»: la flota ya tiene código, patente, tipo y faena
@@ -50,6 +53,7 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
   // La marca viene puesta: la de la lista que coincide con la flota o, si no está y se pueden crear, la de la flota tal cual.
   const initialDraft = (item: IncorporationCandidate): Draft => ({
     brand: item.suggestedBrandId ?? (canCreateBrands ? item.fleetBrand ?? "" : ""),
+    unit: item.unit,
     scheduleId: item.suggestedScheduleId ?? "", reading: "", date: "",
   })
   const [drafts, setDrafts] = React.useState<Record<string, Draft>>(() => Object.fromEntries(candidates.map((item) => [item.vehicleId, initialDraft(item)])))
@@ -94,7 +98,9 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
   const scheduleOptions = (unit: MantUnit) => schedules
     .filter((schedule) => schedule.unit === unit)
     .map((schedule) => ({ value: schedule.id, label: schedule.name }))
-  const selectedUnits = new Set(candidates.filter((item) => selected.has(item.vehicleId)).map((item) => item.unit))
+  /** La unidad con que se incorporaría cada vehículo: la elegida en su fila o, si aún no hay borrador, la de su tipo. */
+  const unitOf = (item: IncorporationCandidate): MantUnit => drafts[item.vehicleId]?.unit ?? item.unit
+  const selectedUnits = new Set(candidates.filter((item) => selected.has(item.vehicleId)).map(unitOf))
 
   const selectAllRef = React.useRef<HTMLInputElement>(null)
   React.useEffect(() => {
@@ -103,6 +109,17 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
 
   function patch(vehicleId: string, change: Partial<Draft>) {
     setDrafts((current) => ({ ...current, [vehicleId]: { ...current[vehicleId]!, ...change } }))
+    setErrors((current) => (current[vehicleId] ? { ...current, [vehicleId]: [] } : current))
+  }
+  /** Cambia la unidad de un equipo; una pauta elegida de la otra unidad ya no calza y se suelta. */
+  function changeUnit(vehicleId: string, value: string) {
+    const unit = parseMaintenanceUnit(value)
+    if (!unit) return
+    const scheduleFits = (scheduleId: string) => !scheduleId || schedules.some((schedule) => schedule.id === scheduleId && schedule.unit === unit)
+    setDrafts((current) => {
+      const draft = current[vehicleId]
+      return draft ? { ...current, [vehicleId]: { ...draft, unit, scheduleId: scheduleFits(draft.scheduleId) ? draft.scheduleId : "" } } : current
+    })
     setErrors((current) => (current[vehicleId] ? { ...current, [vehicleId]: [] } : current))
   }
   function toggle(ids: string[], on: boolean) {
@@ -119,10 +136,14 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
       for (const item of candidates) {
         if (!selected.has(item.vehicleId)) continue
         if (change.brand !== undefined) next[item.vehicleId] = { ...next[item.vehicleId]!, brand: change.brand }
-        if (change.scheduleId !== undefined && item.unit === change.unit) next[item.vehicleId] = { ...next[item.vehicleId]!, scheduleId: change.scheduleId }
+        if (change.scheduleId !== undefined && next[item.vehicleId]!.unit === change.unit) next[item.vehicleId] = { ...next[item.vehicleId]!, scheduleId: change.scheduleId }
       }
       return next
     })
+  }
+  /** Unidad para todos los marcados; la pauta de otra unidad que ya tuvieran se suelta. */
+  function applyUnitToSelected(value: string) {
+    for (const item of candidates) if (selected.has(item.vehicleId)) changeUnit(item.vehicleId, value)
   }
 
   function submit() {
@@ -140,6 +161,7 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
           const newBrandName = isNewBrand(draft.brand) ? draft.brand.trim() : null
           return {
             vehicleId: item.vehicleId, brandId: newBrandName ? "" : draft.brand, newBrandName, scheduleId: draft.scheduleId || null,
+            unit: draft.unit,
             initialReading: draft.reading, initialReadingDate: draft.reading.trim() ? draft.date || null : null,
           }
         }),
@@ -159,7 +181,7 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
   const header = (
     <PageHeader
       title="Incorporar desde la flota"
-      description="Vehículos de la flota que aún no están en Mantención. Elige su marca y su pauta: código, patente, tipo y faena se quedan como están en la flota."
+      description="Vehículos de la flota que aún no están en Mantención. Elige su marca, su unidad y su pauta: código, patente, tipo y faena se quedan como están en la flota."
       breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Equipos", href: "/mantencion/equipos" }, { label: "Incorporar desde la flota" }]}
       actions={candidates.length > 0 ? (
         <Button size="sm" onClick={submit} loading={op.pending} disabled={chosenCount === 0}>
@@ -200,6 +222,10 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
               <Combobox
                 aria-label="Marca para todos los marcados" className="w-full sm:w-48" placeholder={canCreateBrands ? "Marca para todos (o escribe una nueva)" : "Marca para todos"}
                 options={brandOptions} value="" allowCustomValue={canCreateBrands} onChange={(value) => { if (value.trim()) applyToSelected({ brand: value }) }}
+              />
+              <OptionSelect
+                aria-label="Unidad para todos los marcados" className="h-9 w-full sm:w-40" placeholder="Unidad para todos"
+                options={UNIT_OPTIONS} value="" onValueChange={applyUnitToSelected}
               />
               {[...selectedUnits].map((unit) => (
                 <OptionSelect
@@ -248,16 +274,21 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
                       />
                       {isNewBrand(draft.brand) && <p className="text-xs text-[var(--color-text-muted)]">Marca nueva: se agrega a la lista al incorporar.</p>}
                       <OptionSelect
-                        aria-label={`Pauta de ${label}`} className="h-11 w-full" emptyLabel="Sin pauta" options={scheduleOptions(item.unit)}
+                        aria-label={`Unidad de ${label}`} className="h-11 w-full" options={UNIT_OPTIONS}
+                        value={draft.unit} onValueChange={(value) => changeUnit(item.vehicleId, value)}
+                      />
+                      {draft.unit !== item.unit && <p className="text-xs text-[var(--color-text-muted)]">El tipo se mide en {unitName(item.unit)}.</p>}
+                      <OptionSelect
+                        aria-label={`Pauta de ${label}`} className="h-11 w-full" emptyLabel="Sin pauta" options={scheduleOptions(draft.unit)}
                         value={draft.scheduleId} onValueChange={(value) => patch(item.vehicleId, { scheduleId: value })}
                       />
                       <div className="grid grid-cols-2 gap-2">
                         <div className="flex items-center gap-1.5">
                           <Input
-                            aria-label={`Lectura actual de ${label}, en ${unitName(item.unit)}`} inputMode="decimal" className="h-11 w-full tabular-nums"
+                            aria-label={`Lectura actual de ${label}, en ${unitName(draft.unit)}`} inputMode="decimal" className="h-11 w-full tabular-nums"
                             placeholder="Lectura" value={draft.reading} onChange={(event) => patch(item.vehicleId, { reading: event.target.value })}
                           />
-                          <span className="text-xs text-[var(--color-text-muted)]">{UNIT_SHORT[item.unit]}</span>
+                          <span className="text-xs text-[var(--color-text-muted)]">{UNIT_SHORT[draft.unit]}</span>
                         </div>
                         <DatePicker
                           ariaLabel={`Fecha de la lectura de ${label}`} className="h-11 w-full" placeholder="Hoy" max={today}
@@ -285,6 +316,7 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
                 <TableHead>Equipo</TableHead>
                 <TableHead>Tipo y faena</TableHead>
                 <TableHead className="min-w-44">Marca</TableHead>
+                <TableHead className="min-w-36">Unidad</TableHead>
                 <TableHead className="min-w-52">Pauta</TableHead>
                 <TableHead className="min-w-36">Lectura actual</TableHead>
                 <TableHead className="min-w-40">Fecha de la lectura</TableHead>
@@ -293,7 +325,7 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
             <TableBody>
               {visible.length === 0 && (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="py-8 text-center text-sm text-[var(--color-text-muted)]">Ningún vehículo coincide con la búsqueda o la faena elegida.</TableCell>
+                  <TableCell colSpan={8} className="py-8 text-center text-sm text-[var(--color-text-muted)]">Ningún vehículo coincide con la búsqueda o la faena elegida.</TableCell>
                 </TableRow>
               )}
               {visible.map((item) => {
@@ -319,7 +351,7 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
                       <div className="text-[var(--color-text-muted)]">{item.worksiteName}</div>
                     </TableCell>
                     {item.blocker ? (
-                      <TableCell colSpan={4} className="align-top text-sm text-[var(--color-warning-ink)]">{item.blocker}</TableCell>
+                      <TableCell colSpan={5} className="align-top text-sm text-[var(--color-warning-ink)]">{item.blocker}</TableCell>
                     ) : (
                       <>
                         <TableCell className="align-top">
@@ -336,17 +368,24 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
                         </TableCell>
                         <TableCell className="align-top">
                           <OptionSelect
-                            aria-label={`Pauta de ${label}`} className="h-9 w-full" emptyLabel="Sin pauta" options={scheduleOptions(item.unit)}
+                            aria-label={`Unidad de ${label}`} className="h-9 w-full" options={UNIT_OPTIONS}
+                            value={draft.unit} onValueChange={(value) => changeUnit(item.vehicleId, value)}
+                          />
+                          {draft.unit !== item.unit && <p className="mt-1 text-xs text-[var(--color-text-muted)]">El tipo se mide en {unitName(item.unit)}.</p>}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <OptionSelect
+                            aria-label={`Pauta de ${label}`} className="h-9 w-full" emptyLabel="Sin pauta" options={scheduleOptions(draft.unit)}
                             value={draft.scheduleId} onValueChange={(value) => patch(item.vehicleId, { scheduleId: value })}
                           />
                         </TableCell>
                         <TableCell className="align-top">
                           <div className="flex items-center gap-1.5">
                             <Input
-                              aria-label={`Lectura actual de ${label}, en ${unitName(item.unit)}`} inputMode="decimal" className="h-9 w-full tabular-nums"
+                              aria-label={`Lectura actual de ${label}, en ${unitName(draft.unit)}`} inputMode="decimal" className="h-9 w-full tabular-nums"
                               placeholder="Opcional" value={draft.reading} onChange={(event) => patch(item.vehicleId, { reading: event.target.value })}
                             />
-                            <span className="text-xs text-[var(--color-text-muted)]">{UNIT_SHORT[item.unit]}</span>
+                            <span className="text-xs text-[var(--color-text-muted)]">{UNIT_SHORT[draft.unit]}</span>
                           </div>
                         </TableCell>
                         <TableCell className="align-top">
