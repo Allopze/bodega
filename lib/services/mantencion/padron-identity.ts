@@ -28,6 +28,7 @@ export async function loadPadronMaintenance(
       brandId: current.brandId,
       noPlate: current.fields.noPlate,
       unit: current.unit,
+      typeUnit: current.typeUnit,
       unitFixedBy: current.recordCount > 0
         ? { kind: "registros" }
         : current.fields.schedule ? { kind: "pauta", scheduleName: current.fields.schedule } : null,

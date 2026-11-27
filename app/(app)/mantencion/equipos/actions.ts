@@ -69,6 +69,8 @@ function readEquipmentForm(formData: FormData): EquipmentInput {
     scheduleId: text(formData, "scheduleId", 64) || null,
     initialReading: numberOrNull(text(formData, "initialReading", 20)),
     initialReadingDate: text(formData, "initialReadingDate", 10) || null,
+    // La unidad del alta (`km` u `h`): el servidor rechaza cualquier otro valor con un error del campo `unit`.
+    unit: text(formData, "unit", 8) || null,
   }
 }
 
@@ -227,12 +229,14 @@ const incorporateSchema = z.object({
     scheduleId: z.string().max(64).nullable(),
     initialReading: z.string().max(20),
     initialReadingDate: z.string().max(10).nullable(),
+    /** `km` u `h`; ausente o vacía = la de su tipo. Otro valor lo rechaza el servidor, fila por fila. */
+    unit: z.string().max(8).nullable().optional(),
   })).min(1).max(INCORPORATE_MAX_ROWS),
 })
 
 /**
  * Crea la ficha de mantención de vehículos que ya están en la flota. Sólo viaja
- * lo propio de Mantención (marca, pauta, lectura); código, patente, tipo y
+ * lo propio de Mantención (marca, unidad, pauta, lectura); código, patente, tipo y
  * faena los lee el servidor de la flota y no se cambian.
  */
 export async function incorporateFleetAction(input: z.input<typeof incorporateSchema>): Promise<MantActionResult<IncorporationResult>> {
@@ -248,6 +252,7 @@ export async function incorporateFleetAction(input: z.input<typeof incorporateSc
       scheduleId: row.scheduleId || null,
       initialReading: numberOrNull(row.initialReading.trim()),
       initialReadingDate: row.initialReadingDate || null,
+      unit: row.unit?.trim() || null,
     })))
     if (result.incorporated > 0) {
       revalidateEquipment()

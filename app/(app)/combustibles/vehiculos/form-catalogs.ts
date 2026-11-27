@@ -6,10 +6,10 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 
 /** Las listas del formulario del padrón, ya en la forma que pide `VehicleForm`. */
 export interface VehicleFormCatalogs {
-  /** `code` (p. ej. `BIODIVERSA`) decide la unidad de un camión según su faena (`equipment-unit.ts`). */
+  /** `code` ya no decide la unidad de Mantención de un camión (2026-11-26): queda cargado, sin uso en el padrón. */
   worksites: Array<{ id: string; name: string; code: string }>
   users: Array<{ id: string; name: string }>
-  /** `performanceFamily` (`camiones`) decide con la faena la unidad de Mantención del tipo. */
+  /** `performanceFamily` ya no decide la unidad de Mantención del tipo (2026-11-26): queda cargado, sin uso en el padrón. */
   equipmentTypes: Array<{ id: string; name: string; category: string; defaultMeterType: string; defaultPerformanceUnit: string; performanceFamily: string | null; isActive: boolean }>
   suppliers: Array<{ id: string; name: string }>
   products: Array<{ id: string; name: string; unit: string; isActive: boolean }>

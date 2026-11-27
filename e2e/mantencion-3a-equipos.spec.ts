@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 import ExcelJS from "exceljs"
-import { expectPageTitle } from "./helpers"
+import { expectPageTitle, selectRadixById } from "./helpers"
 import { chileDay, dayMonthYear, asJefe, trackConsole, withSql, fichaValue, idFromPath, fillEquipmentForm, importWorkbook } from "./mantencion-3-helpers"
 
 /**
@@ -74,12 +74,21 @@ test.describe("E2E 6 · Equipos", () => {
     await expect(page.getByRole("option", { name: "Nueva faena…" })).toHaveCount(0)
     await page.keyboard.press("Escape")
 
-    // La unidad es del equipo (2026-11-25): un camión de Cholguan mide en horas y no admite «Camiones y tractos» (km).
-    // QA-EQ1 sigue siendo un equipo por km de Cholguan —lo que las pautas de 3b asignan y cambian— y por eso es una camioneta.
+    // La unidad se pregunta al dar de alta (2026-11-26): parte con la de su tipo y manda las pautas que se ofrecen.
+    // QA-EQ1 sigue siendo un equipo por km de Cholguan —lo que las pautas de 3b asignan y cambian—: una camioneta, de odómetro.
     await fillEquipmentForm(page, {
-      code: "qa-eq1", plate: "zzzb 71", type: /^Camioneta · km$/, brand: "Scania", model: "R450", year: "2021",
-      worksite: "Cholguan", schedule: "Camiones y tractos", reading: "12.345",
+      code: "qa-eq1", plate: "zzzb 71", type: /^Camioneta$/, brand: "Scania", model: "R450", year: "2021",
+      worksite: "Cholguan", reading: "12.345",
     })
+    await expect(page.locator("#eq-unit")).toContainText("Kilómetros")
+    // Con horas, sólo se ofrecen pautas en horas; al volver a kilómetros, la pauta que se había elegido se suelta.
+    await selectRadixById(page, "eq-unit", "Horas")
+    await page.locator("#eq-schedule").click()
+    await expect(page.getByRole("option", { name: /^Camiones y tractos/ })).toHaveCount(0)
+    await page.getByRole("option", { name: /^Maquinaria pesada/ }).click()
+    await selectRadixById(page, "eq-unit", "Kilómetros")
+    await expect(page.locator("#eq-schedule")).toContainText("Sin pauta")
+    await selectRadixById(page, "eq-schedule", /^Camiones y tractos/)
     await page.getByRole("button", { name: "Crear equipo", exact: true }).click()
 
     await expect(page).toHaveURL(/\/flota\/[^/?]+\/mantencion/)
@@ -102,7 +111,7 @@ test.describe("E2E 6 · Equipos", () => {
     await asJefe(page)
     await page.goto("/mantencion/equipos/nuevo")
     // Repetir la patente de QA-EQ1 se rechaza con el equipo que ya la tiene.
-    // El tipo «Camión» ya no lleva la unidad en su rótulo: depende de la faena (Biodiversa, por kilómetros).
+    // El tipo no lleva la unidad en su rótulo: la unidad es un campo aparte, que parte con la del tipo (aquí, kilómetros).
     await fillEquipmentForm(page, { code: "QA-EQ2", plate: "ZZZB-71", type: /^Camión$/, brand: "Scania", model: "R450", year: "2020", worksite: "Biodiversa" })
     await page.getByRole("button", { name: "Crear equipo", exact: true }).click()
     await expect(page.getByText(/La patente ZZZB-71 ya está en el equipo QA-EQ1/)).toBeVisible()
@@ -117,6 +126,35 @@ test.describe("E2E 6 · Equipos", () => {
     await expectPageTitle(page, "QA-EQ2")
     await expect(page.getByRole("banner")).toContainText("Sin patente")
     await expect(fichaValue(page, "Pauta")).toHaveText("Sin pauta")
+  })
+
+  test("un camión se puede dar de alta en horas: la unidad elegida queda en el perfil y la pauta es de esa unidad", async ({ page }) => {
+    const errors = trackConsole(page)
+    await asJefe(page)
+    await page.goto("/mantencion/equipos/nuevo")
+    await fillEquipmentForm(page, { code: "QA-EQ3", plate: "ZZZD 73", type: /^Camión$/, brand: "Scania", model: "R500", year: "2022", worksite: "Cholguan" })
+    // «Camión» es un tipo de odómetro: la unidad parte en kilómetros. Los camiones de producción miden en horas, así que se cambia.
+    await expect(page.locator("#eq-unit")).toContainText("Kilómetros")
+    await selectRadixById(page, "eq-unit", "Horas")
+    await expect(page.getByText("El tipo se mide en kilómetros; este equipo se mide en horas.")).toBeVisible()
+    await selectRadixById(page, "eq-schedule", /^Maquinaria pesada/)
+    await page.getByRole("button", { name: "Crear equipo", exact: true }).click()
+
+    await expect(page).toHaveURL(/\/flota\/[^/?]+\/mantencion/)
+    const id = idFromPath(page)
+    await expectPageTitle(page, "QA-EQ3")
+    await expect(fichaValue(page, "Pauta")).toHaveText("Maquinaria pesada")
+    // La unidad es del perfil de Mantención: el medidor de Combustible sigue siendo el del tipo (odómetro).
+    const [row] = await withSql(async (sql) => sql`
+      select p.unit, v.meter_type, s.name as schedule from mant_equipment_profiles p
+      join fuel_vehicles v on v.id = p.vehicle_id left join mant_schedules s on s.id = p.schedule_id where p.vehicle_id = ${id}`)
+    expect(row).toMatchObject({ unit: "h", meter_type: "odometer", schedule: "Maquinaria pesada" })
+    expect(errors).toEqual([])
+    // Equipo de prueba: se deja de baja para que no cuente en las specs que siguen (como los demás QA-).
+    await withSql(async (sql) => {
+      await sql`update fuel_vehicles set is_active = false where id = ${id}`
+      await sql`update mant_equipment_profiles set retired_reason = 'Equipo de prueba E2E' where vehicle_id = ${id}`
+    })
   })
 
   test("la identidad se edita en «Editar vehículo», con las reglas de Mantención, y el historial lo cuenta", async ({ page }) => {

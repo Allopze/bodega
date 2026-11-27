@@ -180,7 +180,7 @@ export async function applyCreate(
   await tx.insert(mantEquipmentProfiles).values({
     vehicleId,
     brandId: resolved.brand.id,
-    // La unidad de Mantención se fija en el alta (camión de Biodiversa en km; los demás camiones, en horas).
+    // La unidad de Mantención se fija en el alta: la que se eligió (`km` u `h`) o, si no, la de su tipo (`equipment-unit.ts`).
     unit: resolved.unit,
     scheduleId: resolved.schedule?.id ?? null,
     initialReading: resolved.initialReading,

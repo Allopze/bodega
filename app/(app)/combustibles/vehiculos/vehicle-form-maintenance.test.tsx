@@ -154,16 +154,16 @@ describe("padrón: la faena es de sólo lectura al editar", () => {
 })
 
 /**
- * Decisión del usuario (2026-11-25): un camión de producción mide en horas y uno de Biodiversa en km,
- * aunque compartan tipo. El selector de tipo bloquea sólo lo que el servidor rechazaría: un tipo que
- * en la faena del equipo mediría distinto, con registros o pauta.
+ * Decisión del usuario (2026-11-26): la unidad de un equipo se elige al darlo de alta y no depende de su faena. El
+ * selector de tipo bloquea sólo lo que el servidor rechazaría: un tipo de otra unidad que la del equipo cuando
+ * éste ya tiene registros o pauta. Un tipo que mide como el actual nunca mueve la unidad y no se bloquea.
  */
-describe("tipo de equipo según la faena del camión", () => {
-  const WORKSITES = [{ id: "ws-1", name: "Arauco", code: "FN-ARA" }, { id: "ws-bio", name: "Biodiversa", code: "BIODIVERSA" }]
+describe("tipo de equipo según la unidad del equipo", () => {
+  const WORKSITES = [{ id: "ws-1", name: "Arauco" }, { id: "ws-bio", name: "Biodiversa" }]
   const TYPES = [
-    { id: "t-camion", name: "Camión", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter", performanceFamily: "camiones", isActive: true },
-    { id: "t-tracto", name: "Tractocamión", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter", performanceFamily: "camiones", isActive: true },
-    { id: "t-excavadora", name: "Excavadora", category: "heavy", defaultMeterType: "hour_meter", defaultPerformanceUnit: "liters_per_hour", performanceFamily: null, isActive: true },
+    { id: "t-camion", name: "Camión", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter", isActive: true },
+    { id: "t-tracto", name: "Tractocamión", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter", isActive: true },
+    { id: "t-excavadora", name: "Excavadora", category: "heavy", defaultMeterType: "hour_meter", defaultPerformanceUnit: "liters_per_hour", isActive: true },
   ]
   const camion = (worksiteId: string, code: string): VehicleForEdit => ({ ...VEHICLE, id: `veh-${code}`, code, plate: `${code}-P`, equipmentTypeId: "t-camion", worksiteId })
 
@@ -187,15 +187,15 @@ describe("tipo de equipo según la faena del camión", () => {
     fireEvent.click(screen.getByRole("combobox", { name: /Tipo de equipo/ }))
   }
 
-  it("un camión en horas de Arauco puede pasar a Tractocamión con registros: el tipo no aparece bloqueado", () => {
-    renderCamion({ ...camion("ws-1", "KA-910") }, { brandId: "b-volvo", noPlate: false, unit: "h", unitFixedBy: { kind: "registros" }, canChangeProfile: true })
-    expect(screen.getByText(/sólo puede pasar a un tipo que en su faena también se mida así/)).toBeDefined()
+  it("un camión dado de alta en horas, con registros, puede pasar a Tractocamión (mismo medidor de odómetro): el tipo no aparece bloqueado", () => {
+    renderCamion({ ...camion("ws-1", "KA-910") }, { brandId: "b-volvo", noPlate: false, unit: "h", typeUnit: "km", unitFixedBy: { kind: "registros" }, canChangeProfile: true })
+    expect(screen.getByText(/sólo puede pasar a un tipo que también se mida así/)).toBeDefined()
     openTypes()
     expect(screen.getByRole("option", { name: /Tractocamión/ }).getAttribute("aria-disabled")).not.toBe("true")
   })
 
-  it("un camión de Biodiversa (km) con registros: Tractocamión sigue disponible y una excavadora (horas) queda bloqueada", () => {
-    renderCamion(camion("ws-bio", "KA-911"), { brandId: "b-volvo", noPlate: false, unit: "km", unitFixedBy: { kind: "registros" }, canChangeProfile: true })
+  it("un camión en km con registros: Tractocamión sigue disponible, en cualquier faena, y una excavadora (horas) queda bloqueada", () => {
+    renderCamion(camion("ws-bio", "KA-911"), { brandId: "b-volvo", noPlate: false, unit: "km", typeUnit: "km", unitFixedBy: { kind: "registros" }, canChangeProfile: true })
     openTypes()
     expect(screen.getByRole("option", { name: /Tractocamión/ }).getAttribute("aria-disabled")).not.toBe("true")
     expect(screen.getByRole("option", { name: /Excavadora.*se mide en horas/ }).getAttribute("aria-disabled")).toBe("true")

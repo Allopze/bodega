@@ -3,8 +3,8 @@
  *
  * Los camiones y tractocamiones de producción miden en horas (horómetro) en Mantención y los de
  * Biodiversa, que van por ruta, en kilómetros (decisión del usuario, 2026-11-25). Este script mueve
- * a horas los equipos que ya estaban en el módulo: lo que el alta nueva decide por la regla de
- * `lib/mantencion/equipment-unit.ts`, aquí se aplica a los existentes.
+ * a horas los equipos que ya estaban en el módulo. (Desde el 2026-11-26 el alta de un equipo ya no
+ * aplica esa regla: pregunta la unidad; ver `lib/mantencion/equipment-unit.ts`.)
  *
  * Es sólo de Mantención: pasa por `setEquipmentUnit`, que escribe el perfil (`mant_equipment_profiles`)
  * y no toca `fuel_vehicles` (el medidor y el rendimiento de Combustible no cambian). Por cada equipo:
@@ -36,8 +36,15 @@ import { and, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelEquipmentTypes, fuelVehicles, mantEquipmentProfiles, mantRecords, mantSchedules, users, worksites } from "@/db/schema"
 import { equipmentCodeKey, plateKey } from "@/lib/mantencion/equipment-identity"
-import { ODOMETER_TRUCK_WORKSITE_CODE, TRUCK_PERFORMANCE_FAMILY, effectiveMaintenanceUnit } from "@/lib/mantencion/equipment-unit"
+import { TRUCK_PERFORMANCE_FAMILY, effectiveMaintenanceUnit } from "@/lib/mantencion/equipment-unit"
 import { setEquipmentUnit } from "@/lib/services/mantencion/equipment-unit-change"
+
+/**
+ * Código (`worksites.code`) de la faena cuyos camiones se quedan en kilómetros. Esta indicación de una sola vez
+ * vivía en `equipment-unit.ts` como regla de alta; se quitó el 2026-11-26 (el alta pregunta la unidad) y sólo este
+ * script, ya aplicado en producción, la sigue necesitando.
+ */
+const ODOMETER_TRUCK_WORKSITE_CODE = "BIODIVERSA"
 
 const REASON = "Los camiones de producción miden en horas (horómetro) y los de Biodiversa en kilómetros (decisión del usuario, 2026-11-25)"
 

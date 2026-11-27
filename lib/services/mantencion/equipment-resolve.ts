@@ -5,7 +5,7 @@ import {
 } from "@/db/schema"
 import { formatNumber, formatReading, unitName } from "@/lib/mantencion/format"
 import { cleanName, findByNameKey, nameKey, normalizeCode, normalizePlate, resolvePlate } from "@/lib/mantencion/normalize"
-import { defaultMaintenanceUnit, effectiveMaintenanceUnit } from "@/lib/mantencion/equipment-unit"
+import { effectiveMaintenanceUnit, maintenanceUnitOfMeter, parseMaintenanceUnit } from "@/lib/mantencion/equipment-unit"
 import type { MantUnit } from "@/lib/mantencion/types"
 import { codeYear, formatDate, todayInChile } from "@/lib/utils"
 import { unitFromMeter } from "./fleet"
@@ -37,6 +37,12 @@ export interface EquipmentInput {
   scheduleId: string | null
   initialReading: number | null
   initialReadingDate: string | null
+  /**
+   * Unidad de Mantención que se eligió al dar de alta el equipo: `km` u `h`. Ausente o vacía = la de su
+   * tipo. Cualquier otro valor es un error del campo `unit`. Sólo se lee en el alta (`current: null`): la
+   * unidad de un equipo que ya existe no la cambia ni el padrón ni la importación.
+   */
+  unit?: string | null
 }
 
 export type FieldErrors = Record<string, string>
@@ -71,7 +77,7 @@ export interface ResolvedEquipment {
   type: { id: string; slug: string; name: string; unit: MantUnit; meterType: string; performanceUnit: string }
   /**
    * Unidad de medida de Mantención del equipo tras guardar: la fija su perfil (`equipment-unit.ts`). Puede
-   * ser distinta de la de su tipo (un camión de producción mide en horas aunque su tipo sea de odómetro).
+   * ser distinta de la de su tipo si quien lo dio de alta la eligió (un camión en horas con tipo de odómetro).
    */
   unit: MantUnit
   brand: { id: string; name: string }
@@ -95,6 +101,8 @@ export interface EquipmentCurrent {
   retiredReason: string | null
   /** Unidad efectiva: la fijada en su perfil o, si no tiene, la de su tipo. Nunca cambia sola. */
   unit: MantUnit
+  /** Unidad de su TIPO (la de su medidor), que puede ser distinta de `unit`; el padrón la usa para no bloquear un cambio de tipo que no mueve la unidad. */
+  typeUnit?: MantUnit | null
   /** Registros en cualquier estado: fijan la unidad del equipo (un anulado también cuenta). */
   recordCount: number
   /** Registros vigentes: sólo ellos fijan la lectura inicial (uno anulado no bloquea nada). */
@@ -117,12 +125,11 @@ export interface EquipmentCurrent {
 }
 
 export interface EquipmentCatalogs {
-  /** `performanceFamily`: `camiones` decide con la faena la unidad de Mantención (`equipment-unit.ts`). */
-  types: Array<{ id: string; slug: string; name: string; isActive: boolean; unit: MantUnit | null; meterType: string; performanceUnit: string; performanceFamily: string | null }>
+  /** `unit` es la del medidor del tipo: con la que nace un equipo si nadie elige otra (`equipment-unit.ts`). */
+  types: Array<{ id: string; slug: string; name: string; isActive: boolean; unit: MantUnit | null; meterType: string; performanceUnit: string }>
   brands: Array<{ id: string; name: string; isActive: boolean }>
   schedules: Array<{ id: string; name: string; unit: MantUnit }>
-  /** `code`: el código de la faena (`BIODIVERSA`…); `null` para una faena que aún no se crea. */
-  worksites: Array<{ id: string; name: string; isActive: boolean; code: string | null }>
+  worksites: Array<{ id: string; name: string; isActive: boolean }>
   /** Toda la flota (con y sin perfil): código y patente son únicos entre todos. */
   identities: VehicleIdentity[]
 }
@@ -143,7 +150,7 @@ export async function loadEquipmentCatalogs(client: Reader): Promise<EquipmentCa
     client.select().from(fuelEquipmentTypes),
     client.select({ id: mantBrands.id, name: mantBrands.name, isActive: mantBrands.isActive }).from(mantBrands),
     loadScheduleCatalog(client),
-    client.select({ id: worksites.id, name: worksites.name, isActive: worksites.isActive, code: worksites.code }).from(worksites),
+    client.select({ id: worksites.id, name: worksites.name, isActive: worksites.isActive }).from(worksites),
     client
       .select({
         id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, isActive: fuelVehicles.isActive,
@@ -157,7 +164,6 @@ export async function loadEquipmentCatalogs(client: Reader): Promise<EquipmentCa
     types: types.map((row) => ({
       id: row.id, slug: row.slug, name: row.name, isActive: row.isActive,
       unit: unitFromMeter(row.defaultMeterType), meterType: row.defaultMeterType, performanceUnit: row.defaultPerformanceUnit,
-      performanceFamily: row.performanceFamily ?? null,
     })),
     brands,
     schedules,
@@ -268,6 +274,7 @@ export async function loadEquipmentCurrents(client: Reader, vehicleId?: string):
       active: row.isActive,
       retiredReason: row.retiredReason,
       unit,
+      typeUnit: maintenanceUnitOfMeter(row.meterType),
       recordCount: records?.n ?? 0,
       activeRecordCount: Number(records?.active ?? 0),
       firstActiveRecord: records?.firstDate && records.firstReading != null ? { date: records.firstDate, reading: Number(records.firstReading) } : null,
@@ -322,7 +329,7 @@ export interface ResolveOptions {
    * Crea la faena nueva (alta o confirmación de una importación). Sin esto sólo
    * se valida: la vista previa de una importación no escribe nada.
    */
-  createWorksite?: (name: string) => Promise<{ id: string; name: string; code?: string | null }>
+  createWorksite?: (name: string) => Promise<{ id: string; name: string }>
   /**
    * Faena que el equipo YA tiene: se acepta aunque esté inactiva. Sin esto, un
    * equipo de una faena desactivada no se podía editar en nada (auditoría I-3).
@@ -566,8 +573,6 @@ export async function resolveEquipment(
   if (!plateResult.ok) errors.plate = plateResult.message
 
   let type: ResolvedEquipment["type"] | null = null
-  /** Familia de rendimiento del tipo: con la faena, decide la unidad de un camión (ver `unit` más abajo). */
-  let typeFamily: string | null = null
   if (!input.equipmentTypeId) errors.equipmentTypeId = "Elige el tipo de equipo."
   else {
     const row = catalogs.types.find((item) => item.id === input.equipmentTypeId)
@@ -576,7 +581,6 @@ export async function resolveEquipment(
     else if (!row.unit) errors.equipmentTypeId = `«${row.name}» no se mide en kilómetros ni en horas.`
     else {
       type = { id: row.id, slug: row.slug, name: row.name, unit: row.unit, meterType: row.meterType, performanceUnit: row.performanceUnit }
-      typeFamily = row.performanceFamily
     }
   }
 
@@ -595,11 +599,9 @@ export async function resolveEquipment(
     errors.year = "Año no válido."
   }
 
-  // Faena existente, o nueva (regla 17: coincide normalizada → se usa la existente). Va antes de la unidad:
-  // la de un camión depende de su código.
+  // Faena existente, o nueva (regla 17: coincide normalizada → se usa la existente).
   let worksiteName: string | null = null
   let worksiteId: string | null = null
-  let worksiteCode: string | null = null
   let newWorksiteName: string | null = null
   if (input.worksiteId === NEW_WORKSITE) {
     const typed = cleanName(input.newWorksiteName)
@@ -608,7 +610,7 @@ export async function resolveEquipment(
     else {
       const existing = findByNameKey(catalogs.worksites, typed)
       if (existing && !existing.isActive) errors.worksiteId = inactiveWorksiteMessage(existing.name, catalogs.worksites)
-      else if (existing) { worksiteId = existing.id; worksiteName = existing.name; worksiteCode = existing.code }
+      else if (existing) { worksiteId = existing.id; worksiteName = existing.name }
       else newWorksiteName = typed
     }
   } else if (!input.worksiteId) errors.worksiteId = "Elige la faena."
@@ -616,30 +618,40 @@ export async function resolveEquipment(
     const row = catalogs.worksites.find((item) => item.id === input.worksiteId)
     const keeping = !!row && row.id === options.keepWorksiteId
     if (!row || (!row.isActive && !keeping)) errors.worksiteId = "Esa faena no existe o está inactiva."
-    else { worksiteId = row.id; worksiteName = row.name; worksiteCode = row.code }
+    else { worksiteId = row.id; worksiteName = row.name }
   }
 
-  // Unidad de medida del equipo tras guardar (decisión del usuario, 2026-11-25; reglas en `equipment-unit.ts`).
-  // Alta: la que le toca a su tipo en su faena (camión de Biodiversa en km; los demás camiones, en horas).
-  // Edición sin cambio de tipo: la que ya tiene; nunca cambia sola. Cambio de tipo: la del tipo nuevo, salvo
-  // que el equipo esté fijado a su unidad (registros, pauta o preventiva declarada): entonces no cambia.
+  // Unidad de medida del equipo tras guardar (decisión del usuario, 2026-11-26; reglas en `equipment-unit.ts`).
+  // Alta: la que se eligió (`km` u `h`) o, si no se eligió ninguna, la de su tipo. Edición sin cambio de tipo: la que
+  // ya tiene; nunca cambia sola ni se elige aquí. Cambio de tipo: si el tipo nuevo mide como el anterior no se mueve;
+  // si mide distinto, la del tipo nuevo, salvo que el equipo esté fijado a su unidad (registros, pauta o preventiva
+  // declarada): entonces no cambia.
+  let chosenUnit: MantUnit | null = null
+  if (!current && input.unit) {
+    chosenUnit = parseMaintenanceUnit(input.unit)
+    if (!chosenUnit) errors.unit = "Elige la unidad de mantención: kilómetros u horas."
+  }
   let unit: MantUnit | null = null
   let planUnit: MantUnit | null = null
   if (type) {
-    const defaultUnit = defaultMaintenanceUnit({ typeMeterType: type.meterType, typeFamily, worksiteCode })
-    if (!current) unit = defaultUnit
-    else if (type.id === current.equipmentTypeId) unit = current.unit
-    else {
+    const typeUnit = type.unit
+    if (!current) {
+      unit = chosenUnit ?? typeUnit
+      planUnit = unit
+    } else if (type.id === current.equipmentTypeId || catalogs.types.find((item) => item.id === current.equipmentTypeId)?.unit === typeUnit) {
+      unit = current.unit
+      planUnit = unit
+    } else {
       const fixed = current.recordCount > 0 || current.scheduleId !== null || !!current.fields.priorPreventiveDate
-      unit = fixed ? current.unit : defaultUnit
-      if (fixed && defaultUnit !== current.unit) {
+      unit = fixed ? current.unit : typeUnit
+      if (fixed && typeUnit !== current.unit) {
         if (current.recordCount > 0) errors.equipmentTypeId = "No se puede cambiar a otra unidad: el equipo ya tiene registros."
         // Con pauta, la pauta se valida contra la unidad del tipo nuevo (abajo) y el aviso dice dónde quitarla.
         else if (current.scheduleId === null) errors.equipmentTypeId = `Tiene una preventiva declarada en ${unitName(current.unit)}: bórrala antes de cambiar a un tipo de otra unidad.`
       }
+      // Con cambio de tipo, la pauta se compara con la unidad que tendría el tipo nuevo.
+      planUnit = typeUnit
     }
-    // Con cambio de tipo, la pauta se compara con la unidad que tendría el tipo nuevo.
-    planUnit = current && type.id !== current.equipmentTypeId ? defaultUnit : unit
   }
   const plan = resolveEquipmentPlan(catalogs.schedules, input, planUnit, current, {
     today, ignoreLockedInitialReading: options.ignoreLockedInitialReading,
@@ -683,7 +695,7 @@ export async function resolveEquipment(
       const created = await options.createWorksite(newWorksiteName ?? "")
       worksiteId = created.id
       worksiteName = created.name
-      if (!catalogs.worksites.some((item) => item.id === created.id)) catalogs.worksites.push({ id: created.id, name: created.name, isActive: true, code: created.code ?? null })
+      if (!catalogs.worksites.some((item) => item.id === created.id)) catalogs.worksites.push({ id: created.id, name: created.name, isActive: true })
     }
   }
 

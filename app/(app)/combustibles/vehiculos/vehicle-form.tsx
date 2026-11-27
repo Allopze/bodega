@@ -58,7 +58,7 @@ export type VehicleForEdit = {
 interface VehicleFormProps {
   open: boolean
   onClose: () => void
-  /** `code` y `performanceFamily` los necesita el selector de tipo de un equipo de Mantención (la unidad de un camión depende de su faena). Opcionales: sin ellos el servidor decide. */
+  /** `code` y `performanceFamily` ya no deciden la unidad de Mantención (2026-11-26); siguen llegando de los catálogos y ningún campo los usa. */
   worksites: Array<{ id: string; name: string; code?: string | null }>
   users: Array<{ id: string; name: string }>
   equipmentTypes: Array<{ id: string; name: string; category: string; defaultMeterType: string; defaultPerformanceUnit: string; performanceFamily?: string | null; isActive: boolean }>
@@ -214,11 +214,9 @@ function MaintenanceIdentityFields({
 }) {
   const [noPlate, setNoPlate] = React.useState(maintenance.noPlate)
   const [code, setCode] = React.useState(vehicle.code ?? "")
-  // La faena del equipo no cambia aquí (sólo por traslado): su código decide la unidad de un camión.
-  const worksiteCode = worksites.find((w) => w.id === vehicle.worksiteId)?.code
   const brandOptions = brands.filter((brand) => brand.isActive || brand.id === maintenance.brandId)
   const typeHelper = maintenance.unitFixedBy?.kind === "registros"
-    ? `Se mide en ${maintenance.unit === "km" ? "kilómetros" : "horas"}: sólo puede pasar a un tipo que en su faena también se mida así, porque ya tiene registros de mantención.`
+    ? `Se mide en ${maintenance.unit === "km" ? "kilómetros" : "horas"}: sólo puede pasar a un tipo que también se mida así, porque ya tiene registros de mantención.`
     : maintenance.unitFixedBy?.kind === "pauta"
       ? `Se mide en ${maintenance.unit === "km" ? "kilómetros" : "horas"}: para pasarlo a otra unidad, quita primero su pauta «${maintenance.unitFixedBy.scheduleName}» en la pestaña Mantención.`
       : "Sólo tipos que se miden en kilómetros u horas: los demás no pueden estar en Mantención."
@@ -262,7 +260,7 @@ function MaintenanceIdentityFields({
           <SelectTrigger id="v-equipment-type" error={!!errors?.equipmentTypeId}><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
           <SelectContent>
             {equipmentTypes.map((item) => {
-              const block = item.id === vehicle.equipmentTypeId ? null : maintenanceTypeBlock(maintenance, item, worksiteCode)
+              const block = item.id === vehicle.equipmentTypeId ? null : maintenanceTypeBlock(maintenance, item)
               return (
                 <SelectItem key={item.id} value={item.id} disabled={(!item.isActive && item.id !== vehicle.equipmentTypeId) || !!block}>
                   {item.name} · {FUEL_EQUIPMENT_CATEGORY_LABELS[item.category as keyof typeof FUEL_EQUIPMENT_CATEGORY_LABELS] ?? item.category}
