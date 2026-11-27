@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { rejectNoteItemAction, resolveNoteItemFromStockAction } from "@/app/(app)/mantencion/notas-pedido/actions"
+import { decideLinesInBulkAction } from "@/app/(app)/mantencion/notas-pedido/bulk-actions"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field } from "@/components/ui/field"
@@ -116,9 +117,10 @@ function TakeFromStockDialog({ noteId, line, worksiteName, stockOptions, onOpenC
 }
 
 /**
- * Las salidas de una línea pendiente: «Reservar de bodega», «Comprar» (abre la solicitud de repuestos con la nota
- * precargada) y «Rechazar» (con motivo). Quien administra la nota ve las tres; quien sólo compra (`mant:np:purchase`), «Comprar».
- * Una nota sin OT no aparta stock: no ofrece «Reservar de bodega». El servidor vuelve a validar permiso, alcance y estado en cada acción.
+ * Las salidas de una línea pendiente: «Reservar de bodega», «Enviar a compra» (arma y envía la solicitud de esa línea de
+ * una vez, como en el lote de la bandeja), «Comprar» (abre la solicitud de repuestos con la nota precargada) y «Rechazar»
+ * (con motivo). Quien administra la nota ve todas; quien sólo compra (`mant:np:purchase`), «Comprar». Una nota sin OT no
+ * aparta stock: no ofrece «Reservar de bodega». El servidor vuelve a validar permiso, alcance y estado en cada acción.
  */
 export function NoteLineActions({ noteId, line, worksiteName, buyHref, stockOptions = [], canManage = true, hasWorkOrder = true }: {
   noteId: string
@@ -133,14 +135,32 @@ export function NoteLineActions({ noteId, line, worksiteName, buyHref, stockOpti
   /** La nota tiene OT: sin ella no hay reserva. */
   hasWorkOrder?: boolean
 }) {
+  const router = useRouter()
   const [dialog, setDialog] = React.useState<"take" | "reject" | null>(null)
+  // Sin diálogo de confirmación (enviar a compra no es destructivo): el resultado sale en un aviso y la ficha se refresca.
+  const send = useOperation({ feedback: "toast" })
   const canTake = line.productId !== null || stockOptions.length > 0
   const showTake = canManage && hasWorkOrder
   if (!canManage && !buyHref) return null
+
+  function sendToPurchase() {
+    send.run(
+      async () => {
+        const res = await decideLinesInBulkAction({ lineIds: [line.id], decision: "comprar" })
+        // Con una sola línea, «ninguna salió» es un fallo aunque el servidor haya procesado la petición: el motivo viene por nota.
+        if (res.result && res.result.ok === 0) return { ok: false, message: res.result.failed[0]?.message ?? res.message }
+        return { ok: res.ok, message: res.message }
+      },
+      () => router.refresh(),
+      (result) => { if (/otra persona|otra sesi[oó]n|ya no/i.test(result.message ?? "")) router.refresh() },
+    )
+  }
+
   return (
     <div className="mt-3 flex flex-col gap-2 border-t border-[var(--color-border)] pt-3">
       <div className="flex flex-wrap items-center gap-2">
         {showTake && <Button type="button" variant="secondary" size="sm" disabled={!canTake} onClick={() => setDialog("take")}>Reservar de bodega</Button>}
+        {canManage && <Button type="button" variant="secondary" size="sm" loading={send.pending} onClick={sendToPurchase}>Enviar a compra</Button>}
         {buyHref && <Button asChild variant="secondary" size="sm"><Link href={buyHref}>Comprar</Link></Button>}
         {canManage && <Button type="button" variant="ghost-danger" size="sm" onClick={() => setDialog("reject")}>Rechazar</Button>}
       </div>
