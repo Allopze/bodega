@@ -60,7 +60,7 @@ async function manual(input: { lines?: Line[]; urgent?: boolean; worksiteId?: st
 const itemsOf = (noteId: string) => testDb.select().from(schema.mantPartsNoteItems).where(eq(schema.mantPartsNoteItems.noteId, noteId)).orderBy(schema.mantPartsNoteItems.sortOrder)
 
 /** Una nota con una compra viva ligada a cada una de sus líneas (la solicitud ya enviada, sin OC todavía). */
-async function boughtNote(input: { lines?: Line[]; urgent?: boolean; worksiteId?: string } = {}) {
+async function boughtNote(input: { lines?: Line[]; urgent?: boolean; worksiteId?: string; viewerId?: string } = {}) {
   const note = await manual(input)
   const requests = []
   for (const item of await itemsOf(note.noteId)) {
