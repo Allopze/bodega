@@ -17,6 +17,7 @@ const mockRegisterStockDocumentTx = vi.hoisted(() => vi.fn())
 const mockCurrentStock = vi.hoisted(() => ({ rows: [{ quantity: 4 }] as Array<{ quantity: number }> }))
 const mockRegisterStockReturn = vi.hoisted(() => vi.fn())
 const mockClosePhysicalInventoryCount = vi.hoisted(() => vi.fn())
+const mockReconcileNotes = vi.hoisted(() => vi.fn())
 
 // El guard de módulo consulta `system_settings` en cada verificación de permiso
 // (CO-007). Estas pruebas mockean sólo las tablas de su caso, así que se
@@ -39,6 +40,10 @@ vi.mock("@/lib/services/stock", () => ({
 }))
 vi.mock("@/lib/services/physical-inventory", () => ({
   closePhysicalInventoryCount: mockClosePhysicalInventoryCount,
+}))
+// Segundo paso de un ajuste que baja el stock de un repuesto (ADR mantención 0001, D21): su servicio tiene pruebas con Postgres real.
+vi.mock("@/lib/services/mantencion/parts-notes/line-reconcile", () => ({
+  reconcileNotesAfterStockAdjustment: mockReconcileNotes,
 }))
 
 const mockDb = {
@@ -77,6 +82,7 @@ describe("bodega actions", () => {
     mockRegisterStockDocumentTx.mockResolvedValue({ id: "adjustment-1", code: "AJU-2026-0001" })
     mockRegisterStockReturn.mockResolvedValue({ id: "return-1", code: "DEV-2026-0001" })
     mockClosePhysicalInventoryCount.mockResolvedValue({ id: "count-1", code: "CON-2026-0001", adjustmentCount: 2 })
+    mockReconcileNotes.mockResolvedValue([])
     // Default select chain for returnStock prior movements
     const selectChain = {
       from: vi.fn().mockReturnThis(),
@@ -173,6 +179,52 @@ describe("bodega actions", () => {
         type: "ajuste",
         quantity: -2,
       }))
+    })
+
+    /**
+     * D21: un ajuste que baja el stock puede haber rebajado reservas de repuestos; las líneas de nota de pedido que se apoyaban
+     * en ellas se corrigen en otra transacción, ya confirmado el ajuste y con los bloqueos en orden. Un sobrante no rebaja nada.
+     */
+    it("un faltante corrige las notas de pedido después de confirmar el ajuste, con su folio y motivo", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
+      const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      fd.set("productId", "prod-1")
+      fd.set("countedQuantity", "2")
+      fd.set("reason", "Faltante detectado en conteo")
+      const result = await adjustStockAction({ ok: false }, fd)
+      expect(result.ok).toBe(true)
+      expect(mockReconcileNotes).toHaveBeenCalledTimes(1)
+      expect(mockReconcileNotes).toHaveBeenCalledWith({
+        worksiteId: "ws-1",
+        productIds: ["prod-1"],
+        actor: { userId: "user-1", email: "bodega@chome.cl" },
+        reason: "AJU-2026-0001: Faltante detectado en conteo",
+      })
+      // Después de la transacción del ajuste, no dentro de ella.
+      expect(mockDb.transaction.mock.invocationCallOrder[0]!).toBeLessThan(mockReconcileNotes.mock.invocationCallOrder[0]!)
+    })
+
+    it("un sobrante, o un ajuste que falla, no toca las notas de pedido", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
+      const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
+      const surplus = new FormData()
+      surplus.set("worksiteId", "ws-1")
+      surplus.set("productId", "prod-1")
+      surplus.set("countedQuantity", "7")
+      surplus.set("reason", "Sobrante detectado en conteo")
+      expect((await adjustStockAction({ ok: false }, surplus)).ok).toBe(true)
+
+      mockRegisterStockDocumentTx.mockRejectedValueOnce(new Error("El ajuste de inventario requiere un motivo"))
+      const failing = new FormData()
+      failing.set("worksiteId", "ws-1")
+      failing.set("productId", "prod-1")
+      failing.set("countedQuantity", "1")
+      failing.set("reason", "Faltante detectado en conteo")
+      expect((await adjustStockAction({ ok: false }, failing)).ok).toBe(false)
+
+      expect(mockReconcileNotes).not.toHaveBeenCalled()
     })
 
     it("ignora cualquier delta que mande el cliente: manda la cantidad real", async () => {

@@ -14,6 +14,11 @@
  * par: ninguna reserva se lee para decidir ni se escribe sin tenerla bloqueada
  * (`lockForStockTx`), salvo la liberación al cerrar la OT, que sólo agranda lo
  * libre y ya corre con la OT bloqueada `FOR UPDATE`.
+ *
+ * Después del stock vienen las líneas de nota de pedido y, la última de todas, la fila
+ * de cada NP (`parts-notes/*`). Lo que no puede tomar la OT ni las líneas después del
+ * stock (el ajuste de inventario, `guardSparePartEgressTx`) sólo lee y deja el resto
+ * para un segundo paso con los bloqueos en orden (ADR mantención 0001, D21).
  */
 
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
@@ -240,6 +245,10 @@ async function consumerOf(tx: Reader, allocationId: string): Promise<string> {
  * una diferencia). Si lo aportado ya se usó, rechaza con un mensaje que nombra el
  * registro y la OT. Llamar ANTES del movimiento de stock (`egreso_anulacion`), para
  * que la guarda del motor ya vea la reserva rebajada. Exige `lockForStockTx`.
+ *
+ * Cada rebaja lleva la línea de nota de pedido a la que se le quita lo que había aportado esa fuente (`note_item_id`
+ * de la fila, igual que el aporte), así «Llegó» de la línea baja con lo que se anuló (ADR 0001 D19). Lo que no era de
+ * ninguna línea sigue siendo una rebaja sin línea. Recalcular las notas es de quien llama (`arrival-reversal.ts`).
  */
 export async function shrinkAllocationsForSourceTx(tx: Tx, input: {
   receiptId?: string | null
@@ -255,39 +264,61 @@ export async function shrinkAllocationsForSourceTx(tx: Tx, input: {
   const bySource = input.receiptId
     ? eq(mantPartsAllocationSources.receiptId, input.receiptId)
     : eq(mantPartsAllocationSources.dispatchGuideId, input.dispatchGuideId as string)
+  // Lo aportado por reserva y por línea de nota: la reserva decide cuánto se rebaja; la línea, a quién se atribuye.
   const contributions = await tx
     .select({
       allocationId: mantPartsAllocationSources.allocationId,
+      noteItemId: mantPartsAllocationSources.noteItemId,
       contributed: sql<number>`sum(${mantPartsAllocationSources.quantity})`.mapWith(Number),
     })
     .from(mantPartsAllocationSources)
     .innerJoin(mantPartsAllocations, eq(mantPartsAllocations.id, mantPartsAllocationSources.allocationId))
     .where(and(bySource, eq(mantPartsAllocations.productId, input.productId), eq(mantPartsAllocations.status, "activa")))
-    .groupBy(mantPartsAllocationSources.allocationId)
-    .orderBy(asc(mantPartsAllocationSources.allocationId))
+    .groupBy(mantPartsAllocationSources.allocationId, mantPartsAllocationSources.noteItemId)
+    .orderBy(asc(mantPartsAllocationSources.allocationId), asc(mantPartsAllocationSources.noteItemId))
+  const byAllocation = new Map<string, Array<{ noteItemId: string | null; contributed: number }>>()
+  for (const row of contributions) {
+    byAllocation.set(row.allocationId, [...(byAllocation.get(row.allocationId) ?? []), { noteItemId: row.noteItemId, contributed: roundQty(Number(row.contributed)) }])
+  }
 
   let pending = roundQty(input.quantity)
   let shrunk = 0
-  for (const row of contributions) {
+  for (const [allocationId, groups] of byAllocation) {
     if (toCents(pending) <= 0) break
-    const contributed = roundQty(Number(row.contributed))
+    const contributed = roundQty(groups.reduce((sum, group) => sum + group.contributed, 0))
     if (toCents(contributed) <= 0) continue
     const cut = roundQty(Math.min(contributed, pending))
-    const remaining = await allocationRemainingTx(tx, row.allocationId)
-    if (toCents(remaining) < toCents(cut)) throw new Error(await consumerOf(tx, row.allocationId))
+    const remaining = await allocationRemainingTx(tx, allocationId)
+    if (toCents(remaining) < toCents(cut)) throw new Error(await consumerOf(tx, allocationId))
+
+    // A qué líneas se atribuye: a cada una hasta lo que esa fuente le aportó (en orden estable); el resto, sin línea.
+    const parts: Array<{ noteItemId: string | null; quantity: number }> = []
+    let left = cut
+    for (const group of groups) {
+      if (toCents(left) <= 0) break
+      if (!group.noteItemId || toCents(group.contributed) <= 0) continue
+      const take = roundQty(Math.min(group.contributed, left))
+      parts.push({ noteItemId: group.noteItemId, quantity: take })
+      left = roundQty(left - take)
+    }
+    if (toCents(left) > 0) parts.push({ noteItemId: null, quantity: left })
+
     await tx.update(mantPartsAllocations)
       .set({ quantity: sql`${mantPartsAllocations.quantity} - ${cut}`, updatedAt: new Date().toISOString() })
-      .where(eq(mantPartsAllocations.id, row.allocationId))
-    await tx.insert(mantPartsAllocationSources).values({
-      id: nanoid(),
-      allocationId: row.allocationId,
-      source: input.source,
-      quantity: -cut,
-      receiptId: input.receiptId ?? null,
-      dispatchGuideId: input.dispatchGuideId ?? null,
-      actorUserId: input.actorUserId,
-      reason: input.reason,
-    })
+      .where(eq(mantPartsAllocations.id, allocationId))
+    for (const part of parts) {
+      await tx.insert(mantPartsAllocationSources).values({
+        id: nanoid(),
+        allocationId,
+        source: input.source,
+        quantity: -part.quantity,
+        noteItemId: part.noteItemId,
+        receiptId: input.receiptId ?? null,
+        dispatchGuideId: input.dispatchGuideId ?? null,
+        actorUserId: input.actorUserId,
+        reason: input.reason,
+      })
+    }
     pending = roundQty(pending - cut)
     shrunk = roundQty(shrunk + cut)
   }

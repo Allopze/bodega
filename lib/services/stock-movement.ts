@@ -10,6 +10,8 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { guardSparePartEgressTx, isReservationCheckedEgress, SPARE_PART_FORBIDDEN_MESSAGE, SPARE_PART_MOVEMENT_TYPES } from "@/lib/services/stock-reservations"
+import { planAdjustmentCutTx } from "@/lib/services/mantencion/parts-notes/line-release"
+import { reconcileNotesAfterStockAdjustment } from "@/lib/services/mantencion/parts-notes/line-reconcile"
 
 /* ── Movement types ─────────────────────────────────────────────────────────── */
 export type MovementType =
@@ -105,7 +107,18 @@ export interface StockDocumentResult {
 export async function registerStockDocument(
   input: ApplyMovementInput & { kind: StockDocumentKind },
 ): Promise<StockDocumentResult> {
-  return db.transaction((tx) => registerStockDocumentTx(tx, input))
+  const result = await db.transaction((tx) => registerStockDocumentTx(tx, input))
+  // Un ajuste que baja el stock de un repuesto puede haber rebajado reservas: las líneas de nota de pedido que se apoyaban
+  // en ellas se devuelven a pendiente ahora, ya confirmado el ajuste y en otra transacción (ADR 0001 D21).
+  if (input.kind === "ajuste" && input.quantity < 0) {
+    await reconcileNotesAfterStockAdjustment({
+      worksiteId: input.worksiteId,
+      productIds: [input.productId],
+      actor: { userId: input.performedBy, email: input.userEmail },
+      reason: `${result.code}: ${input.reason?.trim() ?? ""}`.trim(),
+    })
+  }
+  return result
 }
 
 /**
@@ -305,6 +318,8 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
         quantity: input.quantity,
         performedBy: input.performedBy,
         reason: input.reason,
+        // Lo que un ajuste le quita a una reserva se atribuye a las líneas de nota que la alimentaron (sólo lectura).
+        planCut: planAdjustmentCutTx,
       })
     }
   }

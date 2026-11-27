@@ -273,7 +273,9 @@ export interface ReleasedCapa {
  * corregirla»): la CAPA pasa a `cancelled` con el motivo de la anulación y el hallazgo vuelve a `open` sin vínculo, para
  * que Prevención lo derive de nuevo (acción y OT nuevas). Se escribe directo, como la evidencia de la conformidad
  * (`activateWorkOrderCapaEvidence`): es un efecto del sistema de la anulación, y quien anula la OT no tiene por qué tener
- * permisos de Prevención. Queda en las transiciones de la CAPA, en la actividad operacional y en la auditoría.
+ * permisos de Prevención. Queda en las transiciones de la CAPA, en la actividad operacional y en la auditoría. Prevención se
+ * entera por un aviso que `voidWorkOrder` arma con lo que esta función devuelve y manda DESPUÉS del commit (`capa_cancelled`,
+ * `notifications.ts`): este servicio no avisa, porque los avisos escriben por el `db` global y sobrevivirían a un rollback.
  *
  * Sólo si la CAPA sigue viva sin haber llegado a verificación (`pending`, `in_progress` o `reopened`) y el hallazgo no
  * está cerrado. Una CAPA ya verificada, cerrada, cancelada o en verificación manda: no se toca. Sin hallazgo, o sin CAPA

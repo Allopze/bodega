@@ -485,7 +485,8 @@ export async function conformWorkOrder(actor: WorkOrderActor, input: Base & { fa
 /**
  * Anula la OT (jefatura, o quien la creó mientras no ha entrado a taller: «por asignar» o «asignada»). Si estaba en taller,
  * revierte el estado del equipo. Si nació de un hallazgo de inspección, su acción correctiva (CAPA) viva se cancela con el
- * motivo y el hallazgo vuelve a quedar abierto para derivarlo de nuevo (OT-1, `releaseWorkOrderCapaOnVoid`).
+ * motivo y el hallazgo vuelve a quedar abierto para derivarlo de nuevo (OT-1, `releaseWorkOrderCapaOnVoid`); y Prevención se
+ * entera después del commit: aviso al responsable de la CAPA y al inspector (`capa_cancelled`, `notifications.ts`).
  */
 export async function voidWorkOrder(actor: WorkOrderActor, input: Base & { reason: string }): Promise<LockedResult> {
   return runLocked(actor, input, async (ctx) => {
@@ -514,8 +515,15 @@ export async function voidWorkOrder(actor: WorkOrderActor, input: Base & { reaso
     await rejectOpenLinesOfWorkOrderTx(ctx.tx, { workOrderId: row.id, actor: { userId: actor.userId }, end: { kind: "anulada", reason } })
     // Anulada, la OT ya no usará lo reservado: pasa a stock libre de la faena (ADR mantención 0001, D5).
     await releaseWorkOrderAllocationsTx(ctx.tx, { workOrderId: row.id, actorUserId: actor.userId, reason: `OT anulada: ${reason}` })
-    // Al mecánico asignado (que ya cuenta con ella) y a quien la solicitó.
-    return { row, notify: [planFor(row, "voided", actor, reason)] }
+    // Al mecánico asignado (que ya cuenta con ella) y a quien la solicitó. Si la anulación canceló la CAPA del hallazgo, Prevención
+    // también se entera (D18): al responsable de la acción y al inspector de la inspección, después del commit y sin repetirse.
+    return {
+      row,
+      notify: [
+        planFor(row, "voided", actor, reason),
+        ...(capa ? [{ ...planFor(row, "capa_cancelled", actor, reason), capa: { capaActionId: capa.capaActionId, capaCode: capa.capaCode, findingId: capa.findingId } }] : []),
+      ],
+    }
   })
 }
 

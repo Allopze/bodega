@@ -75,6 +75,9 @@ import { receiveItemTx } from "@/lib/services/item-state"
 import { notifyAfterCommit } from "@/lib/services/notifications"
 import { notifyWorkOrderPartsReceived } from "@/lib/services/mantencion/work-orders/notifications"
 import { addToAllocationTx, lockForStockTx, shrinkAllocationsForSourceTx } from "@/lib/services/mantencion/parts"
+import {
+  lockOrdersOfLinesTx, noteItemIdsOfRequestItemsTx, noteItemIdsOfSourceTx, recalcNotesOfLinesTx,
+} from "@/lib/services/mantencion/parts-notes/arrival-reversal"
 import type { DispatchGuideInput } from "@/lib/validation/dispatch-guides"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
@@ -1330,6 +1333,22 @@ export async function confirmDispatchGuideReceipt(
         shortfallNotices.push(...await closeOrderTx(tx, { ...linked.order, status: "received" }, actor.userId, "Cierre automático: cotejo completo de GDI", { userEmail: actor.userEmail }))
       }
 
+      /**
+       * Notas de pedido de lo cotejado (ADR mantención 0001, D20). El cotejo cambió el estado de la compra de cada ítem
+       * (`receiveItemTx`), y eso decide si la nota todavía espera su repuesto: se recalcula aquí, en la misma transacción,
+       * como en la recepción directa a faena. La diferencia, en cambio, no mueve stock ni reserva (GDI-001): la reserva ya
+       * se hizo con lo despachado, así que no hay nada que devolver a una línea. Al final, con la OT tomada antes
+       * (`FOR SHARE`) y la nota la última: el orden de `registerReceipt`.
+       */
+      const noteLineIds = await noteItemIdsOfRequestItemsTx(tx, normalized.flatMap((line) => (line.poItem.requestItemId ? [line.poItem.requestItemId] : [])))
+      await lockOrdersOfLinesTx(tx, noteLineIds)
+      const noteChanges = await recalcNotesOfLinesTx(tx, {
+        noteItemIds: noteLineIds,
+        reason: `Cotejo de la guía ${guide.code}`,
+        actorUserId: actor.userId,
+        userEmail: actor.userEmail,
+      })
+
       if (guide.status !== nextGuideStatus) {
         await recordStatusChange({
           entityType: "dispatch_guide",
@@ -1354,6 +1373,7 @@ export async function confirmDispatchGuideReceipt(
           complete,
           differences: normalized.filter((line) => line.difference > 1e-9).length,
           shrinkage: normalized.reduce((total, line) => total + (line.difference > 1e-9 ? line.difference : 0), 0),
+          ...(noteChanges.length > 0 ? { notesRecalculated: noteChanges } : {}),
         },
       }, tx)
       return { code: guide.code }
@@ -1529,6 +1549,20 @@ export async function cancelDispatchGuide(
       changedBy:  actor.userId,
       reason,
     }, tx)
+
+    // Notas de pedido de lo que esta guía había dejado reservado (ADR mantención 0001, D19). La rebaja de la reserva ya lleva
+    // su línea (`shrinkAllocationsForSourceTx`): una nota que figuraba «cerrada» porque su repuesto había llegado vuelve a
+    // esperarlo (la compra sigue viva: el ítem sigue en oficina). Las OT ya están tomadas `FOR SHARE` por `lockForStockTx`;
+    // la nota va la última, como en el despacho.
+    const noteChanges = hadStockEgress
+      ? await recalcNotesOfLinesTx(tx, {
+        noteItemIds: await noteItemIdsOfSourceTx(tx, { dispatchGuideId: guide.id }),
+        reason: `Anulación de la guía ${guide.code}: ${reason}`,
+        actorUserId: actor.userId,
+        userEmail: actor.userEmail,
+      })
+      : []
+
     await recordAudit({
       userId:     actor.userId,
       userEmail:  actor.userEmail,
@@ -1537,7 +1571,7 @@ export async function cancelDispatchGuide(
       entityId:   guideId,
       entityCode: guide.code,
       oldState:   { status: guide.status },
-      newState:   { status: "cancelled", reversedMovements: items.length * 2 },
+      newState:   { status: "cancelled", reversedMovements: items.length * 2, ...(noteChanges.length > 0 ? { notesRecalculated: noteChanges } : {}) },
       reason,
     }, tx)
 

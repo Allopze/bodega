@@ -1,10 +1,12 @@
 import { and, eq, inArray, ne } from "drizzle-orm"
 import { db } from "@/db"
 import {
-  fuelVehicles, mantPartsNoteItems, mantPartsNotes, mantWorkOrders, permissions, purchaseRequestItems,
-  rolePermissions, roles, userPermissions, userRoles,
+  fuelVehicles, mantPartsNoteItems, mantPartsNotes, mantWorkOrders, permissions, preventionCapaActions,
+  preventionInspectionFindings, preventionInspectionRuns, purchaseRequestItems, rolePermissions, roles, userPermissions,
+  userRoles, users,
 } from "@/db/schema"
 import type { NotificationType } from "@/db/schema/audit"
+import { logger } from "@/lib/logger"
 import { OT_PERMISSIONS } from "@/lib/mantencion/work-order-states"
 import { notifyAfterCommit, notifyManyUser } from "@/lib/services/notification-create"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
@@ -24,7 +26,12 @@ import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification
  * que el aviso no se pierda en una faena sin responsable.
  */
 
-export type OtNotifyEvent = "created" | "assigned" | "unassigned" | "voided" | "finished" | "received" | "rejected" | "reopened" | "closed"
+/**
+ * `capa_cancelled` no avisa a quien trabaja la OT sino a Prevención: anular una OT nacida de un hallazgo cancela su
+ * acción correctiva (OT-1, `capa-link.ts`). Sus destinatarios salen de la CAPA y de la inspección, no de la OT.
+ */
+export type OtNotifyEvent = "created" | "assigned" | "unassigned" | "voided" | "finished" | "received" | "rejected" | "reopened" | "closed" | "capa_cancelled"
+type OtOrderEvent = Exclude<OtNotifyEvent, "capa_cancelled">
 
 export interface NotificationPlan {
   event: OtNotifyEvent
@@ -38,13 +45,15 @@ export interface NotificationPlan {
   assigneeUserId: string | null
   /** «KA-135 · Camión». */
   equipment: string
-  /** Complemento del cuerpo (motivo del rechazo, etc.). */
+  /** Complemento del cuerpo (motivo del rechazo, etc.). En `capa_cancelled`, el motivo de la anulación. */
   detail?: string | null
   /** `unassigned` por una reasignación: la OT no vuelve a «Por asignar», pasó a otro mecánico. */
   reassigned?: boolean
+  /** `capa_cancelled`: la acción correctiva que cancelló la anulación y el hallazgo que volvió a quedar abierto. */
+  capa?: { capaActionId: string; capaCode: string; findingId: string }
 }
 
-const TYPE: Record<OtNotifyEvent, NotificationType> = {
+const TYPE: Record<OtOrderEvent, NotificationType> = {
   created: "mant_ot_created",
   assigned: "mant_ot_assigned",
   unassigned: "mant_ot_unassigned",
@@ -56,7 +65,7 @@ const TYPE: Record<OtNotifyEvent, NotificationType> = {
   closed: "mant_ot_closed",
 }
 
-const TITLE: Record<OtNotifyEvent, (folio: string) => string> = {
+const TITLE: Record<OtOrderEvent, (folio: string) => string> = {
   created: (folio) => `Nueva orden de trabajo ${folio}`,
   assigned: (folio) => `Se te asignó la orden de trabajo ${folio}`,
   unassigned: (folio) => `Se te quitó la orden de trabajo ${folio}`,
@@ -68,7 +77,7 @@ const TITLE: Record<OtNotifyEvent, (folio: string) => string> = {
   closed: (folio) => `La orden de trabajo ${folio} quedó cerrada`,
 }
 
-const BODY: Record<OtNotifyEvent, string> = {
+const BODY: Record<OtOrderEvent, string> = {
   created: "Está por asignar.",
   assigned: "Entra a taller y registra el ingreso desde la app o el PC.",
   unassigned: "Volvió a «Por asignar»: ya no tienes que ejecutarla.",
@@ -163,7 +172,80 @@ async function recipients(plan: NotificationPlan): Promise<string[]> {
   return [...new Set(ids)].filter((id) => id !== plan.actorUserId)
 }
 
+/**
+ * Aviso a Prevención de que anular la OT de un hallazgo canceló su acción correctiva (OT-1, `releaseWorkOrderCapaOnVoid`).
+ * Antes el hallazgo volvía a `open` y nadie de Prevención se enteraba.
+ *
+ * Es el canal de avisos que Prevención ya usa para la CAPA (`prevention-capa-reminders.ts`): una notificación
+ * `system_alert` con enlace a la CAPA o a la inspección y `dedupeKey`. Le llega a dos personas:
+ *  - al responsable de la CAPA, con el enlace a la acción (como sus recordatorios);
+ *  - a quien responde por el hallazgo: el inspector de la inspección (quien la ejecutó; si aún no se ejecutó, a quien se
+ *    asignó, y si no, quien la creó), con el enlace a los hallazgos de esa inspección, que es donde se deriva de nuevo.
+ *    El hallazgo no guarda quién lo levantó; la inspección sí guarda su inspector.
+ * Si son la misma persona recibe un solo aviso, con el enlace al hallazgo (es lo que tiene que atender). Quien anuló la OT
+ * no se avisa a sí mismo, y un usuario inactivo tampoco. Los destinatarios se resuelven al enviar, como en los demás avisos.
+ */
+async function sendCapaCancelledNotice(plan: NotificationPlan): Promise<void> {
+  const capaInfo = plan.capa
+  if (!capaInfo) return
+  const [capa] = await db
+    .select({ responsibleUserId: preventionCapaActions.responsibleUserId })
+    .from(preventionCapaActions)
+    .where(eq(preventionCapaActions.id, capaInfo.capaActionId))
+    .limit(1)
+  const [finding] = await db
+    .select({ runId: preventionInspectionFindings.runId })
+    .from(preventionInspectionFindings)
+    .where(eq(preventionInspectionFindings.id, capaInfo.findingId))
+    .limit(1)
+  const [run] = finding
+    ? await db
+      .select({
+        executedByUserId: preventionInspectionRuns.executedByUserId,
+        assignedToUserId: preventionInspectionRuns.assignedToUserId,
+        createdByUserId: preventionInspectionRuns.createdByUserId,
+      })
+      .from(preventionInspectionRuns)
+      .where(eq(preventionInspectionRuns.id, finding.runId))
+      .limit(1)
+    : []
+  const inspectorUserId = run ? run.executedByUserId ?? run.assignedToUserId ?? run.createdByUserId : null
+
+  // El enlace de cada persona: el hallazgo manda si es la misma (la CAPA ya está cancelada; el hallazgo es lo que hay que derivar).
+  const link = new Map<string, "capa" | "hallazgo">()
+  if (capa?.responsibleUserId) link.set(capa.responsibleUserId, "capa")
+  if (inspectorUserId && finding) link.set(inspectorUserId, "hallazgo")
+  link.delete(plan.actorUserId)
+  if (link.size === 0) return
+  const active = new Set((await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(inArray(users.id, [...link.keys()]), eq(users.isActive, true)))).map((row) => row.id))
+
+  const reason = (plan.detail ?? "").trim().replace(/[.\s]+$/u, "") || "sin motivo registrado"
+  const notice = {
+    type: "system_alert" as const,
+    title: `Acción correctiva cancelada: ${capaInfo.capaCode}`,
+    body: `La OT ${plan.folio} se anuló: ${reason}. La acción correctiva ${capaInfo.capaCode} se canceló y el hallazgo volvió a quedar abierto.`,
+    // Una vez por OT y acción: una CAPA se cancela una sola vez.
+    dedupeKey: `mant-ot:${plan.workOrderId}:${plan.event}:${capaInfo.capaActionId}`,
+  }
+  const toCapa = [...link].filter(([id, to]) => to === "capa" && active.has(id)).map(([id]) => id)
+  const toFinding = [...link].filter(([id, to]) => to === "hallazgo" && active.has(id)).map(([id]) => id)
+  if (toCapa.length > 0) {
+    await notifyManyUser(toCapa, {
+      ...notice, entityType: "prevention_capa", entityId: capaInfo.capaActionId, entityHref: `/prevencion/capa/${capaInfo.capaActionId}`,
+    })
+  }
+  if (toFinding.length > 0 && finding) {
+    await notifyManyUser(toFinding, {
+      ...notice, entityType: "inspection_run", entityId: finding.runId, entityHref: `/prevencion/inspecciones/${finding.runId}#hallazgos`,
+    })
+  }
+}
+
 export async function sendWorkOrderNotification(plan: NotificationPlan): Promise<void> {
+  if (plan.event === "capa_cancelled") return sendCapaCancelledNotice(plan)
   const userIds = await recipients(plan)
   if (userIds.length === 0) return
   // La OT del administrador de contrato nace asignada al mecánico de su faena: entonces no está «por asignar».
@@ -184,11 +266,20 @@ export async function sendWorkOrderNotification(plan: NotificationPlan): Promise
   })
 }
 
-/** Dispara los avisos; llamar SÓLO cuando `db.transaction` ya resolvió. */
+/**
+ * Dispara los avisos; llamar SÓLO cuando `db.transaction` ya resolvió. Un aviso que falla no impide los que siguen: el de
+ * la anulación y el de la CAPA que ésta cancela no dependen uno del otro.
+ */
 export function dispatchWorkOrderNotifications(plans: readonly NotificationPlan[]): void {
   if (plans.length === 0) return
   notifyAfterCommit(async () => {
-    for (const plan of plans) await sendWorkOrderNotification(plan)
+    for (const plan of plans) {
+      try {
+        await sendWorkOrderNotification(plan)
+      } catch (error) {
+        logger.error(`[notifications] no se pudo enviar el aviso «${plan.event}» de la OT ${plan.folio}`, error)
+      }
+    }
   })
 }
 

@@ -698,6 +698,9 @@ export const pgliteTestFiles = [
 
   // NP · L1 bodega: recepción, guías y anulaciones (suites de la línea debajo de esta ancla).
   "lib/__tests__/np-receiving-stock-pglite.test.ts",
+  // Reversas de Bodega y notas de pedido (D19 a D21): anular una recepción o una guía y cotejar una guía recalculan la
+  // nota; un ajuste que rebaja una reserva devuelve sus líneas a pendiente en un segundo paso con los bloqueos en orden.
+  "lib/__tests__/np-bodega-reversas-pglite.test.ts",
 
   // NP · L2 compras: solicitud desde NP y catalogación obligatoria.
   "lib/__tests__/np-purchase-request-link-pglite.test.ts",
