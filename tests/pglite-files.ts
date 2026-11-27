@@ -718,6 +718,11 @@ export const pgliteTestFiles = [
   // Notas en estado final (cerrada, rechazada, anulada): una persona no resuelve, rechaza ni compra sus líneas, y el prellenado de la
   // solicitud (?np=) exige la faena en el alcance (view_own por autoría no basta).
   "lib/__tests__/np-estados-finales-pglite.test.ts",
+  // Revisión de «Notas de pedido ERP»: la compra real de líneas sin OT (borrador y envío de la solicitud, equipo de cargo que dejó de
+  // servir) con el aviso al autor al llegar a la faena, y los estados que salen del historial (aceptada, espera con OT que termina,
+  // importadas «Cerradas»), el recálculo de las notas anteriores a 0405 y el alta en faena cerrada.
+  "lib/__tests__/np-compra-sin-ot-pglite.test.ts",
+  "lib/__tests__/np-estados-historial-pglite.test.ts",
   // Importación de las notas de CHOME ERP: simulación sin escritura, evento «migrada» único, idempotencia por external_ref.
   "lib/__tests__/np-import-chome-pglite.test.ts",
   // «Mis pendientes» de Mantención: siete tipos de fila repartidos entre quienes pueden resolverlos, avisos del menú

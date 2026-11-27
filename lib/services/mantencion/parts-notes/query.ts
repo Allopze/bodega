@@ -12,7 +12,7 @@ import type {
 } from "../parts/types"
 import { canSeeNote, inWorksiteScope, NP_PERMISSIONS, noteVisibility } from "./access"
 import { loadNoteEvents, statusSinceSql } from "./history"
-import { loadLineStates } from "./lines"
+import { isImportedClosedNote, loadLineStates } from "./lines"
 import { noteFilterConditions, statusCondition, TAB_CONDITIONS } from "./list-filters"
 import { allowedNoteActions } from "./transitions"
 
@@ -281,6 +281,8 @@ export async function getPartsNote(viewer: MantViewer, noteId: string): Promise<
     resolution: item.resolution,
     sortOrder: item.sortOrder,
     noteCreatedAt: note.createdAt,
+    quantity: Number(item.quantity),
+    importedClosed: isImportedClosedNote(note),
   })))
   // Lo que se puede sacar de bodega es lo de la faena que abastece la NP: la del equipo de la OT hoy, o la de la NP si no hay equipo.
   const stockWorksiteId = note.vehicleWorksiteId ?? note.worksiteId

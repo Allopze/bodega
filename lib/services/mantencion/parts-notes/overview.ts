@@ -6,7 +6,7 @@ import type { MantViewer } from "../access"
 import { listAvailableForWorkOrders } from "../parts/reads"
 import type { RecordPartSource, RecordPartStockStatus, WorkOrderPartsOverview } from "../parts/types"
 import { canSeeWorkOrder, workOrderVisibility } from "../work-orders/access"
-import { loadLineStates } from "./lines"
+import { isImportedClosedNote, loadLineStates } from "./lines"
 
 /**
  * Notas de pedido (NP) y repuestos de una o varias OT, en la forma que comparten la
@@ -21,6 +21,8 @@ interface NoteHead {
   id: string
   code: string
   status: string
+  /** Folio de CHOME ERP si la nota se importó (ver `isImportedClosedNote`). */
+  externalRef?: string | null
   workOrderId: string | null
   equipmentStopped: boolean
   createdAt: string
@@ -37,7 +39,10 @@ async function withLines<T extends NoteHead>(notes: readonly T[]): Promise<Array
   const noteById = new Map(notes.map((note) => [note.id, note]))
   const states = await loadLineStates(items.map((item) => {
     const note = noteById.get(item.noteId)!
-    return { id: item.id, noteId: item.noteId, workOrderId: note.workOrderId, productId: item.productId, resolution: item.resolution, sortOrder: item.sortOrder, noteCreatedAt: note.createdAt }
+    return {
+      id: item.id, noteId: item.noteId, workOrderId: note.workOrderId, productId: item.productId, resolution: item.resolution, sortOrder: item.sortOrder,
+      noteCreatedAt: note.createdAt, quantity: Number(item.quantity), importedClosed: isImportedClosedNote(note),
+    }
   }))
 
   return notes.map((note) => {
@@ -79,6 +84,7 @@ export async function loadPartsNotesForWorkOrders(workOrderIds: readonly string[
       id: mantPartsNotes.id,
       code: mantPartsNotes.code,
       status: mantPartsNotes.status,
+      externalRef: mantPartsNotes.externalRef,
       workOrderId: mantPartsNotes.workOrderId,
       equipmentStopped: mantPartsNotes.equipmentStopped,
       createdAt: mantPartsNotes.createdAt,
@@ -113,6 +119,7 @@ export async function loadOwnPartsNotes(userId: string, now: number = Date.now()
       id: mantPartsNotes.id,
       code: mantPartsNotes.code,
       status: mantPartsNotes.status,
+      externalRef: mantPartsNotes.externalRef,
       workOrderId: mantPartsNotes.workOrderId,
       equipmentStopped: mantPartsNotes.equipmentStopped,
       createdAt: mantPartsNotes.createdAt,

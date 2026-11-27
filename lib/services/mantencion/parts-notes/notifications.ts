@@ -1,6 +1,8 @@
-import { and, eq, inArray, ne } from "drizzle-orm"
+import { and, eq, inArray, isNull, ne } from "drizzle-orm"
 import { db } from "@/db"
-import { permissions, rolePermissions, roles, userPermissions, userRoles } from "@/db/schema"
+import {
+  mantPartsNoteItems, mantPartsNotes, permissions, purchaseRequestItems, rolePermissions, roles, userPermissions, userRoles, worksites,
+} from "@/db/schema"
 import type { NotificationType } from "@/db/schema/audit"
 import { notifyManyUser } from "@/lib/services/notification-create"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
@@ -14,6 +16,7 @@ import { NP_PERMISSIONS } from "./access"
  */
 const NP_CREATED: NotificationType = "mant_np_created"
 const NP_REJECTED: NotificationType = "mant_np_rejected"
+const NP_ARRIVED: NotificationType = "mant_np_arrived"
 
 const ADMIN_ROLE = "administrador"
 
@@ -106,4 +109,58 @@ export async function notifyPartsNoteItemRejected(notice: PartsNoteRejectedNotic
     entityHref: notice.workOrderId ? `/mantencion/ot/${notice.workOrderId}` : `/mantencion/notas-pedido/${notice.noteId}`,
     dedupeKey: `mant-np:${notice.noteItemId}:rejected`,
   })
+}
+
+export interface PartsNoteArrivedNotice {
+  /** Recepción (o cotejo de guía) que dejó las compras completas en la faena: parte de la clave de deduplicación. */
+  receiptId: string
+  /** Quien recibió: nunca se avisa a sí mismo. */
+  actorUserId: string
+  /** Ítems de solicitud (las compras) que esa recepción dejó completos en faena. */
+  requestItemIds: readonly string[]
+}
+
+/**
+ * Aviso al autor de una nota de pedido SIN OT de que lo que pidió llegó a la faena (la nota con OT lo recibe por el aviso de la
+ * OT: `notifyWorkOrderPartsReceived`). Una notificación por nota y recepción: la clave `mant-np-arrived:{nota}:{recepción}` hace
+ * que reintentar no la repita. Las notas importadas no tienen autor en la plataforma y no avisan; las anuladas tampoco.
+ * Llamar DESPUÉS del commit (`notifyAfterCommit`).
+ */
+export async function notifyPartsNoteLinesArrived(notice: PartsNoteArrivedNotice): Promise<void> {
+  if (notice.requestItemIds.length === 0) return
+  const rows = await db
+    .select({
+      noteId: mantPartsNotes.id,
+      code: mantPartsNotes.code,
+      status: mantPartsNotes.status,
+      authorId: mantPartsNotes.requestedByUserId,
+      worksiteName: worksites.name,
+      description: mantPartsNoteItems.description,
+    })
+    .from(purchaseRequestItems)
+    .innerJoin(mantPartsNoteItems, eq(mantPartsNoteItems.id, purchaseRequestItems.partsNoteItemId))
+    .innerJoin(mantPartsNotes, eq(mantPartsNotes.id, mantPartsNoteItems.noteId))
+    .innerJoin(worksites, eq(worksites.id, mantPartsNotes.worksiteId))
+    .where(and(inArray(purchaseRequestItems.id, [...notice.requestItemIds]), isNull(mantPartsNotes.workOrderId)))
+    .orderBy(mantPartsNotes.code, mantPartsNoteItems.sortOrder)
+
+  const byNote = new Map<string, { authorId: string; code: string; worksiteName: string; descriptions: string[] }>()
+  for (const row of rows) {
+    if (!row.authorId || row.authorId === notice.actorUserId || row.status === "anulada") continue
+    const entry = byNote.get(row.noteId) ?? { authorId: row.authorId, code: row.code, worksiteName: row.worksiteName, descriptions: [] }
+    entry.descriptions.push(row.description)
+    byNote.set(row.noteId, entry)
+  }
+  for (const [noteId, entry] of byNote) {
+    const what = entry.descriptions.length === 1 ? entry.descriptions[0]! : `${entry.descriptions[0]!} y ${entry.descriptions.length - 1} más`
+    await notifyManyUser([entry.authorId], {
+      type: NP_ARRIVED,
+      title: `${entry.descriptions.length === 1 ? "Llegó" : "Llegaron"} a faena: ${what} · ${entry.code}`,
+      body: `${entry.worksiteName} · ${entry.descriptions.join("; ")}. Ya está en la bodega de la faena.`,
+      entityType: "mant_parts_note",
+      entityId: noteId,
+      entityHref: `/mantencion/notas-pedido/${noteId}`,
+      dedupeKey: `mant-np-arrived:${noteId}:${notice.receiptId}`,
+    })
+  }
 }

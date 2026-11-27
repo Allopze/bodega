@@ -61,7 +61,7 @@ export const mantencionEquiposModule = {
     "mant:ot:execute":            { id: "p-mant-ot-execute", description: "Ejecutar las órdenes de trabajo asignadas (ingreso y salida de taller) desde la app o el PC" },
     "mant:ot:receive":            { id: "p-mant-ot-receive", description: "Registrar la recepción del equipo al salir del taller" },
     "mant:ot:conform":            { id: "p-mant-ot-conform", description: "Registrar la recepción en faena (conformidad) y cerrar la orden de trabajo" },
-    "mant:np:create":             { id: "p-mant-np-create", description: "Pedir repuestos para una orden de trabajo asignada (nota de pedido) desde la app o el PC" },
+    "mant:np:create":             { id: "p-mant-np-create", description: "Pedir repuestos (nota de pedido) desde la app o el PC: para una orden de trabajo asignada o, sin orden, para una faena de su alcance" },
     "mant:np:view_worksite":      { id: "p-mant-np-view-worksite", description: "Ver las notas de pedido de repuestos de sus faenas asignadas" },
     "mant:np:manage":             { id: "p-mant-np-manage", description: "Resolver notas de pedido (sacar de bodega, comprar o rechazar), liberar reservas y conciliar repuestos de sus faenas" },
     "mant:np:view_own":           { id: "p-mant-np-view-own", description: "Ver las notas de pedido de repuestos que pidió él mismo, aunque la faena no sea de su alcance" },

@@ -17,7 +17,8 @@ import type { ChargeResolution, ErpItem, ErpNote, ExclusionRule, ExistingNote, I
  *    compra viva. Es la única resolución que los CHECK de la línea permiten para «llegó a la faena» sin tocar stock:
  *    `desde_stock` exige producto y reserva, y `deriveNoteStatus` con `en_compra` sin compra viva da `cerrada` (no la reabre).
  *  - El texto del artículo se conserva SIEMPRE en `description`. Producto, proveedor y cargo se calzan en exacto o quedan
- *    vacíos (`product_id` null, `supplier_hint`, `charge_text`) y van a los informes de pendientes.
+ *    vacíos (`product_id` null, `supplier_hint`, `charge_text`) y van a los informes de pendientes. El cargo a un equipo sólo calza con
+ *    uno activo y de la faena de la nota (`resolvers.charge`): si no, queda como texto con su motivo.
  */
 
 export const NOTES_MAX = 500

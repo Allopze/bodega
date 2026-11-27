@@ -20,7 +20,12 @@ const catalogs: Catalogs = {
     { id: "u-luis-1", name: "Luis Doble", email: "ldoble1@chome.test", isActive: true },
     { id: "u-luis-2", name: "Luis Doble", email: "ldoble2@chome.test", isActive: true },
   ],
-  vehicles: [{ id: "v-ka115", code: "KA-115", plate: "BCDF-12" }, { id: "v-gr11", code: "GR-11", plate: "GR-11" }],
+  vehicles: [
+    { id: "v-ka115", code: "KA-115", plate: "BCDF-12", worksiteId: "w-bio", isActive: true },
+    { id: "v-gr11", code: "GR-11", plate: "GR-11", worksiteId: "w-bio", isActive: true },
+    { id: "v-ka200", code: "KA-200", plate: "AAAA-11", worksiteId: "w-cho", isActive: true },
+    { id: "v-ka999", code: "KA-999", plate: "BBBB-22", worksiteId: "w-bio", isActive: false },
+  ],
   products: [
     { id: "p-filtro", sku: "SKU-1", name: "Filtro de aceite", partNumber: "FA-100", unitOfMeasure: "unidad", isActive: true },
     { id: "p-viejo", sku: "SKU-2", name: "Correa vieja", partNumber: null, unitOfMeasure: "unidad", isActive: false },
@@ -113,6 +118,24 @@ describe("calces", () => {
     expect(resolvers.charge("fantasma", "w-bio")).toMatchObject({ kind: "pending", reason: expect.stringMatching(/ZZ-1/) })
     expect(resolvers.charge("XY 999", "w-bio")).toMatchObject({ kind: "pending", chargeText: "XY 999" })
     expect(resolvers.charge("  ", "w-bio")).toEqual({ kind: "none" })
+  })
+
+  it("un cargo sólo calza con un equipo activo de la faena de la nota: si no, queda pendiente con el motivo", () => {
+    // El mismo código en la faena que corresponde calza; en otra faena, no (se compraría con un equipo ajeno).
+    expect(resolvers.charge("KA 200", "w-cho")).toMatchObject({ kind: "vehicle", vehicleId: "v-ka200" })
+    expect(resolvers.charge("KA 200", "w-bio")).toMatchObject({ kind: "pending", chargeText: "KA 200", reason: expect.stringMatching(/otra faena \(Cholguán\).*Biodiversa/) })
+    expect(resolvers.charge("KA 999", "w-bio")).toMatchObject({ kind: "pending", reason: expect.stringMatching(/inactivo/) })
+    // La misma regla por la tabla de equivalencias.
+    const viaTable = buildResolvers(catalogs, parseCargoTable({ alias: { "GRUA DOS": { equipo: "KA-200" } } }))
+    expect(viaTable.charge("grua dos", "w-bio")).toMatchObject({ kind: "pending", reason: expect.stringMatching(/otra faena/) })
+    expect(viaTable.charge("grua dos", "w-cho")).toMatchObject({ kind: "vehicle", vehicleId: "v-ka200" })
+  })
+
+  it("el cargo pendiente por equipo ajeno llega a la línea planificada como texto y al informe de cargos", () => {
+    const planned = plan([erpNote({ id: 77, items: [{ articulo: "Manguera", codigo: null, cargo: "KA 200", cantidad: 1, proveedor: null }] })])
+    const note = planned.toImport.find((candidate) => candidate.externalRef === "CHOME-77")!
+    expect(note.lines[0]).toMatchObject({ chargeVehicleId: null, chargeCostCenterId: null, chargeText: "KA 200" })
+    expect(planned.pendingCharges.find((charge) => charge.externalRef === "CHOME-77")).toMatchObject({ cargo: "KA 200", reason: expect.stringMatching(/otra faena/) })
   })
 
   it("artículo: por código y por nombre, sólo repuestos activos y nunca uno ambiguo", () => {

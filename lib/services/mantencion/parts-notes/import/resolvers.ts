@@ -81,11 +81,25 @@ export function buildResolvers(catalogs: Catalogs, cargos: CargoTable): Resolver
     centersByWorksite.set(center.worksiteId, index)
   }
 
-  const vehicleByKey = (key: string) => {
-    const matches = vehiclesByKey.get(key) ?? []
-    return { match: matches.length === 1 ? matches[0]! : null, ambiguous: matches.length > 1 }
-  }
   const vehicleLabel = (vehicle: { code: string | null; plate: string }) => vehicle.code || vehicle.plate
+  // Un cargo a un equipo sólo vale si se puede comprar con él: activo y en la faena de la nota (la misma regla de
+  // `assertItemFleetLink` al guardar la solicitud). Si el código coincide con un equipo que no cumple, la línea queda con
+  // el cargo pendiente y el motivo dice por qué; nunca se imputa a un equipo de otra faena ni dado de baja.
+  const vehicleByKey = (key: string, worksiteId: string) => {
+    const matches = vehiclesByKey.get(key) ?? []
+    const eligible = matches.filter((vehicle) => vehicle.isActive && vehicle.worksiteId === worksiteId)
+    if (eligible.length === 1) return { match: eligible[0]!, problem: null }
+    if (eligible.length > 1) return { match: null, problem: "Coincide con más de un equipo (código o patente)" }
+    if (matches.length === 0) return { match: null, problem: null }
+    if (matches.length > 1) return { match: null, problem: "Coincide con equipos que están inactivos o en otra faena (código o patente)" }
+    const [only] = matches
+    return {
+      match: null,
+      problem: only!.isActive
+        ? `El equipo «${vehicleLabel(only!)}» está en otra faena (${siteNames.get(only!.worksiteId) ?? only!.worksiteId}), no en la de la nota (${siteNames.get(worksiteId) ?? worksiteId})`
+        : `El equipo «${vehicleLabel(only!)}» está inactivo (dado de baja)`,
+    }
+  }
 
   return {
     worksiteId: (text) => resolveWorksiteId(text, catalogs.worksites, catalogs.aliases),
@@ -121,19 +135,19 @@ export function buildResolvers(catalogs: Catalogs, cargos: CargoTable): Resolver
       if (entry) {
         if ("revisar" in entry) return pending("Marcado «revisar» en la tabla de equivalencias")
         if ("equipo" in entry) {
-          const { match } = vehicleByKey(compactKey(entry.equipo))
+          const { match, problem } = vehicleByKey(compactKey(entry.equipo), worksiteId)
           return match
             ? { kind: "vehicle", vehicleId: match.id, label: vehicleLabel(match) }
-            : pending(`La equivalencia apunta al equipo «${entry.equipo}», que no está en la flota (o es ambiguo)`)
+            : pending(problem ?? `La equivalencia apunta al equipo «${entry.equipo}», que no está en la flota (o es ambiguo)`)
         }
         const center = pickUnique(centersByWorksite.get(worksiteId)?.get(nameKey(entry.centro)))
         return center
           ? { kind: "costCenter", costCenterId: center.id, label: center.name }
           : pending(`La equivalencia apunta al centro «${entry.centro}», que no existe (o es ambiguo) en la faena de la nota`)
       }
-      const { match, ambiguous } = vehicleByKey(compactKey(text))
+      const { match, problem } = vehicleByKey(compactKey(text), worksiteId)
       if (match) return { kind: "vehicle", vehicleId: match.id, label: vehicleLabel(match) }
-      return pending(ambiguous ? "Coincide con más de un equipo (código o patente)" : "No es un código ni una patente de la flota y no está en la tabla de equivalencias")
+      return pending(problem ?? "No es un código ni una patente de la flota y no está en la tabla de equivalencias")
     },
   }
 }

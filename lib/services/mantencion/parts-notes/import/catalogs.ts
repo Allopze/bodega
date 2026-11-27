@@ -11,7 +11,8 @@ export interface Catalogs {
   worksites: Array<{ id: string; name: string }>
   aliases: Array<{ worksiteId: string; aliasKey: string }>
   users: Array<{ id: string; name: string; email: string; isActive: boolean }>
-  vehicles: Array<{ id: string; code: string | null; plate: string }>
+  /** Con su faena y si están activos: un cargo sólo calza con un equipo activo de la faena de la nota (ver `resolvers.charge`). */
+  vehicles: Array<{ id: string; code: string | null; plate: string; worksiteId: string; isActive: boolean }>
   /** Sólo repuestos (`is_spare_part`). */
   products: Array<{ id: string; sku: string; name: string; partNumber: string | null; unitOfMeasure: string; isActive: boolean }>
   suppliers: Array<{ id: string; name: string; rut: string | null; isActive: boolean }>
@@ -25,7 +26,7 @@ export async function loadCatalogs(client: Client): Promise<Catalogs> {
     client.select({ id: worksites.id, name: worksites.name }).from(worksites),
     client.select({ worksiteId: worksiteAliases.worksiteId, aliasKey: worksiteAliases.aliasKey }).from(worksiteAliases),
     client.select({ id: users.id, name: users.name, email: users.email, isActive: users.isActive }).from(users),
-    client.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate }).from(fuelVehicles),
+    client.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, worksiteId: fuelVehicles.worksiteId, isActive: fuelVehicles.isActive }).from(fuelVehicles),
     client.select({ id: products.id, sku: products.sku, name: products.name, partNumber: products.partNumber, unitOfMeasure: products.unitOfMeasure, isActive: products.isActive })
       .from(products).where(eq(products.isSparePart, true)),
     client.select({ id: suppliers.id, name: suppliers.name, rut: suppliers.rut, isActive: suppliers.isActive }).from(suppliers),

@@ -16,6 +16,10 @@ import { allocateUsed, lineStage, type PurchaseLiveness } from "./status"
  *
  * «Llegó» depende de la vía de la línea (`arrivals.ts`): con OT, lo que aportó su reserva; sin OT, lo que la faena
  * recibió de las OC que la compran. Lo usado sólo existe con OT (es consumo de una reserva de esa OT).
+ *
+ * Excepción: una nota importada de CHOME ERP que ya llegó «Cerrada» (`isImportedClosedNote`) trae sus líneas «en compra»
+ * sin ninguna compra en la plataforma: el ERP dio por llegado lo pedido, así que la línea cuenta como llegada completa
+ * (etapa «en bodega», llegó = cantidad). Es sólo de lectura: el estado de la nota no cambia (se deriva igual que siempre).
  */
 
 type Reader = Pick<Tx, "select">
@@ -31,7 +35,14 @@ export interface NoteLineRef {
   sortOrder: number
   /** Creación de la NP: ordena el reparto de lo usado entre líneas del mismo repuesto. */
   noteCreatedAt: string
+  /** Lo pedido en la línea: sólo hace falta si `importedClosed`. */
+  quantity?: number
+  /** La nota es una importada de CHOME ERP que llegó «Cerrada» (`isImportedClosedNote`). */
+  importedClosed?: boolean
 }
+
+/** Nota importada de CHOME ERP (`external_ref`) cuyo estado de origen es «Cerrada»: lo pedido llegó a la faena según el ERP. */
+export const isImportedClosedNote = (note: { status: string; externalRef?: string | null }): boolean => note.status === "cerrada" && !!note.externalRef
 
 export interface NoteLineState {
   stage: PartsNoteLineStage
@@ -130,7 +141,9 @@ export async function loadLineStates(refs: readonly NoteLineRef[], client: Reade
   for (const ref of refs) {
     const rows = purchases.get(ref.id) ?? []
     const liveness = rows.map((row) => ({ itemStatus: row.status, requestStatus: row.requestStatus }))
-    const arrived = arrivals.get(ref.id)?.quantity ?? 0
+    // Importada «Cerrada»: una línea «en compra» sin ninguna compra en la plataforma llegó completa (lo dijo el ERP).
+    const arrivedByImport = !!ref.importedClosed && ref.resolution === "en_compra" && rows.length === 0
+    const arrived = arrivedByImport ? roundQty(ref.quantity ?? 0) : arrivals.get(ref.id)?.quantity ?? 0
     states.set(ref.id, {
       stage: lineStage({ resolution: ref.resolution, arrived, purchases: liveness }),
       arrived,

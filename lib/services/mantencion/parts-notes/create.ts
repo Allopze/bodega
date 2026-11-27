@@ -145,8 +145,11 @@ export async function targetOfWorkOrderTx(tx: Tx, viewer: MantViewer, workOrderI
 
 /** Sin OT: la faena que elige quien pide, existente y dentro de su alcance. */
 export async function targetOfWorksiteTx(tx: Tx, viewer: MantViewer, worksiteId: string): Promise<NoteTarget> {
-  const [worksite] = await tx.select({ id: worksites.id, name: worksites.name }).from(worksites).where(eq(worksites.id, worksiteId)).limit(1)
+  const [worksite] = await tx.select({ id: worksites.id, name: worksites.name, isActive: worksites.isActive }).from(worksites).where(eq(worksites.id, worksiteId)).limit(1)
   if (!worksite) return { refusal: { status: 422, message: "Esa faena no existe.", field: "worksiteId" } }
+  // Una faena cerrada ya no recibe pedidos (ni desde la web ni desde el teléfono): no hay quien los compre ni reciba. El formulario no la ofrece,
+  // pero la regla es del servidor.
+  if (!worksite.isActive) return { refusal: { status: 422, message: "Esa faena está cerrada: elige una faena activa.", field: "worksiteId" } }
   if (!inWorksiteScope(viewer, worksite.id)) return { refusal: { status: 403, message: "Esa faena no es de tu alcance.", field: "worksiteId" } }
   return { workOrderId: null, vehicleId: null, worksiteId: worksite.id, workOrderFolio: null, equipment: `Sin OT · ${worksite.name}` }
 }

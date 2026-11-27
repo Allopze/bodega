@@ -11,7 +11,7 @@ import {
   fastPathCoversRequest,
   quotationRequirementMessage,
 } from "../quotation-requirement"
-import { assertLinkedWorkOrderOpen } from "./linked-work-order"
+import { assertLinkedWorkOrderOpen, fleetVehicleProblem } from "./linked-work-order"
 import { assertPartsNoteLineBuyable } from "./linked-parts-note"
 import type { RequestModuleConfig, SubmitRequestInput } from "../request-config"
 
@@ -104,7 +104,13 @@ export async function submitRequest(
     // Una línea sin OT (nota de pedido sin OT, ADR 0001 2026-11-27) se compra sin OT, en la faena de su nota.
     for (const item of items) {
       if (!item.partsNoteItemId) continue
-      await assertPartsNoteLineBuyable(tx, { partsNoteItemId: item.partsNoteItemId, workOrderId: item.workOrderId ?? null, worksiteId: request.worksiteId })
+      const linked = await assertPartsNoteLineBuyable(tx, { partsNoteItemId: item.partsNoteItemId, workOrderId: item.workOrderId ?? null, worksiteId: request.worksiteId })
+      // El equipo de un ítem de línea sin OT es el de cargo de la línea y no se impone si dejó de servir desde que se guardó
+      // el borrador (se dio de baja o se trasladó): el ítem va sin equipo y el cargo se conserva en la nota (misma regla que al guardar).
+      if (linked.workOrderId === null && item.vehicleId && await fleetVehicleProblem(tx, request.worksiteId, item.vehicleId)) {
+        await tx.update(purchaseRequestItems).set({ vehicleId: null, updatedAt: now }).where(eq(purchaseRequestItems.id, item.id))
+        item.vehicleId = null
+      }
     }
 
     // Vía rápida: una OT vinculada, o un equipo que no está operativo. Por ítem:

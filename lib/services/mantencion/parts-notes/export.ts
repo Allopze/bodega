@@ -17,7 +17,7 @@ import { viewerFromSession } from "../access"
 import type { NoteItemResolution, PartsNoteEvent, PartsNoteFilterSet, PartsNoteStatus, PartsNoteTab } from "../parts/types"
 import { NP_PERMISSIONS } from "./access"
 import { loadEventsByNote, statusSinceSql } from "./history"
-import { loadLineStates } from "./lines"
+import { isImportedClosedNote, loadLineStates } from "./lines"
 import { noteFilterConditions, statusCondition, TAB_CONDITIONS } from "./list-filters"
 
 /**
@@ -142,7 +142,10 @@ export async function exportPartsNotes(input: { session: Session; filters: Parts
   const [states, eventsByNote] = await Promise.all([
     loadLineStates(itemRows.map((item) => {
       const note = noteById.get(item.noteId)!
-      return { id: item.id, noteId: item.noteId, workOrderId: note.workOrderId, productId: item.productId, resolution: item.resolution, sortOrder: item.sortOrder, noteCreatedAt: note.createdAt }
+      return {
+        id: item.id, noteId: item.noteId, workOrderId: note.workOrderId, productId: item.productId, resolution: item.resolution, sortOrder: item.sortOrder,
+        noteCreatedAt: note.createdAt, quantity: Number(item.quantity), importedClosed: isImportedClosedNote(note),
+      }
     })),
     loadEventsByNote(noteIds),
   ])

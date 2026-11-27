@@ -1,6 +1,6 @@
-import { eq, inArray } from "drizzle-orm"
+import { desc, eq, inArray } from "drizzle-orm"
 import type { Tx } from "@/db"
-import { mantPartsNoteItems, mantPartsNotes, mantWorkOrders, purchaseRequestItems, purchaseRequests } from "@/db/schema"
+import { mantPartsNoteEvents, mantPartsNoteItems, mantPartsNotes, mantWorkOrders, purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { isPartsNoteOpen } from "@/lib/mantencion/contracts"
 import { OT_OPEN_STATUSES } from "@/lib/mantencion/work-order-states"
 import { roundQty, toCents } from "@/lib/services/stock-reservations"
@@ -20,6 +20,10 @@ import { setNoteStatusTx } from "./set-status"
  *  - `rechazada`: todas las líneas rechazadas; `cerrada`: lo demás, todo lo no rechazado llegó.
  * `en_espera` y `anulada` no se derivan: los fija quien actúa. Mientras la NP está en espera el derivado queda congelado
  * (`recalcNoteStatusTx` no la toca salvo con `force`).
+ *
+ * «Aceptada» se deriva del HISTORIAL (`noteWasAccepted`), no del estado de hoy: si alguien aceptó la nota y después todas sus
+ * líneas vuelven a pendiente (una compra que murió, una reserva que se liberó) sigue aceptada y no «enviada». Sólo una
+ * reapertura (salir de «cerrada» o «rechazada») borra la aceptación.
  */
 
 /** Estados que puede dar el derivado (sin los que fija una persona). */
@@ -43,6 +47,32 @@ export function deriveNoteStatus(
   if (pending > 0) return "en_gestion"
   if (awaitingArrival > 0) return options.arrivedAny ? "recibida_parcial" : "en_compra"
   return resolutions.every((resolution) => resolution === "rechazada") ? "rechazada" : "cerrada"
+}
+
+/** Estados finales: salir de uno de ellos es reabrir la nota y empieza una gestión nueva (la aceptación anterior ya no vale). */
+const FINAL_NOTE_STATUSES: readonly string[] = ["cerrada", "rechazada"]
+
+/**
+ * ¿La nota fue aceptada y no se ha reabierto desde? Recorre su historial del más nuevo al más viejo: un evento hacia
+ * `aceptada` dice que sí; uno que sale de `cerrada` o `rechazada` (una reapertura) corta la búsqueda y dice que no.
+ * Función pura sobre los eventos en orden cronológico; la lee `acceptedFromHistoryTx`.
+ */
+export function noteWasAccepted(events: ReadonlyArray<{ fromStatus: string | null; toStatus: string }>): boolean {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!
+    if (event.toStatus === "aceptada") return true
+    if (event.fromStatus && FINAL_NOTE_STATUSES.includes(event.fromStatus)) return false
+  }
+  return false
+}
+
+async function acceptedFromHistoryTx(tx: Tx, noteId: string): Promise<boolean> {
+  const events = await tx
+    .select({ fromStatus: mantPartsNoteEvents.fromStatus, toStatus: mantPartsNoteEvents.toStatus })
+    .from(mantPartsNoteEvents)
+    .where(eq(mantPartsNoteEvents.noteId, noteId))
+    .orderBy(desc(mantPartsNoteEvents.seq))
+  return noteWasAccepted(events.reverse())
 }
 
 // ── Compras de una línea ────────────────────────────────────────────────────
@@ -177,10 +207,11 @@ async function purchasesOfTx(tx: Tx, itemIds: readonly string[]): Promise<Map<st
 }
 
 /**
- * Estado que corresponde a las líneas de una NP ahora mismo, sin escribir nada. `accepted`: jefatura la aceptó (sólo importa
- * si todas siguen pendientes). Llamar con la OT tomada, si la hay, y con la fila de la NP ya bloqueada.
+ * Estado que corresponde a las líneas de una NP ahora mismo, sin escribir nada. `accepted`: si se omite, sale del historial
+ * (`noteWasAccepted`; sólo importa si todas las líneas siguen pendientes). Llamar con la OT tomada, si la hay, y con la fila
+ * de la NP ya bloqueada.
  */
-export async function deriveNoteStatusTx(tx: Tx, noteId: string, options: { accepted: boolean }): Promise<DerivedNoteStatus> {
+export async function deriveNoteStatusTx(tx: Tx, noteId: string, options: { accepted?: boolean } = {}): Promise<DerivedNoteStatus> {
   const [note] = await tx.select({ workOrderId: mantPartsNotes.workOrderId }).from(mantPartsNotes).where(eq(mantPartsNotes.id, noteId)).limit(1)
   if (!note) throw new Error("La nota de pedido no existe")
   const lines: LineFacts[] = (await tx
@@ -189,8 +220,9 @@ export async function deriveNoteStatusTx(tx: Tx, noteId: string, options: { acce
     .where(eq(mantPartsNoteItems.noteId, noteId))).map((line) => ({ id: line.id, resolution: line.resolution, quantity: Number(line.quantity) }))
   const resolutions = lines.map((line) => line.resolution)
   const inCompra = lines.filter((line) => line.resolution === "en_compra")
+  const accepted = options.accepted ?? (resolutions.every((resolution) => resolution === "pendiente") && await acceptedFromHistoryTx(tx, noteId))
   // Con una pendiente la nota ya está abierta, y sin compras en curso no hay nada que esperar: no hace falta mirar más.
-  if (resolutions.includes("pendiente") || inCompra.length === 0) return deriveNoteStatus(resolutions, 0, { accepted: options.accepted })
+  if (resolutions.includes("pendiente") || inCompra.length === 0) return deriveNoteStatus(resolutions, 0, { accepted })
 
   const workOrderOpen = note.workOrderId ? await isWorkOrderOpenTx(tx, note.workOrderId) : true
   const purchases = await purchasesOfTx(tx, inCompra.map((line) => line.id))
@@ -203,7 +235,7 @@ export async function deriveNoteStatusTx(tx: Tx, noteId: string, options: { acce
     workOrderOpen,
   })).length
   const arrivedAny = lines.some((line) => line.resolution === "desde_stock" || toCents(arrived.get(line.id)?.quantity ?? 0) > 0)
-  return deriveNoteStatus(resolutions, awaiting, { accepted: options.accepted, arrivedAny })
+  return deriveNoteStatus(resolutions, awaiting, { accepted, arrivedAny })
 }
 
 // ── Escritura ───────────────────────────────────────────────────────────────
@@ -240,7 +272,10 @@ export async function recalcNoteStatusTx(tx: Tx, noteId: string, options: Recalc
   if (current === "anulada") return current
   if (current === "en_espera" && !options.force) return current
 
-  const next = await deriveNoteStatusTx(tx, noteId, { accepted: current === "aceptada" })
+  // «Aceptada» se conserva por el historial: una nota que ya estaba aceptada lo sigue estando; de un estado final sólo se sale
+  // reabriendo, y una reapertura empieza sin aceptación; en cualquier otro estado lo dice el historial (`noteWasAccepted`).
+  const accepted = current === "aceptada" ? true : FINAL_NOTE_STATUSES.includes(current) ? false : undefined
+  const next = await deriveNoteStatusTx(tx, noteId, { accepted })
   if (next === current) {
     if (!options.onlyIfChanged) await tx.update(mantPartsNotes).set({ updatedAt: new Date().toISOString() }).where(eq(mantPartsNotes.id, noteId))
     return next

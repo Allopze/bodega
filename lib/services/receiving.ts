@@ -22,6 +22,7 @@ import { applyMovementTx } from "./stock"
 import { OFFICE_ORIGIN_LABEL, prepareDispatchGuideForOfficeReceiptTx, resolveOfficeWorksite } from "./dispatch-guides"
 import { notifyManyUser, notifyAfterCommit } from "./notifications"
 import { notifyWorkOrderPartsReceived } from "./mantencion/work-orders/notifications"
+import { notifyPartsNoteLinesArrived } from "./mantencion/parts-notes/notifications"
 import { addToAllocationTx, freeStockTx, lockForStockTx } from "./mantencion/parts"
 import { recalcNotesOfLinesTx } from "./mantencion/parts-notes/arrival-reversal"
 import { closeOrderTx } from "./purchasing-module/receiving"
@@ -185,6 +186,8 @@ export async function registerReceipt(
   const partsNoteLines = new Map<string, Set<string>>()
   // ADR 0001 (2026-11-27): líneas de NP SIN OT que esta recepción atendió en faena. Su estado se recalcula al final.
   const noteLinesWithoutOt = new Set<string>()
+  // De esas, las compras que esta recepción dejó COMPLETAS en faena: su autor recibe aviso (la nota con OT lo recibe por la OT).
+  const noteArrivalsWithoutOt = new Set<string>()
   const countArrival = (requestItemId: string, request: { id: string; code: string; requesterId: string | null }) => {
     if (!request.requesterId) return
     const arrival = arrivals.get(request.id)
@@ -202,6 +205,7 @@ export async function registerReceipt(
     partsArrivals.clear()
     partsNoteLines.clear()
     noteLinesWithoutOt.clear()
+    noteArrivalsWithoutOt.clear()
     shortfallNotices = []
     const shortfalls: RequesterShortfall[] = []
     // Read order INSIDE the transaction to avoid stale status checks.
@@ -464,6 +468,7 @@ export async function registerReceipt(
               with: { request: { columns: { requesterId: true, code: true, id: true } } },
             })
             if (reqItem?.request) countArrival(reqItem.id, reqItem.request)
+            if (reqItem?.partsNoteItemId && !reqItem.workOrderId) noteArrivalsWithoutOt.add(reqItem.id)
             if (reqItem?.workOrderId) {
               const lines = partsArrivals.get(reqItem.workOrderId) ?? new Set<string>()
               lines.add(reqItem.id)
@@ -614,6 +619,10 @@ export async function registerReceipt(
       workOrderId, receiptId, actorUserId: input.receivedBy, itemCount: lines.size,
       ...(noteLines?.size ? { requestItemIds: [...noteLines] } : {}),
     }))
+  }
+  // Notas de pedido sin OT: una vez por recepción, al autor de cada nota (idempotente por nota y recepción).
+  if (noteArrivalsWithoutOt.size > 0) {
+    notifyAfterCommit(() => notifyPartsNoteLinesArrived({ receiptId, actorUserId: input.receivedBy, requestItemIds: [...noteArrivalsWithoutOt] }))
   }
   flushRequesterShortfallNotifications(shortfallNotices)
 

@@ -154,6 +154,7 @@ export type NotificationType =
   | "mant_np_created"            // NP nueva → quienes la resuelven en la faena (mant:np:manage)
   | "mant_np_rejected"           // línea rechazada → el mecánico que la pidió
   | "mant_np_stock_pending"      // faltó stock al sincronizar un registro → quienes concilian (mant:np:manage)
+  | "mant_np_arrived"           // línea de una NP SIN OT llegó a la faena → quien la pidió (dedupe por recepción y nota)
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),

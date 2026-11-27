@@ -91,7 +91,8 @@ export const autoRejectionTrail = (end: WorkOrderEnd): Record<string, unknown> =
  * lines: 0 }` si no había nada que hacer, que es lo que pasa al repetirla).
  *
  * Además recalcula el estado de esas NP, sin escribir si no cambia: una NP que sólo esperaba una compra deja de esperar
- * cuando la OT termina, porque lo que llegue ya no se reserva para ella (NP4-2). Una NP en espera sigue congelada.
+ * cuando la OT termina, porque lo que llegue ya no se reserva para ella (NP4-2). Una NP en espera sale de la espera: ya no hay
+ * nada que esperar y sigue el estado que dicen sus líneas (rechazada o cerrada).
  */
 export async function rejectOpenLinesOfWorkOrderTx(tx: Tx, input: {
   workOrderId: string
@@ -116,16 +117,20 @@ export async function rejectOpenLinesOfWorkOrderTx(tx: Tx, input: {
 
   // Las filas se tomaron por id; el rastro sale en el orden de la NP y de la línea, que es como se leen.
   const ordered = [...lines].sort((a, b) => a.noteId.localeCompare(b.noteId) || a.sortOrder - b.sortOrder)
-  const reason = autoRejectionReason(input.end)
+  const rejectionReason = autoRejectionReason(input.end)
   const extra = autoRejectionTrail(input.end)
   for (const line of ordered) {
     const note = noteById.get(line.noteId)!
     await rejectLineTx(tx, {
       itemId: line.itemId, noteId: note.id, code: note.code, noteWorksiteId: note.worksiteId,
       workOrderId: input.workOrderId, resolution: line.resolution,
-    }, { reason, actor: input.actor, extra, automatic: true })
+    }, { reason: rejectionReason, actor: input.actor, extra, automatic: true })
   }
-  // La OT ya figura terminada en esta transacción: una NP con compras en curso pasa de «en gestión» a «cerrada».
-  for (const note of notes) await recalcNoteStatusTx(tx, note.id, { onlyIfChanged: true })
+  // La OT ya figura terminada en esta transacción: una NP con compras en curso pasa de «en gestión» a «cerrada». Y una NP «en
+  // espera» deja de estarlo (`force`): ya no queda nada que esperar, y con sus líneas pendientes rechazadas seguiría en
+  // «En gestión» por una orden que terminó. El evento queda automático (sin actor) y con el motivo de la OT.
+  const { end } = input
+  const reason = end.kind === "cerrada" ? "La orden de trabajo se cerró." : `La orden de trabajo se anuló: ${end.reason}`
+  for (const note of notes) await recalcNoteStatusTx(tx, note.id, { onlyIfChanged: true, force: true, actorUserId: null, reason })
   return { notes: new Set(ordered.map((line) => line.noteId)).size, lines: ordered.length }
 }
