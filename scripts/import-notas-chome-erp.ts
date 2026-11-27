@@ -16,8 +16,9 @@
  *   un único evento `migrada` y la auditoría `mant_parts_note` a nombre de `--actor-email` (obligatorio al aplicar).
  * - Idempotente por `external_ref = CHOME-<id>`: volver a correrlo no duplica; las que ya existen se saltan y se informan.
  * - Una faena que no calza deja la nota afuera (informe «Faenas sin calce»); sin faena no hay alcance. Producto, proveedor y
- *   cargo que no calzan NO bloquean: la línea conserva el texto y queda en los informes. Un cargo sólo calza con un equipo ACTIVO y de
- *   la faena de la nota (con otro, la línea no se podría comprar): si no, queda como cargo pendiente con el motivo en el informe.
+ *   cargo que no calzan NO bloquean: la línea conserva el texto y queda en los informes. El cargo es histórico: calza con el equipo
+ *   activo de la faena de la nota o, si no hay, con el único de la flota con ese código o patente (aunque hoy esté en otra faena o
+ *   dado de baja); lo ambiguo queda como cargo pendiente con el motivo en el informe.
  * - NO crea productos ni proveedores desde texto libre.
  * - Se conecta con el `db` del repo (DATABASE_URL); el archivo de notas NO se copia al repositorio.
  *
