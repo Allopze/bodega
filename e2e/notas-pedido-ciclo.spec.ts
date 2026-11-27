@@ -137,7 +137,7 @@ test.describe("Nota de pedido sin OT · ciclo completo", () => {
     expect(nota?.id, "depende del paso 1").toBeTruthy()
     const errores = vigilarConsola(page)
     await entrarPlataforma(page, JEFE)
-    await page.goto("/mantencion/notas-pedido?estado=pendientes")
+    await page.goto("/mantencion/notas-pedido?estado=por_revisar")
     const fila = listRecord(page, nota.code)
     await expect(fila).toBeVisible({ timeout: 30_000 })
     await expect(fila).toContainText("Sin OT")
@@ -367,7 +367,7 @@ test.describe("Nota de pedido sin OT · ciclo completo", () => {
     // La bandeja la pasa a «Cerradas».
     await page.goto("/mantencion/notas-pedido?estado=cerradas")
     await expect(listRecord(page, nota.code)).toBeVisible({ timeout: 30_000 })
-    await page.goto("/mantencion/notas-pedido?estado=pendientes")
+    await page.goto("/mantencion/notas-pedido?estado=por_revisar")
     await expect(listRecord(page, nota.code)).toHaveCount(0)
     expect(errores).toEqual([])
   })

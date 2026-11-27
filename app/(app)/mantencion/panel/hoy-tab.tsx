@@ -127,9 +127,9 @@ export async function renderHoyTab(session: Session, params: SearchParams) {
     track(loadOutOfService(viewer, query), "días fuera de servicio"),
     canViewOrders && byFleet ? track(countUnassignedWorkOrders(viewer, query.worksiteId), "órdenes por asignar") : none<number>(),
     byFleet ? track(countPendingReview(viewer, query.worksiteId), "registros por revisar") : none<number>(),
-    // La cifra de la pestaña «Pendientes» de la bandeja: se pide una fila sólo para leer el conteo.
+    // La cifra de la pestaña «Por revisar» de la bandeja: se pide una fila sólo para leer el conteo.
     canViewNotes && byFleet
-      ? track(listPartsNotes(viewer, { tab: "pendientes", worksiteId: query.worksiteId, page: 1, pageSize: 1 }).then((result) => result.counts.pendientes), "notas de pedido por resolver")
+      ? track(listPartsNotes(viewer, { tab: "por_revisar", worksiteId: query.worksiteId, page: 1, pageSize: 1 }).then((result) => result.counts.por_revisar), "notas de pedido por resolver")
       : none<number>(),
     byFleet ? track(loadReporteEquipos(viewer, query), "reportes de equipos") : none<Awaited<ReturnType<typeof loadReporteEquipos>>>(),
     track(

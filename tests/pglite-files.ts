@@ -743,6 +743,10 @@ export const pgliteTestFiles = [
   // el alcance que ningún filtro amplía; el detalle (historial, espera, acciones, modo lectura de view_own) y el libro.
   "lib/__tests__/np-bandeja-export-pglite.test.ts",
 
+  // NP · Fase 2 (puntos 3 y 4): pestañas de la bandeja por el recorrido de la compra (Por revisar, En compra, En recepción, Cerradas),
+  // antigüedad en días civiles de Chile desde el último evento, urgentes abiertas del alcance y el Excel que sigue la pestaña activa.
+  "lib/__tests__/np-bandeja-pestanas-pglite.test.ts",
+
   // NP · Fase 2 (D30 a D33): aceptar la nota = aprobar su compra (solicitud aprobada o en borrador por la regla de cotización,
   // alcance, permiso y fallos del envío) y las decisiones por línea en lote desde la bandeja (comprar, sacar de bodega, rechazar).
   "lib/__tests__/np-enviar-a-compra-pglite.test.ts",

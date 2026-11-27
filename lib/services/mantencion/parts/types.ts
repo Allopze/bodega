@@ -72,7 +72,18 @@ export type { MantViewer } from "@/lib/services/mantencion/access"
 
 export type PartsActionResult = { ok: true; message?: string } | { ok: false; message: string; field?: string }
 
-export type PartsNoteTab = "pendientes" | "en_gestion" | "cerradas"
+/**
+ * Pestañas de la bandeja de notas de pedido (fase 2, 2026-11-27): siguen el recorrido de la compra.
+ *  - `por_revisar`: queda alguna línea por resolver (enviada, aceptada, en espera, en gestión).
+ *  - `en_compra`: lo pedido se envió a compra y alguna compra viva aún no tiene orden de compra activa.
+ *  - `en_recepcion`: recibida parcial, o todas sus compras vivas ya están en una OC activa y falta que llegue.
+ *  - `cerradas`: cerrada, rechazada o anulada.
+ * Cada nota cae en UNA sola pestaña (las condiciones están en `parts-notes/list-filters.ts`).
+ */
+export type PartsNoteTab = "por_revisar" | "en_compra" | "en_recepcion" | "cerradas"
+
+/** Tramos de antigüedad de la bandeja (días en el estado actual): `?antiguedad=`. Ver `lib/mantencion/parts-notes-age.ts`. */
+export type PartsNoteAgeKey = "0-2" | "3-6" | "7-13" | "14+"
 
 /**
  * Filtros de la bandeja de notas de pedido, tal como los lee el servidor de la URL. El alcance NUNCA sale de aquí:
@@ -95,12 +106,24 @@ export type PartsNoteFilterSet = {
   equipment?: string
   /** Repuesto: texto de la línea, N° de parte o producto del catálogo (nombre, SKU). */
   article?: string
+  /** Tramo de antigüedad: días civiles (hora de Chile) desde que la nota está en su estado actual (`status_since`). */
+  age?: PartsNoteAgeKey
 }
 
 export type PartsNoteListFilters = PartsNoteFilterSet & {
   tab: PartsNoteTab
   page?: number
   pageSize?: number
+  /** El «ahora» con que se miden los días en el estado (pruebas); por omisión, el día de hoy en Chile. */
+  now?: Date
+}
+
+/** Una línea pendiente de la nota, tal como la bandeja la muestra para decidirla sin abrir la nota. */
+export type PartsNotePendingLine = {
+  id: string
+  description: string
+  quantity: number
+  unitOfMeasure: string
 }
 
 export type PartsNoteListRow = {
@@ -123,8 +146,14 @@ export type PartsNoteListRow = {
   equipmentStopped: boolean
   /** Urgencia que fijó quien creó la NP (`urgent`). */
   urgent: boolean
-  pendingLines: number
+  /**
+   * Líneas pendientes de la nota (resolución `pendiente`), en el orden de la nota. SÓLO se llenan en la pestaña `por_revisar`
+   * (ahí es donde se deciden); en las demás pestañas viene `[]` aunque la nota tenga líneas.
+   */
+  pendingLines: PartsNotePendingLine[]
   totalLines: number
+  /** Días civiles (hora de Chile) desde `statusSince`: la misma cuenta del tramo `?antiguedad=`. */
+  ageDays: number
   /** A qué se imputan las líneas (equipo, centro de costo o el texto original), sin repetir y en el orden de las líneas. */
   charges: string[]
   createdAt: string
@@ -188,7 +217,7 @@ export type PartsNoteStockOption = {
   free: number
 }
 
-export type PartsNoteDetail = Omit<PartsNoteListRow, "pendingLines" | "totalLines" | "charges"> & {
+export type PartsNoteDetail = Omit<PartsNoteListRow, "pendingLines" | "totalLines" | "charges" | "ageDays"> & {
   notes: string | null
   voidReason: string | null
   /** Motivo de «En espera»; sólo viene con ese estado. */

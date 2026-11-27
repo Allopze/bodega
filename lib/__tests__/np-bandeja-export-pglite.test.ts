@@ -43,7 +43,7 @@ const { NOTE_ACTION_LABELS } = await import("@/components/mantencion/jefatura/no
 /**
  * Bandeja y exportación de notas de pedido (R14 y R16) contra Postgres de verdad: cada filtro nuevo (estado exacto, urgencia,
  * fechas en hora de Chile, solicitante, equipo por cargo de línea, repuesto), el alcance que ningún filtro amplía, el orden de
- * «Pendientes», «desde cuándo» a partir del último evento, el detalle (historial, motivo de la espera, acciones, modo lectura de
+ * «Por revisar», «desde cuándo» a partir del último evento, el detalle (historial, motivo de la espera, acciones, modo lectura de
  * `view_own`) y el Excel: una fila por línea, compras, fechas de cada estado y la hoja «Historial».
  */
 
@@ -115,10 +115,10 @@ const ids = (rows: Array<{ id: string }>) => rows.map((row) => row.id)
 const page = { page: 1, pageSize: 50 }
 
 describe("bandeja: filtros nuevos (R14)", () => {
-  it("«Pendientes» pone primero lo urgente y, dentro de cada grupo, lo más antiguo", async () => {
+  it("«Por revisar» pone primero lo urgente y, dentro de cada grupo, lo más antiguo", async () => {
     const board = await seedBoard()
     const jefe = await viewerOf(IDS.jefe)
-    const pendientes = await query.listPartsNotes(jefe, { tab: "pendientes", ...page })
+    const pendientes = await query.listPartsNotes(jefe, { tab: "por_revisar", ...page })
     // n3 (urgente, 20-nov) → n1 (urgente, 26-nov) → n2 (10-nov) → n4 (importada, NOW).
     expect(ids(pendientes.rows)).toEqual([board.n3.noteId, board.n1.noteId, board.n2.noteId, "np-tr-import", board.n7.noteId].filter((id) => ids(pendientes.rows).includes(id)))
     expect(ids(pendientes.rows).slice(0, 4)).toEqual([board.n3.noteId, board.n1.noteId, board.n2.noteId, "np-tr-import"])
@@ -128,24 +128,24 @@ describe("bandeja: filtros nuevos (R14)", () => {
   it("el estado exacto afina dentro de la pestaña; el total pagina lo que se ve y los conteos no lo tienen en cuenta", async () => {
     const board = await seedBoard()
     const jefe = await viewerOf(IDS.jefe)
-    const all = await query.listPartsNotes(jefe, { tab: "pendientes", ...page })
-    const accepted = await query.listPartsNotes(jefe, { tab: "pendientes", status: "aceptada", ...page })
+    const all = await query.listPartsNotes(jefe, { tab: "por_revisar", ...page })
+    const accepted = await query.listPartsNotes(jefe, { tab: "por_revisar", status: "aceptada", ...page })
     expect(ids(accepted.rows)).toEqual([board.n1.noteId])
     expect(accepted.total).toBe(1)
     expect(accepted.counts).toEqual(all.counts)
-    expect((await query.listPartsNotes(jefe, { tab: "pendientes", status: "en_espera", ...page })).rows.map((row) => row.status)).toEqual(["en_espera"])
+    expect((await query.listPartsNotes(jefe, { tab: "por_revisar", status: "en_espera", ...page })).rows.map((row) => row.status)).toEqual(["en_espera"])
     // Un estado que no es de la pestaña no devuelve nada (la pantalla sólo ofrece los de la pestaña).
-    expect((await query.listPartsNotes(jefe, { tab: "pendientes", status: "cerrada", ...page })).rows).toEqual([])
-    expect(ids((await query.listPartsNotes(jefe, { tab: "en_gestion", status: "recibida_parcial", ...page })).rows)).toEqual([board.n5.noteId])
-    expect((await query.listPartsNotes(jefe, { tab: "en_gestion", status: "en_compra", ...page })).total).toBe(0)
+    expect((await query.listPartsNotes(jefe, { tab: "por_revisar", status: "cerrada", ...page })).rows).toEqual([])
+    expect(ids((await query.listPartsNotes(jefe, { tab: "en_recepcion", status: "recibida_parcial", ...page })).rows)).toEqual([board.n5.noteId])
+    expect((await query.listPartsNotes(jefe, { tab: "en_recepcion", status: "en_compra", ...page })).total).toBe(0)
     expect(ids((await query.listPartsNotes(jefe, { tab: "cerradas", status: "rechazada", ...page })).rows)).toEqual([board.n6.noteId])
   })
 
   it("urgencia: sólo urgentes, sólo normales", async () => {
     const board = await seedBoard()
     const jefe = await viewerOf(IDS.jefe)
-    expect(ids((await query.listPartsNotes(jefe, { tab: "pendientes", urgent: true, ...page })).rows)).toEqual([board.n3.noteId, board.n1.noteId])
-    const normal = ids((await query.listPartsNotes(jefe, { tab: "pendientes", urgent: false, ...page })).rows)
+    expect(ids((await query.listPartsNotes(jefe, { tab: "por_revisar", urgent: true, ...page })).rows)).toEqual([board.n3.noteId, board.n1.noteId])
+    const normal = ids((await query.listPartsNotes(jefe, { tab: "por_revisar", urgent: false, ...page })).rows)
     expect(normal).toContain(board.n2.noteId)
     expect(normal).not.toContain(board.n1.noteId)
     expect(normal).not.toContain(board.n3.noteId)
@@ -154,7 +154,7 @@ describe("bandeja: filtros nuevos (R14)", () => {
   it("el rango de fechas es por día civil de Chile, ambos extremos incluidos", async () => {
     const board = await seedBoard()
     const jefe = await viewerOf(IDS.jefe)
-    const created = async (filters: { from?: string; to?: string }) => ids((await query.listPartsNotes(jefe, { tab: "pendientes", ...filters, ...page })).rows)
+    const created = async (filters: { from?: string; to?: string }) => ids((await query.listPartsNotes(jefe, { tab: "por_revisar", ...filters, ...page })).rows)
     // n1 se creó el 27-nov a las 02:30 UTC = 26-nov 23:30 en Chile.
     expect(await created({ from: "2026-11-26", to: "2026-11-26" })).toEqual([board.n1.noteId])
     expect(await created({ from: "2026-11-27", to: "2026-11-27" })).not.toContain(board.n1.noteId)
@@ -166,9 +166,9 @@ describe("bandeja: filtros nuevos (R14)", () => {
   it("solicitante: por el nombre del usuario o por el nombre de una nota importada", async () => {
     const board = await seedBoard()
     const jefe = await viewerOf(IDS.jefe)
-    expect(ids((await query.listPartsNotes(jefe, { tab: "pendientes", requester: "javier", ...page })).rows)).toEqual([board.n3.noteId])
-    expect(ids((await query.listPartsNotes(jefe, { tab: "pendientes", requester: "Taller Biodiversa", ...page })).rows)).toEqual(["np-tr-import"])
-    const byJefe = ids((await query.listPartsNotes(jefe, { tab: "pendientes", requester: "Alexis", ...page })).rows)
+    expect(ids((await query.listPartsNotes(jefe, { tab: "por_revisar", requester: "javier", ...page })).rows)).toEqual([board.n3.noteId])
+    expect(ids((await query.listPartsNotes(jefe, { tab: "por_revisar", requester: "Taller Biodiversa", ...page })).rows)).toEqual(["np-tr-import"])
+    const byJefe = ids((await query.listPartsNotes(jefe, { tab: "por_revisar", requester: "Alexis", ...page })).rows)
     expect(byJefe).toEqual(expect.arrayContaining([board.n1.noteId, board.n2.noteId]))
     expect(byJefe).not.toContain(board.n3.noteId)
   })
@@ -176,7 +176,7 @@ describe("bandeja: filtros nuevos (R14)", () => {
   it("equipo: el de la nota (código o patente), el de cargo de una línea y el cargo original sin calce", async () => {
     const board = await seedBoard()
     const jefe = await viewerOf(IDS.jefe)
-    const find = async (equipment: string) => ids((await query.listPartsNotes(jefe, { tab: "pendientes", equipment, ...page })).rows)
+    const find = async (equipment: string) => ids((await query.listPartsNotes(jefe, { tab: "por_revisar", equipment, ...page })).rows)
     // KA-135 es el equipo de la OT de n3 y el equipo de cargo de la línea de n1.
     expect(await find("KA-135")).toEqual(expect.arrayContaining([board.n3.noteId, board.n1.noteId]))
     expect(await find("ka-135")).toHaveLength(2)
@@ -191,21 +191,21 @@ describe("bandeja: filtros nuevos (R14)", () => {
   it("repuesto: por el texto de la línea, el N° de parte, y el nombre o el SKU del producto del catálogo", async () => {
     const board = await seedBoard()
     const jefe = await viewerOf(IDS.jefe)
-    const find = async (tab: "pendientes" | "en_gestion", article: string) => ids((await query.listPartsNotes(jefe, { tab, article, ...page })).rows)
-    expect(await find("pendientes", "hidráulico")).toEqual([board.n3.noteId])
-    expect(await find("pendientes", "FA-1")).toEqual([board.n3.noteId])
-    expect(await find("pendientes", "rodamiento")).toEqual(["np-tr-import"])
-    expect(await find("en_gestion", "FC-77")).toEqual([board.n5.noteId])
-    expect(await find("en_gestion", "combustible")).toEqual([board.n5.noteId])
+    const find = async (tab: "por_revisar" | "en_recepcion", article: string) => ids((await query.listPartsNotes(jefe, { tab, article, ...page })).rows)
+    expect(await find("por_revisar", "hidráulico")).toEqual([board.n3.noteId])
+    expect(await find("por_revisar", "FA-1")).toEqual([board.n3.noteId])
+    expect(await find("por_revisar", "rodamiento")).toEqual(["np-tr-import"])
+    expect(await find("en_recepcion", "FC-77")).toEqual([board.n5.noteId])
+    expect(await find("en_recepcion", "combustible")).toEqual([board.n5.noteId])
     const sku = (await testDb.select({ sku: schema.products.sku }).from(schema.products).where(eq(schema.products.id, board.product)))[0]!.sku
-    expect(await find("en_gestion", sku)).toEqual([board.n5.noteId])
-    expect(await find("pendientes", "100%")).toEqual([])
+    expect(await find("en_recepcion", sku)).toEqual([board.n5.noteId])
+    expect(await find("por_revisar", "100%")).toEqual([])
   })
 
   it("la búsqueda libre ahora también encuentra el folio externo y el solicitante", async () => {
     const board = await seedBoard()
     const jefe = await viewerOf(IDS.jefe)
-    const find = async (q: string) => ids((await query.listPartsNotes(jefe, { tab: "pendientes", q, ...page })).rows)
+    const find = async (q: string) => ids((await query.listPartsNotes(jefe, { tab: "por_revisar", q, ...page })).rows)
     expect(await find("CHOME-900")).toEqual(["np-tr-import"])
     expect(await find("Javier")).toEqual([board.n3.noteId])
     expect(await find("OT-TR-1")).toEqual([board.n3.noteId])
@@ -214,20 +214,20 @@ describe("bandeja: filtros nuevos (R14)", () => {
   it("ningún filtro amplía el alcance: quien ve sólo su faena no ve la de otra, ni pidiéndola", async () => {
     const board = await seedBoard()
     const supervisor = await viewerOf(IDS.supBio)
-    const mine = await query.listPartsNotes(supervisor, { tab: "pendientes", ...page })
+    const mine = await query.listPartsNotes(supervisor, { tab: "por_revisar", ...page })
     expect(ids(mine.rows)).not.toContain(board.n7.noteId)
-    expect((await query.listPartsNotes(supervisor, { tab: "pendientes", worksiteId: IDS.wsCho, ...page })).rows).toEqual([])
-    expect((await query.listPartsNotes(supervisor, { tab: "pendientes", requester: "Pedro", ...page })).rows).toEqual([])
-    expect((await query.listPartsNotes(supervisor, { tab: "pendientes", article: "Manguera", ...page })).rows).toEqual([])
+    expect((await query.listPartsNotes(supervisor, { tab: "por_revisar", worksiteId: IDS.wsCho, ...page })).rows).toEqual([])
+    expect((await query.listPartsNotes(supervisor, { tab: "por_revisar", requester: "Pedro", ...page })).rows).toEqual([])
+    expect((await query.listPartsNotes(supervisor, { tab: "por_revisar", article: "Manguera", ...page })).rows).toEqual([])
     // El jefe (alcance global) sí ve la de Cholguán, y el filtro de faena la acota.
     const jefe = await viewerOf(IDS.jefe)
-    expect(ids((await query.listPartsNotes(jefe, { tab: "pendientes", worksiteId: IDS.wsCho, ...page })).rows)).toEqual([board.n7.noteId])
+    expect(ids((await query.listPartsNotes(jefe, { tab: "por_revisar", worksiteId: IDS.wsCho, ...page })).rows)).toEqual([board.n7.noteId])
   })
 
   it("cada fila trae desde cuándo está en su estado (el último evento), su folio externo y el cargo de sus líneas", async () => {
     const board = await seedBoard()
     const jefe = await viewerOf(IDS.jefe)
-    const rows = (await query.listPartsNotes(jefe, { tab: "pendientes", ...page })).rows
+    const rows = (await query.listPartsNotes(jefe, { tab: "por_revisar", ...page })).rows
     const n1 = rows.find((row) => row.id === board.n1.noteId)!
     const last = (await eventsOf(board.n1.noteId)).at(-1)!
     expect(n1.status).toBe("aceptada")
@@ -304,7 +304,7 @@ describe("detalle: historial, espera y acciones por permiso", () => {
     expect(await query.getPartsNote(own, board.n1.noteId)).toBeNull()
     expect(await query.getPartsNote(own, board.n7.noteId)).toBeNull()
     expect(await query.getPartsNote(own, "np-tr-import")).toBeNull()
-    const tray = await query.listPartsNotes(own, { tab: "pendientes", ...page })
+    const tray = await query.listPartsNotes(own, { tab: "por_revisar", ...page })
     expect(ids(tray.rows)).toEqual([board.n3.noteId])
     // Y el servidor no le deja ejecutar nada sobre ella, aunque llame a la acción a mano.
     expect(await transitions.acceptPartsNote(own, { noteId: board.n3.noteId })).toEqual({ ok: false, message: "No tienes permiso para resolver notas de pedido." })
@@ -447,13 +447,13 @@ describe("exportación a Excel (R16)", () => {
       return { result, rows: rowsOf((await workbookOf(result.buffer)).getWorksheet("Notas de pedido")!) }
     }
     const cases: Array<[Parameters<typeof exportPartsNotes>[0]["filters"], Parameters<typeof query.listPartsNotes>[1]]> = [
-      [{ tab: "pendientes" }, { tab: "pendientes", ...page }],
-      [{ tab: "pendientes", status: "en_espera" }, { tab: "pendientes", status: "en_espera", ...page }],
-      [{ tab: "pendientes", urgent: true }, { tab: "pendientes", urgent: true, ...page }],
-      [{ tab: "pendientes", from: "2026-11-10", to: "2026-11-20" }, { tab: "pendientes", from: "2026-11-10", to: "2026-11-20", ...page }],
-      [{ tab: "pendientes", equipment: "KA-135" }, { tab: "pendientes", equipment: "KA-135", ...page }],
-      [{ tab: "en_gestion", article: "FC-77" }, { tab: "en_gestion", article: "FC-77", ...page }],
-      [{ tab: "pendientes", requester: "Javier" }, { tab: "pendientes", requester: "Javier", ...page }],
+      [{ tab: "por_revisar" }, { tab: "por_revisar", ...page }],
+      [{ tab: "por_revisar", status: "en_espera" }, { tab: "por_revisar", status: "en_espera", ...page }],
+      [{ tab: "por_revisar", urgent: true }, { tab: "por_revisar", urgent: true, ...page }],
+      [{ tab: "por_revisar", from: "2026-11-10", to: "2026-11-20" }, { tab: "por_revisar", from: "2026-11-10", to: "2026-11-20", ...page }],
+      [{ tab: "por_revisar", equipment: "KA-135" }, { tab: "por_revisar", equipment: "KA-135", ...page }],
+      [{ tab: "en_recepcion", article: "FC-77" }, { tab: "en_recepcion", article: "FC-77", ...page }],
+      [{ tab: "por_revisar", requester: "Javier" }, { tab: "por_revisar", requester: "Javier", ...page }],
       [{ tab: "cerradas" }, { tab: "cerradas", ...page }],
     ]
     for (const [exportFilters, listFilters] of cases) {
@@ -483,7 +483,7 @@ describe("exportación a Excel (R16)", () => {
 
   it("sin notas devuelve un libro con sus encabezados (no una descarga fallida) y deja la exportación en la bitácora", async () => {
     const session = await sessionOf(IDS.jefe)
-    const result = await exportPartsNotes({ session, filters: { tab: "pendientes", equipment: "NO-EXISTE" } })
+    const result = await exportPartsNotes({ session, filters: { tab: "por_revisar", equipment: "NO-EXISTE" } })
     if (!result.ok) throw new Error(result.message)
     expect(result.noteCount).toBe(0)
     const workbook = await workbookOf(result.buffer)
@@ -493,6 +493,6 @@ describe("exportación a Excel (R16)", () => {
     expect(audit).toHaveLength(1)
     expect(audit[0]).toMatchObject({ action: "export", userId: IDS.jefe })
     const state = typeof audit[0]!.newState === "string" ? JSON.parse(audit[0]!.newState) : audit[0]!.newState
-    expect(state).toMatchObject({ noteCount: 0, filters: { tab: "pendientes", equipment: "NO-EXISTE" } })
+    expect(state).toMatchObject({ noteCount: 0, filters: { tab: "por_revisar", equipment: "NO-EXISTE" } })
   })
 })

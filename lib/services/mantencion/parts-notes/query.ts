@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, inArray, sql } from "drizzle-orm"
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import { costCenters, fuelVehicles, mantPartsNoteItems, mantPartsNotes, mantWorkOrders, products, suppliers, users, worksiteStock, worksites } from "@/db/schema"
@@ -7,16 +7,14 @@ import { OT_OPEN_STATUSES } from "@/lib/mantencion/work-order-states"
 import { roundQty } from "@/lib/services/stock-reservations"
 import type { MantViewer } from "../access"
 import { stockReservationSummary } from "../parts/reads"
-import type {
-  NoteItemResolution, PartsNoteDetail, PartsNoteDetailLine, PartsNoteLineCharge, PartsNoteListFilters, PartsNoteListRow, PartsNoteStatus, PartsNoteStockOption, PartsNoteTab,
-} from "../parts/types"
+import type { NoteItemResolution, PartsNoteDetail, PartsNoteDetailLine, PartsNoteLineCharge, PartsNoteStatus, PartsNoteStockOption } from "../parts/types"
 import { canSeeNote, inWorksiteScope, NP_PERMISSIONS, noteVisibility } from "./access"
-import { loadNoteEvents, statusSinceSql } from "./history"
+import { loadNoteEvents } from "./history"
 import { isImportedClosedNote, loadLineStates } from "./lines"
-import { noteFilterConditions, statusCondition, TAB_CONDITIONS } from "./list-filters"
 import { allowedNoteActions } from "./transitions"
 
-export { noteHasPendingLineSql, TAB_CONDITIONS } from "./list-filters"
+export { listPartsNotes, type PartsNotesList } from "./inbox"
+export { noteHasPendingLineSql, noteHasUnorderedPurchaseSql, TAB_CONDITIONS } from "./list-filters"
 export { loadWorkOrderPartsOverview } from "./overview"
 export { loadPartsNotePrefill } from "./prefill"
 
@@ -27,129 +25,7 @@ export { loadPartsNotePrefill } from "./prefill"
  * todas las uniones con esas tablas son `leftJoin`.
  */
 
-const EMPTY_COUNTS: Record<PartsNoteTab, number> = { pendientes: 0, en_gestion: 0, cerradas: 0 }
-const MAX_PAGE_SIZE = 200
 const iso = (value: string) => new Date(value).toISOString()
-
-/** Líneas pendientes y totales de la NP, para la columna «n de m». */
-const pendingLinesSql = sql<number>`(select count(*)::int from ${mantPartsNoteItems} where ${mantPartsNoteItems.noteId} = ${mantPartsNotes.id} and ${mantPartsNoteItems.resolution} = 'pendiente')`
-const totalLinesSql = sql<number>`(select count(*)::int from ${mantPartsNoteItems} where ${mantPartsNoteItems.noteId} = ${mantPartsNotes.id})`
-
-/** Cargos de las líneas de las notas de la página (equipo, centro de costo o texto original), sin repetir y en el orden de las líneas. */
-async function loadChargeLabels(noteIds: readonly string[]): Promise<Map<string, string[]>> {
-  const byNote = new Map<string, string[]>()
-  if (noteIds.length === 0) return byNote
-  const rows = await db
-    .select({
-      noteId: mantPartsNoteItems.noteId,
-      label: sql<string | null>`coalesce(${fuelVehicles.code}, ${costCenters.name}, ${mantPartsNoteItems.chargeText})`,
-    })
-    .from(mantPartsNoteItems)
-    .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNoteItems.chargeVehicleId))
-    .leftJoin(costCenters, eq(costCenters.id, mantPartsNoteItems.chargeCostCenterId))
-    .where(inArray(mantPartsNoteItems.noteId, [...noteIds]))
-    .orderBy(asc(mantPartsNoteItems.noteId), asc(mantPartsNoteItems.sortOrder))
-  for (const row of rows) {
-    if (!row.label) continue
-    const labels = byNote.get(row.noteId) ?? []
-    if (!labels.includes(row.label)) labels.push(row.label)
-    byNote.set(row.noteId, labels)
-  }
-  return byNote
-}
-
-export async function listPartsNotes(viewer: MantViewer, filters: PartsNoteListFilters): Promise<{ rows: PartsNoteListRow[]; total: number; counts: Record<PartsNoteTab, number> }> {
-  if (noteVisibility(viewer).kind === "none") return { rows: [], total: 0, counts: { ...EMPTY_COUNTS } }
-  const base = noteFilterConditions(viewer, filters)
-  const pageSize = Math.min(Math.max(Math.trunc(filters.pageSize ?? 25) || 25, 1), MAX_PAGE_SIZE)
-  const page = Math.max(Math.trunc(filters.page ?? 1) || 1, 1)
-
-  // Un solo recorrido: cada nota cae en una sola pestaña, la misma que filtra la lista de abajo. El estado exacto NO
-  // entra en los conteos: las pestañas dicen cuánto hay con el resto de los filtros, y el estado afina dentro de una.
-  const [counted] = await db
-    .select({
-      pendientes: sql<number>`(count(*) filter (where ${TAB_CONDITIONS.pendientes}))::int`,
-      en_gestion: sql<number>`(count(*) filter (where ${TAB_CONDITIONS.en_gestion}))::int`,
-      cerradas: sql<number>`(count(*) filter (where ${TAB_CONDITIONS.cerradas}))::int`,
-    })
-    .from(mantPartsNotes)
-    .leftJoin(mantWorkOrders, eq(mantWorkOrders.id, mantPartsNotes.workOrderId))
-    .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
-    .where(and(...base))
-  const counts: Record<PartsNoteTab, number> = {
-    pendientes: Number(counted?.pendientes ?? 0),
-    en_gestion: Number(counted?.en_gestion ?? 0),
-    cerradas: Number(counted?.cerradas ?? 0),
-  }
-
-  const where = and(...base, TAB_CONDITIONS[filters.tab], filters.status ? statusCondition(filters.status) : undefined)
-  // Con un estado exacto el total de la lista ya no es el de la pestaña: la paginación tiene que contar lo que se ve.
-  let total = counts[filters.tab]
-  if (filters.status) {
-    const [exact] = await db
-      .select({ total: count() })
-      .from(mantPartsNotes)
-      .leftJoin(mantWorkOrders, eq(mantWorkOrders.id, mantPartsNotes.workOrderId))
-      .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
-      .where(where)
-    total = Number(exact?.total ?? 0)
-  }
-
-  const requestedBy = alias(users, "np_requested_by")
-  const rows = await db
-    .select({
-      id: mantPartsNotes.id,
-      code: mantPartsNotes.code,
-      externalRef: mantPartsNotes.externalRef,
-      status: mantPartsNotes.status,
-      statusSince: statusSinceSql,
-      workOrderId: mantPartsNotes.workOrderId,
-      workOrderFolio: mantWorkOrders.folio,
-      equipmentCode: fuelVehicles.code,
-      equipmentPlate: fuelVehicles.plate,
-      worksiteId: mantPartsNotes.worksiteId,
-      worksiteName: worksites.name,
-      requestedByName: sql<string>`coalesce(${requestedBy.name}, ${mantPartsNotes.requestedByName}, '')`,
-      equipmentStopped: mantPartsNotes.equipmentStopped,
-      urgent: mantPartsNotes.urgent,
-      pendingLines: pendingLinesSql,
-      totalLines: totalLinesSql,
-      createdAt: mantPartsNotes.createdAt,
-    })
-    .from(mantPartsNotes)
-    .leftJoin(mantWorkOrders, eq(mantWorkOrders.id, mantPartsNotes.workOrderId))
-    .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
-    .innerJoin(worksites, eq(worksites.id, mantPartsNotes.worksiteId))
-    .leftJoin(requestedBy, eq(requestedBy.id, mantPartsNotes.requestedByUserId))
-    .where(where)
-    // Lo que espera respuesta: primero lo urgente y lo más antiguo; el resto, lo más reciente primero.
-    .orderBy(
-      ...(filters.tab === "pendientes"
-        ? [desc(mantPartsNotes.urgent), asc(mantPartsNotes.createdAt)]
-        : [desc(mantPartsNotes.createdAt)]),
-      asc(mantPartsNotes.id),
-    )
-    .limit(pageSize)
-    .offset((page - 1) * pageSize)
-
-  const charges = await loadChargeLabels(rows.map((row) => row.id))
-  return {
-    rows: rows.map((row): PartsNoteListRow => ({
-      ...row,
-      equipmentCode: row.equipmentCode ?? "",
-      equipmentPlate: row.equipmentPlate ?? "",
-      status: row.status as PartsNoteStatus,
-      statusSince: iso(row.statusSince),
-      requestedByName: row.requestedByName ?? "",
-      pendingLines: Number(row.pendingLines),
-      totalLines: Number(row.totalLines),
-      charges: charges.get(row.id) ?? [],
-      createdAt: iso(row.createdAt),
-    })),
-    total,
-    counts,
-  }
-}
 
 /** Stock libre (stock − reservado, nunca negativo) por producto en una faena. Lectura sin bloqueo: sirve para mostrar, no para decidir. */
 async function freeByProduct(worksiteId: string, productIds: readonly string[]): Promise<Map<string, number>> {

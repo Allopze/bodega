@@ -59,7 +59,7 @@ describe("GET /api/mantencion/notas-pedido/export", () => {
 
   it("sin mant:np:export (lo decide también el servicio) contesta 403 con el mensaje del rechazo", async () => {
     exportPartsNotes.mockResolvedValue({ ok: false, reason: "forbidden", message: "No tienes permiso para exportar notas de pedido." })
-    const response = await GET(request("?estado=pendientes"))
+    const response = await GET(request("?estado=por_revisar"))
     expect(response.status).toBe(403)
     expect(response.redirected).toBe(false)
     expect(await response.json()).toEqual({ error: "No tienes permiso para exportar notas de pedido." })

@@ -87,8 +87,9 @@ describe("nota en espera cuya OT termina (D23)", () => {
     expect(last).toMatchObject({ kind: "transicion", fromStatus: "en_espera", toStatus: "rechazada", actorUserId: null })
     expect(last.reason).toMatch(reasonPattern)
 
-    const inboxGestion = await listPartsNotes(jefe, { tab: "en_gestion" })
-    expect(inboxGestion.rows.some((row) => row.id === note.noteId)).toBe(false)
+    for (const tab of ["por_revisar", "en_compra", "en_recepcion"] as const) {
+      expect((await listPartsNotes(jefe, { tab })).rows.some((row) => row.id === note.noteId), tab).toBe(false)
+    }
     const inboxRejected = await listPartsNotes(jefe, { tab: "cerradas" })
     expect(inboxRejected.rows.some((row) => row.id === note.noteId)).toBe(true)
 

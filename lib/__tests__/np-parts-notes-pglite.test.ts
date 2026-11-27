@@ -791,57 +791,60 @@ describe("bandeja de notas de pedido", () => {
     const { bio, cho, machine } = await seedTray()
     const jefe = await viewerOf(IDS.jefe)
     const base = { page: 1, pageSize: 25 }
-    // «Pendientes» = nota abierta con al menos una línea pendiente, aunque tenga otras resueltas (NP4-2): la de Cholguán (1 de 1)
+    // «Por revisar» = nota con al menos una línea por resolver, aunque tenga otras resueltas (NP4-2): la de Cholguán (1 de 1)
     // y la de la máquina (1 de 2 pendiente, la otra rechazada), con el equipo detenido primero.
-    const pendientes = await query.listPartsNotes(jefe, { tab: "pendientes", ...base })
-    expect(pendientes.counts).toEqual({ pendientes: 2, en_gestion: 0, cerradas: 1 })
+    const pendientes = await query.listPartsNotes(jefe, { tab: "por_revisar", ...base })
+    expect(pendientes.counts).toEqual({ por_revisar: 2, en_compra: 0, en_recepcion: 0, cerradas: 1 })
     expect(pendientes.rows.map((row) => row.id)).toEqual([machine.noteId, cho.noteId])
     expect(pendientes.rows[1]).toMatchObject({
       code: cho.code, status: "enviada", workOrderId: OT.cho, workOrderFolio: "OT-L3-cho", equipmentCode: "KA-200", equipmentPlate: "BCDF-12",
-      worksiteId: IDS.wsCho, worksiteName: "Cholguán", requestedByName: "Pedro Cholguán", equipmentStopped: false, pendingLines: 1, totalLines: 1,
+      worksiteId: IDS.wsCho, worksiteName: "Cholguán", requestedByName: "Pedro Cholguán", equipmentStopped: false, totalLines: 1,
     })
-    expect(pendientes.rows[0]).toMatchObject({ code: machine.code, status: "en_gestion", equipmentStopped: true, pendingLines: 1, totalLines: 2 })
-    // «En gestión» es lo que no tiene nada pendiente y espera una compra: hoy no hay ninguna.
-    expect((await query.listPartsNotes(jefe, { tab: "en_gestion", ...base })).rows).toEqual([])
+    expect(pendientes.rows[1]!.pendingLines).toHaveLength(1)
+    expect(pendientes.rows[0]).toMatchObject({ code: machine.code, status: "en_gestion", equipmentStopped: true, totalLines: 2 })
+    expect(pendientes.rows[0]!.pendingLines).toHaveLength(1)
+    // «En compra» y «En recepción» son lo que no tiene nada por resolver y espera una compra: hoy no hay ninguna.
+    expect((await query.listPartsNotes(jefe, { tab: "en_compra", ...base })).rows).toEqual([])
+    expect((await query.listPartsNotes(jefe, { tab: "en_recepcion", ...base })).rows).toEqual([])
     const cerradas = await query.listPartsNotes(jefe, { tab: "cerradas", ...base })
     expect(cerradas.rows.map((row) => row.id)).toEqual([bio.noteId])
     expect(cerradas.total).toBe(1)
 
-    expect((await query.listPartsNotes(jefe, { tab: "pendientes", worksiteId: IDS.wsBio, ...base })).rows.map((row) => row.id)).toEqual([machine.noteId])
+    expect((await query.listPartsNotes(jefe, { tab: "por_revisar", worksiteId: IDS.wsBio, ...base })).rows.map((row) => row.id)).toEqual([machine.noteId])
     for (const [q, tab, noteId] of [
-      [cho.code, "pendientes", cho.noteId], ["OT-L3-cho", "pendientes", cho.noteId], ["KA-200", "pendientes", cho.noteId], ["bcdf", "pendientes", cho.noteId],
-      ["bomba hidr", "pendientes", cho.noteId], ["OT-L3-asig", "pendientes", machine.noteId], ["mq-01", "pendientes", machine.noteId],
+      [cho.code, "por_revisar", cho.noteId], ["OT-L3-cho", "por_revisar", cho.noteId], ["KA-200", "por_revisar", cho.noteId], ["bcdf", "por_revisar", cho.noteId],
+      ["bomba hidr", "por_revisar", cho.noteId], ["OT-L3-asig", "por_revisar", machine.noteId], ["mq-01", "por_revisar", machine.noteId],
     ] as const) {
       expect((await query.listPartsNotes(jefe, { tab, q, ...base })).rows.map((row) => row.id), q).toEqual([noteId])
     }
-    expect((await query.listPartsNotes(jefe, { tab: "pendientes", q: "100%_no", ...base })).rows).toHaveLength(0)
+    expect((await query.listPartsNotes(jefe, { tab: "por_revisar", q: "100%_no", ...base })).rows).toHaveLength(0)
     await createNote(IDS.mecCho, OT.cho)
     await createNote(IDS.mecCho, OT.cho)
-    const paged = await query.listPartsNotes(jefe, { tab: "pendientes", q: "NP-", page: 2, pageSize: 2 })
-    expect(paged).toMatchObject({ total: 4, counts: { pendientes: 4 } })
+    const paged = await query.listPartsNotes(jefe, { tab: "por_revisar", q: "NP-", page: 2, pageSize: 2 })
+    expect(paged).toMatchObject({ total: 4, counts: { por_revisar: 4 } })
     expect(paged.rows).toHaveLength(2)
   })
 
   it("el alcance lo pone el servidor: supervisión ve sólo su faena, sin permiso no ve nada", async () => {
     const { bio, cho, machine } = await seedTray()
     const supervisor = await viewerOf(IDS.supBio)
-    const mine = await query.listPartsNotes(supervisor, { tab: "pendientes", page: 1, pageSize: 25 })
-    expect(mine.counts).toEqual({ pendientes: 1, en_gestion: 0, cerradas: 1 })
+    const mine = await query.listPartsNotes(supervisor, { tab: "por_revisar", page: 1, pageSize: 25 })
+    expect(mine.counts).toEqual({ por_revisar: 1, en_compra: 0, en_recepcion: 0, cerradas: 1 })
     expect(mine.rows.map((row) => row.id)).toEqual([machine.noteId])
     // Un filtro de otra faena no amplía lo que ve.
-    expect((await query.listPartsNotes(supervisor, { tab: "pendientes", worksiteId: IDS.wsCho, page: 1, pageSize: 25 })).rows).toHaveLength(0)
+    expect((await query.listPartsNotes(supervisor, { tab: "por_revisar", worksiteId: IDS.wsCho, page: 1, pageSize: 25 })).rows).toHaveLength(0)
     expect(await query.getPartsNote(supervisor, cho.noteId)).toBeNull()
     expect((await query.getPartsNote(supervisor, machine.noteId))?.id).toBe(machine.noteId)
     expect((await query.getPartsNote(supervisor, bio.noteId))?.canManage).toBe(true)
 
     // El mecánico ve lo que pidió él mismo (`mant:np:view_own`, por defecto) y nada de lo de otro.
     const mechanic = await viewerOf(IDS.mecBio)
-    expect((await query.listPartsNotes(mechanic, { tab: "pendientes", page: 1, pageSize: 25 })).counts).toEqual({ pendientes: 1, en_gestion: 0, cerradas: 1 })
+    expect((await query.listPartsNotes(mechanic, { tab: "por_revisar", page: 1, pageSize: 25 })).counts).toEqual({ por_revisar: 1, en_compra: 0, en_recepcion: 0, cerradas: 1 })
     expect((await query.getPartsNote(mechanic, bio.noteId))?.id).toBe(bio.noteId)
     expect(await query.getPartsNote(mechanic, cho.noteId)).toBeNull()
     // Sin ningún permiso de notas, no ve nada, ni lo propio.
     const bare = await contextOf(IDS.mecBio, (permissions) => permissions.filter((permission) => !permission.startsWith("mant:np:")))
-    expect((await query.listPartsNotes(bare.viewer, { tab: "pendientes", page: 1, pageSize: 25 })).counts).toEqual({ pendientes: 0, en_gestion: 0, cerradas: 0 })
+    expect((await query.listPartsNotes(bare.viewer, { tab: "por_revisar", page: 1, pageSize: 25 })).counts).toEqual({ por_revisar: 0, en_compra: 0, en_recepcion: 0, cerradas: 0 })
     expect(await query.getPartsNote(bare.viewer, bio.noteId)).toBeNull()
     expect(await query.getPartsNote(await viewerOf(IDS.jefe), "no-existe")).toBeNull()
     // Quien sólo ve (jefatura general) no administra.
@@ -918,10 +921,10 @@ describe("detalle de la NP: etapa, llegado, usado, compras y libre en la faena",
     }])
     expect(detail.lines[3]).toMatchObject({ productId: bolt, productName: "Perno", freeInWorksite: 3 })
     // Ninguna línea está pendiente y una ya llegó a la faena mientras la primera espera su compra: la NP está recibida parcial
-    // (pestaña «En gestión», no «Cerradas») y ninguna cuenta como pendiente.
-    const row = (await query.listPartsNotes(jefe, { tab: "en_gestion", page: 1, pageSize: 25 })).rows.find((item) => item.id === note.noteId)
-    expect(row).toMatchObject({ status: "recibida_parcial", pendingLines: 0, totalLines: 4 })
-    expect((await query.listPartsNotes(jefe, { tab: "pendientes", page: 1, pageSize: 25 })).rows.map((item) => item.id)).not.toContain(note.noteId)
+    // (pestaña «En recepción», no «Cerradas») y ninguna cuenta como pendiente.
+    const row = (await query.listPartsNotes(jefe, { tab: "en_recepcion", page: 1, pageSize: 25 })).rows.find((item) => item.id === note.noteId)
+    expect(row).toMatchObject({ status: "recibida_parcial", pendingLines: [], totalLines: 4 })
+    expect((await query.listPartsNotes(jefe, { tab: "por_revisar", page: 1, pageSize: 25 })).rows.map((item) => item.id)).not.toContain(note.noteId)
     expect((await query.listPartsNotes(jefe, { tab: "cerradas", page: 1, pageSize: 25 })).rows.map((item) => item.id)).not.toContain(note.noteId)
   })
 })
@@ -1117,11 +1120,11 @@ describe("cerrar o anular la OT rechaza las líneas de nota que nadie resolvió"
       expect(JSON.parse(audit.newState as string)).toMatchObject({ resolution: "rechazada", automatic: true, cause: "ot_anulada" })
     }
 
-    // Sale de «Pendientes» y de «En gestión»; el aviso de la anulación le llega al mecánico y los rechazos automáticos no suman otro.
+    // Sale de «Por revisar» y de las pestañas de la compra; el aviso de la anulación le llega al mecánico y los rechazos automáticos no suman otro.
     const jefe = await viewerOf(IDS.jefe)
-    const tray = await query.listPartsNotes(jefe, { tab: "pendientes", page: 1, pageSize: 25 })
+    const tray = await query.listPartsNotes(jefe, { tab: "por_revisar", page: 1, pageSize: 25 })
     expect(tray.rows).toHaveLength(0)
-    expect(tray.counts).toEqual({ pendientes: 0, en_gestion: 0, cerradas: 1 })
+    expect(tray.counts).toEqual({ por_revisar: 0, en_compra: 0, en_recepcion: 0, cerradas: 1 })
     await vi.waitFor(async () => expect((await notificationsOf("mant_ot_voided")).map((row) => row.userId)).toEqual([IDS.mecBio]))
     expect(await notificationsOf("mant_np_rejected")).toHaveLength(0)
 
@@ -1237,7 +1240,7 @@ describe("cerrar o anular la OT rechaza las líneas de nota que nadie resolvió"
       resolution: "rechazada", resolutionReason: "La orden de trabajo se anuló: El equipo se dio de baja", resolvedByUserId: IDS.supBio,
     })
     expect((await noteRow(note.noteId)).status).toBe("rechazada")
-    expect((await query.listPartsNotes(jefe, { tab: "pendientes", page: 1, pageSize: 25 })).rows).toHaveLength(0)
+    expect((await query.listPartsNotes(jefe, { tab: "por_revisar", page: 1, pageSize: 25 })).rows).toHaveLength(0)
     const events = await eventsOf(OT.endVoid4, "parts_note_resolved")
     expect(events.find((event) => (event.changeSet as { itemId?: string } | null)?.itemId === bought && (event.changeSet as { cause?: string }).cause)).toMatchObject({
       changeSet: expect.objectContaining({ automatic: true, cause: "ot_anulada", previousResolution: "en_compra" }),

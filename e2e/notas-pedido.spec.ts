@@ -16,9 +16,9 @@ import {
  *      tiene stock en la faena (sembrado).
  *   2  SIN señal, el mecánico pide dos repuestos (uno con el nombre del repuesto de catálogo, otro
  *      texto libre) con «Enviar pedido»; vuelve la señal y la nota se envía sola.
- *   3  jefatura ve la nota en «Pendientes», resuelve la línea del catálogo con «Reservar de bodega» y
+ *   3  jefatura ve la nota en «Por revisar», resuelve la línea del catálogo con «Reservar de bodega» y
  *      comprueba el enlace «Comprar» de la otra (solicitud de repuestos prellenada desde la nota). Con una línea
- *      resuelta y otra pendiente, la nota sigue en «Pendientes» (por resolver: 1 de 2).
+ *      resuelta y otra pendiente, la nota sigue en «Por revisar» (por resolver: 1 de 2).
  *   4  el mecánico refresca el catálogo, ve «Llegó · 1 disponible» y registra una correctiva de la
  *      OT con el chip «Disponibles para esta OT».
  *   5  el kárdex de Bodega muestra «Uso en mantención» enlazado al registro y a la OT; el stock bajó 1.
@@ -206,18 +206,18 @@ test.describe("Notas de pedido de repuestos", () => {
 
   // ── 3 · Jefatura resuelve ─────────────────────────────────────────────────────────────────────────
 
-  test("3 · jefatura ve la nota en «Pendientes», reserva el repuesto de la bodega y comprueba el enlace «Comprar» de la otra línea", async ({ page }) => {
+  test("3 · jefatura ve la nota en «Por revisar», reserva el repuesto de la bodega y comprueba el enlace «Comprar» de la otra línea", async ({ page }) => {
     expect(nota.id, "depende del paso 2").not.toBe("")
     const errores = vigilarConsola(page)
     await entrarPlataforma(page, JEFE)
 
-    // Bandeja: la nota está en «Pendientes», con el equipo detenido a la vista.
+    // Bandeja: la nota está en «Por revisar», con el equipo detenido a la vista.
     await page.goto("/mantencion/notas-pedido")
-    await expect(page).toHaveURL(/\/mantencion\/notas-pedido\?estado=pendientes/)
+    await expect(page).toHaveURL(/\/mantencion\/notas-pedido\?estado=por_revisar/)
     await expect(page.getByRole("heading", { level: 1, name: "Notas de pedido" })).toBeVisible()
     const pestanas = page.getByRole("navigation", { name: "Estado de las notas de pedido" })
-    for (const etiqueta of [/^Pendientes/, /^En gestión/, /^Cerradas/, /^Por conciliar/]) await expect(pestanas.getByRole("link", { name: etiqueta })).toBeVisible()
-    await expect(pestanas.getByRole("link", { name: /^Pendientes/ })).toHaveAttribute("aria-current", "page")
+    for (const etiqueta of [/^Por revisar/, /^En compra/, /^En recepción/, /^Cerradas/, /^Por conciliar/]) await expect(pestanas.getByRole("link", { name: etiqueta })).toBeVisible()
+    await expect(pestanas.getByRole("link", { name: /^Por revisar/ })).toHaveAttribute("aria-current", "page")
     const fila = listRecord(page, nota.code)
     await expect(fila).toBeVisible({ timeout: 30_000 })
     await expect(fila).toContainText("Equipo detenido")
@@ -277,8 +277,8 @@ test.describe("Notas de pedido de repuestos", () => {
     // El equipo estaba detenido: la urgencia sale crítica.
     await expect(page.locator("#urgency")).toContainText("Crítica")
 
-    // «Por resolver» es toda nota abierta con una línea pendiente, aunque tenga otra ya resuelta: sigue en «Pendientes», con lo que falta.
-    await page.goto("/mantencion/notas-pedido?estado=pendientes")
+    // «Por resolver» es toda nota abierta con una línea pendiente, aunque tenga otra ya resuelta: sigue en «Por revisar», con lo que falta.
+    await page.goto("/mantencion/notas-pedido?estado=por_revisar")
     const filaPendiente = listRecord(page, nota.code)
     await expect(filaPendiente).toBeVisible({ timeout: 30_000 })
     await expect(filaPendiente).toContainText("1 de 2")

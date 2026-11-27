@@ -195,7 +195,7 @@ test.describe("Nota de pedido · casos negativos", () => {
     const cholguan = await sesionComo(browser, ADMIN_CONTRATO_CHO)
     await expectNoEncontrada(cholguan.page, detalle(rechazable.id), rechazable.code)
     await expectNoEncontrada(cholguan.page, detalle(anulable.id), anulable.code)
-    for (const estado of ["pendientes", "en_gestion", "cerradas"]) {
+    for (const estado of ["por_revisar", "en_compra", "en_recepcion", "cerradas"]) {
       await cholguan.page.goto(`/mantencion/notas-pedido?estado=${estado}`)
       await expect(cholguan.page.getByRole("heading", { level: 1, name: "Notas de pedido" })).toBeVisible({ timeout: 30_000 })
       await expect(listRecord(cholguan.page, rechazable.code), `«${estado}» de Cholguan no lista notas de Biodiversa`).toHaveCount(0)
@@ -237,7 +237,7 @@ test.describe("Nota de pedido · casos negativos", () => {
     // Jefatura (tiene `mant:np:export`): descarga el Excel desde la bandeja y trae las notas de esta corrida.
     const errores = vigilarConsola(page)
     await cambiarDeSesion(page, JEFE)
-    await page.goto("/mantencion/notas-pedido?estado=pendientes")
+    await page.goto("/mantencion/notas-pedido?estado=por_revisar")
     await page.getByRole("button", { name: "Exportar Excel" }).click()
     await expect(page.getByRole("dialog")).toBeVisible()
     const descarga = page.waitForEvent("download", { timeout: 30_000 })
@@ -254,8 +254,8 @@ test.describe("Nota de pedido · casos negativos", () => {
     expect(texto).toContain(rechazable.code)
     expect(texto).toContain(anulable.code)
     expect(texto).toContain(`QA_NEG Bomba de agua B ${CICLO}`)
-    // La pestaña filtra: las anuladas no están entre las pendientes.
-    const pendientes = await textoDelExcel(await page.request.get("/api/mantencion/notas-pedido/export?estado=pendientes"))
+    // La pestaña filtra: las anuladas no están entre las que faltan por revisar.
+    const pendientes = await textoDelExcel(await page.request.get("/api/mantencion/notas-pedido/export?estado=por_revisar"))
     expect(pendientes).toContain(rechazable.code)
     expect(pendientes).not.toContain(anulable.code)
     // El administrador de contrato de Biodiversa también exporta (de su faena).
@@ -264,7 +264,7 @@ test.describe("Nota de pedido · casos negativos", () => {
     expect(errores).toEqual([])
   })
 
-  test("7 · jefatura anula con motivo la nota reabierta: la deja anulada, fuera de las pendientes, y sin acciones", async ({ page }) => {
+  test("7 · jefatura anula con motivo la nota reabierta: la deja anulada, fuera de las por revisar, y sin acciones", async ({ page }) => {
     expect(rechazable?.id, "depende del paso 3").toBeTruthy()
     const errores = vigilarConsola(page)
     await cambiarDeSesion(page, JEFE)
@@ -278,8 +278,8 @@ test.describe("Nota de pedido · casos negativos", () => {
     for (const nombre of ["Aceptar", "Poner en espera", "Rechazar nota", "Anular nota", "Reabrir"]) {
       await expect(page.getByRole("button", { name: nombre, exact: true })).toHaveCount(0)
     }
-    // Una nota anulada sale de «Pendientes» y queda en «Cerradas» (como las notas finales).
-    await page.goto("/mantencion/notas-pedido?estado=pendientes")
+    // Una nota anulada sale de «Por revisar» y queda en «Cerradas» (como las notas finales).
+    await page.goto("/mantencion/notas-pedido?estado=por_revisar")
     await expect(listRecord(page, rechazable.code)).toHaveCount(0)
     await page.goto("/mantencion/notas-pedido?estado=cerradas")
     await expect(listRecord(page, rechazable.code)).toBeVisible({ timeout: 30_000 })

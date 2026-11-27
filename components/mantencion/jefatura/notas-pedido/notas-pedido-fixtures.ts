@@ -6,7 +6,11 @@ import type {
 export function noteRow(overrides: Partial<PartsNoteListRow> = {}): PartsNoteListRow {
   return {
     id: "n1", code: "NP-2026-0001", externalRef: null, status: "enviada", statusSince: "2026-11-20T15:00:00.000Z", workOrderId: "ot-1", workOrderFolio: "OT-BIO-0001", equipmentCode: "KA-135", equipmentPlate: "RBYD-98",
-    worksiteId: "ws-1", worksiteName: "Biodiversa", requestedByName: "Javier Roa", equipmentStopped: false, pendingLines: 2, totalLines: 3, charges: [],
+    worksiteId: "ws-1", worksiteName: "Biodiversa", requestedByName: "Javier Roa", equipmentStopped: false, totalLines: 3, charges: [], ageDays: 0,
+    pendingLines: [
+      { id: "i1", description: "Filtro de aceite", quantity: 2, unitOfMeasure: "unidad" },
+      { id: "i2", description: "Correa", quantity: 1, unitOfMeasure: "unidad" },
+    ],
     createdAt: "2026-11-20T15:00:00.000Z", urgent: false, ...overrides,
   }
 }
@@ -21,8 +25,8 @@ export function noteLine(overrides: Partial<PartsNoteDetailLine> = {}): PartsNot
 }
 
 export function noteDetail(overrides: Partial<PartsNoteDetail> = {}): PartsNoteDetail {
-  const { pendingLines: _pending, totalLines: _total, charges: _charges, ...base } = noteRow()
-  void [_pending, _total, _charges]
+  const { pendingLines: _pending, totalLines: _total, charges: _charges, ageDays: _age, ...base } = noteRow()
+  void [_pending, _total, _charges, _age]
   return {
     ...base,
     notes: "Se rompió en la ruta; el equipo no puede salir.",

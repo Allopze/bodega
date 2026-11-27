@@ -5,6 +5,7 @@ import { FilterSearchInput } from "@/components/ui/filter-search-input"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { OptionSelect } from "@/components/ui/option-select"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
+import { noteAgeBucketLabel } from "@/lib/mantencion/parts-notes-age"
 import { formatDate } from "@/lib/utils"
 import {
   advancedFilterCount, NOTE_FILTER_PARAMS, NOTE_STATUS_TEXT, parsePartsNoteFilters, STATUSES_BY_TAB, URGENCY_OPTIONS, type InboxTab,
@@ -16,6 +17,8 @@ const SHEET_INPUT_CLASS = "h-11 w-full pl-8 text-xs sm:h-9"
 /**
  * Filtros de la bandeja (A2): cinco primarios —búsqueda, faena, urgencia, creada desde y creada hasta— y, en «Más filtros»
  * con su contador, el estado exacto, el solicitante, el equipo y el repuesto. Una pastilla removible por cada filtro activo.
+ * La antigüedad no tiene control propio (A5: una dimensión, una representación): la elige el gráfico de arriba de la tabla y,
+ * activa, queda como una pastilla más, que también la quita desde pestañas donde el gráfico no se dibuja.
  * Todo vive en la URL (`router.replace`, sin mover el scroll) y lo resuelve el servidor: la ruta está en `ROUTES_WITH_OWN_SEARCH`
  * y la búsqueda va rotulada, porque la lista pagina en el servidor y el filtro de la barra superior sólo vería la página cargada.
  *
@@ -23,7 +26,7 @@ const SHEET_INPUT_CLASS = "h-11 w-full pl-8 text-xs sm:h-9"
  * pestaña sigue siendo la representación principal del estado). En «Por conciliar» no hay notas que filtrar: sólo la faena.
  * Con una sola faena en el alcance no hay nada que elegir y el selector no se dibuja.
  */
-export function PartsNotesFilters({ worksites, allWorksitesLabel, tab = "pendientes" }: {
+export function PartsNotesFilters({ worksites, allWorksitesLabel, tab = "por_revisar" }: {
   worksites: Array<{ id: string; name: string }>
   allWorksitesLabel: string
   tab?: InboxTab
@@ -34,7 +37,8 @@ export function PartsNotesFilters({ worksites, allWorksitesLabel, tab = "pendien
   const onConciliation = tab === "por_conciliar"
 
   const worksiteId = getFilter("faena")
-  const urgency = URGENCY_OPTIONS.find((option) => option.value === getFilter("urgencia"))
+  // `urgente=1` es un atajo de `urgencia=urgente`: el selector y la pastilla leen el filtro ya interpretado.
+  const urgency = URGENCY_OPTIONS.find((option) => option.value === (filters.urgent === undefined ? undefined : filters.urgent ? "urgente" : "normal"))
   const from = filters.from ?? ""
   const to = filters.to ?? ""
   const statusOptions = onConciliation ? [] : STATUSES_BY_TAB[tab].map((status) => ({ value: status, label: NOTE_STATUS_TEXT[status] }))
@@ -47,6 +51,7 @@ export function PartsNotesFilters({ worksites, allWorksitesLabel, tab = "pendien
   if (!onConciliation) {
     add("q", "Búsqueda", filters.q)
     add("urgencia", "Urgencia", urgency?.value, urgency?.label)
+    add("antiguedad", "Antigüedad", filters.age, filters.age ? noteAgeBucketLabel(filters.age) ?? filters.age : undefined)
     add("desde", "Creada desde", from, from ? formatDate(from) : undefined)
     add("hasta", "Creada hasta", to, to ? formatDate(to) : undefined)
     add("situacion", "Estado", filters.status, filters.status ? NOTE_STATUS_TEXT[filters.status] : undefined)
@@ -61,20 +66,22 @@ export function PartsNotesFilters({ worksites, allWorksitesLabel, tab = "pendien
     <FilterToolbar
       activeChips={chips}
       activeCount={onConciliation ? 0 : advancedFilterCount(filters)}
-      onRemoveChip={(key) => setFilter(key, null)}
+      onRemoveChip={(key) => (key === "urgencia" ? setFilters({ urgencia: null, urgente: null }) : setFilter(key, null))}
       onClearAll={() => setFilters(Object.fromEntries(NOTE_FILTER_PARAMS.map((key) => [key, null])))}
       overflowTitle="Más filtros de las notas"
       overflowDescription="Afina por estado, solicitante, equipo o repuesto."
       overflowFilters={onConciliation ? undefined : (
         <>
-          <OptionSelect
-            aria-label="Filtrar por estado"
-            className={BAR_SELECT_CLASS}
-            emptyLabel="Todos los estados de la pestaña"
-            options={statusOptions}
-            value={filters.status ?? ""}
-            onValueChange={(value) => setFilter("situacion", value)}
-          />
+          {statusOptions.length > 0 && (
+            <OptionSelect
+              aria-label="Filtrar por estado"
+              className={BAR_SELECT_CLASS}
+              emptyLabel="Todos los estados de la pestaña"
+              options={statusOptions}
+              value={filters.status ?? ""}
+              onValueChange={(value) => setFilter("situacion", value)}
+            />
+          )}
           <FilterSearchInput param="solicitante" pageKeys={["pagina"]} placeholder="Solicitante" ariaLabel="Filtrar por solicitante" className={SHEET_INPUT_CLASS} />
           <FilterSearchInput param="equipo" pageKeys={["pagina"]} placeholder="Equipo: código, patente o cargo" ariaLabel="Filtrar por equipo" className={SHEET_INPUT_CLASS} />
           <FilterSearchInput param="articulo" pageKeys={["pagina"]} placeholder="Repuesto: texto, N° de parte o producto" ariaLabel="Filtrar por repuesto" className={SHEET_INPUT_CLASS} />
@@ -108,7 +115,7 @@ export function PartsNotesFilters({ worksites, allWorksitesLabel, tab = "pendien
             emptyLabel="Toda urgencia"
             options={URGENCY_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
             value={urgency?.value ?? ""}
-            onValueChange={(value) => setFilter("urgencia", value)}
+            onValueChange={(value) => setFilters({ urgencia: value || null, urgente: null })}
           />
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
             <div className="min-w-0 sm:w-36">
