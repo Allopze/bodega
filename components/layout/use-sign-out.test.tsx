@@ -56,6 +56,25 @@ describe("useSignOut", () => {
     expect(window.location.href).toBe("/login")
   })
 
+  it("borra el borrador de nueva nota de pedido de todas las personas del equipo antes de cerrar la sesión, sin tocar claves ajenas", async () => {
+    const order: string[] = []
+    localStorage.setItem("chome:np-nueva-borrador:u-1", "{}")
+    localStorage.setItem("chome:np-nueva-borrador:u-2", "{}")
+    localStorage.setItem("chome:otra-cosa", "se queda")
+    mocks.signOut.mockImplementation(async () => {
+      order.push(`signOut:${localStorage.getItem("chome:np-nueva-borrador:u-1") ?? "sin borrador"}`)
+    })
+
+    const { result } = renderHook(() => useSignOut())
+    await act(async () => { await result.current.handleSignOut() })
+
+    expect(order[0]).toBe("signOut:sin borrador")
+    expect(localStorage.getItem("chome:np-nueva-borrador:u-1")).toBeNull()
+    expect(localStorage.getItem("chome:np-nueva-borrador:u-2")).toBeNull()
+    expect(localStorage.getItem("chome:otra-cosa")).toBe("se queda")
+    localStorage.clear()
+  })
+
   it("purga los borradores de incidentes y RE-20 antes de cerrar la sesión", async () => {
     const order: string[] = []
     mocks.purgeIncidentOfflineData.mockImplementation(async () => { order.push("incidentes") })

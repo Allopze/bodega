@@ -2,9 +2,10 @@ import { and, asc, eq, inArray } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import { fuelVehicles, mantPartsNoteItems, mantPartsNotes, mantWorkOrders } from "@/db/schema"
+import { isPartsNoteOpen } from "@/lib/mantencion/contracts"
 import type { MantViewer } from "../access"
 import type { PartsNotePrefill } from "../parts/types"
-import { canSeeNote, NP_PERMISSIONS, noteVisibility } from "./access"
+import { inWorksiteScope, NP_PERMISSIONS } from "./access"
 import { loadPurchases } from "./lines"
 import { isResolvableLine } from "./status"
 
@@ -15,8 +16,9 @@ const vehicleLabel = (code: string | null, plate: string | null) => (!code ? pla
  * Lo que `?np=<id>` precarga en la solicitud de repuestos: el equipo y la OT de la NP (si los tiene),
  * urgencia crítica si la NP es urgente, y sólo las líneas que aún nadie resolvió (pendientes, o «en compra»
  * cuyas compras murieron todas). Sin OT, la solicitud se arma sin OT y en la faena de la NP; cada línea lleva
- * su equipo de cargo. `null` si no hay nada que pedir, la NP está anulada o en espera, o quien pregunta no puede
- * resolverla (ni `mant:np:manage` ni `mant:np:purchase` en su alcance).
+ * su equipo de cargo. `null` si no hay nada que pedir, la NP está cerrada, rechazada, anulada o en espera (sólo «Reabrir»
+ * la devuelve), o quien pregunta no puede comprarla: exige `mant:np:manage` o `mant:np:purchase` Y la faena de la NP (o la
+ * actual de su equipo) en su alcance. Ser quien la pidió (`mant:np:view_own`) no basta.
  */
 export async function loadPartsNotePrefill(viewer: MantViewer, noteId: string): Promise<PartsNotePrefill | null> {
   const canBuy = viewer.permissions.includes(NP_PERMISSIONS.manage) || viewer.permissions.includes(NP_PERMISSIONS.purchase)
@@ -32,7 +34,6 @@ export async function loadPartsNotePrefill(viewer: MantViewer, noteId: string): 
       workOrderFolio: mantWorkOrders.folio,
       equipmentStopped: mantPartsNotes.equipmentStopped,
       urgent: mantPartsNotes.urgent,
-      requestedByUserId: mantPartsNotes.requestedByUserId,
       vehicleCode: fuelVehicles.code,
       vehiclePlate: fuelVehicles.plate,
       vehicleWorksiteId: fuelVehicles.worksiteId,
@@ -42,8 +43,11 @@ export async function loadPartsNotePrefill(viewer: MantViewer, noteId: string): 
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, mantPartsNotes.vehicleId))
     .where(eq(mantPartsNotes.id, noteId))
     .limit(1)
-  if (!note || note.status === "anulada" || note.status === "en_espera") return null
-  if (!canSeeNote(noteVisibility(viewer), note)) return null
+  // Una nota en estado final no se compra: las líneas «en compra» sin compra viva de una importada «Cerrada» no cuentan como abiertas.
+  if (!note || !isPartsNoteOpen(note.status) || note.status === "en_espera") return null
+  // Comprar exige la faena en el alcance, como en `getPartsNote` (`canBuy`): la autoría (`view_own`) sólo sirve para ver.
+  const inScope = inWorksiteScope(viewer, note.worksiteId) || (!!note.vehicleWorksiteId && inWorksiteScope(viewer, note.vehicleWorksiteId))
+  if (!inScope) return null
 
   const chargeVehicle = alias(fuelVehicles, "np_prefill_charge_vehicle")
   const items = await db

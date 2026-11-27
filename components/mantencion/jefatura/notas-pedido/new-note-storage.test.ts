@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { newDraft, newLine, type NoteDraft } from "./new-note-draft"
 import { NEW_NOTE_OPTIONS as OPTIONS, SINGLE_WORKSITE_OPTIONS } from "./new-note-fixtures"
+import { clearAllNewNoteDrafts } from "./new-note-draft-keys"
 import { clearDraft, draftStorageKey, readDraft, sanitizeDraft, writeDraft } from "./new-note-storage"
 
 const USER = "u-mec"
@@ -33,6 +34,23 @@ describe("borrador en el equipo", () => {
     expect(readDraft("u-otro", OPTIONS, NOW)).toBeNull()
     localStorage.setItem(draftStorageKey("u-otro"), localStorage.getItem(draftStorageKey(USER))!)
     expect(readDraft("u-otro", OPTIONS, NOW)).toBeNull()
+  })
+
+  it("clearAllNewNoteDrafts (cerrar sesión) borra el borrador de todas las personas y deja las claves ajenas", () => {
+    writeDraft(USER, written(), NOW)
+    writeDraft("u-otro", written(), NOW)
+    localStorage.setItem("chome:inspeccion:otra", "{}")
+    clearAllNewNoteDrafts()
+    expect(readDraft(USER, OPTIONS, NOW)).toBeNull()
+    expect(readDraft("u-otro", OPTIONS, NOW)).toBeNull()
+    expect(localStorage.getItem(draftStorageKey(USER))).toBeNull()
+    expect(localStorage.getItem("chome:inspeccion:otra")).toBe("{}")
+  })
+
+  it("clearAllNewNoteDrafts no lanza con el almacenamiento bloqueado", () => {
+    vi.spyOn(Storage.prototype, "key").mockImplementation(() => { throw new Error("bloqueado") })
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => { throw new Error("bloqueado") })
+    expect(() => clearAllNewNoteDrafts()).not.toThrow()
   })
 
   it("clearDraft lo borra, y uno de hace más de un mes ya no se restaura", () => {

@@ -51,7 +51,8 @@ export interface PartsNoteLineLink {
  * espera, volver a guardar (el autoguardado lo hace solo) no puede fallar —el ítem se conserva— y es el envío el que lo
  * frena. Sigue exigiéndose que la línea exista y sea de la OT del ítem.
  *
- * Una línea `en_compra` sí se acepta: es la que ya compra este mismo borrador o la que se compra en partes.
+ * Una línea `en_compra` sí se acepta mientras la nota siga abierta: es la que ya compra este mismo borrador o la que se compra
+ * en partes. En una nota cerrada o rechazada ya no (sólo «Reabrir» la devuelve a gestión).
  *
  * `actor`: al guardar el borrador se exige además que quien guarda pueda comprar (`canBuyPartsNoteLines`) en la faena de
  * la nota. Ocultar el prellenado (`?np=`) no es autorización: el id de la línea viaja en el formulario y cualquiera con
@@ -107,6 +108,11 @@ export async function assertPartsNoteLineBuyable(
   }
   if (line.resolution === "desde_stock") {
     throw new Error(`La línea «${line.description}» de la nota de pedido ${line.noteCode} se resolvió desde el stock de la faena: quita ese ítem de la solicitud`)
+  }
+  // Cerrada o rechazada: lo pedido ya llegó o se rechazó entero. Una línea «en compra» sin compra viva (las de una importada
+  // «Cerrada») no se vuelve a comprar: sólo «Reabrir» la nota la devuelve a gestión.
+  if (line.noteStatus === "cerrada" || line.noteStatus === "rechazada") {
+    throw new Error(`La nota de pedido ${line.noteCode} está ${line.noteStatus === "cerrada" ? "cerrada" : "rechazada"}: ya no se compra con ella (sólo «Reabrir» la devuelve a gestión): quita ese ítem de la solicitud`)
   }
   return result
 }

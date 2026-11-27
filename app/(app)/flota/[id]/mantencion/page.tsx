@@ -19,6 +19,7 @@ import { loadEquipmentInsurance, loadEquipmentWorkOrders, loadLifeRows, loadLife
 import { loadEquipmentTimeline } from "@/lib/services/mantencion/maintenance-work"
 import { listEquipmentHistory } from "@/lib/services/mantencion/equipment-history"
 import { loadEquipmentParts } from "@/lib/services/mantencion/equipment-parts"
+import { noteVisibility } from "@/lib/services/mantencion/parts-notes/access"
 import { loadEquipmentCurrents } from "@/lib/services/mantencion/equipment-resolve"
 import { loadFleet } from "@/lib/services/mantencion/fleet"
 import { listAssignableMechanics, listExecutionWorksiteOptions, listWorkOrderEquipmentOptions, listWorksiteMechanics } from "@/lib/services/mantencion/work-orders/query"
@@ -198,7 +199,7 @@ export default async function EquipmentDetailPage({
     parts: {
       ...parts,
       // Los enlaces siguen la puerta de cada pantalla (la nota y la OT validan permiso y alcance otra vez).
-      canOpenNotes: canAny(session, "mant:np:view_worksite", "mant:np:manage"),
+      canOpenNotes: noteVisibility(viewer).kind !== "none",
       canOpenWorkOrders: canAny(session, "mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute"),
     },
   }

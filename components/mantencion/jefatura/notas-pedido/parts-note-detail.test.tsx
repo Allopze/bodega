@@ -166,6 +166,24 @@ describe("PartsNoteDetailView: líneas", () => {
     expect(resolved!.queryByRole("link", { name: "Comprar" })).toBeNull()
   })
 
+  it("una nota cerrada, rechazada o anulada no ofrece ninguna acción de línea, aunque una línea siga pendiente o «en compra» sin compra (importadas)", () => {
+    for (const status of ["cerrada", "rechazada", "anulada"] as const) {
+      view({
+        note: noteDetail({
+          status,
+          voidReason: status === "anulada" ? "Duplicada" : null,
+          canManage: true,
+          canBuy: true,
+          lines: [noteLine(), noteLine({ id: "i2", description: "Correa", resolution: "en_compra", stage: "en_compra", productId: null, freeInWorksite: null })],
+        }),
+      })
+      expect(screen.queryByRole("button", { name: "Reservar de bodega" }), status).toBeNull()
+      expect(screen.queryByRole("button", { name: "Rechazar" }), status).toBeNull()
+      expect(screen.queryByRole("link", { name: "Comprar" }), status).toBeNull()
+      cleanup()
+    }
+  })
+
   it("sin canManage sólo se ve el estado; sin permiso para pedir no hay «Comprar»", () => {
     view({ note: noteDetail({ canManage: false, canBuy: false }) })
     expect(screen.queryByRole("button", { name: "Reservar de bodega" })).toBeNull()

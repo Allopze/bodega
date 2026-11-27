@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, gt, inArray, sql } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import { costCenters, fuelVehicles, mantPartsNoteItems, mantPartsNotes, mantWorkOrders, products, suppliers, users, worksiteStock, worksites } from "@/db/schema"
+import { isPartsNoteOpen } from "@/lib/mantencion/contracts"
 import { OT_OPEN_STATUSES } from "@/lib/mantencion/work-order-states"
 import { roundQty } from "@/lib/services/stock-reservations"
 import type { MantViewer } from "../access"
@@ -364,7 +365,8 @@ export async function getPartsNote(viewer: MantViewer, noteId: string): Promise<
     actions,
     canManage,
     canBuy,
-    // Una nota sin OT no aparta stock (se compra o se rechaza): no hay repuestos que ofrecer para reservar.
-    stockOptions: canManage && note.workOrderId ? await stockOptionsIn(stockWorksiteId) : [],
+    // Una nota sin OT no aparta stock (se compra o se rechaza): no hay repuestos que ofrecer para reservar. Una cerrada, rechazada
+    // o anulada tampoco resuelve sus líneas (sólo «Reabrir»): la ficha no ofrece acciones de línea.
+    stockOptions: canManage && note.workOrderId && isPartsNoteOpen(note.status) ? await stockOptionsIn(stockWorksiteId) : [],
   }
 }

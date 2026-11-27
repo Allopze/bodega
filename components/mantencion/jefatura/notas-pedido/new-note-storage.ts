@@ -3,21 +3,22 @@ import {
   chargeBelongsTo, defaultCharge, NEW_NOTE_DEFAULT_UNIT, NEW_NOTE_DESCRIPTION_MAX, NEW_NOTE_MAX_LINES, NEW_NOTE_NOTES_MAX, newLine,
   type DraftLine, type NoteDraft, type NoteLinePart,
 } from "./new-note-draft"
+import { draftStorageKey } from "./new-note-draft-keys"
 
 /**
  * Borrador de «Nueva nota de pedido» en `localStorage`: la nota se escribe en terreno, donde la señal falla, y un envío caído
  * o una pestaña cerrada no pueden costar lo escrito. Se guarda en cada cambio, se restaura al volver y se borra al crearse
  * la nota. La `clientOpId` viaja con el borrador: reabrirlo y reenviar es el mismo envío y el servidor no duplica.
  *
- * - Una clave por persona (`…:<userId>`): un equipo compartido no hereda el borrador de otro. Al cerrar sesión no se borra
- *   (ese limpiador no conoce esta clave): por eso además se verifica la persona dentro del contenido.
+ * - Una clave por persona (`…:<userId>`): un equipo compartido no hereda el borrador de otro. Al cerrar sesión se borran todos
+ *   (`clearAllNewNoteDrafts`, que llama `use-sign-out`); una sesión que termina sin pasar por ahí (vencida, revocada) se cubre
+ *   verificando además la persona dentro del contenido.
  * - Todo acceso va envuelto en try/catch: en modo privado o con el almacenamiento bloqueado el propio accessor lanza.
  *   Un borrador que no se puede leer es «no había borrador»; uno que no se puede escribir se avisa (`writeDraft` → `false`).
  * - Lo guardado no es de fiar (otra versión, otra faena, un cargo que ya no existe): `sanitizeDraft` suelta lo que no calce
  *   con lo que hoy se ofrece y el servidor valida igual al enviar.
  */
 
-const KEY_PREFIX = "chome:np-nueva-borrador:"
 const SCHEMA = 1
 /** Un borrador de hace más de un mes ya no es lo que la persona quería pedir. */
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
@@ -28,7 +29,7 @@ export interface StoredDraft {
   savedAt: string
 }
 
-export const draftStorageKey = (userId: string) => `${KEY_PREFIX}${userId}`
+export { draftStorageKey }
 
 export function writeDraft(userId: string, draft: NoteDraft, now: Date = new Date()): boolean {
   try {

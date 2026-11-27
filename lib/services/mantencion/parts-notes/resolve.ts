@@ -13,7 +13,7 @@ import { loadPurchases } from "./lines"
 import { rejectLineTx } from "./line-rejection"
 import { splitLineRemainderTx } from "./line-split"
 import { notifyPartsNoteItemRejected } from "./notifications"
-import { allPurchasesDead, isResolvableLine, recalcNoteStatusTx } from "./status"
+import { allPurchasesDead, isResolvableLine, recalcNoteStatusTx, whyNoteLinesAreLocked } from "./status"
 import { writeTrail } from "./trail"
 
 /**
@@ -31,7 +31,8 @@ import { writeTrail } from "./trail"
  *
  * Sin OT no hay reserva: «Sacar de bodega» se rechaza (el repuesto ya está libre en la bodega
  * de la faena; se resuelve comprando o rechazando). Con la NP en espera no se resuelve ninguna
- * línea (`whyNotResolvable`): sólo se acepta, se rechaza entera o se anula.
+ * línea (`whyNotResolvable`): sólo se acepta, se rechaza entera o se anula. Tampoco se resuelve ni se rechaza una línea de una
+ * nota cerrada, rechazada o anulada (`whyNoteLinesAreLocked`): sólo «Reabrir» la devuelve a pendiente.
  */
 
 const OPEN: readonly string[] = OT_OPEN_STATUSES
@@ -40,10 +41,14 @@ export { voidPartsNote } from "./transitions"
 
 /** Por qué una línea ya no se puede resolver, o `null` si sí. Las compras vivas viven fuera de la línea. */
 async function whyNotResolvable(tx: Tx, line: NoteItemContext): Promise<string | null> {
-  if (line.noteStatus === "anulada") return `La nota ${line.code} está anulada.`
+  if (line.noteStatus === "anulada") return whyNoteLinesAreLocked(line.noteStatus, line.code)
   if (line.noteStatus === "en_espera") return "La nota está en espera: acéptala primero."
   if (line.resolution === "desde_stock") return `«${line.description}» ya se apartó del stock.`
   if (line.resolution === "rechazada") return `«${line.description}» ya está rechazada.`
+  // Cerrada o rechazada: las líneas que quedan «en compra» sin compra viva (las importadas de CHOME ERP) no se resuelven;
+  // sólo «Reabrir» las devuelve. La lectura de la nota la hace el llamador con la línea bloqueada.
+  const locked = whyNoteLinesAreLocked(line.noteStatus, line.code)
+  if (locked) return locked
   const purchases = [...((await loadPurchases(tx, [line.itemId])).get(line.itemId) ?? [])]
   const liveness = purchases.map((row) => ({ itemStatus: row.status, requestStatus: row.requestStatus }))
   if (isResolvableLine(line.resolution, liveness)) return null

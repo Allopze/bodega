@@ -6,6 +6,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { PeriodControl } from "@/components/ui/period-control"
 import { can } from "@/lib/auth/can"
+import { PARTS_NOTES_VIEW_PERMISSIONS } from "@/components/mantencion/jefatura/notas-pedido/parts-notes-format"
 import { chartWindowCaption, DEFAULT_RANGE_LABEL, defaultIndicatorRange, indicatorPeriodLabel, resolveIndicatorPeriod } from "@/lib/indicators/period"
 import { logger } from "@/lib/logger"
 import { allWorksitesLabel } from "@/lib/auth/worksite-label"
@@ -77,7 +78,8 @@ export async function renderHoyTab(session: Session, params: SearchParams) {
 
   const canViewOrders = can(session, "mant:ot:view_worksite") || can(session, "mant:ot:view_all")
   const canExport = can(session, "mant:export")
-  const canViewNotes = can(session, "mant:np:view_worksite") || can(session, "mant:np:manage")
+  // Los mismos permisos que abren la bandeja (`PARTS_NOTES_VIEW_PERMISSIONS`); `listPartsNotes` pone el alcance.
+  const canViewNotes = PARTS_NOTES_VIEW_PERMISSIONS.some((permission) => can(session, permission))
 
   const query: MantIndicatorQuery = {
     from: period.from,

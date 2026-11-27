@@ -621,10 +621,12 @@ describe("rechazar y anular", () => {
     const note = await createNote(IDS.mecBio, OT.a)
     const jefe = await viewerOf(IDS.jefe)
     const [live, dead] = note.itemIds
-    await markInPurchase(live!)
-    await markInPurchase(dead!)
+    // Como lo hace la solicitud: el ítem de compra existe ANTES de dejar la línea «en compra» (y recalcular la nota). Al revés, la
+    // nota se derivaba «cerrada» (sin compra viva no hay nada que esperar) y quedaba así con una compra viva.
     await insertPurchase({ noteItemId: live!, workOrderId: OT.a, itemStatus: "in_purchase_order" })
     await insertPurchase({ noteItemId: dead!, workOrderId: OT.a, itemStatus: "rejected" })
+    await markInPurchase(live!)
+    await markInPurchase(dead!)
 
     expect(await resolver.rejectNoteItem(jefe, { itemId: live!, reason: "Ya no se necesita" })).toMatchObject({ ok: false, message: expect.stringContaining("compra") })
     expect(await resolver.resolveNoteItemFromStock(jefe, { itemId: live!, productId: filter, quantity: 1 })).toMatchObject({ ok: false })
@@ -848,15 +850,18 @@ describe("bandeja de notas de pedido", () => {
   })
 
   it("quien resuelve ve los repuestos con stock libre en la faena del equipo para elegir cuál sacar (lo encontró la E2E)", async () => {
-    const { bio } = await seedTray()
+    // La nota de la máquina (Biodiversa) sigue abierta con una línea pendiente: la de Biodiversa de `seedTray` quedó rechazada (estado
+    // final), y una nota cerrada, rechazada o anulada no resuelve sus líneas, así que no ofrece repuestos para reservar.
+    const { bio, machine } = await seedTray()
     const gasket = await makeProduct("Empaquetadura culata QA")
     await ingress(gasket, 2)
     const jefe = await viewerOf(IDS.jefe)
-    const detail = await query.getPartsNote(jefe, bio.noteId)
+    const detail = await query.getPartsNote(jefe, machine.noteId)
     expect(detail?.stockOptions).toEqual(expect.arrayContaining([expect.objectContaining({ productId: gasket, name: "Empaquetadura culata QA", free: 2 })]))
     expect(detail?.stockOptions?.every((option) => option.free > 0)).toBe(true)
+    expect((await query.getPartsNote(jefe, bio.noteId))).toMatchObject({ status: "rechazada", stockOptions: [] })
     const viewOnly = { ...jefe, permissions: ["mant:np:view_worksite"] }
-    expect((await query.getPartsNote(viewOnly, bio.noteId))?.stockOptions).toEqual([])
+    expect((await query.getPartsNote(viewOnly, machine.noteId))?.stockOptions).toEqual([])
   })
 })
 

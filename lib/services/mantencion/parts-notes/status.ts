@@ -1,6 +1,7 @@
 import { eq, inArray } from "drizzle-orm"
 import type { Tx } from "@/db"
 import { mantPartsNoteItems, mantPartsNotes, mantWorkOrders, purchaseRequestItems, purchaseRequests } from "@/db/schema"
+import { isPartsNoteOpen } from "@/lib/mantencion/contracts"
 import { OT_OPEN_STATUSES } from "@/lib/mantencion/work-order-states"
 import { roundQty, toCents } from "@/lib/services/stock-reservations"
 import type { NoteItemResolution, PartsNoteLineStage, PartsNoteStatus } from "../parts/types"
@@ -64,6 +65,18 @@ export function isDeadPurchase(purchase: PurchaseLiveness): boolean {
 /** Todas sus compras murieron (o no queda ninguna): la línea `en_compra` vuelve a poder resolverse. */
 export function allPurchasesDead(purchases: readonly PurchaseLiveness[]): boolean {
   return purchases.every(isDeadPurchase)
+}
+
+/**
+ * Por qué las líneas de una nota en estado final (`cerrada`, `rechazada`, `anulada`) no admiten que una PERSONA las resuelva,
+ * las rechace ni las compre, o `null` si la nota sigue abierta. Sólo «Reabrir» las devuelve a pendiente. Es una regla de las
+ * acciones de personas: los barridos automáticos (`unlinkNoteItemsFromRequestTx`, la anulación de una recepción, el cierre de
+ * la OT) siguen tocando las líneas de una nota cerrada cuando su compra cambia.
+ */
+export function whyNoteLinesAreLocked(status: string, code: string): string | null {
+  if (isPartsNoteOpen(status)) return null
+  if (status === "anulada") return `La nota ${code} está anulada.`
+  return `La nota ${code} está ${status === "cerrada" ? "cerrada" : "rechazada"}: sus líneas ya no se resuelven. Sólo «Reabrir» las devuelve a pendiente.`
 }
 
 /** Una línea se puede resolver (desde stock, rechazar o enlazar a otra solicitud) si está pendiente o su compra murió. */

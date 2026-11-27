@@ -125,7 +125,7 @@ export async function phoneOtNote(overrides: Partial<SyncPartsNote> = {}): Promi
 }
 
 /** Alta desde la web, sin OT, en la faena de Biodiversa. */
-export async function manualNote(lines: Array<{ description: string; quantity?: number; productId?: string | null; chargeVehicleId?: string; chargeCostCenterId?: string; suggestedSupplierId?: string }> = [{ description: "Filtro de aceite", quantity: 2 }], viewerId = IDS.jefe): Promise<NoteIds> {
+export async function manualNote(lines: Array<{ description: string; quantity?: number; productId?: string | null; chargeVehicleId?: string; chargeCostCenterId?: string; suggestedSupplierId?: string }> = [{ description: "Filtro de aceite", quantity: 2 }], viewerId: string = IDS.jefe): Promise<NoteIds> {
   const result = await createPartsNote(await viewerOf(viewerId), {
     clientOpId: opId(), worksiteId: IDS.wsBio, urgent: false,
     lines: lines.map((line) => ({ unitOfMeasure: "unidad", quantity: 2, ...line })),

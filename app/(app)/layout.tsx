@@ -16,6 +16,7 @@ import { NavigationProgress } from "@/components/layout/navigation-progress"
 import { AppToaster } from "@/components/ui/app-toaster"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { can, canAny } from "@/lib/auth/can"
+import { PARTS_NOTES_VIEW_PERMISSIONS } from "@/components/mantencion/jefatura/notas-pedido/parts-notes-format"
 import { getNavigationToggleState, routeIsEnabled, type NavigationToggleState } from "@/lib/services/module-toggles"
 import { registry } from "@/modules/registry"
 import { getOperationalWorkCounts, type OperationalWorkCounts } from "@/lib/services/operational-work-queue"
@@ -187,7 +188,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     "/pendientes":   canViewOperations ? operationalCounts.total : 0,
     // Mantención: el mismo cálculo que la cola. Cada número sólo viaja si la sesión puede abrir esa pantalla.
     "/mantencion/ot":            canAny(session, "mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute") ? operationalCounts.ot : 0,
-    "/mantencion/notas-pedido":  canAny(session, "mant:np:view_worksite", "mant:np:manage") ? operationalCounts.notas : 0,
+    // Los mismos permisos que abren la bandeja y su ítem del menú (`PARTS_NOTES_VIEW_PERMISSIONS`); el número es el de la cola.
+    "/mantencion/notas-pedido":  canAny(session, ...PARTS_NOTES_VIEW_PERMISSIONS) ? operationalCounts.notas : 0,
     "/mantencion/registros":     canAny(session, "mant:records:view_own", "mant:records:view_worksite", "mant:records:view_all") ? operationalCounts.registros : 0,
   }
 
