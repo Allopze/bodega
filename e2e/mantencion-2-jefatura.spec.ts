@@ -491,7 +491,7 @@ test("la cola de revisión: anterior y siguiente, «Marcar revisado y siguiente�
   await expect(page.getByText(/No quedan registros por revisar/)).toBeVisible()
 })
 
-test("observar un registro y marcarlo revisado", async ({ page }) => {
+test("observar un registro propio, sin poder marcarlo revisado", async ({ page }) => {
   await login(page, JEFE)
   // C (otra faena): A y D ya se revisaron en la cola de arriba.
   await page.goto(`/mantencion/registros/${rec.C.id}`)
@@ -507,9 +507,9 @@ test("observar un registro y marcarlo revisado", async ({ page }) => {
   await expect(page.getByText("Aún sin respuesta del mecánico.")).toBeVisible()
   await expect(page.getByText("Observado", { exact: true })).toBeVisible()
 
-  await page.getByRole("button", { name: "Marcar revisado", exact: true }).click()
-  await expect(page.getByText("Revisado", { exact: true })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Marcar revisado", exact: true })).toHaveCount(0)
+  // C lo firmó y ejecutó la propia jefatura: nadie revisa lo suyo (2026-11-26), así que el botón no se ofrece.
+  // Marcar revisado lo cubre la cola de arriba con A y D, que son de un mecánico.
+  await expect(page.getByRole("button", { name: /^Marcar revisado/ })).toHaveCount(0)
 })
 
 test("anular exige motivo, ofrece el registro corregido y desaparece de los cálculos", async ({ page }) => {
