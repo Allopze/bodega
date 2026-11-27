@@ -73,7 +73,7 @@ export async function applyCamionesCopecKm(options: { actorEmail: string; schedu
           continue
         }
         const result = await setEquipmentUnit(tx, actor, { vehicleId: truck.vehicleId, unit: "km", scheduleId, reason: REASON })
-        if (!result.ok) throw new Error(`${code}: ${result.message ?? JSON.stringify(result.errors)}. No se escribió nada.`)
+        if (!result.ok) throw new Error(`${code}: ${result.message}. No se escribió nada.`)
         outcomes.push({ code, worksite, result: apply ? "aplicado" : "dry-run", detail: result.message })
       }
       if (!apply) throw new DryRunRollback()
