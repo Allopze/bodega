@@ -6,6 +6,7 @@
  */
 
 import type { CatalogPartsAvailable, CatalogPartsNote, PartsNoteLineStage, PartsNoteStatus } from "@/lib/mantencion/contracts"
+import type { NoteActionKey } from "../parts-notes/transitions"
 
 export type { CatalogPartsAvailable, CatalogPartsNote, PartsNoteLineStage, PartsNoteStatus }
 
@@ -73,11 +74,31 @@ export type PartsActionResult = { ok: true; message?: string } | { ok: false; me
 
 export type PartsNoteTab = "pendientes" | "en_gestion" | "cerradas"
 
-export type PartsNoteListFilters = {
-  tab: PartsNoteTab
+/**
+ * Filtros de la bandeja de notas de pedido, tal como los lee el servidor de la URL. El alcance NUNCA sale de aquí:
+ * lo pone `noteVisibility(viewer)` y un filtro sólo recorta lo que ya se veía.
+ */
+export type PartsNoteFilterSet = {
   worksiteId?: string
-  /** Búsqueda de la TopBar: NP, folio de OT, equipo o repuesto. */
+  /** Búsqueda de texto: código de NP, folio externo, folio de OT, equipo, solicitante o repuesto. */
   q?: string
+  /** Estado exacto (uno de los nueve), dentro de la pestaña. */
+  status?: PartsNoteStatus
+  /** `true`: sólo urgentes; `false`: sólo normales. */
+  urgent?: boolean
+  /** Rango de creación, días civiles `YYYY-MM-DD` en hora de Chile, ambos inclusivos. */
+  from?: string
+  to?: string
+  /** Quién la pidió: texto contenido en su nombre (usuario o nombre de una nota importada). */
+  requester?: string
+  /** Equipo de la nota o de cualquiera de sus líneas (código, patente) o el cargo original sin calce. */
+  equipment?: string
+  /** Repuesto: texto de la línea, N° de parte o producto del catálogo (nombre, SKU). */
+  article?: string
+}
+
+export type PartsNoteListFilters = PartsNoteFilterSet & {
+  tab: PartsNoteTab
   page?: number
   pageSize?: number
 }
@@ -85,7 +106,11 @@ export type PartsNoteListFilters = {
 export type PartsNoteListRow = {
   id: string
   code: string
+  /** Folio del sistema de origen (p. ej. `CHOME-123`) de una nota importada. */
+  externalRef: string | null
   status: PartsNoteStatus
+  /** Desde cuándo está en este estado: el momento del último evento de su historial. */
+  statusSince: string
   /** Null: nota sin OT. */
   workOrderId: string | null
   workOrderFolio: string | null
@@ -100,6 +125,8 @@ export type PartsNoteListRow = {
   urgent: boolean
   pendingLines: number
   totalLines: number
+  /** A qué se imputan las líneas (equipo, centro de costo o el texto original), sin repetir y en el orden de las líneas. */
+  charges: string[]
   createdAt: string
 }
 
@@ -133,7 +160,23 @@ export type PartsNoteDetailLine = {
   /** Cargo de la línea (equipo o centro de costo) y proveedor sugerido, si los trae. */
   charge: PartsNoteLineCharge | null
   suggestedSupplierId: string | null
+  /** Nombre del proveedor sugerido del catálogo. */
+  suggestedSupplierName: string | null
   supplierHint: string | null
+}
+
+/** Un renglón del historial de la nota (`mant_parts_note_events`, append-only): de qué estado a cuál, por qué y quién. */
+export type PartsNoteEvent = {
+  id: string
+  kind: "creada" | "transicion" | "migrada"
+  fromStatus: PartsNoteStatus | null
+  toStatus: PartsNoteStatus
+  reason: string | null
+  /** Null = automático del sistema (una llegada, una recepción, la OT que termina). */
+  actorName: string | null
+  /** Descripción de la línea que causó el cambio, si la hubo. */
+  itemDescription: string | null
+  createdAt: string
 }
 
 /** Repuesto con stock libre en la faena actual del equipo: lo que jefatura puede «Reservar de bodega». */
@@ -145,11 +188,23 @@ export type PartsNoteStockOption = {
   free: number
 }
 
-export type PartsNoteDetail = Omit<PartsNoteListRow, "pendingLines" | "totalLines"> & {
+export type PartsNoteDetail = Omit<PartsNoteListRow, "pendingLines" | "totalLines" | "charges"> & {
   notes: string | null
   voidReason: string | null
+  /** Motivo de «En espera»; sólo viene con ese estado. */
+  holdReason: string | null
   lines: PartsNoteDetailLine[]
+  /** Historial completo, del más antiguo al más reciente. */
+  events: PartsNoteEvent[]
+  /**
+   * Acciones de cabecera que quien mira puede hacer hoy (`allowedNoteActions` con su permiso, su alcance y lo que hay en la nota).
+   * Es lo que la pantalla ofrece; el servidor repite la regla al ejecutar.
+   */
+  actions: NoteActionKey[]
+  /** Resolver las líneas (reservar de bodega, comprar, rechazar): `mant:np:manage` y la faena de la nota en su alcance. */
   canManage: boolean
+  /** Comprar lo pedido: `mant:np:manage` o `mant:np:purchase`, con la faena en su alcance. Sin ninguno la ficha es de lectura. */
+  canBuy: boolean
   /**
    * Repuestos del catálogo con stock libre en la faena actual del equipo (sólo para quien
    * resuelve). El mecánico pide en texto libre: jefatura elige aquí cuál saca de la bodega.

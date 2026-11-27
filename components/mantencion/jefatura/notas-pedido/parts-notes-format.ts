@@ -1,8 +1,11 @@
 import type { StageTab } from "@/components/ui/stage-tabs"
 import type {
-  PartsNoteLineStage, PartsNoteStatus, PartsNoteTab, RecordPartStockStatus,
+  PartsNoteFilterSet, PartsNoteLineStage, PartsNoteStatus, PartsNoteTab, RecordPartStockStatus,
 } from "@/lib/services/mantencion/parts/types"
-import { isPartsNoteOpen } from "@/lib/mantencion/contracts"
+import { isPartsNoteOpen, PARTS_NOTE_STATUSES } from "@/lib/mantencion/contracts"
+import type { NoteActionKey } from "@/lib/services/mantencion/parts-notes/transitions"
+import { isCivilDate } from "@/lib/validation/dates"
+import type { Permission } from "@/modules/permissions"
 import { formatDateRelative, formatQty } from "@/lib/utils"
 
 // Ojo: sólo `import type` de los servicios. Este módulo lo importan componentes de cliente y los
@@ -48,22 +51,88 @@ export function isInboxTab(value: string | undefined, canManage: boolean): value
 }
 
 /**
- * La URL de la bandeja (`?estado=&faena=&q=&pagina=`) como filtros. Sin `estado` rige «Pendientes»
- * (`explicitTab: false`: la página redirige a `?estado=pendientes` para que la pestaña quede marcada).
- * Un valor de pestaña que el usuario no puede ver («Por conciliar» sin `manage`) se trata como ausente.
+ * Permisos que abren la bandeja y la ficha: ver las de sus faenas, resolverlas, comprarlas (la persona de compras que no
+ * resuelve) o ver las que pidió uno mismo. El alcance de cada una lo pone el servidor (`noteVisibility`).
  */
-export function parsePartsNotesQuery(raw: RawSearchParams, canManage: boolean): { tab: InboxTab; explicitTab: boolean; worksiteId?: string; q?: string; page: number } {
-  const estado = first(raw, "estado")
-  const page = Number.parseInt(first(raw, "pagina") ?? "1", 10)
+export const PARTS_NOTES_VIEW_PERMISSIONS: Permission[] = ["mant:np:view_worksite", "mant:np:manage", "mant:np:purchase", "mant:np:view_own"]
+
+/**
+ * Parámetros de la URL que son filtros (los que limpia «Limpiar filtros»; la pestaña `estado` y la página no). `situacion` es el
+ * estado exacto —uno de los nueve— DENTRO de la pestaña; `urgencia`, `urgente` o `normal`; `desde`/`hasta`, el día en que se creó la nota.
+ */
+export const NOTE_FILTER_PARAMS = ["faena", "q", "situacion", "urgencia", "desde", "hasta", "solicitante", "equipo", "articulo"] as const
+
+/** Qué estados caen en cada pestaña (`TAB_CONDITIONS`): el estado exacto sólo se ofrece entre los de la pestaña activa. */
+export const STATUSES_BY_TAB: Record<PartsNoteTab, readonly PartsNoteStatus[]> = {
+  pendientes: ["enviada", "aceptada", "en_espera", "en_gestion"],
+  en_gestion: ["en_compra", "recibida_parcial"],
+  cerradas: ["cerrada", "rechazada", "anulada"],
+}
+
+export const URGENCY_OPTIONS = [{ value: "urgente", label: "Urgentes" }, { value: "normal", label: "Normales" }] as const
+
+function isNoteStatus(value: string | undefined): value is PartsNoteStatus {
+  return !!value && (PARTS_NOTE_STATUSES as readonly string[]).includes(value)
+}
+
+/** Los filtros de la URL (todo menos la pestaña y la página), ya validados: un valor mal formado se ignora en vez de llegar a la consulta. */
+export function parsePartsNoteFilters(raw: RawSearchParams): PartsNoteFilterSet {
+  const situacion = first(raw, "situacion")
+  const urgencia = first(raw, "urgencia")
+  const desde = first(raw, "desde")
+  const hasta = first(raw, "hasta")
   const worksiteId = first(raw, "faena")
   const q = first(raw, "q")
+  const requester = first(raw, "solicitante")
+  const equipment = first(raw, "equipo")
+  const article = first(raw, "articulo")
+  return {
+    ...(worksiteId ? { worksiteId } : {}),
+    ...(q ? { q } : {}),
+    ...(isNoteStatus(situacion) ? { status: situacion } : {}),
+    ...(urgencia === "urgente" || urgencia === "normal" ? { urgent: urgencia === "urgente" } : {}),
+    ...(isCivilDate(desde) ? { from: desde } : {}),
+    ...(isCivilDate(hasta) ? { to: hasta } : {}),
+    ...(requester ? { requester } : {}),
+    ...(equipment ? { equipment } : {}),
+    ...(article ? { article } : {}),
+  }
+}
+
+/** Cuántos filtros de «Más filtros» hay activos (estado exacto, solicitante, equipo y repuesto): lo que dice el contador del botón. */
+export function advancedFilterCount(filters: PartsNoteFilterSet): number {
+  return [filters.status, filters.requester, filters.equipment, filters.article].filter(Boolean).length
+}
+
+/** Hay algún filtro activo distinto de la pestaña. */
+export function hasPartsNoteFilters(filters: PartsNoteFilterSet): boolean {
+  return Object.values(filters).some((value) => value !== undefined)
+}
+
+/**
+ * La URL de la bandeja (`?estado=&faena=&q=&situacion=&urgencia=&desde=&hasta=&solicitante=&equipo=&articulo=&pagina=`) como filtros.
+ * Sin `estado` rige «Pendientes» (`explicitTab: false`: la página redirige a `?estado=pendientes` para que la pestaña quede marcada).
+ * Un valor de pestaña que el usuario no puede ver («Por conciliar» sin `manage`) se trata como ausente.
+ */
+export function parsePartsNotesQuery(raw: RawSearchParams, canManage: boolean): { tab: InboxTab; explicitTab: boolean; page: number } & PartsNoteFilterSet {
+  const estado = first(raw, "estado")
+  const page = Number.parseInt(first(raw, "pagina") ?? "1", 10)
   return {
     tab: isInboxTab(estado, canManage) ? estado : "pendientes",
     explicitTab: isInboxTab(estado, canManage),
-    ...(worksiteId ? { worksiteId } : {}),
-    ...(q ? { q } : {}),
+    ...parsePartsNoteFilters(raw),
     page: Number.isFinite(page) && page > 0 ? page : 1,
   }
+}
+
+/**
+ * Los parámetros de la URL que lleva la exportación: la pestaña (salvo «Por conciliar», que no es una lista de notas) y los
+ * filtros, tal como están en la URL. El servidor los vuelve a leer con `parsePartsNoteFilters`: aquí no se decide nada.
+ */
+export function exportParamsOf(raw: RawSearchParams, tab: InboxTab): Record<string, string | undefined> {
+  const params: Record<string, string | undefined> = tab === "por_conciliar" ? {} : { estado: tab }
+  for (const key of NOTE_FILTER_PARAMS) params[key] = first(raw, key)
+  return params
 }
 
 /** Pestañas en orden de trabajo. `conciliation` es `null` cuando quien mira no puede conciliar: la pestaña no se ofrece. */
@@ -103,6 +172,15 @@ export const NOTE_STATUS_TONE: Record<PartsNoteStatus, "signal" | "info" | "succ
   anulada: "neutral",
 }
 
+/** Rótulo de cada acción de cabecera. Es el mismo de `NOTE_ACTIONS` (el servicio); una prueba cuida que no se separen. */
+export const NOTE_ACTION_LABELS: Record<NoteActionKey, string> = {
+  aceptar: "Aceptar",
+  en_espera: "Poner en espera",
+  rechazar: "Rechazar nota",
+  anular: "Anular nota",
+  reabrir: "Reabrir",
+}
+
 /** «2 de 3»: las líneas que faltan resolver sobre el total de la nota. */
 export function pendingLinesText(pending: number, total: number): string {
   return `${pending} de ${total}`
@@ -111,6 +189,12 @@ export function pendingLinesText(pending: number, total: number): string {
 /** Una nota sigue pendiente mientras esté abierta y le falten líneas por resolver. */
 export function isNotePending(row: { status: PartsNoteStatus; pendingLines: number }): boolean {
   return isPartsNoteOpen(row.status) && row.pendingLines > 0
+}
+
+/** El cargo de una nota sin OT en una celda: los dos primeros (equipo, centro de costo o texto original) y cuántos más hay. */
+export function chargesText(charges: readonly string[], shown = 2): string {
+  if (charges.length <= shown) return charges.join(", ")
+  return `${charges.slice(0, shown).join(", ")} +${charges.length - shown}`
 }
 
 /** «Hoy», «Ayer», «Hace 5 días»: desde cuándo espera la nota. */
@@ -137,6 +221,11 @@ export const STAGE_META: Record<PartsNoteLineStage, { label: string; variant: "s
   rechazado: { label: STAGE_TEXT.rechazado, variant: "danger" },
 }
 
+/** Sin OT lo que llega entra a stock libre de la faena, no queda reservado para ninguna orden: la insignia dice «En la faena». */
+export function stageMeta(stage: PartsNoteLineStage, hasWorkOrder: boolean): (typeof STAGE_META)[PartsNoteLineStage] {
+  return !hasWorkOrder && stage === "en_bodega" ? { label: "En la faena", variant: "success" } : STAGE_META[stage]
+}
+
 export type ProgressStep = { key: "pedido" | "en_compra" | "llego" | "usado"; label: string; state: "done" | "current" | "todo" }
 
 /**
@@ -144,17 +233,22 @@ export type ProgressStep = { key: "pedido" | "en_compra" | "llego" | "usado"; la
  * (`null`: se dice «Rechazado» con su motivo). Los números sólo aparecen donde ya hay algo que contar;
  * el paso actual se marca con `aria-current` y peso, no sólo con color.
  */
-export function lineProgress(line: { stage: PartsNoteLineStage; quantity: number; arrived: number; used: number }): ProgressStep[] | null {
+export function lineProgress(
+  line: { stage: PartsNoteLineStage; quantity: number; arrived: number; used: number },
+  options: { usage?: boolean } = {},
+): ProgressStep[] | null {
   if (line.stage === "rechazado") return null
+  const usage = options.usage ?? true
   const arrived = line.stage === "en_bodega" ? line.arrived : 0
   const used = line.stage === "en_bodega" ? line.used : 0
-  const reached = line.stage === "pedido" ? 0 : line.stage === "en_compra" ? 1 : used > 0 ? 3 : 2
-  const complete = arrived > 0 && used >= arrived
+  const reached = line.stage === "pedido" ? 0 : line.stage === "en_compra" ? 1 : usage && used > 0 ? 3 : 2
+  // Sin OT no hay consumo de una reserva: la cadena termina en lo que llegó a la faena.
+  const complete = arrived > 0 && (usage ? used >= arrived : arrived >= line.quantity)
   const labels: Array<[ProgressStep["key"], string]> = [
     ["pedido", "Pedido"],
     ["en_compra", "En compra"],
     ["llego", arrived > 0 ? `Llegó ${formatQty(arrived)}/${formatQty(line.quantity)}` : "Llegó"],
-    ["usado", arrived > 0 && used > 0 ? `Usado ${formatQty(used)}/${formatQty(arrived)}` : "Usado"],
+    ...(usage ? [["usado", arrived > 0 && used > 0 ? `Usado ${formatQty(used)}/${formatQty(arrived)}` : "Usado"] as [ProgressStep["key"], string]] : []),
   ]
   return labels.map(([key, label], index) => ({
     key,

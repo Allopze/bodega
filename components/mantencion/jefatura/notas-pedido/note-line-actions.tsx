@@ -116,11 +116,11 @@ function TakeFromStockDialog({ noteId, line, worksiteName, stockOptions, onOpenC
 }
 
 /**
- * Las tres salidas de una línea pendiente: «Reservar de bodega», «Comprar» (abre la solicitud de repuestos con la
- * nota precargada) y «Rechazar» (con motivo). Sólo se dibuja para quien administra la nota y mientras la línea
- * siga pendiente; el servidor vuelve a validar permiso, alcance y estado en cada acción.
+ * Las salidas de una línea pendiente: «Reservar de bodega», «Comprar» (abre la solicitud de repuestos con la nota
+ * precargada) y «Rechazar» (con motivo). Quien administra la nota ve las tres; quien sólo compra (`mant:np:purchase`), «Comprar».
+ * Una nota sin OT no aparta stock: no ofrece «Reservar de bodega». El servidor vuelve a validar permiso, alcance y estado en cada acción.
  */
-export function NoteLineActions({ noteId, line, worksiteName, buyHref, stockOptions = [] }: {
+export function NoteLineActions({ noteId, line, worksiteName, buyHref, stockOptions = [], canManage = true, hasWorkOrder = true }: {
   noteId: string
   line: PartsNoteDetailLine
   worksiteName: string
@@ -128,17 +128,23 @@ export function NoteLineActions({ noteId, line, worksiteName, buyHref, stockOpti
   buyHref: string | null
   /** Repuestos con stock libre en la faena del equipo, para elegir cuando la línea vino en texto libre. */
   stockOptions?: PartsNoteStockOption[]
+  /** Resolver la línea (reservar, rechazar). Sin él sólo se ofrece comprar. */
+  canManage?: boolean
+  /** La nota tiene OT: sin ella no hay reserva. */
+  hasWorkOrder?: boolean
 }) {
   const [dialog, setDialog] = React.useState<"take" | "reject" | null>(null)
   const canTake = line.productId !== null || stockOptions.length > 0
+  const showTake = canManage && hasWorkOrder
+  if (!canManage && !buyHref) return null
   return (
     <div className="mt-3 flex flex-col gap-2 border-t border-[var(--color-border)] pt-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="secondary" size="sm" disabled={!canTake} onClick={() => setDialog("take")}>Reservar de bodega</Button>
+        {showTake && <Button type="button" variant="secondary" size="sm" disabled={!canTake} onClick={() => setDialog("take")}>Reservar de bodega</Button>}
         {buyHref && <Button asChild variant="secondary" size="sm"><Link href={buyHref}>Comprar</Link></Button>}
-        <Button type="button" variant="ghost-danger" size="sm" onClick={() => setDialog("reject")}>Rechazar</Button>
+        {canManage && <Button type="button" variant="ghost-danger" size="sm" onClick={() => setDialog("reject")}>Rechazar</Button>}
       </div>
-      {!canTake && <p className="text-xs text-[var(--color-text-muted)]">No hay repuestos con stock libre en {worksiteName}: se puede comprar o rechazar.</p>}
+      {showTake && !canTake && <p className="text-xs text-[var(--color-text-muted)]">No hay repuestos con stock libre en {worksiteName}: se puede comprar o rechazar.</p>}
       {dialog === "take" && <TakeFromStockDialog noteId={noteId} line={line} worksiteName={worksiteName} stockOptions={stockOptions} onOpenChange={(open) => { if (!open) setDialog(null) }} />}
       {dialog === "reject" && (
         <NoteReasonDialog

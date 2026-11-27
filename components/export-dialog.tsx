@@ -34,6 +34,12 @@ export interface ExportDialogProps {
     status?: string
   }
   isoDateISOFormat?: boolean
+  /**
+   * Parámetros que viajan siempre en el enlace de descarga, antes de los que elige quien exporta aquí (que los pisan si
+   * coinciden). Sirve a las listas con filtros propios en la URL (pestaña, búsqueda…): el archivo sale con lo que se ve.
+   * Los valores vacíos no se envían.
+   */
+  baseParams?: Record<string, string | undefined>
   canExport?: boolean
   /**
    * Un export que es una foto de hoy (existencias, saldos) no tiene rango de
@@ -63,6 +69,7 @@ const ExportDialogInner = React.memo(function ExportDialogInner({
   tone = "neutral",
   paramNames = {},
   isoDateISOFormat = false,
+  baseParams,
   canExport = true,
   showDateRange = true,
   trigger,
@@ -83,6 +90,7 @@ const ExportDialogInner = React.memo(function ExportDialogInner({
 
   function buildUrl() {
     const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(baseParams ?? {})) if (value) params.set(key, value)
     if (tipo) params.set("tipo", tipo)
     if (faena) params.set(worksiteParam, faena)
     if (status) params.set(statusParam, status)

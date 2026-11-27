@@ -728,6 +728,9 @@ export const pgliteTestFiles = [
   "lib/__tests__/np-catalogo-propias-pglite.test.ts",
 
   // NP · L6 jefatura web.
+  // Bandeja (R14) y exportación a Excel (R16): filtros por estado exacto, urgencia, fechas de Chile, solicitante, equipo y repuesto;
+  // el alcance que ningún filtro amplía; el detalle (historial, espera, acciones, modo lectura de view_own) y el libro.
+  "lib/__tests__/np-bandeja-export-pglite.test.ts",
 
   // NP · R9: notas de pedido y consumos de repuestos en la hoja de vida del equipo.
   "lib/__tests__/equipment-parts-pglite.test.ts",

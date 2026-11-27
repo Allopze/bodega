@@ -97,12 +97,13 @@ export const mantencionEquiposModule = {
           badge: "count" as const,
         },
         {
-          // Bandeja de las notas de pedido del mecánico (2026-11-26). Quien las
-          // resuelve también las ve.
+          // Bandeja de las notas de pedido (2026-11-26). Quien las resuelve, quien las compra
+          // (`purchase`) y quien pidió las suyas (`view_own`) también la abren: el alcance lo pone
+          // `noteVisibility`, igual que en la página (`PARTS_NOTES_VIEW_PERMISSIONS`).
           label: "Notas de pedido",
           href: "/mantencion/notas-pedido",
           iconName: "Tray",
-          permissions: ["mant:np:view_worksite", "mant:np:manage"],
+          permissions: ["mant:np:view_worksite", "mant:np:manage", "mant:np:purchase", "mant:np:view_own"],
           group: "Mantención",
           // Notas por resolver que son de esta persona (`getOperationalWorkCounts`).
           badge: "count" as const,

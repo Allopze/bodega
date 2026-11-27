@@ -11,7 +11,8 @@ import { conciliatePart } from "@/lib/services/mantencion/parts/conciliation"
 import { releaseAllocationTx } from "@/lib/services/mantencion/parts"
 import { loadWorkOrderPartsOverview } from "@/lib/services/mantencion/parts-notes/query"
 import { revalidateQueueOfNote } from "@/lib/services/mantencion/queue-revalidation"
-import { rejectNoteItem, resolveNoteItemFromStock, voidPartsNote } from "@/lib/services/mantencion/parts-notes/resolve"
+import { rejectNoteItem, resolveNoteItemFromStock } from "@/lib/services/mantencion/parts-notes/resolve"
+import { acceptPartsNote, holdPartsNote, rejectPartsNote, reopenPartsNote, voidPartsNote } from "@/lib/services/mantencion/parts-notes/transitions"
 import type { ReturnedNoteLine } from "@/lib/services/mantencion/parts-notes/line-release"
 import type { PartsActionResult } from "@/lib/services/mantencion/parts/types"
 import { formatQty } from "@/lib/utils"
@@ -26,6 +27,8 @@ import type { Permission } from "@/modules/permissions"
 
 const PATH = "/mantencion/notas-pedido"
 const MANAGE: Permission[] = ["mant:np:manage"]
+/** Reabrir tiene su propio permiso: quien resuelve notas no necesariamente puede reabrirlas. */
+const REOPEN: Permission[] = ["mant:np:reopen"]
 
 /** El mismo largo mínimo del motivo que exige `releaseAllocationTx` y que pide la pantalla. */
 const REASON_MIN = 5
@@ -55,6 +58,7 @@ function refreshNotes(noteId?: string) {
 const resolveSchema = z.object({ noteId: id, itemId: id, productId: id, quantity })
 const rejectSchema = z.object({ noteId: id, itemId: id, reason })
 const voidSchema = z.object({ noteId: id, reason })
+const acceptSchema = z.object({ noteId: id })
 const releaseSchema = z.object({ workOrderId: id, allocationId: id, quantity, reason })
 const conciliateSchema = z.discriminatedUnion("mode", [
   z.object({ recordPartId: id, mode: z.literal("aplicar") }),
@@ -102,19 +106,54 @@ export async function rejectNoteItemAction(input: unknown): Promise<NoteActionSt
   }
 }
 
-/** «Anular nota»: queda visible y marcada, con su motivo. */
-export async function voidPartsNoteAction(input: unknown): Promise<NoteActionState> {
-  const guard = await guardAnyPermission(MANAGE, PATH)
+/**
+ * Acciones de CABECERA de la nota (ADR 0001, 2026-11-27): aceptar, poner en espera, rechazar la nota entera, anular y reabrir.
+ * Cada una revalida su permiso aquí y el servicio vuelve a validar estado, alcance de faena y motivo bajo bloqueo: las reglas
+ * viven en el servidor (`transitions.ts`), la pantalla sólo muestra las que `allowedNoteActions` dice que valen.
+ */
+async function runHeaderAction(
+  permissions: Permission[],
+  schema: z.ZodType<{ noteId: string; reason?: string }>,
+  input: unknown,
+  run: (viewer: ReturnType<typeof viewerFromSession>, data: { noteId: string; reason?: string }) => Promise<PartsActionResult>,
+  fallback: string,
+): Promise<NoteActionState> {
+  const guard = await guardAnyPermission(permissions, PATH)
   if (guard.error) return guard.error
-  const parsed = parseZ(voidSchema, input)
+  const parsed = parseZ(schema, input)
   if (!parsed.ok) return parsed
   try {
-    const result = await voidPartsNote(viewerFromSession(guard.session), parsed.data)
+    const result = await run(viewerFromSession(guard.session), parsed.data)
     if (result.ok) await refreshNoteQueue(parsed.data.noteId)
     return toState(result)
   } catch (error) {
-    return actionErrorResult(error, "No se pudo anular la nota.")
+    return actionErrorResult(error, fallback)
   }
+}
+
+/** «Aceptar»: la nota queda aceptada (o vuelve al estado de sus líneas si estaba en espera). Sin motivo ni confirmación. */
+export async function acceptPartsNoteAction(input: unknown): Promise<NoteActionState> {
+  return runHeaderAction(MANAGE, acceptSchema, input, acceptPartsNote, "No se pudo aceptar la nota.")
+}
+
+/** «Poner en espera»: congela la nota hasta que se acepte; el motivo queda en el historial y se muestra. */
+export async function holdPartsNoteAction(input: unknown): Promise<NoteActionState> {
+  return runHeaderAction(MANAGE, voidSchema, input, holdPartsNote, "No se pudo poner la nota en espera.")
+}
+
+/** «Rechazar nota»: rechaza todas las líneas pendientes con el mismo motivo. */
+export async function rejectPartsNoteAction(input: unknown): Promise<NoteActionState> {
+  return runHeaderAction(MANAGE, voidSchema, input, rejectPartsNote, "No se pudo rechazar la nota.")
+}
+
+/** «Reabrir»: las líneas rechazadas vuelven a pendiente. Pide `mant:np:reopen`, no `manage`. */
+export async function reopenPartsNoteAction(input: unknown): Promise<NoteActionState> {
+  return runHeaderAction(REOPEN, voidSchema, input, reopenPartsNote, "No se pudo reabrir la nota.")
+}
+
+/** «Anular nota»: queda visible y marcada, con su motivo. */
+export async function voidPartsNoteAction(input: unknown): Promise<NoteActionState> {
+  return runHeaderAction(MANAGE, voidSchema, input, voidPartsNote, "No se pudo anular la nota.")
 }
 
 /** Lo que le pasó a las líneas de nota que esa reserva alimentaba, dicho al final del aviso de «Liberar». */

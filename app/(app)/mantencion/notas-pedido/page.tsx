@@ -4,8 +4,9 @@ import { redirect } from "next/navigation"
 import { Suspense } from "react"
 import { ConciliationList } from "@/components/mantencion/jefatura/notas-pedido/conciliation-list"
 import { PartsNotesFilters } from "@/components/mantencion/jefatura/notas-pedido/parts-notes-filters"
+import { PartsNotesExportButton } from "@/components/mantencion/jefatura/notas-pedido/parts-notes-export-button"
 import {
-  buildPartsNotesTabs, parsePartsNotesQuery, PARTS_NOTES_PAGE_SIZE, type InboxTab, type RawSearchParams,
+  buildPartsNotesTabs, exportParamsOf, hasPartsNoteFilters, INBOX_TAB_LABELS, parsePartsNoteFilters, parsePartsNotesQuery, PARTS_NOTES_PAGE_SIZE, PARTS_NOTES_VIEW_PERMISSIONS, type InboxTab, type RawSearchParams,
 } from "@/components/mantencion/jefatura/notas-pedido/parts-notes-format"
 import { PartsNotesTable } from "@/components/mantencion/jefatura/notas-pedido/parts-notes-table"
 import { Button } from "@/components/ui/button"
@@ -30,11 +31,11 @@ const PATHNAME = "/mantencion/notas-pedido"
 
 /** Qué dice una pestaña vacía: qué significa y qué hacer, sin jerga (regla A4). */
 function emptyCopy(tab: InboxTab, filtered: boolean): { title: string; description: string } {
-  if (filtered) return { title: "Ninguna nota coincide con los filtros", description: "Prueba con otra faena o quita los filtros." }
+  if (filtered) return { title: "Ninguna nota coincide con los filtros", description: "Prueba con otros filtros o quítalos para ver todas las notas." }
   switch (tab) {
-    case "pendientes": return { title: "No hay notas por resolver", description: "Cuando un mecánico pida repuestos para una orden de trabajo, la nota aparece aquí mientras le quede una línea por resolver." }
+    case "pendientes": return { title: "No hay notas por resolver", description: "Cuando alguien pida repuestos, para una orden de trabajo o para la faena, la nota aparece aquí mientras le quede una línea por resolver." }
     case "en_gestion": return { title: "No hay notas en gestión", description: "Aquí quedan las notas sin líneas por resolver que esperan una compra: el repuesto aún no llega a la faena." }
-    case "cerradas": return { title: "Aún no hay notas cerradas", description: "Una nota se cierra cuando cada línea quedó rechazada, reservada de la bodega o comprada y recibida; o queda anulada con su motivo." }
+    case "cerradas": return { title: "Aún no hay notas cerradas", description: "Una nota se cierra cuando todo lo pedido llegó a la faena o se sacó de la bodega; también quedan aquí las rechazadas y las anuladas, con su motivo." }
     case "por_conciliar": return { title: "No hay repuestos por conciliar", description: "Aquí aparecen los repuestos que un mecánico declaró usar sin que hubiera stock al sincronizar su registro." }
   }
 }
@@ -42,12 +43,15 @@ function emptyCopy(tab: InboxTab, filtered: boolean): { title: string; descripti
 export default async function PartsNotesPage({ searchParams }: { searchParams: Promise<RawSearchParams> }) {
   let session
   try {
-    session = await requireAnyPermission(["mant:np:view_worksite", "mant:np:manage"], PATHNAME)
+    // Ver las de sus faenas, resolverlas, comprarlas o ver las propias (`view_own`): `listPartsNotes` aplica el alcance de cada una.
+    session = await requireAnyPermission(PARTS_NOTES_VIEW_PERMISSIONS, PATHNAME)
   } catch {
     redirect("/forbidden")
   }
   const viewer = viewerFromSession(session)
   const canManage = can(session, "mant:np:manage")
+  const canCreate = can(session, "mant:np:create")
+  const canExport = can(session, "mant:np:export")
   const raw = await searchParams
   const query = parsePartsNotesQuery(raw, canManage)
 
@@ -66,12 +70,14 @@ export default async function PartsNotesPage({ searchParams }: { searchParams: P
   const allWorksites = await listExecutionWorksiteOptions()
   const worksites = viewer.isGlobal ? allWorksites : allWorksites.filter((item) => viewer.worksiteIds.includes(item.id))
   const worksiteId = query.worksiteId && worksites.some((item) => item.id === query.worksiteId) ? query.worksiteId : undefined
+  // Los filtros que viajan al servicio: los de la URL ya validados, con la faena acotada al alcance. «Por conciliar» sólo filtra por faena.
+  const filters = { ...parsePartsNoteFilters(raw), worksiteId }
 
   const onConciliation = query.tab === "por_conciliar"
   const noteTab: PartsNoteTab = query.tab === "por_conciliar" ? "pendientes" : query.tab
   // Fuera de «Por conciliar» las notas pagan los conteos de las pestañas y, dentro, sólo los conteos (una fila basta).
   const [list, conciliation] = await Promise.all([
-    listPartsNotes(viewer, { tab: noteTab, worksiteId, q: query.q, page: onConciliation ? 1 : query.page, pageSize: onConciliation ? 1 : PARTS_NOTES_PAGE_SIZE }),
+    listPartsNotes(viewer, { ...(onConciliation ? { worksiteId } : filters), tab: noteTab, page: onConciliation ? 1 : query.page, pageSize: onConciliation ? 1 : PARTS_NOTES_PAGE_SIZE }),
     canManage
       ? listPendingConciliation(viewer, { worksiteId, page: onConciliation ? query.page : 1, pageSize: onConciliation ? PARTS_NOTES_PAGE_SIZE : 1 })
       : Promise.resolve(null),
@@ -79,8 +85,8 @@ export default async function PartsNotesPage({ searchParams }: { searchParams: P
 
   const total = onConciliation ? (conciliation?.total ?? 0) : list.total
   const pagination = resolvePagination({ pageParam: String(query.page), totalItems: total, pageSize: PARTS_NOTES_PAGE_SIZE })
-  const empty = emptyCopy(query.tab, !!(worksiteId || query.q))
-  const filtered = !!(worksiteId || query.q)
+  const filtered = onConciliation ? !!worksiteId : hasPartsNoteFilters(filters)
+  const empty = emptyCopy(query.tab, filtered)
   const clearFiltersHref = `${PATHNAME}?estado=${query.tab}`
   const rowsEmpty = onConciliation ? (conciliation?.rows.length ?? 0) === 0 : list.rows.length === 0
 
@@ -88,8 +94,14 @@ export default async function PartsNotesPage({ searchParams }: { searchParams: P
     <PageContainer>
       <PageHeader
         title="Notas de pedido"
-        description="Repuestos que piden los mecánicos para sus órdenes de trabajo."
+        description="Repuestos que se piden para las órdenes de trabajo y para las faenas."
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Notas de pedido" }]}
+        actions={(canExport && !onConciliation) || canCreate ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {canExport && !onConciliation && <PartsNotesExportButton params={exportParamsOf(raw, query.tab)} tabLabel={INBOX_TAB_LABELS[query.tab]} />}
+            {canCreate && <Button asChild size="sm"><Link href="/mantencion/notas-pedido/nueva">Nueva nota</Link></Button>}
+          </div>
+        ) : undefined}
       />
 
       <div className="mb-3">
@@ -98,7 +110,7 @@ export default async function PartsNotesPage({ searchParams }: { searchParams: P
         </Suspense>
       </div>
 
-      <PartsNotesFilters worksites={worksites} allWorksitesLabel={allWorksitesLabel(viewer.isGlobal)} />
+      <PartsNotesFilters worksites={worksites} allWorksitesLabel={allWorksitesLabel(viewer.isGlobal)} tab={query.tab} />
 
       {rowsEmpty ? (
         <EmptyState
