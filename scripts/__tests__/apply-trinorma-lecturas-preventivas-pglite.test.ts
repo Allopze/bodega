@@ -78,7 +78,7 @@ afterAll(async () => {
 interface Row2 {
   code: string; plate: string; reading?: number | string | Date; readingDate?: string | Date; note?: string
   formDate?: string | Date; formOdo?: number | string; answer?: string; realDate?: string | Date; realOdo?: number | string
-  service?: string; where?: string; evidence?: string
+  service?: string; where?: string; evidence?: string; ot?: string
 }
 interface Row3 { code: string; plate: string; reading?: number; date?: string | Date }
 
@@ -99,7 +99,7 @@ async function planilla(rows2: Row2[], rows3: Row3[] = []): Promise<Uint8Array> 
   HEADERS2.forEach((title, i) => { s2.getCell(4, i + 1).value = title })
   rows2.forEach((r, i) => {
     const values = ["Biodiversa", r.code, r.plate, r.reading ?? null, r.readingDate ?? null, "Inspección diaria", r.note ?? "",
-      r.formDate ?? null, r.formOdo ?? null, "", "", "", r.answer ?? null, r.realDate ?? null, r.realOdo ?? null, r.service ?? null, r.where ?? null, r.evidence ?? null, null]
+      r.formDate ?? null, r.formOdo ?? null, r.ot ?? "", "", "", r.answer ?? null, r.realDate ?? null, r.realOdo ?? null, r.service ?? null, r.where ?? null, r.evidence ?? null, null]
     values.forEach((v, c) => { if (v !== null) s2.getCell(5 + i, c + 1).value = v as ExcelJS.CellValue })
   })
   const s3 = wb.addWorksheet("3 Arauco")
@@ -395,5 +395,82 @@ describe.sequential("carga de lecturas y preventivas declaradas", () => {
     }, { active: true, retiredReason: "" })
     expect(stale).toMatchObject({ ok: false, message: expect.stringMatching(/cambió mientras la editabas/) })
     expect(await profileOf("v-143")).toMatchObject({ initialReading: 390_447.4, priorPreventiveDate: "2026-04-09" })
+  })
+})
+
+/**
+ * `--origen-formularios` (2026-11-27): las filas que el Jefe dejó sin responder se cargan con lo que dicen los
+ * formularios. Pauta cíclica de 40/80/120 mil km, como la de camiones en prod.
+ */
+describe.sequential("carga con origen en los formularios", () => {
+  const FORMS = [
+    { id: "v-f1", code: "KF-1", plate: "FFFF-01" },
+    { id: "v-f2", code: "KF-2", plate: "FFFF-02" },
+    { id: "v-f3", code: "KF-3", plate: "FFFF-03" },
+    { id: "v-f4", code: "KF-4", plate: "FFFF-04" },
+  ]
+  const rows: Row2[] = [
+    // Sin respuesta y con OT: se carga con lo de los formularios. 400.627 km → punto 400.000 → servicio 40.000 en el ciclo de 120.000.
+    { code: "KF-1", plate: "FFFF-01", reading: 438_715, readingDate: "19-11-2026", formDate: "28-05-2026", formOdo: 400_627, ot: "33753" },
+    // Sin respuesta y sin OT: pendiente (sin respaldo no se carga nada).
+    { code: "KF-2", plate: "FFFF-02", reading: 436_251, readingDate: "20-11-2026", formDate: "28-01-2026", formOdo: 360_093 },
+    // «No sé» manda aunque haya formularios: pendiente.
+    { code: "KF-3", plate: "FFFF-03", reading: 390_447, readingDate: "20-11-2026", formDate: "09-04-2026", formOdo: 360_100, ot: "33716", answer: "No sé" },
+    // Fuera de --solo: pendiente.
+    { code: "KF-4", plate: "FFFF-04", reading: 490_646, readingDate: "20-11-2026", formDate: "10-07-2026", formOdo: 460_000, ot: "33909" },
+  ]
+
+  beforeAll(async () => {
+    const db = inMemoryDb
+    const [type] = await db.select().from(schema.fuelEquipmentTypes).where(eq(schema.fuelEquipmentTypes.slug, "camion"))
+    await db.insert(schema.mantSchedules).values({ id: "s-ciclica", name: "Camiones km cíclica", nameKey: "camiones km ciclica", unit: "km", version: 1, cyclic: true })
+    await db.insert(schema.mantScheduleVersions).values({
+      scheduleId: "s-ciclica", version: 1, summary: "Versión inicial",
+      snapshot: { id: "s-ciclica", name: "Camiones km cíclica", unit: "km", version: 1, intervals: [40_000, 80_000, 120_000], cyclic: true, groups: [], brandRules: [] },
+    })
+    for (const vehicle of FORMS) {
+      await db.insert(schema.fuelVehicles).values({ ...vehicle, type: "camion", equipmentTypeId: type!.id, meterType: "odometer", worksiteId: "w-bio" })
+      await db.insert(schema.mantEquipmentProfiles).values({ vehicleId: vehicle.id, brandId: "b-man", scheduleId: "s-ciclica" })
+    }
+  })
+
+  it("sin --origen-formularios, una fila sin respuesta queda pendiente", async () => {
+    const { applyTrinormaLecturasPreventivas } = await load()
+    const report = await applyTrinormaLecturasPreventivas({ ...common, bytes: await planilla(rows), pautaConfirmada: true, only: ["KF-1"] })
+    expect(report.outcomes.find((o) => o.item.includes("KF-1"))).toMatchObject({ result: "pendiente", detail: "sin respuesta en «¿Confirma o corrige?»" })
+  })
+
+  it("con --origen-formularios carga lectura y preventiva de los formularios, con la OT, el servicio sugerido y la fuente honesta", async () => {
+    const { applyTrinormaLecturasPreventivas, FORMS_SOURCE_NOTE } = await load()
+    const report = await applyTrinormaLecturasPreventivas({
+      ...common, bytes: await planilla(rows), pautaConfirmada: true, apply: true, formsOrigin: true, only: ["KF-1", "KF-2", "KF-3"],
+    })
+    const outcome = (code: string) => report.outcomes.find((o) => o.item.includes(code))
+    expect(outcome("KF-1")).toMatchObject({ result: "cargado" })
+    expect(outcome("KF-1")!.detail).toContain("servicio 40000 sugerido por la regla de la pauta")
+    expect(outcome("KF-2")).toMatchObject({ result: "pendiente" })
+    expect(outcome("KF-2")!.detail).toMatch(/no trae un número de OT/)
+    expect(outcome("KF-3")).toMatchObject({ result: "pendiente", detail: "respondió «No sé»" })
+    expect(outcome("KF-4")).toMatchObject({ result: "pendiente", detail: "fuera de esta carga (--solo)" })
+
+    const profile = await profileOf("v-f1")
+    expect(profile).toMatchObject({
+      initialReadingDate: "2026-11-19", priorPreventiveDate: "2026-05-28", priorPreventiveInterval: 40_000,
+      priorPreventiveEvidence: "OT 33753", priorPreventiveDeclaredBy: "u-jefe",
+    })
+    expect(Number(profile.initialReading)).toBe(438_715)
+    expect(Number(profile.priorPreventiveReading)).toBe(400_627)
+    expect(profile.priorPreventiveSource).toContain(FORMS_SOURCE_NOTE)
+    for (const id of ["v-f2", "v-f3", "v-f4"]) expect((await profileOf(id)).priorPreventiveDate, id).toBeNull()
+
+    const [audit] = (await inMemoryDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityType, "mant_equipment_prior_preventive_load")))
+      .filter((row) => String(row.newState).includes('"formsOrigin":true'))
+    expect(audit?.reason).toContain(FORMS_SOURCE_NOTE)
+  })
+
+  it("una segunda corrida con --origen-formularios da «ya estaba»", async () => {
+    const { applyTrinormaLecturasPreventivas } = await load()
+    const report = await applyTrinormaLecturasPreventivas({ ...common, bytes: await planilla(rows), pautaConfirmada: true, apply: true, formsOrigin: true, only: ["KF-1"] })
+    expect(report.outcomes.find((o) => o.item.includes("KF-1"))).toMatchObject({ result: "ya estaba" })
   })
 })

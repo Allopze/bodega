@@ -24,6 +24,12 @@
  *
  *   npx tsx scripts/apply-trinorma-lecturas-preventivas.ts --file <planilla.xlsx> --actor-email <correo> --declarada-por <correo> [--pauta-confirmada] [--report <informe.md>]           # simulación
  *   npx tsx scripts/apply-trinorma-lecturas-preventivas.ts --file <planilla.xlsx> --actor-email <correo> --declarada-por <correo> --pauta-confirmada --apply [--report <informe.md>]  # escribe
+ *
+ * `--origen-formularios` (decisión del usuario del 2026-11-27, antes de la auditoría del 01-12): una fila que el Jefe
+ * dejó sin responder se carga con lo que dicen los formularios (fecha y odómetro de la última preventiva, la OT como
+ * respaldo y el servicio que la regla de la pauta sugiere para ese odómetro). La fuente lo dice así en la historia del
+ * equipo: «según formularios, sin confirmar por el Jefe de Mantención». Lo que el Jefe sí respondió manda igual que siempre.
+ * `--solo <código,código>` acota la carga a esos equipos; el resto queda pendiente con su motivo.
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
@@ -37,6 +43,8 @@ import { matchVehicle, plateKey } from "@/lib/mantencion/equipment-identity"
 import { loadXlsxTolerant } from "@/lib/reports/xlsx-normalize"
 import { EVIDENCE_REFERENCE_MESSAGE, isEvidenceReference, loadEquipmentCurrent } from "@/lib/services/mantencion/equipment-resolve"
 import { updateEquipmentPlanTx } from "@/lib/services/mantencion/equipment"
+import { getCurrentScheduleSnapshots } from "@/lib/services/mantencion/schedule-versions"
+import { suggestInterval } from "@/lib/mantencion/schedule"
 
 export const MANAGE_PERMISSION = "mant:equipment:manage"
 const LOCK_KEY = "trinorma-lecturas-preventivas"
@@ -125,6 +133,8 @@ export interface PreventiveRow {
   service: unknown
   where: string
   evidence: string
+  /** OT de la última preventiva según formularios (columna «OT»), para `--origen-formularios`. */
+  formOt: string
 }
 
 export interface NovemberReading { row: number; code: string; plate: string; reading: unknown; date: unknown }
@@ -179,6 +189,7 @@ export async function readPlanilla(bytes: ArrayBuffer | Uint8Array): Promise<Pla
       service: r.getCell(col("SERVICIODEPAUTA")).value,
       where: col("DONDESEHIZO") ? text(r.getCell(col("DONDESEHIZO")).value) : "",
       evidence: text(r.getCell(col("RESPALDOOTOFACTURA")).value),
+      formOt: col("OT") ? text(r.getCell(col("OT")).value) : "",
     })
   }
 
@@ -223,8 +234,19 @@ export interface Candidate {
 const label = (row: { code: string; plate: string }) => [row.code, row.plate].filter(Boolean).join(" ") || "(sin código ni patente)"
 
 /** La fila de la planilla convertida en lo que se cargaría, o el motivo por el que queda pendiente. */
-export function buildCandidate(row: PreventiveRow, november: NovemberReading | null, fileName: string): { ok: true; value: Candidate } | { ok: false; reason: string } {
+/** Con `--origen-formularios`: el servicio que la regla de la pauta sugiere para el odómetro de la preventiva. */
+export interface FormsOrigin { intervals: readonly number[]; cyclic: boolean }
+
+export const FORMS_SOURCE_NOTE = "según formularios, sin confirmar por el Jefe de Mantención"
+
+export function buildCandidate(
+  row: PreventiveRow,
+  november: NovemberReading | null,
+  fileName: string,
+  formsOrigin: FormsOrigin | null = null,
+): { ok: true; value: Candidate } | { ok: false; reason: string } {
   const answer = headerKey(row.answer)
+  if (!answer && formsOrigin) return buildFromForms(row, november, fileName, formsOrigin)
   let priorDate: string | null
   let priorReading: number | null
   if (answer === "CONFIRMA") {
@@ -285,6 +307,31 @@ export function buildCandidate(row: PreventiveRow, november: NovemberReading | n
   }
 }
 
+/**
+ * Fila sin respuesta del Jefe, cargada con lo que dicen los formularios. Mismas condiciones que una confirmación
+ * (fecha y odómetro válidos, respaldo con número, lectura actual con fecha); el servicio no lo eligió nadie, así que
+ * se usa el que sugiere la regla de la pauta del equipo para ese odómetro, como en la app del mecánico.
+ */
+function buildFromForms(row: PreventiveRow, november: NovemberReading | null, fileName: string, origin: FormsOrigin): { ok: true; value: Candidate } | { ok: false; reason: string } {
+  const date = parsePlainDate(row.formDate)
+  const reading = parseNumber(row.formReading)
+  if (!date || reading === null) return { ok: false, reason: "sin respuesta del Jefe y los formularios no traen una preventiva con fecha y odómetro" }
+  const ot = row.formOt.replace(/^OT\s*/i, "").trim()
+  if (!/^\d+$/.test(ot)) return { ok: false, reason: "sin respuesta del Jefe y la preventiva de los formularios no trae un número de OT que sirva de respaldo" }
+  if (origin.intervals.length === 0) return { ok: false, reason: "la pauta del equipo no tiene intervalos" }
+  const service = suggestInterval(origin.intervals, reading, origin.cyclic).intervalValue
+  const built = buildCandidate({ ...row, answer: "Confirma", service, evidence: `OT ${ot}` }, november, fileName)
+  if (!built.ok) return built
+  return {
+    ok: true,
+    value: {
+      ...built.value,
+      source: `Formularios de mantención (${path.basename(fileName)}), ${FORMS_SOURCE_NOTE}${row.note ? ` · Nota: ${row.note}` : ""}`,
+      notes: [...built.value.notes, `servicio ${service} sugerido por la regla de la pauta (nadie lo eligió)`],
+    },
+  }
+}
+
 /* ── Informe ─────────────────────────────────────────────────────────────── */
 
 type Result = "dry-run" | "cargado" | "ya estaba" | "pendiente"
@@ -328,6 +375,10 @@ export interface ApplyLecturasOptions {
   declaredByEmail: string
   pautaConfirmada?: boolean
   apply?: boolean
+  /** Carga las filas sin respuesta con lo que dicen los formularios (ver el encabezado). */
+  formsOrigin?: boolean
+  /** Sólo estos códigos (o patentes); vacío = todos. */
+  only?: readonly string[]
 }
 
 export async function applyTrinormaLecturasPreventivas(options: ApplyLecturasOptions): Promise<LecturasReport> {
@@ -360,6 +411,7 @@ export async function applyTrinormaLecturasPreventivas(options: ApplyLecturasOpt
 
       const loaded: string[] = []
       const conflicts: string[] = []
+      const only = new Set((options.only ?? []).map((value) => plateKey(value)).filter(Boolean))
       for (const row of planilla.rows) {
         const item = label(row)
         const pending = (reason: string) => report.outcomes.push({ item, row: row.row, result: "pendiente", detail: reason })
@@ -376,8 +428,14 @@ export async function applyTrinormaLecturasPreventivas(options: ApplyLecturasOpt
         if (!current) { pending("el equipo está en la flota, pero no en Mantención"); continue }
         if (!current.scheduleId) { pending("el equipo no tiene pauta asignada en Mantención"); continue }
         if (!current.active) { pending("el equipo está dado de baja: no se le carga lectura ni preventiva"); continue }
+        if (only.size > 0 && !only.has(plateKey(row.code)) && !only.has(plateKey(row.plate))) { pending("fuera de esta carga (--solo)"); continue }
 
-        const built = buildCandidate(row, novemberRows[0] ?? null, options.fileName)
+        let origin: FormsOrigin | null = null
+        if (options.formsOrigin) {
+          const [snapshot] = await getCurrentScheduleSnapshots([current.scheduleId], tx)
+          origin = { intervals: snapshot?.intervals ?? [], cyclic: snapshot?.cyclic ?? false }
+        }
+        const built = buildCandidate(row, novemberRows[0] ?? null, options.fileName, origin)
         if (!built.ok) { pending(built.reason); continue }
         const target = built.value
 
@@ -436,12 +494,14 @@ export async function applyTrinormaLecturasPreventivas(options: ApplyLecturasOpt
         userId: actor.userId, userEmail: actor.email, action: "update", entityType: "mant_equipment_prior_preventive_load", entityId: nanoid(),
         entityCode: "trinorma-lecturas-preventivas",
         newState: {
-          file: report.fileName, applied: apply, declaredBy: declarer.userId, pautaConfirmada,
+          file: report.fileName, applied: apply, declaredBy: declarer.userId, pautaConfirmada, formsOrigin: options.formsOrigin ?? false,
           total: report.outcomes.length, loaded: loaded.length, alreadyThere: countOf("ya estaba"), pending: countOf("pendiente"),
           loadedEquipment: loaded,
           pendingEquipment: report.outcomes.filter((o) => o.result === "pendiente").map((o) => ({ item: o.item, reason: o.detail })),
         },
-        reason: "Carga de la lectura inicial y la preventiva declarada anterior a la plataforma desde la planilla del Jefe de Mantención (Trinorma, 2026-11-21)",
+        reason: options.formsOrigin
+          ? `Carga de la lectura inicial y la preventiva declarada anterior a la plataforma; las filas sin respuesta del Jefe salen de los formularios (${FORMS_SOURCE_NOTE}; decisión del 2026-11-27)`
+          : "Carga de la lectura inicial y la preventiva declarada anterior a la plataforma desde la planilla del Jefe de Mantención (Trinorma, 2026-11-21)",
       }, tx)
       // La simulación corre el mismo código y lo deshace: lo que informa es lo que `--apply` haría.
       if (!apply) throw new DryRunRollback()
@@ -508,12 +568,14 @@ export async function main(argv = process.argv) {
   const actorEmail = argValue(argv, "--actor-email")
   const declaredByEmail = argValue(argv, "--declarada-por")
   const reportPath = argValue(argv, "--report")
+  const formsOrigin = argv.includes("--origen-formularios")
+  const only = (argValue(argv, "--solo") ?? "").split(",").map((value) => value.trim()).filter(Boolean)
   if (!file) throw new Error("Falta --file <planilla.xlsx>.")
   if (!actorEmail) throw new Error("Falta --actor-email <correo>: la bitácora necesita un responsable.")
   if (!declaredByEmail) throw new Error("Falta --declarada-por <correo>: quién declara la preventiva (el Jefe de Mantención).")
   if (apply && !pautaConfirmada) throw new Error(PAUTA_REQUIRED_ERROR)
   console.log(`Lecturas y preventivas declaradas — ${apply ? "escribiendo" : "simulación (no escribe)"}`)
-  const report = await applyTrinormaLecturasPreventivas({ bytes: readFileSync(file), fileName: file, actorEmail, declaredByEmail, pautaConfirmada, apply })
+  const report = await applyTrinormaLecturasPreventivas({ bytes: readFileSync(file), fileName: file, actorEmail, declaredByEmail, pautaConfirmada, apply, formsOrigin, only })
   printLecturasReport(report)
   if (reportPath) {
     writeFileSync(reportPath, renderLecturasReportMarkdown(report), "utf8")
