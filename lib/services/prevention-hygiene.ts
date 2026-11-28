@@ -791,7 +791,16 @@ export async function recordSurveillanceOutcome(input: unknown, access: HygieneA
     // `FOR UPDATE` sobre la matrícula: el ciclo siguiente se abre y se retira
     // mirando su estado, y dos registros concurrentes de la misma persona no
     // pueden decidirlo cada uno sobre una foto distinta.
-    const [row] = await tx.select({ enrollment: preventionSurveillanceEnrollments, program: preventionSurveillancePrograms })
+    const [row] = await tx.select({
+      enrollment: preventionSurveillanceEnrollments,
+      program: preventionSurveillancePrograms,
+      // El sello se compara como instante y en SQL, no como texto: según cómo
+      // lo lea la pantalla (select directo o consulta relacional, que pasa por
+      // JSON) llega como `2026-11-28 17:29:20+00` o `2026-11-28T17:29:20+00:00`.
+      tokenMatches: data.expectedUpdatedAt === undefined
+        ? sql<boolean>`true`
+        : sql<boolean>`${preventionSurveillanceEnrollments.updatedAt} = ${data.expectedUpdatedAt}::timestamptz`,
+    })
       .from(preventionSurveillanceEnrollments)
       .innerJoin(preventionSurveillancePrograms, eq(preventionSurveillanceEnrollments.programId, preventionSurveillancePrograms.id))
       .where(eq(preventionSurveillanceEnrollments.id, data.enrollmentId))
@@ -805,7 +814,7 @@ export async function recordSurveillanceOutcome(input: unknown, access: HygieneA
      * vista, el último en llegar pisaba al primero sin saberlo. Opcional como
      * `expectedVersion` en `setProtocolApplicability`; la pantalla siempre lo
      * envía. */
-    if (data.expectedUpdatedAt !== undefined && row.enrollment.updatedAt !== data.expectedUpdatedAt) {
+    if (!row.tokenMatches) {
       throw new Error("La matrícula cambió mientras la revisabas. Recarga y vuelve a intentarlo.")
     }
     /* Un control asistido sólo se corrige a ausente (o se exime): esa es la

@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from "drizzle-orm"
+import { and, eq, inArray, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   approvalDecisions,
@@ -32,12 +32,20 @@ export async function updatePendingRequestItem(input: {
   item: RequestItemFormData
 }): Promise<{ updatedAt: string; quantity: number }> {
   return await db.transaction(async (tx) => {
-    const [item] = await tx
-      .select()
+    // El token se compara como instante y en SQL, no como texto: la ficha lo
+    // lee con una consulta relacional (JSON, `2026-11-28T17:29:20.053+00:00`)
+    // y este select lo trae como texto (`2026-11-28 17:29:20.053+00`). Como
+    // strings nunca coincidían y guardar fallaba siempre.
+    const [row] = await tx
+      .select({
+        item: purchaseRequestItems,
+        tokenMatches: sql<boolean>`${purchaseRequestItems.updatedAt} = ${input.expectedUpdatedAt}::timestamptz`,
+      })
       .from(purchaseRequestItems)
       .where(eq(purchaseRequestItems.id, input.itemId))
       .for("update")
-    if (!item) throw new Error("Ítem no encontrado")
+    if (!row) throw new Error("Ítem no encontrado")
+    const item = row.item
 
     const [request] = await tx
       .select()
@@ -57,7 +65,7 @@ export async function updatePendingRequestItem(input: {
     if (item.status !== "requested") {
       throw new Error("Este ítem ya fue aprobado, rechazado o pasó a otra etapa")
     }
-    if (item.updatedAt !== input.expectedUpdatedAt) {
+    if (!row.tokenMatches) {
       throw new Error("El ítem cambió desde que abriste la edición. Actualiza la página e inténtalo nuevamente")
     }
 

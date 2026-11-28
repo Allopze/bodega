@@ -376,6 +376,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/receiving-two-stage.test.ts",
   "lib/__tests__/registro-action.test.ts",
   "lib/__tests__/requests-delete.test.ts",
+  // Editar un ítem pendiente con el updatedAt que entrega la ficha (formato JSON de la consulta relacional).
+  "lib/__tests__/request-item-edit-pglite.test.ts",
   "lib/__tests__/sst-alerts.test.ts",
   "lib/__tests__/sst-delete-evaluation.test.ts",
   "lib/__tests__/sst-worker-evaluations-scope.test.ts",

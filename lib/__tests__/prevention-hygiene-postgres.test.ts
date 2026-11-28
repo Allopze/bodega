@@ -283,9 +283,15 @@ describeIf("Higiene industrial on real PostgreSQL", () => {
     expect((await readEnrollment()).updatedAt).toBe(attended.updatedAt)
 
     // La corrección deliberada a ausente sigue disponible, con la versión vigente.
+    // El sello llega con el formato de una consulta relacional (JSON, con «T»):
+    // es el mismo instante y tiene que valer igual que el texto del select.
+    const [jsonToken] = await getDb().execute<{ token: string }>(sql`
+      SELECT to_json(updated_at) #>> '{}' AS token
+      FROM prevention_surveillance_enrollments WHERE id = ${attended.id}`)
+    expect(jsonToken!.token).not.toBe(attended.updatedAt)
     const corrected = await service.recordSurveillanceOutcome({
       enrollmentId: attended.id, status: "absent", absenceReason: "Se corrigió: nunca asistió al control.",
-      expectedUpdatedAt: attended.updatedAt,
+      expectedUpdatedAt: jsonToken!.token,
     }, HYGIENIST)
     expect(corrected.status).toBe("absent")
   })

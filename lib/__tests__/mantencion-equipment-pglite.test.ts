@@ -395,6 +395,32 @@ describe("«Editar mantención»: pauta, lectura inicial y baja", () => {
     expect(result).toMatchObject({ ok: true, data: { changed: true } })
     expect(await profileOf(vehicleId)).toMatchObject({ scheduleId: scheduleKm, retiredReason: "Equipo vendido a tercero" })
   })
+
+  it("el sello de la ficha vale como instante: texto o JSON pasan, uno viejo no", async () => {
+    // Un select directo trae `2026-11-28 17:29:20.053+00`; una consulta relacional
+    // (JSON) trae `2026-11-28T17:29:20.053+00:00`. Son el mismo instante.
+    const tokens = async () => {
+      const { rows } = await pg.query<{ text: string; json: string }>(
+        "SELECT updated_at::text AS text, to_json(updated_at) #>> '{}' AS json FROM mant_equipment_profiles WHERE vehicle_id = $1",
+        [vehicleId],
+      )
+      return rows[0]!
+    }
+    const retired = { active: false, retiredReason: "Equipo vendido a tercero" }
+
+    const first = await tokens()
+    expect(first.json).not.toBe(first.text)
+    const byJson = await updateEquipmentPlan(actor, vehicleId, { ...plan({ scheduleId: null, initialReading: 4_000, initialReadingDate: "2026-10-01" }), expectedUpdatedAt: first.json }, retired)
+    expect(byJson).toMatchObject({ ok: true, data: { changed: true } })
+
+    const second = await tokens()
+    const byText = await updateEquipmentPlan(actor, vehicleId, { ...plan({ scheduleId: scheduleKm, initialReading: 4_000, initialReadingDate: "2026-10-01" }), expectedUpdatedAt: second.text }, retired)
+    expect(byText).toMatchObject({ ok: true, data: { changed: true } })
+
+    const stale = await updateEquipmentPlan(actor, vehicleId, { ...plan({ scheduleId: null, initialReading: 4_000, initialReadingDate: "2026-10-01" }), expectedUpdatedAt: first.json }, retired)
+    expect(!stale.ok && stale.message).toMatch(/La ficha cambió/)
+    expect(await profileOf(vehicleId)).toMatchObject({ scheduleId: scheduleKm })
+  })
 })
 
 async function workbookBuffer(rows: Array<Array<string | number | null>>): Promise<ArrayBuffer> {

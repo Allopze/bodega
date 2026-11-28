@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm"
+import { and, eq, isNull, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
   fuelEquipmentTypes, fuelVehicleOperationalIntervals, fuelVehicleWorksiteIntervals, fuelVehicles, mantEquipmentProfiles,
@@ -392,8 +392,17 @@ export async function updateEquipmentPlanTx(
   }
   // Edición concurrente: si la ficha cambió después de abrir el formulario (otra persona o la carga de
   // la planilla), no se guarda; un formulario viejo borraría lo que se cargó entretanto.
-  if (input.expectedUpdatedAt && input.expectedUpdatedAt !== current.profileUpdatedAt) {
-    return equipmentFailure({}, "La ficha cambió mientras la editabas. Recarga la página y vuelve a intentarlo.")
+  // El sello se compara como instante y en SQL, no como texto (el formato cambia según cómo se lea:
+  // select directo o consulta relacional por JSON), y con la ficha bloqueada hasta el final.
+  if (input.expectedUpdatedAt) {
+    const [token] = await tx
+      .select({ matches: sql<boolean>`${mantEquipmentProfiles.updatedAt} = ${input.expectedUpdatedAt}::timestamptz` })
+      .from(mantEquipmentProfiles)
+      .where(eq(mantEquipmentProfiles.vehicleId, vehicleId))
+      .for("update")
+    if (!token?.matches) {
+      return equipmentFailure({}, "La ficha cambió mientras la editabas. Recarga la página y vuelve a intentarlo.")
+    }
   }
   const today = todayInChile()
   // Con una declaración nueva en la entrada, ésa se valida contra la lectura (abajo); sin ella, la
